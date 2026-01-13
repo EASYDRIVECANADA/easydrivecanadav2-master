@@ -1,0 +1,673 @@
+'use client'
+
+import { useState, useEffect, useMemo } from 'react'
+import Link from 'next/link'
+
+interface Vehicle {
+  id: string
+  make: string
+  model: string
+  series: string
+  year: number
+  price: number
+  mileage: number
+  fuelType: string
+  transmission: string
+  bodyStyle: string
+  exteriorColor: string
+  city: string
+  province: string
+  images: string[]
+  status: string
+  inventoryType?: string
+}
+
+type SortOption = 'newest' | 'price-low' | 'price-high' | 'mileage-low' | 'mileage-high' | 'year-new' | 'year-old'
+
+export default function InventoryPage() {
+  const [vehicles, setVehicles] = useState<Vehicle[]>([])
+  const [loading, setLoading] = useState(true)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [showMobileFilters, setShowMobileFilters] = useState(false)
+  const [sortBy, setSortBy] = useState<SortOption>('newest')
+  const [currentPage, setCurrentPage] = useState(1)
+  const itemsPerPage = 12
+  const [filters, setFilters] = useState({
+    make: '',
+    bodyStyle: '',
+    exteriorColor: '',
+    inventoryType: '',
+    minPrice: '',
+    maxPrice: '',
+    minYear: '',
+    maxYear: '',
+  })
+
+  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'
+
+  useEffect(() => {
+    fetchVehicles()
+  }, [])
+
+  const fetchVehicles = async () => {
+    try {
+      const res = await fetch(`${API_URL}/api/vehicles`)
+      if (res.ok) {
+        const data = await res.json()
+        setVehicles(data.filter((v: Vehicle) => v.status === 'ACTIVE'))
+      }
+    } catch (_error) {
+      console.error('Error fetching vehicles:', _error)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const formatPrice = (price: number) => {
+    return new Intl.NumberFormat('en-CA', {
+      style: 'currency',
+      currency: 'CAD',
+      minimumFractionDigits: 0,
+    }).format(price)
+  }
+
+  // Get unique values from vehicles dynamically
+  const uniqueMakes = useMemo(() => {
+    const makes = Array.from(new Set(vehicles.map((v) => v.make).filter(Boolean)))
+    return makes.sort()
+  }, [vehicles])
+  
+  const uniqueBodyStyles = useMemo(() => {
+    const styles = Array.from(new Set(vehicles.map((v) => v.bodyStyle).filter(Boolean)))
+    return styles.sort()
+  }, [vehicles])
+  
+  const uniqueColors = useMemo(() => {
+    const colors = Array.from(new Set(vehicles.map((v) => v.exteriorColor).filter(Boolean)))
+    return colors.sort()
+  }, [vehicles])
+
+  // Get year range from actual vehicle data
+  const yearRange = useMemo(() => {
+    if (vehicles.length === 0) return []
+    const years = vehicles.map((v) => v.year).filter(Boolean)
+    const minYear = Math.min(...years)
+    const maxYear = Math.max(...years)
+    const range = []
+    for (let y = maxYear; y >= minYear; y--) {
+      range.push(y)
+    }
+    return range
+  }, [vehicles])
+
+  // Filter and search vehicles
+  const filteredVehicles = useMemo(() => {
+    const result = vehicles.filter((vehicle) => {
+      // Search query - searches make, model, year
+      if (searchQuery) {
+        const query = searchQuery.toLowerCase()
+        const searchString = `${vehicle.year} ${vehicle.make} ${vehicle.model}`.toLowerCase()
+        if (!searchString.includes(query)) {
+          return false
+        }
+      }
+      
+      // Filters
+      if (filters.make && vehicle.make !== filters.make) return false
+      if (filters.bodyStyle && vehicle.bodyStyle !== filters.bodyStyle) return false
+      if (filters.exteriorColor && vehicle.exteriorColor !== filters.exteriorColor) return false
+      if (filters.inventoryType && vehicle.inventoryType !== filters.inventoryType) return false
+      if (filters.minPrice && vehicle.price < parseInt(filters.minPrice)) return false
+      if (filters.maxPrice && vehicle.price > parseInt(filters.maxPrice)) return false
+      if (filters.minYear && vehicle.year < parseInt(filters.minYear)) return false
+      if (filters.maxYear && vehicle.year > parseInt(filters.maxYear)) return false
+      
+      return true
+    })
+
+    // Sort
+    switch (sortBy) {
+      case 'price-low':
+        result.sort((a, b) => a.price - b.price)
+        break
+      case 'price-high':
+        result.sort((a, b) => b.price - a.price)
+        break
+      case 'mileage-low':
+        result.sort((a, b) => a.mileage - b.mileage)
+        break
+      case 'mileage-high':
+        result.sort((a, b) => b.mileage - a.mileage)
+        break
+      case 'year-new':
+        result.sort((a, b) => b.year - a.year)
+        break
+      case 'year-old':
+        result.sort((a, b) => a.year - b.year)
+        break
+      default:
+        break
+    }
+
+    return result
+  }, [vehicles, searchQuery, filters, sortBy])
+
+  // Pagination
+  const totalPages = Math.ceil(filteredVehicles.length / itemsPerPage)
+  const startIndex = (currentPage - 1) * itemsPerPage
+  const endIndex = startIndex + itemsPerPage
+  const paginatedVehicles = filteredVehicles.slice(startIndex, endIndex)
+
+  // Reset to page 1 when filters change
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [searchQuery, filters, sortBy])
+
+  const clearFilters = () => {
+    setFilters({
+      make: '',
+      bodyStyle: '',
+      exteriorColor: '',
+      inventoryType: '',
+      minPrice: '',
+      maxPrice: '',
+      minYear: '',
+      maxYear: '',
+    })
+    setSearchQuery('')
+  }
+
+  const activeFilterCount = Object.values(filters).filter(Boolean).length + (searchQuery ? 1 : 0)
+
+  const FilterSidebar = ({ mobile = false }: { mobile?: boolean }) => (
+    <div className={mobile ? '' : 'glass-card rounded-2xl p-6 sticky top-24'}>
+      <div className="flex items-center justify-between mb-6">
+        <h2 className="text-lg font-semibold text-gray-900">Filters</h2>
+        {activeFilterCount > 0 && (
+          <button
+            onClick={clearFilters}
+            className="text-sm text-[#118df0] hover:underline"
+          >
+            Clear all
+          </button>
+        )}
+      </div>
+
+      <div className="space-y-5">
+        {/* Make Filter */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">Make</label>
+          <select
+            value={filters.make}
+            onChange={(e) => setFilters({ ...filters, make: e.target.value })}
+            className="select-field"
+          >
+            <option value="">All Makes</option>
+            {uniqueMakes.map((make) => (
+              <option key={make} value={make}>{make}</option>
+            ))}
+          </select>
+        </div>
+
+        {/* Inventory Type Filter */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">Collection</label>
+          <select
+            value={filters.inventoryType}
+            onChange={(e) => setFilters({ ...filters, inventoryType: e.target.value })}
+            className="select-field"
+          >
+            <option value="">All Vehicles</option>
+            <option value="FLEET">Fleet Cars</option>
+            <option value="PREMIERE">Premiere Cars</option>
+          </select>
+        </div>
+
+        {/* Body Style Filter */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">Body Style</label>
+          <select
+            value={filters.bodyStyle}
+            onChange={(e) => setFilters({ ...filters, bodyStyle: e.target.value })}
+            className="select-field"
+          >
+            <option value="">All Styles</option>
+            {uniqueBodyStyles.map((style) => (
+              <option key={style} value={style}>{style}</option>
+            ))}
+          </select>
+        </div>
+
+        {/* Exterior Color */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">Exterior Color</label>
+          <select
+            value={filters.exteriorColor}
+            onChange={(e) => setFilters({ ...filters, exteriorColor: e.target.value })}
+            className="select-field"
+          >
+            <option value="">All Colors</option>
+            {uniqueColors.map((color) => (
+              <option key={color} value={color}>{color}</option>
+            ))}
+          </select>
+        </div>
+
+        {/* Price Range */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">Price Range</label>
+          <div className="grid grid-cols-2 gap-2">
+            <select
+              value={filters.minPrice}
+              onChange={(e) => setFilters({ ...filters, minPrice: e.target.value })}
+              className="select-field text-sm"
+            >
+              <option value="">Min</option>
+              {[5000, 10000, 15000, 20000, 25000, 30000, 35000, 40000, 50000, 60000, 75000, 100000]
+                .filter(price => !filters.maxPrice || price <= parseInt(filters.maxPrice))
+                .map(price => (
+                  <option key={price} value={price}>${price >= 1000 ? `${price / 1000}k` : price}</option>
+                ))}
+            </select>
+            <select
+              value={filters.maxPrice}
+              onChange={(e) => setFilters({ ...filters, maxPrice: e.target.value })}
+              className="select-field text-sm"
+            >
+              <option value="">Max</option>
+              {[10000, 15000, 20000, 25000, 30000, 35000, 40000, 50000, 60000, 75000, 100000, 150000]
+                .filter(price => !filters.minPrice || price >= parseInt(filters.minPrice))
+                .map(price => (
+                  <option key={price} value={price}>${price >= 1000 ? `${price / 1000}k` : price}</option>
+                ))}
+            </select>
+          </div>
+        </div>
+
+        {/* Year Range */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">Year Range</label>
+          <div className="grid grid-cols-2 gap-2">
+            <select
+              value={filters.minYear}
+              onChange={(e) => setFilters({ ...filters, minYear: e.target.value })}
+              className="select-field text-sm"
+            >
+              <option value="">Min</option>
+              {yearRange
+                .filter(year => !filters.maxYear || year <= parseInt(filters.maxYear))
+                .map((year) => (
+                  <option key={year} value={year}>{year}</option>
+                ))}
+            </select>
+            <select
+              value={filters.maxYear}
+              onChange={(e) => setFilters({ ...filters, maxYear: e.target.value })}
+              className="select-field text-sm"
+            >
+              <option value="">Max</option>
+              {yearRange
+                .filter(year => !filters.minYear || year >= parseInt(filters.minYear))
+                .map((year) => (
+                  <option key={year} value={year}>{year}</option>
+                ))}
+            </select>
+          </div>
+        </div>
+      </div>
+
+      {mobile && (
+        <div className="mt-6 flex gap-3">
+          <button
+            onClick={() => setShowMobileFilters(false)}
+            className="flex-1 btn-primary"
+          >
+            Show {filteredVehicles.length} Results
+          </button>
+        </div>
+      )}
+    </div>
+  )
+
+  return (
+    <div className="min-h-screen">
+      {/* Hero Header */}
+      <section className="relative overflow-hidden py-16 lg:py-20">
+        <div className="absolute inset-0 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900"></div>
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-[#118df0]/20 via-transparent to-transparent"></div>
+        <div className="absolute top-10 right-10 w-72 h-72 bg-[#118df0]/10 rounded-full blur-3xl"></div>
+        
+        <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="text-center">
+            <span className="badge mb-4 bg-white/10 border-white/20 text-white/90">
+              {vehicles.length} Vehicles Available
+            </span>
+            <h1 className="text-3xl md:text-4xl lg:text-5xl font-bold text-white mb-4">
+              Find Your Perfect <span className="gradient-text">Vehicle</span>
+            </h1>
+            <p className="text-slate-300 text-lg max-w-2xl mx-auto mb-8">
+              Browse our selection of quality pre-owned vehicles
+            </p>
+
+            {/* Search Bar */}
+            <div className="max-w-2xl mx-auto">
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                  <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                  </svg>
+                </div>
+                <input
+                  type="text"
+                  placeholder="Search by make, model, or year..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full pl-12 pr-4 py-4 bg-white/10 backdrop-blur-xl border border-white/20 rounded-2xl text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-[#118df0]/50 focus:border-transparent transition-all"
+                />
+                {searchQuery && (
+                  <button
+                    onClick={() => setSearchQuery('')}
+                    className="absolute inset-y-0 right-0 pr-4 flex items-center text-white/50 hover:text-white"
+                  >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Main Content */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div className="flex flex-col lg:flex-row gap-8">
+          {/* Desktop Filters Sidebar */}
+          <div className="hidden lg:block lg:w-72 flex-shrink-0">
+            <FilterSidebar />
+          </div>
+
+          {/* Vehicle Grid */}
+          <div className="flex-1">
+            {/* Toolbar */}
+            <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
+              <div className="flex items-center gap-4">
+                {/* Mobile Filter Button */}
+                <button
+                  onClick={() => setShowMobileFilters(true)}
+                  className="lg:hidden flex items-center gap-2 px-4 py-2 glass-card rounded-xl text-gray-700 font-medium"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+                  </svg>
+                  Filters
+                  {activeFilterCount > 0 && (
+                    <span className="bg-[#118df0] text-white text-xs px-2 py-0.5 rounded-full">
+                      {activeFilterCount}
+                    </span>
+                  )}
+                </button>
+
+                <p className="text-gray-600">
+                  Showing {startIndex + 1}-{Math.min(endIndex, filteredVehicles.length)} of {' '}
+                  <span className="font-semibold text-gray-900">{filteredVehicles.length}</span>
+                  {' '}total vehicles
+                </p>
+              </div>
+
+              {/* Sort Dropdown */}
+              <div className="flex items-center gap-2">
+                <label className="text-sm text-gray-600">Sort by:</label>
+                <select
+                  value={sortBy}
+                  onChange={(e) => setSortBy(e.target.value as SortOption)}
+                  className="select-field py-2 text-sm w-auto"
+                >
+                  <option value="newest">Newest</option>
+                  <option value="price-low">Price: Low to High</option>
+                  <option value="price-high">Price: High to Low</option>
+                  <option value="mileage-low">Mileage: Low to High</option>
+                  <option value="mileage-high">Mileage: High to Low</option>
+                  <option value="year-new">Year: Newest First</option>
+                  <option value="year-old">Year: Oldest First</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Active Filters Pills */}
+            {activeFilterCount > 0 && (
+              <div className="flex flex-wrap gap-2 mb-6">
+                {searchQuery && (
+                  <span className="inline-flex items-center gap-1 px-3 py-1 bg-[#118df0]/10 text-[#118df0] rounded-full text-sm">
+                    Search: &quot;{searchQuery}&quot;
+                    <button onClick={() => setSearchQuery('')} className="hover:text-[#0a7dd4]">
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </span>
+                )}
+                {filters.make && (
+                  <span className="inline-flex items-center gap-1 px-3 py-1 bg-[#118df0]/10 text-[#118df0] rounded-full text-sm">
+                    {filters.make}
+                    <button onClick={() => setFilters({ ...filters, make: '' })} className="hover:text-[#0a7dd4]">
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </span>
+                )}
+                {filters.bodyStyle && (
+                  <span className="inline-flex items-center gap-1 px-3 py-1 bg-[#118df0]/10 text-[#118df0] rounded-full text-sm">
+                    {filters.bodyStyle}
+                    <button onClick={() => setFilters({ ...filters, bodyStyle: '' })} className="hover:text-[#0a7dd4]">
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </span>
+                )}
+                {filters.exteriorColor && (
+                  <span className="inline-flex items-center gap-1 px-3 py-1 bg-[#118df0]/10 text-[#118df0] rounded-full text-sm">
+                    {filters.exteriorColor}
+                    <button onClick={() => setFilters({ ...filters, exteriorColor: '' })} className="hover:text-[#0a7dd4]">
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </span>
+                )}
+              </div>
+            )}
+
+            {/* Vehicle Grid */}
+            {loading ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+                {[1, 2, 3, 4, 5, 6].map((i) => (
+                  <div key={i} className="glass-card rounded-2xl overflow-hidden animate-pulse">
+                    <div className="h-52 bg-gray-200"></div>
+                    <div className="p-5 space-y-3">
+                      <div className="h-5 bg-gray-200 rounded w-3/4"></div>
+                      <div className="h-4 bg-gray-200 rounded w-1/2"></div>
+                      <div className="flex gap-2">
+                        <div className="h-8 bg-gray-200 rounded w-20"></div>
+                        <div className="h-8 bg-gray-200 rounded w-20"></div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : filteredVehicles.length > 0 ? (
+              <>
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+                {paginatedVehicles.map((vehicle) => (
+                  <Link key={vehicle.id} href={`/inventory/${vehicle.id}`}>
+                    <div className="glass-card-hover rounded-2xl overflow-hidden group h-full flex flex-col">
+                      <div className="relative h-52 bg-gradient-to-br from-gray-100 to-gray-200 overflow-hidden flex-shrink-0">
+                        {vehicle.images && vehicle.images.length > 0 ? (
+                          <img
+                            src={`${API_URL}${vehicle.images[0]}`}
+                            alt={`${vehicle.year} ${vehicle.make} ${vehicle.model}`}
+                            className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
+                          />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center">
+                            <div className="text-center">
+                              <svg className="w-16 h-16 mx-auto mb-2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                              </svg>
+                              <p className="text-sm text-gray-500">No Image</p>
+                            </div>
+                          </div>
+                        )}
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+                        <div className="absolute top-4 right-4 price-tag">
+                          {formatPrice(vehicle.price)}
+                        </div>
+                      </div>
+                      <div className="p-5 flex flex-col flex-1">
+                        <h3 className="text-lg font-bold text-gray-900 group-hover:text-[#118df0] transition-colors line-clamp-2">
+                          {vehicle.year} {vehicle.make} {vehicle.model} {vehicle.series}
+                        </h3>
+                        {vehicle.city && vehicle.province && (
+                          <p className="text-sm text-gray-500 mt-1 flex items-center gap-1">
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                            </svg>
+                            {vehicle.city}, {vehicle.province}
+                          </p>
+                        )}
+                        <div className="flex flex-wrap gap-2 mt-3">
+                          <span className="inline-flex items-center text-sm text-gray-500 bg-gray-100/80 px-3 py-1.5 rounded-lg">
+                            {vehicle.mileage?.toLocaleString()} km
+                          </span>
+                          {vehicle.transmission && vehicle.transmission.trim() !== '' && (
+                            <span className="inline-flex items-center text-sm text-gray-500 bg-gray-100/80 px-3 py-1.5 rounded-lg">
+                              {vehicle.transmission}
+                            </span>
+                          )}
+                          {vehicle.fuelType && vehicle.fuelType.trim() !== '' && (
+                            <span className="inline-flex items-center text-sm text-gray-500 bg-gray-100/80 px-3 py-1.5 rounded-lg">
+                              {vehicle.fuelType}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </Link>
+                ))}
+              </div>
+
+              {/* Pagination */}
+              {totalPages > 1 && (
+                <div className="mt-12 flex justify-center items-center gap-2">
+                  <button
+                    onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                    disabled={currentPage === 1}
+                    className={`px-4 py-2 rounded-lg font-medium transition-all ${
+                      currentPage === 1
+                        ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                        : 'bg-white text-gray-700 hover:bg-[#118df0] hover:text-white shadow-sm'
+                    }`}
+                  >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                    </svg>
+                  </button>
+
+                  {/* Page Numbers */}
+                  <div className="flex gap-2">
+                    {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                      let pageNum
+                      if (totalPages <= 5) {
+                        pageNum = i + 1
+                      } else if (currentPage <= 3) {
+                        pageNum = i + 1
+                      } else if (currentPage >= totalPages - 2) {
+                        pageNum = totalPages - 4 + i
+                      } else {
+                        pageNum = currentPage - 2 + i
+                      }
+                      
+                      return (
+                        <button
+                          key={pageNum}
+                          onClick={() => setCurrentPage(pageNum)}
+                          className={`px-4 py-2 rounded-lg font-medium transition-all ${
+                            currentPage === pageNum
+                              ? 'bg-[#118df0] text-white shadow-md'
+                              : 'bg-white text-gray-700 hover:bg-gray-100 shadow-sm'
+                          }`}
+                        >
+                          {pageNum}
+                        </button>
+                      )
+                    })}
+                  </div>
+
+                  <button
+                    onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                    disabled={currentPage === totalPages}
+                    className={`px-4 py-2 rounded-lg font-medium transition-all ${
+                      currentPage === totalPages
+                        ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                        : 'bg-white text-gray-700 hover:bg-[#118df0] hover:text-white shadow-sm'
+                    }`}
+                  >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                    </svg>
+                  </button>
+                </div>
+              )}
+              </>
+            ) : (
+            <div className="glass-card rounded-2xl text-center py-16">
+                <div className="icon-container mx-auto mb-6">
+                  <svg className="w-8 h-8 text-[#118df0]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                </div>
+                <h3 className="text-xl font-semibold text-gray-700 mb-2">No Vehicles Found</h3>
+                <p className="text-gray-500 mb-6">Try adjusting your filters or search query</p>
+                <button onClick={clearFilters} className="btn-outline">
+                  Clear All Filters
+                </button>
+              </div>
+          )}
+        </div>
+      </div>
+    </div>
+
+      {/* Mobile Filter Drawer */}
+      {showMobileFilters && (
+        <div className="fixed inset-0 z-50 lg:hidden">
+          {/* Backdrop */}
+          <div 
+            className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+            onClick={() => setShowMobileFilters(false)}
+          ></div>
+          
+          {/* Drawer */}
+          <div className="absolute right-0 top-0 h-full w-full max-w-sm bg-white shadow-2xl overflow-y-auto">
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-xl font-bold text-gray-900">Filters</h2>
+                <button
+                  onClick={() => setShowMobileFilters(false)}
+                  className="p-2 hover:bg-gray-100 rounded-xl transition-colors"
+                >
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+              <FilterSidebar mobile />
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}

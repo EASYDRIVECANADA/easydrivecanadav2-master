@@ -1,0 +1,140 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Vehicle listing
+model Vehicle {
+  id             String   @id @default(cuid())
+  stockNumber    String?  @unique // Unit ID from EDC
+  make           String
+  model          String
+  year           Int
+  series         String?  // Series/Trim from EDC
+  trim           String?  // Alternate trim field
+  vin            String   @unique
+  price          Float
+  originalPrice  Float?
+  mileage        Int      // Kilometers from EDC
+  exteriorColor  String   // Ext Color from EDC
+  interiorColor  String?
+  transmission   String
+  drivetrain     String?
+  fuelType       String
+  bodyStyle      String
+  equipment      String?  @db.Text // Equip column from EDC
+  description    String?  @db.Text
+  features       String[] @default([])
+  images         String[] @default([])
+  city           String
+  province       String
+  postalCode     String?
+  status         VehicleStatus @default(ACTIVE)
+  inventoryType  InventoryType @default(FLEET)
+  featured       Boolean  @default(false)
+  keyNumber      String?  // Key/Keyfob number from keybox (optional)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([make])
+  @@index([status])
+  @@index([stockNumber])
+  @@index([inventoryType])
+}
+
+// Finance/Contact lead
+model Lead {
+  id              String   @id @default(cuid())
+  firstName       String
+  lastName        String
+  email           String
+  phone           String
+  vehicleInterest String?  // Vehicle ID or description
+  message         String?  @db.Text
+  // Finance-specific fields (Clutch-style)
+  dateOfBirth     String?
+  annualIncome    Float?   // Total Gross Annual Income (before tax)
+  monthlyRent     Float?   // Monthly Rent or Mortgage Payment
+  streetAddress   String?
+  suiteUnit       String?
+  city            String?
+  province        String?
+  postalCode      String?
+  // Legacy fields (kept for backward compatibility)
+  employmentStatus String?
+  monthlyIncome    Float?
+  downPayment      Float?
+  creditScore      String?  // Excellent, Good, Fair, Poor
+  // GHL sync
+  ghlContactId    String?
+  ghlSynced       Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+// User/Admin accounts
+model User {
+  id            String         @id @default(cuid())
+  email         String         @unique
+  name          String
+  password      String?        // Null for Google OAuth users
+  googleId      String?        @unique
+  role          UserRole       @default(STAFF)
+  isActive      Boolean        @default(true)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  refreshTokens RefreshToken[]
+  passwordResets PasswordReset[]
+}
+
+// Refresh tokens for session management
+model RefreshToken {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  
+  @@index([userId])
+  @@index([token])
+}
+
+// Password reset tokens
+model PasswordReset {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  used      Boolean  @default(false)
+  createdAt DateTime @default(now())
+  
+  @@index([userId])
+  @@index([token])
+}
+
+enum UserRole {
+  ADMIN        // Full access, can manage users
+  STAFF        // Can manage inventory only
+}
+
+enum VehicleStatus {
+  ACTIVE
+  SOLD
+  PENDING
+  DRAFT
+}
+
+enum InventoryType {
+  FLEET
+  PREMIERE
+}
+

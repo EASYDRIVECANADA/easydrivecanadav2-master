@@ -1,0 +1,28 @@
+{
+  "name": "easy_drive_canada_v1",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "npm --prefix client run dev",
+    "build": "npm --prefix client run build",
+    "start": "npm --prefix client run start",
+    "lint": "npm --prefix client run lint"
+  },
+  "dependencies": {
+    "@prisma/client": "^7.1.0",
+    "next": "14.2.33",
+    "prisma": "^7.1.0",
+    "react": "^18",
+    "react-dom": "^18"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "@types/react": "^18",
+    "@types/react-dom": "^18",
+    "eslint": "^8",
+    "eslint-config-next": "14.2.33",
+    "postcss": "^8",
+    "tailwindcss": "^3.4.1",
+    "typescript": "^5"
+  }
+}
