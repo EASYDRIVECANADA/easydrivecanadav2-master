@@ -13,7 +13,7 @@ type AdjustorRow = {
   bankCommission: number
   status: 'Open' | 'Closed'
 }
-
+//DFSAFSA
 export default function DealAdjustorPage() {
   const [from, setFrom] = useState('2026-01-01')
   const [to, setTo] = useState('2026-01-31')
