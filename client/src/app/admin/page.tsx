@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import Script from 'next/script'
+import { supabase } from '@/lib/supabaseClient'
 
 // Extend Window interface for Google Identity Services
 declare global {
@@ -32,9 +32,7 @@ declare global {
 }
 
 interface User {
-  id: string
   email: string
-  name: string
   role: string
 }
 
@@ -48,72 +46,30 @@ export default function AdminPage() {
   const [checkingAuth, setCheckingAuth] = useState(true)
   // const router = useRouter(); // Uncomment if needed for navigation
 
-  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'
-  const GOOGLE_CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID
-
   useEffect(() => {
     checkAuth()
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const checkAuth = async () => {
-    const token = localStorage.getItem('admin_token')
-    if (!token) {
+    const sessionStr = localStorage.getItem('edc_admin_session')
+    if (!sessionStr) {
       setCheckingAuth(false)
       return
     }
 
     try {
-      const res = await fetch(`${API_URL}/api/auth/me`, {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-
-      if (res.ok) {
-        const data = await res.json()
-        setUser(data.user)
+      const parsed = JSON.parse(sessionStr) as { email?: string; role?: string }
+      if (parsed?.email && parsed?.role) {
+        setUser({ email: parsed.email, role: parsed.role })
         setIsAuthenticated(true)
-      } else if (res.status === 401) {
-        // Try to refresh token
-        await refreshAccessToken()
       } else {
-        localStorage.removeItem('admin_token')
-        localStorage.removeItem('refresh_token')
+        localStorage.removeItem('edc_admin_session')
       }
     } catch {
-      localStorage.removeItem('admin_token')
-      localStorage.removeItem('refresh_token')
+      localStorage.removeItem('edc_admin_session')
     } finally {
       setCheckingAuth(false)
-    }
-  }
-
-  const refreshAccessToken = async () => {
-    const refreshToken = localStorage.getItem('refresh_token')
-    if (!refreshToken) return false
-
-    try {
-      const res = await fetch(`${API_URL}/api/auth/refresh`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ refreshToken }),
-      })
-
-      if (res.ok) {
-        const data = await res.json()
-        localStorage.setItem('admin_token', data.token)
-        localStorage.setItem('refresh_token', data.refreshToken)
-        setUser(data.user)
-        setIsAuthenticated(true)
-        return true
-      } else {
-        localStorage.removeItem('admin_token')
-        localStorage.removeItem('refresh_token')
-        return false
-      }
-    } catch {
-      localStorage.removeItem('admin_token')
-      localStorage.removeItem('refresh_token')
-      return false
     }
   }
 
@@ -123,50 +79,36 @@ export default function AdminPage() {
     setLoading(true)
 
     try {
-      const res = await fetch(`${API_URL}/api/auth/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
-      })
+      const normalizedEmail = email.trim().toLowerCase()
+      const accessCode = password
 
-      const data = await res.json()
-
-      if (res.ok) {
-        localStorage.setItem('admin_token', data.token)
-        localStorage.setItem('refresh_token', data.refreshToken)
-        setUser(data.user)
-        setIsAuthenticated(true)
-      } else {
-        setError(data.error || 'Login failed')
+      if (!normalizedEmail || !accessCode) {
+        setError('Email and access code required')
+        return
       }
-    } catch {
-      setError('Failed to connect to server')
-    } finally {
-      setLoading(false)
-    }
-  }
 
-  const handleGoogleLogin = async (response: { credential: string }) => {
-    setError('')
-    setLoading(true)
+      const { data, error: dbError } = await supabase
+        .from('edc_admin_users')
+        .select('email, role, is_active')
+        .eq('email', normalizedEmail)
+        .eq('access_code', accessCode)
+        .limit(1)
+        .maybeSingle()
 
-    try {
-      const res = await fetch(`${API_URL}/api/auth/google`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ credential: response.credential }),
-      })
-
-      const data = await res.json()
-
-      if (res.ok) {
-        localStorage.setItem('admin_token', data.token)
-        localStorage.setItem('refresh_token', data.refreshToken)
-        setUser(data.user)
-        setIsAuthenticated(true)
-      } else {
-        setError(data.error || 'Google login failed')
+      if (dbError) {
+        setError('Login failed')
+        return
       }
+
+      if (!data || !data.is_active) {
+        setError('Invalid email or access code')
+        return
+      }
+
+      const session = { email: data.email, role: data.role }
+      localStorage.setItem('edc_admin_session', JSON.stringify(session))
+      setUser({ email: data.email, role: data.role })
+      setIsAuthenticated(true)
     } catch {
       setError('Failed to connect to server')
     } finally {
@@ -175,44 +117,9 @@ export default function AdminPage() {
   }
 
   const handleLogout = async () => {
-    const refreshToken = localStorage.getItem('refresh_token')
-    
-    if (refreshToken) {
-      try {
-        await fetch(`${API_URL}/api/auth/logout`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ refreshToken }),
-        })
-      } catch (error) {
-        console.error('Logout error:', error)
-      }
-    }
-
-    localStorage.removeItem('admin_token')
-    localStorage.removeItem('refresh_token')
+    localStorage.removeItem('edc_admin_session')
     setUser(null)
     setIsAuthenticated(false)
-    
-    // Re-render Google button after logout
-    setTimeout(() => {
-      if (window.google && GOOGLE_CLIENT_ID) {
-        const buttonContainer = document.getElementById('google-signin-button')
-        if (buttonContainer) {
-          buttonContainer.innerHTML = '' // Clear existing button
-          window.google.accounts.id.renderButton(
-            buttonContainer,
-            { 
-              theme: 'outline', 
-              size: 'large', 
-              width: 368,
-              text: 'signin_with',
-              shape: 'rectangular',
-            }
-          )
-        }
-      }
-    }, 100)
   }
 
   if (checkingAuth) {
@@ -229,56 +136,12 @@ export default function AdminPage() {
   if (!isAuthenticated) {
     return (
       <>
-        {GOOGLE_CLIENT_ID && (
-          <Script 
-            src="https://accounts.google.com/gsi/client" 
-            strategy="afterInteractive"
-            onLoad={() => {
-              if (window.google) {
-                window.google.accounts.id.initialize({
-                  client_id: GOOGLE_CLIENT_ID,
-                  callback: handleGoogleLogin,
-                  use_fedcm_for_prompt: false, // Disable FedCM to avoid errors
-                });
-                window.google.accounts.id.renderButton(
-                  document.getElementById('google-signin-button'),
-                  { 
-                    theme: 'outline', 
-                    size: 'large', 
-                    width: 368,
-                    text: 'signin_with',
-                    shape: 'rectangular',
-                  }
-                );
-              }
-            }}
-          />
-        )}
         <div className="min-h-screen bg-gray-100 flex items-center justify-center">
           <div className="bg-white rounded-xl shadow-lg p-8 w-full max-w-md">
             <h1 className="text-2xl font-bold text-center mb-6">Admin Login</h1>
             {error && (
               <div className="bg-red-50 text-red-600 p-3 rounded-lg mb-4 text-sm">
                 {error}
-              </div>
-            )}
-
-            {/* Google Sign In Button - Rendered by Google */}
-            {GOOGLE_CLIENT_ID && (
-              <div className="mb-6">
-                <div id="google-signin-button" className="flex justify-center"></div>
-              </div>
-            )}
-
-            {/* Divider */}
-            {GOOGLE_CLIENT_ID && (
-              <div className="relative mb-6">
-                <div className="absolute inset-0 flex items-center">
-                  <div className="w-full border-t border-gray-300"></div>
-                </div>
-                <div className="relative flex justify-center text-sm">
-                  <span className="px-2 bg-white text-gray-500">Or continue with email</span>
-                </div>
               </div>
             )}
 
@@ -307,7 +170,7 @@ export default function AdminPage() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
-                  placeholder="Enter your password"
+                  placeholder="Enter access code"
                   autoComplete="current-password"
                   required
                 />
@@ -335,21 +198,15 @@ export default function AdminPage() {
     <div className="min-h-screen bg-gray-100">
       {/* Header */}
       <div className="bg-white shadow">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center">
+        <div className="w-full px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center">
           <div>
             <h1 className="text-2xl font-bold text-gray-900">Admin Dashboard</h1>
-            <p className="text-sm text-gray-500">Welcome back, {user?.name}</p>
+            <p className="text-sm text-gray-500">Welcome back, {user?.email}</p>
           </div>
-          <button
-            onClick={handleLogout}
-            className="text-gray-600 hover:text-red-600 font-medium"
-          >
-            Logout
-          </button>
         </div>
       </div>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <div className="w-full px-4 sm:px-6 lg:px-8 py-8">
         {/* Quick Stats */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
           <Link href="/admin/inventory" className="bg-white rounded-xl shadow p-6 hover:shadow-lg transition-shadow">

@@ -3,11 +3,12 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import { supabase } from '@/lib/supabaseClient'
 
 interface User {
   id: string
   email: string
-  name: string
+  accessCode: string
   role: string
   isActive: boolean
   createdAt: string
@@ -20,39 +21,55 @@ export default function AdminUsersPage() {
   const [editingUser, setEditingUser] = useState<User | null>(null)
   const [formData, setFormData] = useState({
     email: '',
-    name: '',
-    password: '',
+    accessCode: '',
     role: 'STAFF',
+    isActive: true,
   })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const router = useRouter()
 
-  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'
-
   useEffect(() => {
-    const token = localStorage.getItem('admin_token')
-    if (!token) {
+    const sessionStr = localStorage.getItem('edc_admin_session')
+    if (!sessionStr) {
       router.push('/admin')
       return
     }
+
+    try {
+      const parsed = JSON.parse(sessionStr) as { email?: string; role?: string }
+      if (parsed?.role !== 'ADMIN') {
+        router.push('/admin')
+        return
+      }
+    } catch {
+      router.push('/admin')
+      return
+    }
+
     fetchUsers()
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const fetchUsers = async () => {
     try {
-      const token = localStorage.getItem('admin_token')
-      const res = await fetch(`${API_URL}/api/users`, {
-        headers: { Authorization: `Bearer ${token}` },
-      })
+      const { data, error: dbError } = await supabase
+        .from('edc_admin_users')
+        .select('id, email, access_code, role, is_active, created_at')
+        .order('created_at', { ascending: false })
 
-      if (res.ok) {
-        const data = await res.json()
-        setUsers(data)
-      } else if (res.status === 401 || res.status === 403) {
-        router.push('/admin')
-      }
+      if (dbError) throw dbError
+
+      setUsers(
+        (data || []).map((u) => ({
+          id: u.id,
+          email: u.email,
+          accessCode: u.access_code || '',
+          role: u.role,
+          isActive: !!u.is_active,
+          createdAt: u.created_at,
+        }))
+      )
     } catch (_error) {
       console.error('Error fetching users:', _error)
     } finally {
@@ -62,14 +79,14 @@ export default function AdminUsersPage() {
 
   const handleAddUser = () => {
     setEditingUser(null)
-    setFormData({ email: '', name: '', password: '', role: 'STAFF' })
+    setFormData({ email: '', accessCode: '', role: 'STAFF', isActive: true })
     setError('')
     setShowModal(true)
   }
 
   const handleEditUser = (user: User) => {
     setEditingUser(user)
-    setFormData({ email: user.email, name: user.name, password: '', role: user.role })
+    setFormData({ email: user.email, accessCode: user.accessCode, role: user.role, isActive: user.isActive })
     setError('')
     setShowModal(true)
   }
@@ -80,32 +97,39 @@ export default function AdminUsersPage() {
     setError('')
 
     try {
-      const token = localStorage.getItem('admin_token')
-      const url = editingUser
-        ? `${API_URL}/api/users/${editingUser.id}`
-        : `${API_URL}/api/users`
+      const normalizedEmail = formData.email.trim().toLowerCase()
+      const accessCode = formData.accessCode
 
-      const body = editingUser
-        ? { name: formData.name, role: formData.role, ...(formData.password && { password: formData.password }) }
-        : formData
-
-      const res = await fetch(url, {
-        method: editingUser ? 'PUT' : 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify(body),
-      })
-
-      const data = await res.json()
-
-      if (res.ok) {
-        setShowModal(false)
-        fetchUsers()
-      } else {
-        setError(data.error || 'Failed to save user')
+      if (!normalizedEmail || !accessCode) {
+        setError('Email and access code required')
+        return
       }
+
+      if (editingUser) {
+        const { error: dbError } = await supabase
+          .from('edc_admin_users')
+          .update({
+            email: normalizedEmail,
+            access_code: accessCode,
+            role: formData.role,
+            is_active: formData.isActive,
+          })
+          .eq('id', editingUser.id)
+
+        if (dbError) throw dbError
+      } else {
+        const { error: dbError } = await supabase.from('edc_admin_users').insert({
+          email: normalizedEmail,
+          access_code: accessCode,
+          role: formData.role,
+          is_active: formData.isActive,
+        })
+
+        if (dbError) throw dbError
+      }
+
+      setShowModal(false)
+      fetchUsers()
     } catch {
       setError('Failed to connect to server')
     } finally {
@@ -115,37 +139,25 @@ export default function AdminUsersPage() {
 
   const handleToggleActive = async (user: User) => {
     try {
-      const token = localStorage.getItem('admin_token')
-      const res = await fetch(`${API_URL}/api/users/${user.id}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ isActive: !user.isActive }),
-      })
+      const { error: dbError } = await supabase
+        .from('edc_admin_users')
+        .update({ is_active: !user.isActive })
+        .eq('id', user.id)
 
-      if (res.ok) {
-        fetchUsers()
-      }
+      if (dbError) throw dbError
+      fetchUsers()
     } catch (_error) {
       console.error('Error toggling user status:', _error)
     }
   }
 
   const handleDelete = async (user: User) => {
-    if (!confirm(`Delete user ${user.name}? This cannot be undone.`)) return
+    if (!confirm(`Delete user ${user.email}? This cannot be undone.`)) return
 
     try {
-      const token = localStorage.getItem('admin_token')
-      const res = await fetch(`${API_URL}/api/users/${user.id}`, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${token}` },
-      })
-
-      if (res.ok) {
-        fetchUsers()
-      }
+      const { error: dbError } = await supabase.from('edc_admin_users').delete().eq('id', user.id)
+      if (dbError) throw dbError
+      fetchUsers()
     } catch (_error) {
       console.error('Error deleting user:', _error)
     }
@@ -166,12 +178,9 @@ export default function AdminUsersPage() {
     <div className="min-h-screen bg-gray-100">
       {/* Header */}
       <div className="bg-white shadow">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+        <div className="w-full px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex justify-between items-center">
             <div className="flex items-center">
-              <Link href="/admin" className="text-gray-500 hover:text-gray-700 mr-4">
-                ← Back
-              </Link>
               <h1 className="text-2xl font-bold text-gray-900">User Management</h1>
             </div>
             <button
@@ -184,7 +193,7 @@ export default function AdminUsersPage() {
         </div>
       </div>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <div className="w-full px-4 sm:px-6 lg:px-8 py-8">
         {loading ? (
           <div className="bg-white rounded-xl shadow p-8 text-center">
             <div className="animate-spin w-8 h-8 border-4 border-[#118df0] border-t-transparent rounded-full mx-auto"></div>
@@ -205,8 +214,8 @@ export default function AdminUsersPage() {
                   {pendingUsers.map((user) => (
                     <div key={user.id} className="bg-white rounded-lg p-4 flex items-center justify-between">
                       <div>
-                        <p className="font-medium text-gray-900">{user.name}</p>
-                        <p className="text-sm text-gray-500">{user.email}</p>
+                        <p className="font-medium text-gray-900">{user.email}</p>
+                        <p className="text-sm text-gray-500">Role: {user.role}</p>
                         <p className="text-xs text-gray-400 mt-1">Requested: {formatDate(user.createdAt)}</p>
                       </div>
                       <div className="flex gap-2">
@@ -246,7 +255,6 @@ export default function AdminUsersPage() {
                   <tr key={user.id} className="hover:bg-gray-50">
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div>
-                        <div className="text-sm font-medium text-gray-900">{user.name}</div>
                         <div className="text-sm text-gray-500">{user.email}</div>
                       </div>
                     </td>
@@ -325,40 +333,25 @@ export default function AdminUsersPage() {
             )}
 
             <form onSubmit={handleSubmit} className="space-y-4">
-              {!editingUser && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Email *</label>
-                  <input
-                    type="email"
-                    required
-                    value={formData.email}
-                    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                    className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
-                  />
-                </div>
-              )}
-
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Name *</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Email *</label>
                 <input
-                  type="text"
+                  type="email"
                   required
-                  value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  value={formData.email}
+                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                   className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Password {editingUser && '(leave blank to keep current)'}
-                </label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Access Code *</label>
                 <input
                   type="password"
-                  value={formData.password}
-                  onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                  required
+                  value={formData.accessCode}
+                  onChange={(e) => setFormData({ ...formData, accessCode: e.target.value })}
                   className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
-                  {...(!editingUser && { required: true })}
                 />
               </div>
 
@@ -375,6 +368,17 @@ export default function AdminUsersPage() {
                 <p className="mt-1 text-xs text-gray-500">
                   Staff can manage inventory. Admins can manage users and all settings.
                 </p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <input
+                  id="isActive"
+                  type="checkbox"
+                  checked={formData.isActive}
+                  onChange={(e) => setFormData({ ...formData, isActive: e.target.checked })}
+                  className="h-4 w-4"
+                />
+                <label htmlFor="isActive" className="text-sm text-gray-700">Active</label>
               </div>
 
               <div className="flex gap-4 pt-4">

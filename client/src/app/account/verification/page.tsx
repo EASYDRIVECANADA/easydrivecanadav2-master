@@ -15,6 +15,7 @@ type VerificationDraft = {
   status: 'draft' | 'ready'
 }
 const VERIFICATION_KEY = 'edc_customer_verification'
+const VERIFIED_KEY = 'edc_account_verified'
 
 const readDraft = (): VerificationDraft | null => {
   if (typeof window === 'undefined') return null
@@ -31,6 +32,11 @@ const writeDraft = (draft: VerificationDraft) => {
   window.localStorage.setItem(VERIFICATION_KEY, JSON.stringify(draft))
 }
 
+const clearDraft = () => {
+  if (typeof window === 'undefined') return
+  window.localStorage.removeItem(VERIFICATION_KEY)
+}
+
 export default function AccountVerificationPage() {
   const router = useRouter()
   const didInitRef = useRef(false)
@@ -41,6 +47,7 @@ export default function AccountVerificationPage() {
   const [readingLicense, setReadingLicense] = useState(false)
   const [scanError, setScanError] = useState<string | null>(null)
   const N8N_SCAN_WEBHOOK_URL = process.env.NEXT_PUBLIC_N8N_SCAN_WEBHOOK_URL || 'https://primary-production-6722.up.railway.app/webhook/scan'
+  const N8N_VALIDATION_WEBHOOK_URL = process.env.NEXT_PUBLIC_N8N_VALIDATION_WEBHOOK_URL || 'https://primary-production-6722.up.railway.app/webhook/validation'
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const [showUploadErrorModal, setShowUploadErrorModal] = useState(false)
   const [uploadErrorMessage, setUploadErrorMessage] = useState('')
@@ -50,6 +57,7 @@ export default function AccountVerificationPage() {
   const [insertingVerification, setInsertingVerification] = useState(false)
   const [insertError, setInsertError] = useState<string | null>(null)
   const [insertSuccess, setInsertSuccess] = useState(false)
+  const [dragActive, setDragActive] = useState(false)
 
   const [fullName, setFullName] = useState('')
   const [address, setAddress] = useState('')
@@ -66,6 +74,22 @@ export default function AccountVerificationPage() {
         return
       }
 
+      if (user.email) {
+        const { data: existing, error: existingError } = await supabase
+          .from('edc_account_verifications')
+          .select('id')
+          .eq('email', user.email)
+          .limit(1)
+
+        if (!existingError && Array.isArray(existing) && existing.length > 0) {
+          if (typeof window !== 'undefined') {
+            window.localStorage.setItem(VERIFIED_KEY, 'true')
+          }
+          router.replace('/inventory')
+          return
+        }
+      }
+
       if (typeof window !== 'undefined') {
         const hasHashTokens = /access_token=|refresh_token=|token_type=|expires_in=|provider_token=|issued_at=/.test(window.location.hash)
         const hasCodeParam = /[?&]code=/.test(window.location.search)
@@ -79,35 +103,17 @@ export default function AccountVerificationPage() {
       const metaName = (user.user_metadata as any)?.full_name
       setUserName(typeof metaName === 'string' ? metaName : null)
 
-      const existing = readDraft()
-      if (existing) {
-        setFullName(existing.fullName)
-        setAddress(existing.address)
-        setLicenseNumber(existing.licenseNumber)
-        setStatus(existing.status)
-      } else {
-        setFullName(typeof metaName === 'string' ? metaName : '')
-      }
+      clearDraft()
+      setFullName('')
+      setAddress('')
+      setLicenseNumber('')
+      setStatus('draft')
 
       didInitRef.current = true
     }
 
     void init()
   }, [router])
-
-  useEffect(() => {
-    if (!didInitRef.current) return
-
-    const draft: VerificationDraft = {
-      fullName: fullName.trim(),
-      address: address.trim(),
-      licenseNumber: licenseNumber.trim(),
-      updatedAt: new Date().toISOString(),
-      status,
-    }
-
-    writeDraft(draft)
-  }, [fullName, address, licenseNumber, status])
 
   useEffect(() => {
     if (!licenseFile) {
@@ -129,30 +135,147 @@ export default function AccountVerificationPage() {
     return !!licenseFile && isLicenseImageValid
   }, [licenseFile, isLicenseImageValid])
 
-  const validateLooksLikeDriversLicense = async (file: File) => {
-    const { recognize } = await import('tesseract.js')
-    const result = await recognize(file, 'eng')
-    const text = (result?.data?.text || '').toLowerCase()
+  const parseMaybeJson = (rawText: string) => {
+    if (!rawText) return null
+    try {
+      return JSON.parse(rawText)
+    } catch {
+      return rawText
+    }
+  }
 
-    const keywords = [
-      'driver',
-      'licence',
-      'license',
-      'class',
-      'address',
-      'dob',
-      'birth',
-      'expires',
-      'expiry',
-      'exp',
-      'issued',
-      'iss',
+  const extractValidationPayload = (raw: any): any | null => {
+    if (!raw) return null
+    if (Array.isArray(raw)) return extractValidationPayload(raw[0])
+    if (typeof raw !== 'object') return raw
+    if ((raw as any).json) return extractValidationPayload((raw as any).json)
+    if ((raw as any).data) return extractValidationPayload((raw as any).data)
+    if ((raw as any).body) {
+      const body = (raw as any).body
+      if (typeof body === 'string') return extractValidationPayload(parseMaybeJson(body))
+      return extractValidationPayload(body)
+    }
+    return raw
+  }
+
+  const isValidationOk = (payload: any) => {
+    if (payload == null) return false
+    if (typeof payload === 'boolean') return payload
+    if (typeof payload === 'string') return payload.toLowerCase() === 'true'
+    if (typeof payload !== 'object') return false
+
+    const candidates = [
+      (payload as any).valid,
+      (payload as any).is_valid,
+      (payload as any).isValid,
+      (payload as any).license_valid,
+      (payload as any).licenseValid,
+      (payload as any).is_driver_license,
+      (payload as any).isDriverLicense,
     ]
 
-    const keywordHits = keywords.reduce((acc, k) => acc + (text.includes(k) ? 1 : 0), 0)
-    const hasLikelyLicenseNumber = /\b[a-z0-9]{6,14}\b/i.test(text)
+    for (const v of candidates) {
+      if (typeof v === 'boolean') return v
+      if (typeof v === 'string') {
+        const s = v.toLowerCase().trim()
+        if (s === 'true') return true
+        if (s === 'false') return false
+      }
+      if (typeof v === 'number') return v === 1
+    }
 
-    return keywordHits >= 2 || (keywordHits >= 1 && hasLikelyLicenseNumber)
+    return false
+  }
+
+  const handleSelectedLicenseFile = (file: File | null) => {
+    if (!file) {
+      setLicenseFile(null)
+      setIsLicenseImageValid(false)
+      return
+    }
+
+    if (!file.type || !file.type.startsWith('image/')) {
+      setLicenseFile(null)
+      setIsLicenseImageValid(false)
+      if (previewUrl) URL.revokeObjectURL(previewUrl)
+      setPreviewUrl(null)
+      setUploadErrorMessage('Only driver\'s license images are allowed. Please upload an image file (JPG/PNG/WebP).')
+      setShowUploadErrorModal(true)
+      if (fileInputRef.current) fileInputRef.current.value = ''
+      return
+    }
+
+    setScanError(null)
+    setInsertError(null)
+    setInsertSuccess(false)
+    setValidatingUpload(true)
+    setIsLicenseImageValid(false)
+
+    void (async () => {
+      try {
+        const formData = new FormData()
+        formData.append('file', file)
+
+        const res = await fetch(N8N_VALIDATION_WEBHOOK_URL, {
+          method: 'POST',
+          body: formData,
+        })
+
+        const rawText = await res.text().catch(() => '')
+        const parsed = parseMaybeJson(rawText)
+
+        if (!res.ok) {
+          const msg = (parsed && typeof (parsed as any).error === 'string') ? (parsed as any).error : 'Failed to validate license image'
+          setUploadErrorMessage(msg)
+          setShowUploadErrorModal(true)
+          if (fileInputRef.current) fileInputRef.current.value = ''
+          return
+        }
+
+        if (parsed && typeof parsed === 'object' && (parsed as any).message === 'Workflow was started') {
+          setUploadErrorMessage(
+            'n8n validation responded with "Workflow was started". Configure the webhook to respond with a validation result (true/false) using a Respond to Webhook node.'
+          )
+          setShowUploadErrorModal(true)
+          if (fileInputRef.current) fileInputRef.current.value = ''
+          return
+        }
+
+        const payload = extractValidationPayload(parsed)
+        const ok = isValidationOk(payload)
+        if (!ok) {
+          setLicenseFile(null)
+          if (previewUrl) URL.revokeObjectURL(previewUrl)
+          setPreviewUrl(null)
+          setUploadErrorMessage('Invalid image. Please upload a clear photo of your driver\'s license.')
+          setShowUploadErrorModal(true)
+          if (fileInputRef.current) fileInputRef.current.value = ''
+          return
+        }
+
+        setLicenseFile(file)
+        setIsLicenseImageValid(true)
+      } catch {
+        setLicenseFile(null)
+        setIsLicenseImageValid(false)
+        if (previewUrl) URL.revokeObjectURL(previewUrl)
+        setPreviewUrl(null)
+        setUploadErrorMessage('Unable to validate this image. Please try again.')
+        setShowUploadErrorModal(true)
+        if (fileInputRef.current) fileInputRef.current.value = ''
+      } finally {
+        setValidatingUpload(false)
+      }
+    })()
+  }
+
+  const handleClearLicense = () => {
+    setLicenseFile(null)
+    setIsLicenseImageValid(false)
+    setScanError(null)
+    if (previewUrl) URL.revokeObjectURL(previewUrl)
+    setPreviewUrl(null)
+    if (fileInputRef.current) fileInputRef.current.value = ''
   }
 
   const canSaveReady = useMemo(() => {
@@ -214,6 +337,11 @@ export default function AccountVerificationPage() {
       }
 
       setInsertSuccess(true)
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem(VERIFIED_KEY, 'true')
+      }
+
+      router.push('/inventory')
     } catch {
       setInsertError('Failed to save verification. Please try again.')
     } finally {
@@ -322,17 +450,18 @@ export default function AccountVerificationPage() {
   }
 
   const handleSave = (nextStatus: VerificationDraft['status']) => {
-    const draft: VerificationDraft = {
-      fullName: fullName.trim(),
-      address: address.trim(),
-      licenseNumber: licenseNumber.trim(),
-      licenseImageName: licenseFile?.name,
-      updatedAt: new Date().toISOString(),
-      status: nextStatus,
-    }
-
-    writeDraft(draft)
     setStatus(nextStatus)
+  }
+
+  const handleClearFields = () => {
+    setFullName('')
+    setAddress('')
+    setLicenseNumber('')
+    setStatus('draft')
+    setScanError(null)
+    setInsertError(null)
+    setInsertSuccess(false)
+    clearDraft()
   }
 
   return (
@@ -350,8 +479,8 @@ export default function AccountVerificationPage() {
                 </div>
                 <h1 className="mt-3 text-3xl md:text-4xl font-bold tracking-tight text-gray-900">Account Verification</h1>
                 <p className="mt-2 text-gray-600 max-w-2xl">
-                  Upload a clear photo of your driver’s license. We’ll validate the image first, then you can scan to autofill
-                  your details.
+                  Upload a clear photo of your driver’s license. We’ll validate the image first, then you can scan to autofill your
+                  details.
                 </p>
                 {userEmail && (
                   <div className="mt-4 text-sm text-gray-600">
@@ -360,171 +489,18 @@ export default function AccountVerificationPage() {
                 )}
               </div>
 
-              <div className="flex items-center gap-3">
-                <span className={status === 'ready' ? 'badge badge-success' : 'badge badge-warning'}>
-                  {status === 'ready' ? 'Ready' : 'Draft'}
-                </span>
-              </div>
+              <div />
             </div>
 
-            <div className="mt-8 grid grid-cols-1 lg:grid-cols-12 gap-6">
-              <div className="lg:col-span-5">
-                <div className="glass-card rounded-2xl border border-gray-200/60 bg-white/70 p-5 md:p-6">
-                  <div className="flex items-start justify-between gap-4">
-                    <div>
-                      <div className="text-sm font-semibold text-gray-900">Driver’s License Image</div>
-                      <div className="mt-1 text-xs text-gray-600">Image only (JPG/PNG/WebP). No screenshots, blurry, or cropped photos.</div>
-                    </div>
-                    {validatingUpload ? (
-                      <span className="badge badge-warning">Validating…</span>
-                    ) : isLicenseImageValid && licenseFile ? (
-                      <span className="badge badge-success">Validated</span>
-                    ) : (
-                      <span className="badge badge-warning">Required</span>
-                    )}
-                  </div>
-
-                  <div className="mt-4">
-                    <input
-                      ref={fileInputRef}
-                      className="block w-full text-sm text-gray-700 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-semibold file:bg-primary-600 file:text-white hover:file:bg-primary-700"
-                      type="file"
-                      accept="image/*"
-                      onChange={(e) => {
-                        const file = e.target.files?.[0] || null
-                        if (!file) {
-                          setLicenseFile(null)
-                          setIsLicenseImageValid(false)
-                          return
-                        }
-
-                        if (!file.type || !file.type.startsWith('image/')) {
-                          setLicenseFile(null)
-                          setIsLicenseImageValid(false)
-                          if (previewUrl) URL.revokeObjectURL(previewUrl)
-                          setPreviewUrl(null)
-                          setUploadErrorMessage('Only driver\'s license images are allowed. Please upload an image file (JPG/PNG/WebP).')
-                          setShowUploadErrorModal(true)
-                          if (fileInputRef.current) fileInputRef.current.value = ''
-                          return
-                        }
-
-                        setScanError(null)
-                        setValidatingUpload(true)
-                        setIsLicenseImageValid(false)
-
-                        void (async () => {
-                          try {
-                            const ok = await validateLooksLikeDriversLicense(file)
-                            if (!ok) {
-                              setLicenseFile(null)
-                              if (previewUrl) URL.revokeObjectURL(previewUrl)
-                              setPreviewUrl(null)
-                              setUploadErrorMessage('Invalid image. Please upload a clear photo of your driver\'s license.')
-                              setShowUploadErrorModal(true)
-                              if (fileInputRef.current) fileInputRef.current.value = ''
-                              return
-                            }
-
-                            setLicenseFile(file)
-                            setIsLicenseImageValid(true)
-                          } catch {
-                            setLicenseFile(null)
-                            setIsLicenseImageValid(false)
-                            if (previewUrl) URL.revokeObjectURL(previewUrl)
-                            setPreviewUrl(null)
-                            setUploadErrorMessage('Unable to validate this image. Please try another driver\'s license photo.')
-                            setShowUploadErrorModal(true)
-                            if (fileInputRef.current) fileInputRef.current.value = ''
-                          } finally {
-                            setValidatingUpload(false)
-                          }
-                        })()
-                      }}
-                    />
-                  </div>
-
-                  {previewUrl ? (
-                    <div className="mt-4">
-                      <div className="rounded-2xl border border-gray-200 bg-white overflow-hidden">
-                        <img src={previewUrl} alt="License preview" className="w-full object-cover" />
-                      </div>
-                      <div className="mt-2 text-xs text-gray-500 break-all">{licenseFile?.name}</div>
-                    </div>
-                  ) : (
-                    <div className="mt-4 rounded-2xl border border-dashed border-gray-300 bg-white/60 p-8 text-center">
-                      <div className="text-sm font-medium text-gray-900">Upload a license photo</div>
-                      <div className="mt-1 text-xs text-gray-600">Your preview will appear here.</div>
-                    </div>
-                  )}
-
-                  {scanError && (
-                    <div className="mt-4 p-3 rounded-2xl bg-red-50 border border-red-200 text-sm text-red-700">
-                      {scanError}
-                    </div>
-                  )}
-
-                  <div className="mt-5 flex flex-col sm:flex-row gap-3">
-                    <button
-                      type="button"
-                      onClick={handleScanAndAutofill}
-                      disabled={!canAutofill || readingLicense || validatingUpload}
-                      className="btn-primary text-sm px-5 py-3 disabled:opacity-50"
-                    >
-                      {validatingUpload ? 'Validating…' : readingLicense ? 'Processing…' : 'Scan & Autofill'}
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              {mounted && showUploadErrorModal &&
-                createPortal(
-                  <div className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-y-auto">
-                    <div
-                      className="fixed inset-0 bg-black/50 backdrop-blur-sm"
-                      onClick={() => setShowUploadErrorModal(false)}
-                    ></div>
-
-                    <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md my-8 flex flex-col">
-                      <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 flex-shrink-0">
-                        <h2 className="text-lg font-bold text-gray-900">Upload Error</h2>
-                        <button
-                          onClick={() => setShowUploadErrorModal(false)}
-                          className="p-2 hover:bg-gray-100 rounded-xl transition-colors"
-                        >
-                          <svg className="w-6 h-6 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                          </svg>
-                        </button>
-                      </div>
-
-                      <div className="p-6">
-                        <div className="text-sm text-gray-700">{uploadErrorMessage}</div>
-                        <div className="mt-6 flex gap-3 justify-end">
-                          <button
-                            type="button"
-                            onClick={() => setShowUploadErrorModal(false)}
-                            className="btn-primary text-sm px-5 py-2.5"
-                          >
-                            OK
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  </div>,
-                  document.body
-                )}
-
-              <div className="lg:col-span-7">
+            <div className="mt-8 flex flex-col gap-6">
+              <div>
                 <div className="glass-card rounded-2xl border border-gray-200/60 bg-white/70 p-5 md:p-6">
                   <div className="flex items-start justify-between gap-4">
                     <div>
                       <div className="text-sm font-semibold text-gray-900">BOS Fields</div>
-                      <div className="mt-1 text-xs text-gray-600">Verify and edit details before marking as ready.</div>
+                      <div className="mt-1 text-xs text-gray-600">Verify and edit details before continuing.</div>
                     </div>
-                    {readingLicense ? (
-                      <span className="badge badge-warning">Scanning…</span>
-                    ) : null}
+                    {readingLicense ? <span className="badge badge-warning">Scanning…</span> : null}
                   </div>
 
                   <div className="mt-5 grid grid-cols-1 gap-4">
@@ -571,9 +547,7 @@ export default function AccountVerificationPage() {
                   </div>
 
                   <div className="mt-6 rounded-2xl border border-gray-200/70 bg-white/60 p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                    <div className="text-sm text-gray-600">
-                      You can edit any field after autofill.
-                    </div>
+                    <div className="text-sm text-gray-600">You can edit any field after autofill.</div>
                     <div className="flex flex-col sm:flex-row gap-3">
                       <button
                         type="button"
@@ -581,6 +555,13 @@ export default function AccountVerificationPage() {
                         className="btn-secondary text-sm px-6 py-3"
                       >
                         Save
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleClearFields}
+                        className="text-sm px-6 py-3 rounded-xl border border-gray-200 bg-white hover:bg-gray-50 transition-colors"
+                      >
+                        Clear
                       </button>
                     </div>
                   </div>
@@ -607,12 +588,168 @@ export default function AccountVerificationPage() {
                       </div>
                     )}
                   </div>
+                </div>
+              </div>
 
-                  {status === 'ready' && (
-                    <div className="mt-6 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-700">
-                      Verification details saved locally. Backend + real OCR will be added next.
+              {mounted && showUploadErrorModal &&
+                createPortal(
+                  <div className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-y-auto">
+                    <div
+                      className="fixed inset-0 bg-black/50 backdrop-blur-sm"
+                      onClick={() => setShowUploadErrorModal(false)}
+                    ></div>
+
+                    <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md my-8 flex flex-col">
+                      <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 flex-shrink-0">
+                        <h2 className="text-lg font-bold text-gray-900">Upload Error</h2>
+                        <button
+                          onClick={() => setShowUploadErrorModal(false)}
+                          className="p-2 hover:bg-gray-100 rounded-xl transition-colors"
+                        >
+                          <svg className="w-6 h-6 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                          </svg>
+                        </button>
+                      </div>
+
+                      <div className="p-6">
+                        <div className="text-sm text-gray-700">{uploadErrorMessage}</div>
+                        <div className="mt-6 flex gap-3 justify-end">
+                          <button
+                            type="button"
+                            onClick={() => setShowUploadErrorModal(false)}
+                            className="btn-primary text-sm px-5 py-2.5"
+                          >
+                            OK
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>,
+                  document.body
+                )}
+
+              <div>
+                <div className="glass-card rounded-2xl border border-gray-200/60 bg-white/70 p-5 md:p-6">
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <div className="text-sm font-semibold text-gray-900">Driver’s License Image</div>
+                      <div className="mt-1 text-xs text-gray-600">Image only (JPG/PNG/WebP). No screenshots, blurry, or cropped photos.</div>
+                    </div>
+                    {validatingUpload ? (
+                      <span className="badge badge-warning">Validating…</span>
+                    ) : isLicenseImageValid && licenseFile ? (
+                      <span className="badge badge-success">Validated</span>
+                    ) : (
+                      <span className="badge badge-warning">Required</span>
+                    )}
+                  </div>
+
+                  <div className="mt-4">
+                    <input
+                      ref={fileInputRef}
+                      className="sr-only"
+                      type="file"
+                      accept="image/*"
+                      onChange={(e) => handleSelectedLicenseFile(e.target.files?.[0] || null)}
+                    />
+
+                    <div
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault()
+                          fileInputRef.current?.click()
+                        }
+                      }}
+                      onClick={() => fileInputRef.current?.click()}
+                      onDragEnter={(e) => {
+                        e.preventDefault()
+                        e.stopPropagation()
+                        setDragActive(true)
+                      }}
+                      onDragOver={(e) => {
+                        e.preventDefault()
+                        e.stopPropagation()
+                        setDragActive(true)
+                      }}
+                      onDragLeave={(e) => {
+                        e.preventDefault()
+                        e.stopPropagation()
+                        setDragActive(false)
+                      }}
+                      onDrop={(e) => {
+                        e.preventDefault()
+                        e.stopPropagation()
+                        setDragActive(false)
+                        const file = e.dataTransfer.files?.[0] || null
+                        handleSelectedLicenseFile(file)
+                      }}
+                      className={
+                        dragActive
+                          ? 'rounded-2xl border-2 border-primary-500 bg-primary-50/60 p-4 cursor-pointer transition-colors'
+                          : 'rounded-2xl border border-dashed border-gray-300 bg-white/60 p-4 cursor-pointer hover:border-primary-300 hover:bg-primary-50/40 transition-colors'
+                      }
+                    >
+                      {previewUrl ? (
+                        <div>
+                          <div className="rounded-2xl border border-gray-200 bg-white overflow-hidden">
+                            <img src={previewUrl} alt="License preview" className="w-full object-cover" />
+                          </div>
+                          <div className="mt-2 text-xs text-gray-500 break-all">{licenseFile?.name}</div>
+                          <div className="mt-1 text-xs text-gray-600">Click or drop to replace the image.</div>
+                          <div className="mt-4 flex flex-col sm:flex-row gap-3">
+                            <button
+                              type="button"
+                              className="btn-secondary text-sm px-5 py-2.5"
+                              onClick={(e) => {
+                                e.preventDefault()
+                                e.stopPropagation()
+                                handleClearLicense()
+                                fileInputRef.current?.click()
+                              }}
+                            >
+                              Reupload
+                            </button>
+                            <button
+                              type="button"
+                              className="text-sm px-5 py-2.5 rounded-xl border border-gray-200 bg-white hover:bg-gray-50 transition-colors"
+                              onClick={(e) => {
+                                e.preventDefault()
+                                e.stopPropagation()
+                                handleClearLicense()
+                              }}
+                            >
+                              Remove
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="p-8 text-center">
+                          <div className="text-sm font-medium text-gray-900">Drag & drop your license photo here</div>
+                          <div className="mt-1 text-xs text-gray-600">or click to choose a file</div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {scanError && (
+                    <div className="mt-4 p-3 rounded-2xl bg-red-50 border border-red-200 text-sm text-red-700">
+                      {scanError}
                     </div>
                   )}
+
+                  <div className="mt-5 flex flex-col sm:flex-row gap-3">
+                    <button
+                      type="button"
+                      onClick={handleScanAndAutofill}
+                      disabled={!canAutofill || readingLicense || validatingUpload}
+                      className="btn-primary text-sm px-5 py-3 disabled:opacity-50"
+                    >
+                      {validatingUpload ? 'Validating…' : readingLicense ? 'Processing…' : 'Scan & Autofill'}
+                    </button>
+                  </div>
                 </div>
 
                 <div className="mt-6 flex items-center justify-between">

@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import { supabase } from '@/lib/supabaseClient'
 
 export default function NewVehiclePage() {
   const [formData, setFormData] = useState({
@@ -11,6 +12,7 @@ export default function NewVehiclePage() {
     year: new Date().getFullYear(),
     trim: '',
     stockNumber: '',
+    keyNumber: '',
     series: '',
     equipment: '',
     price: '',
@@ -33,11 +35,9 @@ export default function NewVehiclePage() {
   const [error, setError] = useState('')
   const router = useRouter()
 
-  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'
-
   useEffect(() => {
-    const token = localStorage.getItem('admin_token')
-    if (!token) {
+    const sessionStr = localStorage.getItem('edc_admin_session')
+    if (!sessionStr) {
       router.push('/admin')
       return
     }
@@ -62,19 +62,43 @@ export default function NewVehiclePage() {
         features: formData.features.split(',').map((f) => f.trim()).filter(Boolean),
       }
 
-      const res = await fetch(`${API_URL}/api/vehicles`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      })
+      const { data, error: dbError } = await supabase
+        .from('edc_vehicles')
+        .insert({
+          make: payload.make,
+          model: payload.model,
+          year: payload.year,
+          trim: payload.trim || null,
+          stock_number: payload.stockNumber || null,
+          series: payload.series || null,
+          equipment: payload.equipment || null,
+          vin: payload.vin,
+          price: payload.price,
+          mileage: payload.mileage,
+          status: payload.status,
+          inventory_type: payload.inventoryType,
+          fuel_type: payload.fuelType || null,
+          transmission: payload.transmission || null,
+          body_style: payload.bodyStyle || null,
+          drivetrain: payload.drivetrain || null,
+          city: payload.city,
+          province: payload.province,
+          exterior_color: payload.exteriorColor || null,
+          interior_color: payload.interiorColor || null,
+          description: payload.description || null,
+          features: payload.features,
+          images: [],
+          key_number: payload.keyNumber || null,
+        })
+        .select('id')
+        .single()
 
-      if (res.ok) {
-        const vehicle = await res.json()
-        router.push(`/admin/inventory/${vehicle.id}/photos`)
-      } else {
-        const data = await res.json()
-        setError(data.error || 'Failed to create vehicle')
+      if (dbError || !data?.id) {
+        setError('Failed to create vehicle')
+        return
       }
+
+      router.push(`/admin/inventory/${data.id}/photos`)
     } catch {
       setError('Unable to create vehicle. Please try again.')
     } finally {
@@ -86,11 +110,8 @@ export default function NewVehiclePage() {
     <div className="min-h-screen bg-gray-100">
       {/* Header */}
       <div className="bg-white shadow">
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+        <div className="w-full px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex items-center">
-            <Link href="/admin/inventory" className="text-gray-500 hover:text-gray-700 mr-4">
-              ← Back
-            </Link>
             <h1 className="text-2xl font-bold text-gray-900">Add New Vehicle</h1>
           </div>
         </div>

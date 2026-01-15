@@ -1,7 +1,8 @@
+
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useParams } from 'next/navigation'
+import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 
 interface Vehicle {
@@ -35,6 +36,7 @@ interface Vehicle {
 
 export default function VehicleDetailPage() {
   const params = useParams()
+  const router = useRouter()
   const [vehicle, setVehicle] = useState<Vehicle | null>(null)
   const [loading, setLoading] = useState(true)
   const [selectedImage, setSelectedImage] = useState(0)
@@ -51,7 +53,15 @@ export default function VehicleDetailPage() {
   const [submitting, setSubmitting] = useState(false)
   const [submitted, setSubmitted] = useState(false)
 
+  const [isVerified, setIsVerified] = useState(false)
+
   const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      setIsVerified(window.localStorage.getItem('edc_account_verified') === 'true')
+    }
+  }, [])
 
   useEffect(() => {
     if (params.id) {
@@ -501,6 +511,24 @@ export default function VehicleDetailPage() {
 
               {/* Action Buttons */}
               <div className="space-y-3">
+                {isVerified ? (
+                  <button
+                    type="button"
+                    onClick={() => router.push(`/purchase/${vehicle.id}`)}
+                    className="btn-primary w-full flex items-center justify-center"
+                  >
+                    Proceed to Deposit
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => router.push('/account/verification')}
+                    className="w-full flex items-center justify-center gap-2 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-800 font-semibold px-4 py-3 rounded-xl transition-colors"
+                  >
+                    Verify Account to Continue
+                  </button>
+                )}
+
                 {/* Fleet Disclosure Button */}
                 {vehicle.inventoryType === 'FLEET' && (
                   <button

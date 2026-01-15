@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import Link from 'next/link'
+import { supabase } from '@/lib/supabaseClient'
 
 interface Vehicle {
   id: string
@@ -21,11 +22,23 @@ export default function AdminVehiclePhotosPage() {
   const [deleting, setDeleting] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'
+  const BUCKET = 'vehicle-photos'
+
+  const getStoragePathFromPublicUrl = (publicUrl: string) => {
+    try {
+      const u = new URL(publicUrl)
+      const marker = `/storage/v1/object/public/${BUCKET}/`
+      const idx = u.pathname.indexOf(marker)
+      if (idx === -1) return null
+      return decodeURIComponent(u.pathname.substring(idx + marker.length))
+    } catch {
+      return null
+    }
+  }
 
   useEffect(() => {
-    const token = localStorage.getItem('admin_token')
-    if (!token) {
+    const sessionStr = localStorage.getItem('edc_admin_session')
+    if (!sessionStr) {
       router.push('/admin')
       return
     }
@@ -34,13 +47,24 @@ export default function AdminVehiclePhotosPage() {
 
   const fetchVehicle = async () => {
     try {
-      const res = await fetch(`${API_URL}/api/vehicles/${params.id}`)
-      if (res.ok) {
-        const data = await res.json()
-        setVehicle(data)
-      } else {
+      const { data, error } = await supabase
+        .from('edc_vehicles')
+        .select('id, make, model, year, images')
+        .eq('id', String(params.id))
+        .maybeSingle()
+
+      if (error || !data) {
         router.push('/admin/inventory')
+        return
       }
+
+      setVehicle({
+        id: data.id,
+        make: data.make,
+        model: data.model,
+        year: data.year,
+        images: Array.isArray(data.images) ? data.images : [],
+      })
     } catch (error) {
       console.error('Error fetching vehicle:', error)
     } finally {
@@ -52,21 +76,48 @@ export default function AdminVehiclePhotosPage() {
     if (!e.target.files || e.target.files.length === 0) return
 
     setUploading(true)
-    const formData = new FormData()
-    
-    for (let i = 0; i < e.target.files.length; i++) {
-      formData.append('photos', e.target.files[i])
-    }
+
+    const files = Array.from(e.target.files)
 
     try {
-      const res = await fetch(`${API_URL}/api/vehicles/${params.id}/photos`, {
-        method: 'POST',
-        body: formData,
-      })
+      const uploadedUrls: string[] = []
 
-      if (res.ok) {
-        fetchVehicle()
+      for (const file of files) {
+        const fileName = `${Date.now()}_${file.name}`
+        const objectPath = `${String(params.id)}/${fileName}`
+
+        const { error: uploadError } = await supabase.storage.from(BUCKET).upload(objectPath, file, {
+          upsert: false,
+          contentType: file.type || undefined,
+        })
+
+        if (uploadError) {
+          console.error('Upload error:', uploadError)
+          continue
+        }
+
+        const { data: publicData } = supabase.storage.from(BUCKET).getPublicUrl(objectPath)
+        if (publicData?.publicUrl) uploadedUrls.push(publicData.publicUrl)
       }
+
+      if (uploadedUrls.length === 0) {
+        alert('No photos uploaded')
+        return
+      }
+
+      const updatedImages = [...(vehicle?.images || []), ...uploadedUrls]
+      const { error: dbError } = await supabase
+        .from('edc_vehicles')
+        .update({ images: updatedImages })
+        .eq('id', String(params.id))
+
+      if (dbError) {
+        console.error('DB update error:', dbError)
+        alert('Uploaded files, but failed to save to vehicle')
+        return
+      }
+
+      setVehicle((prev) => (prev ? { ...prev, images: updatedImages } : prev))
     } catch (error) {
       console.error('Error uploading photos:', error)
     } finally {
@@ -87,19 +138,24 @@ export default function AdminVehiclePhotosPage() {
     setDeleting(photoPath)
     
     try {
-      const res = await fetch(`${API_URL}/api/vehicles/${params.id}/photos`, {
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ photoPath }),
-      })
-
-      if (res.ok) {
-        const data = await res.json()
-        setVehicle(data.vehicle)
-      } else {
-        const error = await res.json()
-        alert(`Failed to delete photo: ${error.error}`)
+      const storagePath = getStoragePathFromPublicUrl(photoPath)
+      if (storagePath) {
+        const { error: storageError } = await supabase.storage.from(BUCKET).remove([storagePath])
+        if (storageError) console.error('Storage delete error:', storageError)
       }
+
+      const updatedImages = vehicle.images.filter((img) => img !== photoPath)
+      const { error: dbError } = await supabase
+        .from('edc_vehicles')
+        .update({ images: updatedImages })
+        .eq('id', String(params.id))
+
+      if (dbError) {
+        alert('Failed to delete photo')
+        return
+      }
+
+      setVehicle({ ...vehicle, images: updatedImages })
     } catch (error) {
       console.error('Error deleting photo:', error)
       alert('Failed to delete photo')
@@ -114,20 +170,18 @@ export default function AdminVehiclePhotosPage() {
     try {
       // Reorder images array to put the selected image first
       const updatedImages = [photoPath, ...vehicle.images.filter(img => img !== photoPath)]
-      
-      const res = await fetch(`${API_URL}/api/vehicles/${params.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ images: updatedImages }),
-      })
 
-      if (res.ok) {
-        const data = await res.json()
-        setVehicle(data)
-        alert('Main photo updated successfully')
-      } else {
+      const { error } = await supabase
+        .from('edc_vehicles')
+        .update({ images: updatedImages })
+        .eq('id', String(params.id))
+
+      if (error) {
         alert('Failed to update main photo')
+        return
       }
+
+      setVehicle({ ...vehicle, images: updatedImages })
     } catch (error) {
       console.error('Error setting main photo:', error)
       alert('Failed to update main photo')
@@ -150,12 +204,9 @@ export default function AdminVehiclePhotosPage() {
     <div className="min-h-screen bg-gray-100">
       {/* Header */}
       <div className="bg-white shadow">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+        <div className="w-full px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex justify-between items-center">
             <div className="flex items-center">
-              <Link href="/admin/inventory" className="text-gray-500 hover:text-gray-700 mr-4">
-                ← Back
-              </Link>
               <h1 className="text-2xl font-bold text-gray-900">
                 Photos: {vehicle.year} {vehicle.make} {vehicle.model}
               </h1>
@@ -170,7 +221,7 @@ export default function AdminVehiclePhotosPage() {
         </div>
       </div>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <div className="w-full px-4 sm:px-6 lg:px-8 py-8">
         {/* Upload Section */}
         <div className="bg-white rounded-xl shadow p-6 mb-8">
           <h2 className="text-lg font-semibold mb-4">Upload Photos</h2>
@@ -218,7 +269,7 @@ export default function AdminVehiclePhotosPage() {
                 <div key={index} className="relative group">
                   <div className="aspect-video bg-gray-200 rounded-lg overflow-hidden">
                     <img
-                      src={`${API_URL}${image}`}
+                      src={image}
                       alt={`Photo ${index + 1}`}
                       className="w-full h-full object-cover"
                     />

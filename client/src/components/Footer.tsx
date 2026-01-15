@@ -1,7 +1,35 @@
+ 'use client'
+
 import Link from 'next/link'
 import Image from 'next/image'
+import { useEffect, useState } from 'react'
+import { usePathname } from 'next/navigation'
+import { supabase } from '@/lib/supabaseClient'
 
 export default function Footer() {
+  const pathname = usePathname()
+  const [userEmail, setUserEmail] = useState<string | null>(null)
+
+  useEffect(() => {
+    const init = async () => {
+      const { data } = await supabase.auth.getSession()
+      setUserEmail(data.session?.user?.email || null)
+    }
+
+    void init()
+
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUserEmail(session?.user?.email || null)
+    })
+
+    return () => {
+      sub.subscription.unsubscribe()
+    }
+  }, [])
+
+  if (pathname.startsWith('/admin')) return null
+  if (userEmail) return null
+
   return (
     <footer className="bg-gradient-to-b from-slate-900 to-slate-950 text-white relative overflow-hidden" role="contentinfo">
       {/* Decorative Elements */}

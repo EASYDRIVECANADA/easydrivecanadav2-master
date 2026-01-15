@@ -5,6 +5,7 @@ import HowItWorks from '@/components/home/HowItWorks'
 import Benefits from '@/components/home/Benefits'
 import FAQ from '@/components/home/FAQ'
 import CTA from '@/components/home/CTA'
+import HomeGate from '@/components/HomeGate'
 
 export default function Home() {
   const structuredData = {
@@ -29,6 +30,7 @@ export default function Home() {
 
   return (
     <>
+      <HomeGate />
       {/* Structured Data for SEO */}
       <script
         type="application/ld+json"

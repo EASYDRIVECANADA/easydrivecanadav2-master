@@ -1,17 +1,85 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabaseClient'
 import type { AuthChangeEvent, Session } from '@supabase/supabase-js'
 
 export default function AccountPage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const [userEmail, setUserEmail] = useState<string | null>(null)
   const [userName, setUserName] = useState<string | null>(null)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [isVerified, setIsVerified] = useState(false)
+  const [editingName, setEditingName] = useState('')
+  const [editingAddress, setEditingAddress] = useState('')
+  const [editingLicenseNumber, setEditingLicenseNumber] = useState('')
+  const [verificationId, setVerificationId] = useState<string | null>(null)
+  const [loadingVerification, setLoadingVerification] = useState(false)
+  const [savingProfile, setSavingProfile] = useState(false)
+  const [saveSuccess, setSaveSuccess] = useState(false)
+  const [isEditingProfile, setIsEditingProfile] = useState(false)
+
+  const [originalName, setOriginalName] = useState('')
+  const [originalAddress, setOriginalAddress] = useState('')
+  const [originalLicenseNumber, setOriginalLicenseNumber] = useState('')
+
+  const fromOauth = searchParams.get('from') === 'oauth'
+
+  const syncVerifiedFromDb = async (email: string) => {
+    const { data, error: dbError } = await supabase
+      .from('edc_account_verifications')
+      .select('id')
+      .eq('email', email)
+      .limit(1)
+
+    if (dbError) {
+      setError('Unable to check verification status. Please try again, or continue to verification.')
+      return null as unknown as boolean
+    }
+
+    const hasRow = Array.isArray(data) && data.length > 0
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem('edc_account_verified', hasRow ? 'true' : 'false')
+    }
+    setIsVerified(hasRow)
+    return hasRow
+  }
+
+  const loadLatestVerification = async (email: string) => {
+    setLoadingVerification(true)
+    try {
+      const { data, error: dbError } = await supabase
+        .from('edc_account_verifications')
+        .select('id, full_name, address, license_number')
+        .eq('email', email)
+        .order('created_at', { ascending: false })
+        .limit(1)
+
+      if (dbError) return
+
+      const row = Array.isArray(data) && data.length > 0 ? (data[0] as any) : null
+      setVerificationId(row?.id || null)
+      const verifiedFullName = typeof row?.full_name === 'string' ? row.full_name : ''
+      const nextAddress = typeof row?.address === 'string' ? row.address : ''
+      const nextLicenseNumber = typeof row?.license_number === 'string' ? row.license_number : ''
+
+      if (verifiedFullName.trim().length > 0) {
+        setEditingName(verifiedFullName)
+        setOriginalName(verifiedFullName)
+        setUserName(verifiedFullName)
+      }
+      setEditingAddress(nextAddress)
+      setEditingLicenseNumber(nextLicenseNumber)
+      setOriginalAddress(nextAddress)
+      setOriginalLicenseNumber(nextLicenseNumber)
+    } finally {
+      setLoadingVerification(false)
+    }
+  }
 
   useEffect(() => {
     const init = async () => {
@@ -21,16 +89,56 @@ export default function AccountPage() {
         setUserEmail(user.email || null)
         const metaName = (user.user_metadata as any)?.full_name
         setUserName(typeof metaName === 'string' ? metaName : null)
+        const nextName = typeof metaName === 'string' ? metaName : ''
+        setEditingName(nextName)
+        setOriginalName(nextName)
+
+        if (user.email) {
+          const hasRow = await syncVerifiedFromDb(user.email)
+          await loadLatestVerification(user.email)
+          if (fromOauth) {
+            if (hasRow === true) {
+              router.replace('/inventory')
+              return
+            }
+            if (hasRow === false) {
+              router.replace('/account/verification')
+              return
+            }
+          }
+        }
       }
     }
 
     void init()
+
+    if (typeof window !== 'undefined') {
+      setIsVerified(window.localStorage.getItem('edc_account_verified') === 'true')
+    }
 
     const { data: sub } = supabase.auth.onAuthStateChange((_event: AuthChangeEvent, session: Session | null) => {
       const user = session?.user
       setUserEmail(user?.email || null)
       const metaName = (user?.user_metadata as any)?.full_name
       setUserName(typeof metaName === 'string' ? metaName : null)
+      const nextName = typeof metaName === 'string' ? metaName : ''
+      setEditingName(nextName)
+      setOriginalName(nextName)
+      setSaveSuccess(false)
+      setIsEditingProfile(false)
+
+      if (user?.email) {
+        void syncVerifiedFromDb(user.email).then((hasRow) => {
+          if (fromOauth) {
+            if (hasRow === true) router.replace('/inventory')
+            if (hasRow === false) router.replace('/account/verification')
+          }
+        })
+        void loadLatestVerification(user.email)
+        return
+      }
+
+      if (typeof window !== 'undefined') setIsVerified(window.localStorage.getItem('edc_account_verified') === 'true')
     })
 
     return () => {
@@ -45,7 +153,7 @@ export default function AccountPage() {
       const { error: oauthError } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: `${window.location.origin}/account/verification`,
+          redirectTo: `${window.location.origin}/account?from=oauth`,
         },
       })
       if (oauthError) setError(oauthError.message)
@@ -57,6 +165,71 @@ export default function AccountPage() {
   const handleSignOut = async () => {
     await supabase.auth.signOut()
     window.localStorage.removeItem('edc_customer_verification')
+    window.localStorage.removeItem('edc_account_verified')
+  }
+
+  const handleSaveProfile = async () => {
+    if (!userEmail) return
+
+    setError('')
+    setSaveSuccess(false)
+    setSavingProfile(true)
+
+    try {
+      const nextName = editingName.trim()
+      const nextAddress = editingAddress.trim()
+      const nextLicenseNumber = editingLicenseNumber.trim()
+
+      setEditingName(nextName)
+      setEditingAddress(nextAddress)
+      setEditingLicenseNumber(nextLicenseNumber)
+      const { error: updateError } = await supabase.auth.updateUser({
+        data: {
+          full_name: nextName,
+        },
+      })
+
+      if (updateError) {
+        setError(updateError.message || 'Unable to update account')
+        return
+      }
+
+      setUserName(nextName)
+      setOriginalName(nextName)
+
+      if (verificationId) {
+        const { error: verificationError } = await supabase
+          .from('edc_account_verifications')
+          .update({
+            full_name: nextName,
+            address: nextAddress,
+            license_number: nextLicenseNumber,
+          })
+          .eq('id', verificationId)
+
+        if (verificationError) {
+          setError(verificationError.message || 'Unable to update verification details')
+          return
+        }
+
+        setOriginalAddress(nextAddress)
+        setOriginalLicenseNumber(nextLicenseNumber)
+      }
+
+      setSaveSuccess(true)
+      setIsEditingProfile(false)
+      void loadLatestVerification(userEmail)
+    } finally {
+      setSavingProfile(false)
+    }
+  }
+
+  const handleCancelEdit = () => {
+    setEditingName(originalName)
+    setEditingAddress(originalAddress)
+    setEditingLicenseNumber(originalLicenseNumber)
+    setSaveSuccess(false)
+    setIsEditingProfile(false)
   }
 
   return (
@@ -76,47 +249,62 @@ export default function AccountPage() {
               </svg>
               Customer Account
             </span>
-            <h1 className="text-3xl md:text-4xl lg:text-5xl font-bold text-white mb-4">
-              Create Your <span className="gradient-text">EDC Account</span>
-            </h1>
-            <p className="text-slate-300 text-lg max-w-2xl mx-auto">
-              Sign in with Google to continue your purchase. You'll then upload your driver's license for verification.
-            </p>
+            {userEmail ? (
+              <>
+                <h1 className="text-3xl md:text-4xl lg:text-5xl font-bold text-white mb-4">
+                  Your <span className="gradient-text">EDC Account</span>
+                </h1>
+                <p className="text-slate-300 text-lg max-w-2xl mx-auto">
+                  Manage your verification status and continue shopping.
+                </p>
+              </>
+            ) : (
+              <>
+                <h1 className="text-3xl md:text-4xl lg:text-5xl font-bold text-white mb-4">
+                  Create Your <span className="gradient-text">EDC Account</span>
+                </h1>
+                <p className="text-slate-300 text-lg max-w-2xl mx-auto">
+                  Sign in with Google to continue your purchase. You'll then upload your driver's license for verification.
+                </p>
+              </>
+            )}
           </div>
         </div>
       </section>
 
       <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
         {/* Process Steps */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
-          <div className="glass-card rounded-xl p-6 text-center group hover:shadow-lg transition-shadow">
-            <div className="icon-container mx-auto mb-4 group-hover:scale-110 transition-transform">
-              <svg className="w-6 h-6 text-[#118df0]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-              </svg>
+        {!userEmail ? (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
+            <div className="glass-card rounded-xl p-6 text-center group hover:shadow-lg transition-shadow">
+              <div className="icon-container mx-auto mb-4 group-hover:scale-110 transition-transform">
+                <svg className="w-6 h-6 text-[#118df0]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                </svg>
+              </div>
+              <h3 className="font-semibold text-gray-900 mb-2">Create EDC Account</h3>
+              <p className="text-gray-500 text-sm">Sign in with your Google account</p>
             </div>
-            <h3 className="font-semibold text-gray-900 mb-2">Create EDC Account</h3>
-            <p className="text-gray-500 text-sm">Sign in with your Google account</p>
-          </div>
-          <div className="glass-card rounded-xl p-6 text-center group hover:shadow-lg transition-shadow">
-            <div className="icon-container mx-auto mb-4 group-hover:scale-110 transition-transform">
-              <svg className="w-6 h-6 text-[#118df0]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-              </svg>
+            <div className="glass-card rounded-xl p-6 text-center group hover:shadow-lg transition-shadow">
+              <div className="icon-container mx-auto mb-4 group-hover:scale-110 transition-transform">
+                <svg className="w-6 h-6 text-[#118df0]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+              </div>
+              <h3 className="font-semibold text-gray-900 mb-2">Upload License</h3>
+              <p className="text-gray-500 text-sm">Upload your driver's license</p>
             </div>
-            <h3 className="font-semibold text-gray-900 mb-2">Upload License</h3>
-            <p className="text-gray-500 text-sm">Upload your driver's license</p>
-          </div>
-          <div className="glass-card rounded-xl p-6 text-center group hover:shadow-lg transition-shadow">
-            <div className="icon-container mx-auto mb-4 group-hover:scale-110 transition-transform">
-              <svg className="w-6 h-6 text-[#118df0]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
+            <div className="glass-card rounded-xl p-6 text-center group hover:shadow-lg transition-shadow">
+              <div className="icon-container mx-auto mb-4 group-hover:scale-110 transition-transform">
+                <svg className="w-6 h-6 text-[#118df0]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
+              <h3 className="font-semibold text-gray-900 mb-2">Verification Complete</h3>
+              <p className="text-gray-500 text-sm">Start shopping for vehicles</p>
             </div>
-            <h3 className="font-semibold text-gray-900 mb-2">Verification Complete</h3>
-            <p className="text-gray-500 text-sm">Start shopping for vehicles</p>
           </div>
-        </div>
+        ) : null}
 
         {/* Account Form */}
         <div className="glass-card rounded-2xl p-8">
@@ -137,30 +325,111 @@ export default function AccountPage() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
                 </svg>
               </div>
-              <h2 className="text-3xl font-bold text-gray-900 mb-4">Account Created!</h2>
-              <div className="bg-white/70 backdrop-blur-sm rounded-xl p-6 mb-8 max-w-md mx-auto">
-                <div className="text-sm text-gray-500 mb-1">Signed in as</div>
-                <div className="font-semibold text-gray-900 text-lg">{userName || 'Customer'}</div>
-                <div className="text-gray-600">{userEmail}</div>
-              </div>
-              <div className="flex flex-col sm:flex-row gap-4 justify-center">
-                <button 
-                  type="button" 
-                  onClick={() => router.push('/account/verification')} 
-                  className="btn-primary flex items-center gap-2"
-                >
-                  Continue to Verification
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
-                  </svg>
-                </button>
-                <button 
-                  type="button" 
-                  onClick={handleSignOut} 
-                  className="btn-outline"
-                >
-                  Sign Out
-                </button>
+              <h2 className="text-3xl font-bold text-gray-900 mb-4">Account</h2>
+              <div className="bg-white/70 backdrop-blur-sm rounded-2xl border border-gray-200/60 p-6 mb-8 max-w-xl mx-auto">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                  <div className="text-left">
+                    <div className="text-sm font-semibold text-gray-900">Profile</div>
+                    <div className="mt-1 text-xs text-gray-600">Signed in as</div>
+                    <div className="mt-1 text-sm font-medium text-gray-900 break-all">{userEmail}</div>
+                  </div>
+                  <div className="flex flex-col items-start sm:items-end gap-2">
+                    <span className={isVerified ? 'badge badge-success' : 'badge badge-warning'}>
+                      {isVerified ? 'Verified' : 'Verification Required'}
+                    </span>
+                    {!isEditingProfile ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setError('')
+                          setSaveSuccess(false)
+                          setIsEditingProfile(true)
+                        }}
+                        className="btn-secondary text-sm px-5 py-2.5"
+                      >
+                        Edit
+                      </button>
+                    ) : (
+                      <div className="flex flex-col sm:flex-row gap-3">
+                        <button
+                          type="button"
+                          onClick={handleSaveProfile}
+                          disabled={savingProfile}
+                          className="btn-primary text-sm px-5 py-2.5 disabled:opacity-50"
+                        >
+                          {savingProfile ? 'Saving…' : 'Save'}
+                        </button>
+                        <button type="button" onClick={handleCancelEdit} className="btn-outline text-sm px-5 py-2.5">
+                          Cancel
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="mt-6 grid grid-cols-1 gap-4">
+                  <div className="text-left">
+                    <label className="block text-sm font-medium text-gray-700 mb-1" htmlFor="accountFullName">
+                      Full name
+                    </label>
+                    <input
+                      id="accountFullName"
+                      className={
+                        isEditingProfile
+                          ? 'input-field'
+                          : 'input-field bg-gray-50 text-gray-700 cursor-not-allowed'
+                      }
+                      value={editingName}
+                      onChange={(e) => setEditingName(e.target.value)}
+                      placeholder={loadingVerification ? 'Loading…' : 'Full name from verification'}
+                      autoComplete="name"
+                      disabled={!isEditingProfile}
+                    />
+                  </div>
+
+                  <div className="text-left">
+                    <label className="block text-sm font-medium text-gray-700 mb-1" htmlFor="accountAddress">
+                      Address
+                    </label>
+                    <input
+                      id="accountAddress"
+                      className={
+                        isEditingProfile
+                          ? 'input-field'
+                          : 'input-field bg-gray-50 text-gray-700 cursor-not-allowed'
+                      }
+                      value={editingAddress}
+                      onChange={(e) => setEditingAddress(e.target.value)}
+                      placeholder={loadingVerification ? 'Loading…' : 'Address from verification'}
+                      autoComplete="street-address"
+                      disabled={!isEditingProfile}
+                    />
+                  </div>
+
+                  <div className="text-left">
+                    <label className="block text-sm font-medium text-gray-700 mb-1" htmlFor="accountLicenseNumber">
+                      Driver license number
+                    </label>
+                    <input
+                      id="accountLicenseNumber"
+                      className={
+                        isEditingProfile
+                          ? 'input-field'
+                          : 'input-field bg-gray-50 text-gray-700 cursor-not-allowed'
+                      }
+                      value={editingLicenseNumber}
+                      onChange={(e) => setEditingLicenseNumber(e.target.value)}
+                      placeholder={loadingVerification ? 'Loading…' : 'License number from verification'}
+                      disabled={!isEditingProfile}
+                    />
+                  </div>
+                </div>
+
+                {saveSuccess ? (
+                  <div className="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-700">
+                    Account updated successfully.
+                  </div>
+                ) : null}
               </div>
             </div>
           ) : (
@@ -214,14 +483,7 @@ export default function AccountPage() {
               </svg>
               Back to Home
             </Link>
-            {userEmail && (
-              <Link href="/account/verification" className="text-sm text-gray-700 hover:text-[#118df0] transition-colors flex items-center gap-1">
-                Go to Verification
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
-                </svg>
-              </Link>
-            )}
+            <div />
           </div>
         </div>
       </div>

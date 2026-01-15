@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import { supabase } from '@/lib/supabaseClient'
 
 interface Lead {
   id: string
@@ -31,11 +32,9 @@ export default function AdminLeadsPage() {
   const itemsPerPage = 20
   const router = useRouter()
 
-  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'
-
   useEffect(() => {
-    const token = localStorage.getItem('admin_token')
-    if (!token) {
+    const sessionStr = localStorage.getItem('edc_admin_session')
+    if (!sessionStr) {
       router.push('/admin')
       return
     }
@@ -44,15 +43,37 @@ export default function AdminLeadsPage() {
 
   const fetchLeads = async () => {
     try {
-      const res = await fetch(`${API_URL}/api/leads`)
-      if (res.ok) {
-        const data = await res.json()
-        setLeads(data)
-        setFilteredLeads(data)
-        setTotalLeads(data.length)
-      }
+      const { data, error } = await supabase
+        .from('edc_leads')
+        .select('id, first_name, last_name, email, phone, vehicle_interest, message, employment_status, monthly_income, down_payment, credit_score, ghl_synced, created_at')
+        .order('created_at', { ascending: false })
+
+      if (error) throw error
+
+      const mapped: Lead[] = (data || []).map((l: any) => ({
+        id: l.id,
+        firstName: l.first_name || '',
+        lastName: l.last_name || '',
+        email: l.email || '',
+        phone: l.phone || '',
+        vehicleInterest: l.vehicle_interest ?? null,
+        message: l.message ?? null,
+        employmentStatus: l.employment_status ?? null,
+        monthlyIncome: l.monthly_income ?? null,
+        downPayment: l.down_payment ?? null,
+        creditScore: l.credit_score ?? null,
+        ghlSynced: !!l.ghl_synced,
+        createdAt: l.created_at,
+      }))
+
+      setLeads(mapped)
+      setFilteredLeads(mapped)
+      setTotalLeads(mapped.length)
     } catch (error) {
       console.error('Error fetching leads:', error)
+      setLeads([])
+      setFilteredLeads([])
+      setTotalLeads(0)
     } finally {
       setLoading(false)
     }
@@ -94,13 +115,10 @@ export default function AdminLeadsPage() {
     if (!confirm('Are you sure you want to delete this lead?')) return
 
     try {
-      const res = await fetch(`${API_URL}/api/leads/${id}`, {
-        method: 'DELETE',
-      })
-      if (res.ok) {
-        setLeads(leads.filter((l) => l.id !== id))
-        setSelectedLead(null)
-      }
+      const { error } = await supabase.from('edc_leads').delete().eq('id', id)
+      if (error) throw error
+      setLeads(leads.filter((l) => l.id !== id))
+      setSelectedLead(null)
     } catch (error) {
       console.error('Error deleting lead:', error)
     }
@@ -120,17 +138,14 @@ export default function AdminLeadsPage() {
     <div className="min-h-screen bg-gray-100">
       {/* Header */}
       <div className="bg-white shadow">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+        <div className="w-full px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex items-center">
-            <Link href="/admin" className="text-gray-500 hover:text-gray-700 mr-4">
-              ← Back
-            </Link>
             <h1 className="text-2xl font-bold text-gray-900">Leads & Inquiries</h1>
           </div>
         </div>
       </div>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <div className="w-full px-4 sm:px-6 lg:px-8 py-8">
         {/* Search and Stats */}
         <div className="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div className="flex-1 max-w-md">

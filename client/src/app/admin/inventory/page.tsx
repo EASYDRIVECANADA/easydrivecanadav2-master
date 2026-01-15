@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import { supabase } from '@/lib/supabaseClient'
 
 interface Vehicle {
   id: string
@@ -27,40 +28,181 @@ export default function AdminInventoryPage() {
   const [filteredVehicles, setFilteredVehicles] = useState<Vehicle[]>([])
   const [loading, setLoading] = useState(true)
   const [deleting, setDeleting] = useState<string | null>(null)
-  const [generatingAI, setGeneratingAI] = useState<string | null>(null)
-  const [selectedVehicles, setSelectedVehicles] = useState<Set<string>>(new Set())
-  const [bulkGenerating, setBulkGenerating] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [inventoryTypeFilter, setInventoryTypeFilter] = useState<'' | 'FLEET' | 'PREMIERE'>('')
   const [currentPage, setCurrentPage] = useState(1)
   const [totalVehicles, setTotalVehicles] = useState(0)
   const [statusTab, setStatusTab] = useState<'ACTIVE' | 'PENDING' | 'SOLD'>('ACTIVE')
+  const [showAddModal, setShowAddModal] = useState(false)
+  const [addSubmitting, setAddSubmitting] = useState(false)
+  const [addError, setAddError] = useState('')
+  const [addFormData, setAddFormData] = useState({
+    make: '',
+    model: '',
+    year: new Date().getFullYear(),
+    trim: '',
+    stockNumber: '',
+    keyNumber: '',
+    series: '',
+    equipment: '',
+    price: '',
+    mileage: '',
+    vin: '',
+    fuelType: 'Gasoline',
+    transmission: 'Automatic',
+    bodyStyle: '',
+    exteriorColor: '',
+    interiorColor: '',
+    drivetrain: 'FWD',
+    city: '',
+    province: 'ON',
+    description: '',
+    features: '',
+    status: 'ACTIVE',
+    inventoryType: 'FLEET',
+  })
   const itemsPerPage = 20
   const router = useRouter()
 
-  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'
-
   useEffect(() => {
     // Check auth
-    const token = localStorage.getItem('admin_token')
-    if (!token) {
+    const sessionStr = localStorage.getItem('edc_admin_session')
+    if (!sessionStr) {
       router.push('/admin')
       return
     }
     fetchVehicles()
   }, [statusTab])
 
+  const handleOpenAddModal = () => {
+    setAddError('')
+    setAddSubmitting(false)
+    setAddFormData({
+      make: '',
+      model: '',
+      year: new Date().getFullYear(),
+      trim: '',
+      stockNumber: '',
+      keyNumber: '',
+      series: '',
+      equipment: '',
+      price: '',
+      mileage: '',
+      vin: '',
+      fuelType: 'Gasoline',
+      transmission: 'Automatic',
+      bodyStyle: '',
+      exteriorColor: '',
+      interiorColor: '',
+      drivetrain: 'FWD',
+      city: '',
+      province: 'ON',
+      description: '',
+      features: '',
+      status: 'ACTIVE',
+      inventoryType: 'FLEET',
+    })
+    setShowAddModal(true)
+  }
+
+  const handleAddChange = (
+    e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>
+  ) => {
+    const { name, value } = e.target
+    setAddFormData((prev) => ({ ...prev, [name]: value }))
+  }
+
+  const handleAddSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setAddSubmitting(true)
+    setAddError('')
+
+    try {
+      const payload = {
+        ...addFormData,
+        price: parseFloat(addFormData.price),
+        mileage: parseInt(addFormData.mileage),
+        year: parseInt(addFormData.year.toString()),
+        features: addFormData.features.split(',').map((f) => f.trim()).filter(Boolean),
+      }
+
+      const { data, error: dbError } = await supabase
+        .from('edc_vehicles')
+        .insert({
+          make: payload.make,
+          model: payload.model,
+          year: payload.year,
+          trim: payload.trim || null,
+          stock_number: payload.stockNumber || null,
+          series: payload.series || null,
+          equipment: payload.equipment || null,
+          vin: payload.vin,
+          price: payload.price,
+          mileage: payload.mileage,
+          status: payload.status,
+          inventory_type: payload.inventoryType,
+          fuel_type: payload.fuelType || null,
+          transmission: payload.transmission || null,
+          body_style: payload.bodyStyle || null,
+          drivetrain: payload.drivetrain || null,
+          city: payload.city,
+          province: payload.province,
+          exterior_color: payload.exteriorColor || null,
+          interior_color: payload.interiorColor || null,
+          description: payload.description || null,
+          features: payload.features,
+          images: [],
+          key_number: payload.keyNumber || null,
+        })
+        .select('id')
+        .single()
+
+      if (dbError || !data?.id) {
+        setAddError('Failed to create vehicle')
+        return
+      }
+
+      setShowAddModal(false)
+      router.push(`/admin/inventory/${data.id}/photos`)
+    } catch {
+      setAddError('Unable to create vehicle. Please try again.')
+    } finally {
+      setAddSubmitting(false)
+    }
+  }
+
   const fetchVehicles = async () => {
     setLoading(true)
     try {
-      const res = await fetch(`${API_URL}/api/vehicles?limit=1000&status=${statusTab}`) // Fetch by status
-      if (res.ok) {
-        const data = await res.json()
-        setVehicles(data)
-        setTotalVehicles(data.length)
-        setFilteredVehicles(data)
-        setCurrentPage(1)
-      }
+      const { data, error } = await supabase
+        .from('edc_vehicles')
+        .select('id, make, model, year, trim, stock_number, price, mileage, status, inventory_type, images, key_number, vin, created_at')
+        .eq('status', statusTab)
+        .order('created_at', { ascending: false })
+
+      if (error) throw error
+
+      const mapped: Vehicle[] = (data || []).map((v: any) => ({
+        id: v.id,
+        make: v.make,
+        model: v.model,
+        year: v.year,
+        trim: v.trim || undefined,
+        stockNumber: v.stock_number || '',
+        price: v.price,
+        mileage: v.mileage,
+        status: v.status,
+        inventoryType: v.inventory_type,
+        images: Array.isArray(v.images) ? v.images : [],
+        keyNumber: v.key_number || undefined,
+        vin: v.vin || undefined,
+        createdAt: v.created_at,
+      }))
+
+      setVehicles(mapped)
+      setTotalVehicles(mapped.length)
+      setFilteredVehicles(mapped)
+      setCurrentPage(1)
     } catch (error) {
       console.error('Error fetching vehicles:', error)
     } finally {
@@ -109,95 +251,14 @@ export default function AdminInventoryPage() {
 
     setDeleting(id)
     try {
-      const res = await fetch(`${API_URL}/api/vehicles/${id}`, {
-        method: 'DELETE',
-      })
-      if (res.ok) {
+      const { error } = await supabase.from('edc_vehicles').delete().eq('id', id)
+      if (!error) {
         setVehicles(vehicles.filter((v) => v.id !== id))
       }
     } catch (error) {
       console.error('Error deleting vehicle:', error)
     } finally {
       setDeleting(null)
-    }
-  }
-
-  const handleGenerateAI = async (id: string) => {
-    if (!confirm('Generate AI image for this vehicle? This will add a new image.')) return
-
-    setGeneratingAI(id)
-    try {
-      const res = await fetch(`${API_URL}/api/vehicles/${id}/generate-image`, {
-        method: 'POST',
-      })
-      if (res.ok) {
-        const data = await res.json()
-        // Update vehicle in both lists
-        const updateVehicle = (v: Vehicle) => v.id === id ? { ...v, images: data.vehicle.images } : v
-        setVehicles(prev => prev.map(updateVehicle))
-        setFilteredVehicles(prev => prev.map(updateVehicle))
-        alert('AI image generated successfully!')
-      } else {
-        const error = await res.json()
-        alert(`Failed: ${error.error}`)
-      }
-    } catch (error) {
-      console.error('Error generating AI image:', error)
-      alert('Failed to generate AI image')
-    } finally {
-      setGeneratingAI(null)
-    }
-  }
-
-  const handleBulkGenerateAI = async () => {
-    if (selectedVehicles.size === 0) {
-      alert('Please select vehicles first')
-      return
-    }
-
-    if (!confirm(`Generate AI images for ${selectedVehicles.size} selected vehicle(s)?`)) return
-
-    setBulkGenerating(true)
-    try {
-      const res = await fetch(`${API_URL}/api/vehicles/generate-images/bulk`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ vehicleIds: Array.from(selectedVehicles) }),
-      })
-      
-      if (res.ok) {
-        const data = await res.json()
-        alert(data.message)
-        // Refresh the list
-        fetchVehicles()
-        setSelectedVehicles(new Set())
-      } else {
-        const error = await res.json()
-        alert(`Failed: ${error.error}`)
-      }
-    } catch (error) {
-      console.error('Error bulk generating AI images:', error)
-      alert('Failed to generate AI images')
-    } finally {
-      setBulkGenerating(false)
-    }
-  }
-
-  const toggleSelectVehicle = (id: string) => {
-    const newSelected = new Set(selectedVehicles)
-    if (newSelected.has(id)) {
-      newSelected.delete(id)
-    } else {
-      newSelected.add(id)
-    }
-    setSelectedVehicles(newSelected)
-  }
-
-  const selectAll = () => {
-    if (selectedVehicles.size === vehicles.length) {
-      setSelectedVehicles(new Set())
-    } else {
-      setSelectedVehicles(new Set(vehicles.map(v => v.id)))
     }
   }
 
@@ -211,17 +272,9 @@ export default function AdminInventoryPage() {
 
   const handleStatusChange = async (vehicleId: string, newStatus: 'ACTIVE' | 'PENDING' | 'SOLD') => {
     try {
-      const token = localStorage.getItem('admin_token')
-      const res = await fetch(`${API_URL}/api/vehicles/${vehicleId}`, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-        body: JSON.stringify({ status: newStatus }),
-      })
+      const { error } = await supabase.from('edc_vehicles').update({ status: newStatus }).eq('id', vehicleId)
 
-      if (res.ok) {
+      if (!error) {
         // Remove from current list since it changed status
         setVehicles(prev => prev.filter(v => v.id !== vehicleId))
         setFilteredVehicles(prev => prev.filter(v => v.id !== vehicleId))
@@ -239,25 +292,23 @@ export default function AdminInventoryPage() {
     <div className="min-h-screen bg-gray-100">
       {/* Header */}
       <div className="bg-white shadow">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+        <div className="w-full px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex justify-between items-center">
             <div className="flex items-center">
-              <Link href="/admin" className="text-gray-500 hover:text-gray-700 mr-4">
-                ← Back
-              </Link>
               <h1 className="text-2xl font-bold text-gray-900">Inventory Management</h1>
             </div>
-            <Link
-              href="/admin/inventory/new"
+            <button
+              type="button"
+              onClick={handleOpenAddModal}
               className="bg-[#118df0] text-white px-4 py-2 rounded-lg font-medium hover:bg-[#0d6ebd] transition-colors"
             >
               + Add Vehicle
-            </Link>
+            </button>
           </div>
         </div>
       </div>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <div className="w-full px-4 sm:px-6 lg:px-8 py-8">
         {/* Status Tabs */}
         <div className="bg-white rounded-xl shadow mb-6">
           <div className="border-b border-gray-200">
@@ -350,39 +401,6 @@ export default function AdminInventoryPage() {
           </div>
         </div>
 
-        {selectedVehicles.size > 0 && (
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4 flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <span className="text-blue-900 font-medium">{selectedVehicles.size} vehicle(s) selected</span>
-              <button
-                onClick={() => setSelectedVehicles(new Set())}
-                className="text-blue-600 hover:text-blue-800 text-sm"
-              >
-                Clear selection
-              </button>
-            </div>
-            <button
-              onClick={handleBulkGenerateAI}
-              disabled={bulkGenerating}
-              className="bg-purple-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-purple-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-            >
-              {bulkGenerating ? (
-                <>
-                  <div className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full"></div>
-                  Generating...
-                </>
-              ) : (
-                <>
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                  </svg>
-                  Generate AI Images
-                </>
-              )}
-            </button>
-          </div>
-        )}
-
         {loading ? (
           <div className="bg-white rounded-xl shadow p-8 text-center">
             <div className="animate-spin w-8 h-8 border-4 border-[#118df0] border-t-transparent rounded-full mx-auto"></div>
@@ -396,12 +414,13 @@ export default function AdminInventoryPage() {
             <h3 className="text-xl font-semibold text-gray-700 mb-2">No Vehicles</h3>
             <p className="text-gray-500 mb-4">Start by adding your first vehicle or importing a CSV file.</p>
             <div className="flex justify-center gap-4">
-              <Link
-                href="/admin/inventory/new"
+              <button
+                type="button"
+                onClick={handleOpenAddModal}
                 className="bg-[#118df0] text-white px-6 py-2 rounded-lg font-medium hover:bg-[#0d6ebd] transition-colors"
               >
                 Add Vehicle
-              </Link>
+              </button>
               <Link
                 href="/admin/import"
                 className="border border-[#118df0] text-[#118df0] px-6 py-2 rounded-lg font-medium hover:bg-[#118df0] hover:text-white transition-colors"
@@ -417,14 +436,6 @@ export default function AdminInventoryPage() {
               <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
                   <tr>
-                    <th className="px-6 py-3 text-left sticky left-0 bg-gray-50 z-10">
-                      <input
-                        type="checkbox"
-                        checked={selectedVehicles.size === paginatedVehicles.length && paginatedVehicles.length > 0}
-                        onChange={selectAll}
-                        className="w-4 h-4 text-[#118df0] border-gray-300 rounded focus:ring-[#118df0]"
-                      />
-                    </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">Vehicle</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">Stock #</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">Key #</th>
@@ -438,24 +449,15 @@ export default function AdminInventoryPage() {
                 <tbody className="bg-white divide-y divide-gray-200">
                   {paginatedVehicles.map((vehicle) => (
                   <tr key={vehicle.id} className="hover:bg-gray-50">
-                    <td className="px-6 py-4 whitespace-nowrap sticky left-0 bg-white z-10">
-                      <input
-                        type="checkbox"
-                        checked={selectedVehicles.has(vehicle.id)}
-                        onChange={() => toggleSelectVehicle(vehicle.id)}
-                        className="w-4 h-4 text-[#118df0] border-gray-300 rounded focus:ring-[#118df0]"
-                      />
-                    </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="flex items-center">
                         <div className="w-12 h-12 bg-gray-200 rounded-lg overflow-hidden flex-shrink-0">
                           {vehicle.images && vehicle.images.length > 0 ? (
                             <img
-                              src={`${API_URL}${vehicle.images[0]}`}
+                              src={vehicle.images[0]}
                               alt=""
                               className="w-full h-full object-cover"
                               onError={(e) => {
-                                console.error('Image failed to load:', `${API_URL}${vehicle.images[0]}`)
                                 e.currentTarget.style.display = 'none'
                               }}
                             />
@@ -518,23 +520,6 @@ export default function AdminInventoryPage() {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-center">
                       <div className="flex items-center justify-center gap-1">
-                        <button
-                          onClick={() => handleGenerateAI(vehicle.id)}
-                          disabled={generatingAI === vehicle.id}
-                          className="p-2 text-purple-600 hover:bg-purple-50 rounded-lg disabled:opacity-50 transition-colors"
-                          title="Generate AI image"
-                        >
-                          {generatingAI === vehicle.id ? (
-                            <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
-                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                            </svg>
-                          ) : (
-                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
-                            </svg>
-                          )}
-                        </button>
                         <Link
                           href={`/admin/inventory/${vehicle.id}/photos`}
                           className="p-2 text-[#118df0] hover:bg-blue-50 rounded-lg transition-colors"
@@ -588,7 +573,7 @@ export default function AdminInventoryPage() {
                   <div className="w-28 h-28 bg-gray-100 rounded-lg overflow-hidden flex-shrink-0">
                     {vehicle.images && vehicle.images.length > 0 ? (
                       <img
-                        src={`${API_URL}${vehicle.images[0]}`}
+                        src={vehicle.images[0]}
                         alt={`${vehicle.year} ${vehicle.make} ${vehicle.model}`}
                         className="w-full h-full object-cover"
                         onError={(e) => {
@@ -766,6 +751,377 @@ export default function AdminInventoryPage() {
         </>
         )}
       </div>
+
+      {showAddModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div
+            className="absolute inset-0 bg-black/50"
+            onClick={() => (addSubmitting ? null : setShowAddModal(false))}
+          ></div>
+          <div className="relative bg-white w-full max-w-4xl mx-4 rounded-2xl shadow-xl overflow-hidden max-h-[90vh] flex flex-col">
+            <div className="px-6 py-4 border-b flex items-center justify-between">
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900">Add New Vehicle</h2>
+                <p className="text-sm text-gray-500">Create a vehicle and then add photos</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => (addSubmitting ? null : setShowAddModal(false))}
+                className="p-2 rounded-lg hover:bg-gray-100"
+                aria-label="Close"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="p-6 overflow-y-auto">
+              <form onSubmit={handleAddSubmit} className="space-y-8">
+                {addError && (
+                  <div className="p-4 bg-red-50 border border-red-200 rounded-lg text-red-700">{addError}</div>
+                )}
+
+                <div>
+                  <h3 className="text-lg font-semibold mb-4 border-b pb-2">Basic Information</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Make *</label>
+                      <input
+                        type="text"
+                        name="make"
+                        required
+                        value={addFormData.make}
+                        onChange={handleAddChange}
+                        placeholder="e.g., Toyota"
+                        className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Model *</label>
+                      <input
+                        type="text"
+                        name="model"
+                        required
+                        value={addFormData.model}
+                        onChange={handleAddChange}
+                        placeholder="e.g., Camry"
+                        className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Year *</label>
+                      <input
+                        type="number"
+                        name="year"
+                        required
+                        value={addFormData.year}
+                        onChange={handleAddChange}
+                        min="1990"
+                        max={new Date().getFullYear() + 1}
+                        className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Price ($) *</label>
+                      <input
+                        type="number"
+                        name="price"
+                        required
+                        value={addFormData.price}
+                        onChange={handleAddChange}
+                        placeholder="e.g., 25000"
+                        className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Mileage (km) *</label>
+                      <input
+                        type="number"
+                        name="mileage"
+                        required
+                        value={addFormData.mileage}
+                        onChange={handleAddChange}
+                        placeholder="e.g., 50000"
+                        className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+                      <select
+                        name="status"
+                        value={addFormData.status}
+                        onChange={handleAddChange}
+                        className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+                      >
+                        <option value="ACTIVE">Active</option>
+                        <option value="PENDING">Pending</option>
+                        <option value="SOLD">Sold</option>
+                        <option value="DRAFT">Draft</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Inventory Type</label>
+                      <select
+                        name="inventoryType"
+                        value={addFormData.inventoryType}
+                        onChange={handleAddChange}
+                        className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+                      >
+                        <option value="FLEET">Fleet Cars</option>
+                        <option value="PREMIERE">Premiere Cars</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <h3 className="text-lg font-semibold mb-4 border-b pb-2">Identification & Location</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Stock Number (Unit ID)</label>
+                      <input
+                        type="text"
+                        name="stockNumber"
+                        value={addFormData.stockNumber}
+                        onChange={handleAddChange}
+                        placeholder="e.g., 8FDJTG"
+                        className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">VIN *</label>
+                      <input
+                        type="text"
+                        name="vin"
+                        required
+                        value={addFormData.vin}
+                        onChange={handleAddChange}
+                        placeholder="Vehicle Identification Number"
+                        className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Series</label>
+                      <input
+                        type="text"
+                        name="series"
+                        value={addFormData.series}
+                        onChange={handleAddChange}
+                        placeholder="e.g., 40K4, 45KF"
+                        className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">City *</label>
+                      <input
+                        type="text"
+                        name="city"
+                        required
+                        value={addFormData.city}
+                        onChange={handleAddChange}
+                        placeholder="e.g., Toronto"
+                        className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Province *</label>
+                      <select
+                        name="province"
+                        required
+                        value={addFormData.province}
+                        onChange={handleAddChange}
+                        className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+                      >
+                        <option value="ON">Ontario</option>
+                        <option value="QC">Quebec</option>
+                        <option value="BC">British Columbia</option>
+                        <option value="AB">Alberta</option>
+                        <option value="MB">Manitoba</option>
+                        <option value="SK">Saskatchewan</option>
+                        <option value="NS">Nova Scotia</option>
+                        <option value="NB">New Brunswick</option>
+                        <option value="NL">Newfoundland and Labrador</option>
+                        <option value="PE">Prince Edward Island</option>
+                        <option value="NT">Northwest Territories</option>
+                        <option value="NU">Nunavut</option>
+                        <option value="YT">Yukon</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Key #</label>
+                      <input
+                        type="text"
+                        name="keyNumber"
+                        value={addFormData.keyNumber}
+                        onChange={handleAddChange}
+                        placeholder="e.g., 12"
+                        className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <h3 className="text-lg font-semibold mb-4 border-b pb-2">Specifications</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Fuel Type</label>
+                      <select
+                        name="fuelType"
+                        value={addFormData.fuelType}
+                        onChange={handleAddChange}
+                        className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+                      >
+                        <option value="Gasoline">Gasoline</option>
+                        <option value="Diesel">Diesel</option>
+                        <option value="Hybrid">Hybrid</option>
+                        <option value="Electric">Electric</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Transmission</label>
+                      <select
+                        name="transmission"
+                        value={addFormData.transmission}
+                        onChange={handleAddChange}
+                        className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+                      >
+                        <option value="Automatic">Automatic</option>
+                        <option value="Manual">Manual</option>
+                        <option value="CVT">CVT</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Drivetrain</label>
+                      <select
+                        name="drivetrain"
+                        value={addFormData.drivetrain}
+                        onChange={handleAddChange}
+                        className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+                      >
+                        <option value="FWD">FWD</option>
+                        <option value="RWD">RWD</option>
+                        <option value="AWD">AWD</option>
+                        <option value="4WD">4WD</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Body Style *</label>
+                      <input
+                        type="text"
+                        name="bodyStyle"
+                        required
+                        value={addFormData.bodyStyle}
+                        onChange={handleAddChange}
+                        placeholder="e.g., Sedan"
+                        className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Trim</label>
+                      <input
+                        type="text"
+                        name="trim"
+                        value={addFormData.trim}
+                        onChange={handleAddChange}
+                        placeholder="e.g., SE, XLE"
+                        className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <h3 className="text-lg font-semibold mb-4 border-b pb-2">Colors</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Exterior Color *</label>
+                      <input
+                        type="text"
+                        name="exteriorColor"
+                        required
+                        value={addFormData.exteriorColor}
+                        onChange={handleAddChange}
+                        placeholder="e.g., Silver"
+                        className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Interior Color</label>
+                      <input
+                        type="text"
+                        name="interiorColor"
+                        value={addFormData.interiorColor}
+                        onChange={handleAddChange}
+                        placeholder="e.g., Black"
+                        className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <h3 className="text-lg font-semibold mb-4 border-b pb-2">Description & Features</h3>
+                  <div className="grid grid-cols-1 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Equipment</label>
+                      <textarea
+                        name="equipment"
+                        rows={2}
+                        value={addFormData.equipment}
+                        onChange={handleAddChange}
+                        placeholder="e.g., A3 40 KOMFORT AWD SEDAN"
+                        className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+                      ></textarea>
+                      <p className="mt-1 text-xs text-gray-500">Full equipment description from EDC inventory</p>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                      <textarea
+                        name="description"
+                        value={addFormData.description}
+                        onChange={handleAddChange}
+                        rows={4}
+                        className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Features (comma-separated)</label>
+                      <textarea
+                        name="features"
+                        value={addFormData.features}
+                        onChange={handleAddChange}
+                        rows={3}
+                        placeholder="Bluetooth, Backup Camera, Sunroof"
+                        className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-end gap-3 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowAddModal(false)}
+                    disabled={addSubmitting}
+                    className="px-5 py-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={addSubmitting}
+                    className="bg-[#118df0] text-white px-6 py-2 rounded-lg font-semibold hover:bg-[#0d6ebd] transition-colors disabled:opacity-50"
+                  >
+                    {addSubmitting ? 'Creating…' : 'Create Vehicle & Add Photos'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import Link from 'next/link'
+import { supabase } from '@/lib/supabaseClient'
 
 interface Vehicle {
   id: string
@@ -42,11 +43,9 @@ export default function AdminEditVehiclePage() {
   const [saving, setSaving] = useState(false)
   const [formData, setFormData] = useState<VehicleFormData>({})
 
-  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'
-
   useEffect(() => {
-    const token = localStorage.getItem('admin_token')
-    if (!token) {
+    const sessionStr = localStorage.getItem('edc_admin_session')
+    if (!sessionStr) {
       router.push('/admin')
       return
     }
@@ -55,13 +54,43 @@ export default function AdminEditVehiclePage() {
 
   const fetchVehicle = async () => {
     try {
-      const res = await fetch(`${API_URL}/api/vehicles/${params.id}`)
-      if (res.ok) {
-        const data = await res.json()
-        setFormData(data)
-      } else {
+      const { data, error } = await supabase
+        .from('edc_vehicles')
+        .select('*')
+        .eq('id', String(params.id))
+        .maybeSingle()
+
+      if (error || !data) {
         router.push('/admin/inventory')
+        return
       }
+
+      setFormData({
+        id: data.id,
+        make: data.make,
+        model: data.model,
+        year: data.year,
+        trim: data.trim || '',
+        stockNumber: data.stock_number || '',
+        keyNumber: data.key_number || '',
+        series: data.series || '',
+        equipment: data.equipment || '',
+        vin: data.vin,
+        price: data.price,
+        mileage: data.mileage,
+        exteriorColor: data.exterior_color || '',
+        interiorColor: data.interior_color || '',
+        transmission: data.transmission || '',
+        drivetrain: data.drivetrain || '',
+        fuelType: data.fuel_type || '',
+        bodyStyle: data.body_style || '',
+        description: data.description || '',
+        features: Array.isArray(data.features) ? data.features : [],
+        city: data.city,
+        province: data.province,
+        status: data.status,
+        inventoryType: data.inventory_type,
+      })
     } catch (error) {
       console.error('Error fetching vehicle:', error)
     } finally {
@@ -79,21 +108,43 @@ export default function AdminEditVehiclePage() {
     setSaving(true)
 
     try {
-      const res = await fetch(`${API_URL}/api/vehicles/${params.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...formData,
+      const features =
+        typeof formData.features === 'string'
+          ? formData.features.split(',').map((f: string) => f.trim()).filter(Boolean)
+          : Array.isArray(formData.features)
+            ? formData.features
+            : []
+
+      const { error } = await supabase
+        .from('edc_vehicles')
+        .update({
+          make: formData.make,
+          model: formData.model,
           year: parseInt(String(formData.year)),
+          trim: formData.trim || null,
+          stock_number: formData.stockNumber || null,
+          key_number: formData.keyNumber || null,
+          series: formData.series || null,
+          equipment: formData.equipment || null,
+          vin: formData.vin,
           price: parseFloat(String(formData.price)),
           mileage: parseInt(String(formData.mileage)),
-          features: typeof formData.features === 'string' 
-            ? formData.features.split(',').map((f: string) => f.trim())
-            : formData.features,
-        }),
-      })
+          status: formData.status,
+          inventory_type: formData.inventoryType,
+          fuel_type: formData.fuelType || null,
+          transmission: formData.transmission || null,
+          body_style: formData.bodyStyle || null,
+          drivetrain: formData.drivetrain || null,
+          city: formData.city,
+          province: formData.province,
+          exterior_color: formData.exteriorColor || null,
+          interior_color: formData.interiorColor || null,
+          description: formData.description || null,
+          features,
+        })
+        .eq('id', String(params.id))
 
-      if (res.ok) {
+      if (!error) {
         router.push('/admin/inventory')
       }
     } catch (error) {
@@ -115,12 +166,9 @@ export default function AdminEditVehiclePage() {
     <div className="min-h-screen bg-gray-100">
       {/* Header */}
       <div className="bg-white shadow">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+        <div className="w-full px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex justify-between items-center">
             <div className="flex items-center">
-              <Link href="/admin/inventory" className="text-gray-500 hover:text-gray-700 mr-4">
-                ← Back
-              </Link>
               <h1 className="text-2xl font-bold text-gray-900">Edit Vehicle</h1>
             </div>
             <Link
@@ -133,7 +181,7 @@ export default function AdminEditVehiclePage() {
         </div>
       </div>
 
-      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <div className="w-full px-4 sm:px-6 lg:px-8 py-8">
         <form onSubmit={handleSubmit} className="bg-white rounded-xl shadow p-6">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {/* Basic Info */}

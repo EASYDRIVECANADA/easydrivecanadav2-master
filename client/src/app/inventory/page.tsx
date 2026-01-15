@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react'
 import Link from 'next/link'
+import { supabase } from '@/lib/supabaseClient'
 
 interface Vehicle {
   id: string
@@ -43,19 +44,42 @@ export default function InventoryPage() {
     maxYear: '',
   })
 
-  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'
-
   useEffect(() => {
     fetchVehicles()
   }, [])
 
   const fetchVehicles = async () => {
     try {
-      const res = await fetch(`${API_URL}/api/vehicles`)
-      if (res.ok) {
-        const data = await res.json()
-        setVehicles(data.filter((v: Vehicle) => v.status === 'ACTIVE'))
-      }
+      const { data, error } = await supabase
+        .from('edc_vehicles')
+        .select(
+          'id, make, model, series, year, price, mileage, fuel_type, transmission, body_style, exterior_color, city, province, images, status, inventory_type'
+        )
+        .eq('status', 'ACTIVE')
+        .order('created_at', { ascending: false })
+
+      if (error) throw error
+
+      const mapped: Vehicle[] = (data || []).map((v: any) => ({
+        id: v.id,
+        make: v.make,
+        model: v.model,
+        series: v.series || '',
+        year: v.year,
+        price: Number(v.price || 0),
+        mileage: Number(v.mileage || 0),
+        fuelType: v.fuel_type || '',
+        transmission: v.transmission || '',
+        bodyStyle: v.body_style || '',
+        exteriorColor: v.exterior_color || '',
+        city: v.city || '',
+        province: v.province || '',
+        images: Array.isArray(v.images) ? v.images : [],
+        status: v.status,
+        inventoryType: v.inventory_type || '',
+      }))
+
+      setVehicles(mapped)
     } catch (_error) {
       console.error('Error fetching vehicles:', _error)
     } finally {
@@ -507,7 +531,7 @@ export default function InventoryPage() {
                       <div className="relative h-52 bg-gradient-to-br from-gray-100 to-gray-200 overflow-hidden flex-shrink-0">
                         {vehicle.images && vehicle.images.length > 0 ? (
                           <img
-                            src={`${API_URL}${vehicle.images[0]}`}
+                            src={vehicle.images[0]}
                             alt={`${vehicle.year} ${vehicle.make} ${vehicle.model}`}
                             className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
                           />
@@ -623,7 +647,7 @@ export default function InventoryPage() {
               )}
               </>
             ) : (
-            <div className="glass-card rounded-2xl text-center py-16">
+              <div className="glass-card rounded-2xl text-center py-16">
                 <div className="icon-container mx-auto mb-6">
                   <svg className="w-8 h-8 text-[#118df0]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -635,10 +659,10 @@ export default function InventoryPage() {
                   Clear All Filters
                 </button>
               </div>
-          )}
+            )}
+          </div>
         </div>
       </div>
-    </div>
 
       {/* Mobile Filter Drawer */}
       {showMobileFilters && (
