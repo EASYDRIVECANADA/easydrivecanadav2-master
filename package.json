@@ -6,7 +6,8 @@
     "dev": "npm --prefix client run dev",
     "build": "npm --prefix client run build",
     "start": "npm --prefix client run start",
-    "lint": "npm --prefix client run lint"
+    "lint": "npm --prefix client run lint",
+    "postinstall": "npm --prefix client install"
   },
   "dependencies": {
     "@prisma/client": "^7.1.0",
