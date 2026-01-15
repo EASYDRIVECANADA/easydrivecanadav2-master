@@ -1,12 +1,20 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { Suspense, useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabaseClient'
 import type { AuthChangeEvent, Session } from '@supabase/supabase-js'
 
 export default function AccountPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen" />}> 
+      <AccountPageInner />
+    </Suspense>
+  )
+}
+
+function AccountPageInner() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const [userEmail, setUserEmail] = useState<string | null>(null)
