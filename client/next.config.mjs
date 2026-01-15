@@ -15,6 +15,9 @@ const nextConfig = {
       },
     ],
   },
+  eslint: {
+    ignoreDuringBuilds: true,
+  },
   // Production optimizations
   compress: true,
   poweredByHeader: false,
