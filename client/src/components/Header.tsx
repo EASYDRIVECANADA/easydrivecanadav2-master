@@ -105,6 +105,7 @@ export default function Header() {
       window.localStorage.removeItem('edc_customer_verification')
       window.localStorage.removeItem('edc_account_verified')
     }
+    router.push('/account')
   }
 
   const handleAdminSignOut = () => {
