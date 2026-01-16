@@ -14,6 +14,7 @@ export default function Header() {
   const [isVerified, setIsVerified] = useState(false)
   const [adminRole, setAdminRole] = useState<string | null>(null)
   const [showAdminSignOutModal, setShowAdminSignOutModal] = useState(false)
+  const [showUserSignOutModal, setShowUserSignOutModal] = useState(false)
 
   if (pathname.startsWith('/admin')) return null
 
@@ -206,7 +207,7 @@ export default function Header() {
                 Admin Sign Out
               </button>
             ) : userEmail ? (
-              <button type="button" onClick={handleSignOut} className="btn-secondary text-sm px-5 py-2.5">
+              <button type="button" onClick={() => setShowUserSignOutModal(true)} className="btn-secondary text-sm px-5 py-2.5">
                 Sign Out
               </button>
             ) : (
@@ -301,7 +302,7 @@ export default function Header() {
                   )}
                   <button
                     type="button"
-                    onClick={handleSignOut}
+                    onClick={() => setShowUserSignOutModal(true)}
                     className="text-left text-gray-700 hover:text-primary-600 focus-visible:text-primary-600 transition-colors font-medium px-2 py-1 rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600"
                   >
                     Sign Out
@@ -369,6 +370,59 @@ export default function Header() {
                 onClick={() => {
                   setShowAdminSignOutModal(false)
                   handleAdminSignOut()
+                }}
+              >
+                Sign Out
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {showUserSignOutModal ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          role="dialog"
+          aria-modal="true"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) setShowUserSignOutModal(false)
+          }}
+        >
+          <div className="absolute inset-0 bg-black/50" />
+          <div className="relative w-full max-w-md bg-white rounded-2xl shadow-xl overflow-hidden">
+            <div className="px-6 py-5 border-b border-gray-100 flex items-center justify-between">
+              <div className="text-lg font-semibold text-gray-900">Sign out</div>
+              <button
+                type="button"
+                className="w-10 h-10 rounded-xl hover:bg-gray-100 flex items-center justify-center"
+                onClick={() => setShowUserSignOutModal(false)}
+                aria-label="Close"
+              >
+                <svg className="w-5 h-5 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="px-6 py-5">
+              <div className="text-sm text-gray-600">Are you sure you want to sign out?</div>
+            </div>
+
+            <div className="px-6 pb-6 flex items-center justify-end gap-3">
+              <button
+                type="button"
+                className="h-10 px-4 rounded-xl border border-gray-200 bg-white text-sm font-semibold text-gray-700 hover:bg-gray-50"
+                onClick={() => setShowUserSignOutModal(false)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="h-10 px-4 rounded-xl bg-[#118df0] text-white text-sm font-semibold hover:bg-[#0d6ebd]"
+                onClick={() => {
+                  setShowUserSignOutModal(false)
+                  setIsMenuOpen(false)
+                  void handleSignOut()
                 }}
               >
                 Sign Out

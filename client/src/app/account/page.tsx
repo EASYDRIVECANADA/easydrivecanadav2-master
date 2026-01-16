@@ -21,6 +21,7 @@ function AccountPageInner() {
   const [userName, setUserName] = useState<string | null>(null)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [initLoading, setInitLoading] = useState(true)
   const [isVerified, setIsVerified] = useState(false)
   const [editingName, setEditingName] = useState('')
   const [editingAddress, setEditingAddress] = useState('')
@@ -91,30 +92,34 @@ function AccountPageInner() {
 
   useEffect(() => {
     const init = async () => {
-      const { data } = await supabase.auth.getSession()
-      const user = data.session?.user
-      if (user) {
-        setUserEmail(user.email || null)
-        const metaName = (user.user_metadata as any)?.full_name
-        setUserName(typeof metaName === 'string' ? metaName : null)
-        const nextName = typeof metaName === 'string' ? metaName : ''
-        setEditingName(nextName)
-        setOriginalName(nextName)
+      try {
+        const { data } = await supabase.auth.getSession()
+        const user = data.session?.user
+        if (user) {
+          setUserEmail(user.email || null)
+          const metaName = (user.user_metadata as any)?.full_name
+          setUserName(typeof metaName === 'string' ? metaName : null)
+          const nextName = typeof metaName === 'string' ? metaName : ''
+          setEditingName(nextName)
+          setOriginalName(nextName)
 
-        if (user.email) {
-          const hasRow = await syncVerifiedFromDb(user.email)
-          await loadLatestVerification(user.email)
-          if (fromOauth) {
-            if (hasRow === true) {
-              router.replace('/inventory')
-              return
-            }
-            if (hasRow === false) {
-              router.replace('/account/verification')
-              return
+          if (user.email) {
+            const hasRow = await syncVerifiedFromDb(user.email)
+            await loadLatestVerification(user.email)
+            if (fromOauth) {
+              if (hasRow === true) {
+                router.replace('/inventory')
+                return
+              }
+              if (hasRow === false) {
+                router.replace('/account/verification')
+                return
+              }
             }
           }
         }
+      } finally {
+        setInitLoading(false)
       }
     }
 
@@ -153,6 +158,10 @@ function AccountPageInner() {
       sub.subscription.unsubscribe()
     }
   }, [])
+
+  if (initLoading) {
+    return <div className="min-h-screen" />
+  }
 
   const handleGoogleAuth = async () => {
     setError('')

@@ -183,7 +183,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                       <Image src="/images/logo.png" alt="EDC" width={28} height={28} className="object-contain" priority />
                     </div>
                     <div className="min-w-0 leading-tight">
-                      <div className="text-sm font-semibold text-white leading-4">Easy Drive</div>
+                      <div className="text-sm font-semibold text-white leading-4">EasyDrive</div>
                       <div className="text-sm font-semibold text-white leading-4">Canada</div>
                     </div>
                   </div>
