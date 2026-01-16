@@ -1,6 +1,6 @@
 'use client'
 
-import { Suspense, useEffect, useState } from 'react'
+import { FormEvent, Suspense, useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabaseClient'
@@ -23,6 +23,10 @@ function AccountPageInner() {
   const [loading, setLoading] = useState(false)
   const [initLoading, setInitLoading] = useState(true)
   const [isVerified, setIsVerified] = useState(false)
+
+  const [customerAuthEmail, setCustomerAuthEmail] = useState('')
+  const [customerAuthPassword, setCustomerAuthPassword] = useState('')
+  const [customerCreateMode, setCustomerCreateMode] = useState(false)
   const [editingName, setEditingName] = useState('')
   const [editingAddress, setEditingAddress] = useState('')
   const [editingLicenseNumber, setEditingLicenseNumber] = useState('')
@@ -87,6 +91,78 @@ function AccountPageInner() {
       setOriginalLicenseNumber(nextLicenseNumber)
     } finally {
       setLoadingVerification(false)
+    }
+  }
+
+  const tryAdminLogin = async (email: string, accessCode: string) => {
+    const normalizedEmail = email.trim().toLowerCase()
+    if (!normalizedEmail || !accessCode) return false
+
+    const { data, error: dbError } = await supabase
+      .from('edc_admin_users')
+      .select('email, role, is_active')
+      .eq('email', normalizedEmail)
+      .eq('access_code', accessCode)
+      .limit(1)
+      .maybeSingle()
+
+    if (dbError) return false
+    if (!data || !data.is_active) return false
+
+    const session = { email: data.email, role: data.role }
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem('edc_admin_session', JSON.stringify(session))
+      window.dispatchEvent(new Event('edc_admin_session_changed'))
+    }
+    return true
+  }
+
+  const handleUnifiedSignIn = async (e: FormEvent) => {
+    e.preventDefault()
+    setError('')
+    setLoading(true)
+    try {
+      const email = customerAuthEmail.trim().toLowerCase()
+      const passwordOrAccessCode = customerAuthPassword
+
+      if (!email || !passwordOrAccessCode) {
+        setError('Email and password are required')
+        return
+      }
+
+      if (customerCreateMode) {
+        const { error: signUpError } = await supabase.auth.signUp({
+          email,
+          password: passwordOrAccessCode,
+          options: {
+            emailRedirectTo: `${window.location.origin}/account?from=oauth`,
+          },
+        })
+        if (signUpError) {
+          setError(signUpError.message)
+          return
+        }
+        setError('Account created. Please check your email to confirm, then sign in.')
+        setCustomerCreateMode(false)
+        return
+      }
+
+      const isAdmin = await tryAdminLogin(email, passwordOrAccessCode)
+      if (isAdmin) {
+        router.push('/admin')
+        return
+      }
+
+      const { error: signInError } = await supabase.auth.signInWithPassword({
+        email,
+        password: passwordOrAccessCode,
+      })
+      if (signInError) {
+        setError(signInError.message)
+        return
+      }
+    } finally {
+      setLoading(false)
     }
   }
 
@@ -454,18 +530,94 @@ function AccountPageInner() {
             <div className="max-w-md mx-auto text-center">
               <div className="flex items-center gap-3 mb-6 justify-center">
                 <span className="w-1 h-8 bg-gradient-to-b from-[#118df0] to-[#0a6bc4] rounded-full"></span>
-                <h2 className="text-xl font-bold text-gray-900">Sign In with Google</h2>
+                <h2 className="text-xl font-bold text-gray-900">Sign In</h2>
               </div>
-              
-              <p className="text-gray-600 mb-8">
-                Use your Google account to create your EDC customer profile. This ensures secure access to your account and verification process.
+
+              {error ? (
+                <div className="mb-6 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</div>
+              ) : null}
+
+              <p className="text-gray-600 mb-6">
+                {customerCreateMode
+                  ? 'Create an account using email and password, or continue with Google.'
+                  : 'Sign in using your email and password (or admin access code).'}
               </p>
+
+              <form onSubmit={handleUnifiedSignIn} className="space-y-4 text-left">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1" htmlFor="unifiedEmail">
+                    Email
+                  </label>
+                  <input
+                    id="unifiedEmail"
+                    type="email"
+                    value={customerAuthEmail}
+                    onChange={(e) => setCustomerAuthEmail(e.target.value)}
+                    className="input-field"
+                    placeholder="Enter your email"
+                    autoComplete="email"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1" htmlFor="unifiedPassword">
+                    Password
+                  </label>
+                  <input
+                    id="unifiedPassword"
+                    type="password"
+                    value={customerAuthPassword}
+                    onChange={(e) => setCustomerAuthPassword(e.target.value)}
+                    className="input-field"
+                    placeholder="Enter your password"
+                    autoComplete={
+                      customerCreateMode ? 'new-password' : 'current-password'
+                    }
+                  />
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <label className="flex items-center gap-2 text-sm text-gray-600">
+                    <input type="checkbox" className="h-4 w-4 rounded border-gray-300" />
+                    Remember me
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setError('Forgot password is not available yet.')}
+                    className="text-sm text-[#118df0] hover:underline"
+                  >
+                    Forgot Password?
+                  </button>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="w-full bg-[#118df0] text-white px-6 py-4 rounded-full font-semibold shadow-md shadow-black/5 transition-all duration-300 hover:bg-[#0a6bc4] disabled:opacity-50"
+                >
+                  {loading ? 'Please wait…' : customerCreateMode ? 'Create Account' : 'Sign In'}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setCustomerCreateMode((v) => !v)}
+                  className="w-full bg-white/80 text-gray-900 px-6 py-3 rounded-full font-semibold border border-gray-200/60 shadow-sm shadow-black/5 transition-all duration-300 hover:bg-white"
+                >
+                  {customerCreateMode ? 'I already have an account' : 'Create new account instead'}
+                </button>
+              </form>
+
+              <div className="my-7 flex items-center gap-3">
+                <div className="h-px flex-1 bg-gray-200/70" />
+                <div className="text-xs font-semibold text-gray-500">Or login with</div>
+                <div className="h-px flex-1 bg-gray-200/70" />
+              </div>
 
               <button
                 type="button"
                 onClick={handleGoogleAuth}
                 disabled={loading}
-                className="w-full bg-white/80 backdrop-blur-sm text-gray-900 px-6 py-4 rounded-full font-semibold border border-gray-200/60 shadow-md shadow-black/5 transition-all duration-300 hover:bg-white hover:shadow-lg disabled:opacity-50 mb-6"
+                className="w-full bg-white/80 backdrop-blur-sm text-gray-900 px-6 py-4 rounded-full font-semibold border border-gray-200/60 shadow-md shadow-black/5 transition-all duration-300 hover:bg-white hover:shadow-lg disabled:opacity-50"
               >
                 <span className="flex items-center justify-center gap-3">
                   <span className="inline-flex h-6 w-6 items-center justify-center" aria-hidden="true">
@@ -480,15 +632,6 @@ function AccountPageInner() {
                   <span>{loading ? 'Redirecting…' : 'Continue with Google'}</span>
                 </span>
               </button>
-
-              <div className="bg-[#118df0]/5 border border-[#118df0]/20 rounded-xl p-4">
-                <p className="text-sm text-gray-600 flex items-start gap-2">
-                  <svg className="w-5 h-5 text-[#118df0] flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                  EDC account creation and login is exclusively via Google authentication for security and convenience.
-                </p>
-              </div>
             </div>
           )}
 

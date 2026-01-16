@@ -6,7 +6,7 @@ import Benefits from '@/components/home/Benefits'
 import FAQ from '@/components/home/FAQ'
 import CTA from '@/components/home/CTA'
 import HomeGate from '@/components/HomeGate'
-
+//fdsafsa
 export default function Home() {
   const structuredData = {
     "@context": "https://schema.org",

@@ -144,380 +144,327 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       window.localStorage.removeItem('edc_admin_session')
     }
     setSession(null)
-    router.push('/admin')
-  }
-
-  if (!isAuthed) {
-    return <>{children}</>
+    router.push('/account')
   }
 
   return (
     <div className="min-h-screen bg-gray-100">
       <div className="flex min-h-screen">
-        <aside
-          className={`${collapsed ? 'w-16' : 'w-60'} bg-gradient-to-b from-slate-900 to-slate-950 text-white flex flex-col transition-[width] duration-200`}
-        >
-          <div className={`border-b border-white/10 ${collapsed ? 'px-2 py-3' : 'px-4 py-3'}`}>
-            {collapsed ? (
-              <div className="flex flex-col items-center gap-2">
-                <div className="w-11 h-11 rounded-xl bg-[#118df0]/25 border border-[#118df0]/40 flex items-center justify-center overflow-hidden">
-                  <Image src="/images/logo.png" alt="EDC" width={28} height={28} className="object-contain" priority />
-                </div>
-                <button
-                  type="button"
-                  onClick={toggleCollapsed}
-                  className="w-11 h-11 rounded-xl bg-white flex items-center justify-center border border-slate-300 text-slate-700 hover:bg-slate-50 transition-colors"
-                  aria-label="Expand sidebar"
-                  title="Expand"
-                >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-                  </svg>
-                </button>
-              </div>
-            ) : (
-              <>
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className="w-11 h-11 rounded-xl bg-[#118df0]/25 border border-[#118df0]/40 flex items-center justify-center overflow-hidden shrink-0">
-                      <Image src="/images/logo.png" alt="EDC" width={28} height={28} className="object-contain" priority />
-                    </div>
-                    <div className="min-w-0 leading-tight">
-                      <div className="text-sm font-semibold text-white leading-4">EasyDrive</div>
-                      <div className="text-sm font-semibold text-white leading-4">Canada</div>
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={toggleCollapsed}
-                    className="w-9 h-9 flex items-center justify-center rounded-lg hover:bg-white/10 transition-colors"
-                    aria-label="Collapse sidebar"
-                    title="Collapse"
-                  >
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-                    </svg>
-                  </button>
-                </div>
-                <div className="text-xs text-white/60 mt-1 truncate">{session?.email || ''}</div>
-              </>
-            )}
-          </div>
-
-          <nav className={`${collapsed ? 'px-2 py-3' : 'px-2 py-3'} flex-1`} aria-label="Admin navigation">
-            <ul className="space-y-1">
-              {navItems.map((item) => {
-                const active = pathname === item.href || (item.href !== '/admin' && pathname.startsWith(item.href))
-                const base =
-                  `flex items-center ${collapsed ? 'justify-center gap-0 px-2' : 'gap-3 px-4'} py-2.5 rounded-xl text-sm font-medium transition-colors`
-                const classes = item.disabled
-                  ? `${base} text-white/40 cursor-not-allowed`
-                  : active
-                    ? `${base} bg-white/10 text-white`
-                    : `${base} text-white/80 hover:bg-white/10 hover:text-white`
-
-                const isSales = item.label === 'Sales'
-                const isReports = item.label === 'Reports'
-
-                return (
-                  <li key={item.label}>
-                    {isSales ? (
-                      <>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (collapsed) {
-                              try {
-                                if (typeof window !== 'undefined') {
-                                  window.localStorage.setItem('edc_admin_sidebar_collapsed', 'false')
-                                }
-                              } catch {
-                                // ignore
-                              }
-                              setCollapsed(false)
-                              setSalesOpen(true)
-                              return
-                            }
-                            setSalesOpen((v) => !v)
-                          }}
-                          className={`${classes} w-full ${collapsed ? '' : 'justify-between'}`}
-                          title={item.label}
-                          aria-expanded={salesOpen}
-                        >
-                          <span className={`flex items-center ${collapsed ? 'justify-center w-full' : 'gap-3'}`}>
-                            <Icon name={item.icon} />
-                            {collapsed ? null : <span>{item.label}</span>}
-                          </span>
-                          {collapsed ? null : (
-                            <svg
-                              className={`w-4 h-4 transition-transform ${salesOpen ? 'rotate-90' : ''}`}
-                              fill="none"
-                              stroke="currentColor"
-                              viewBox="0 0 24 24"
-                            >
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                            </svg>
-                          )}
-                        </button>
-
-                        {!collapsed && salesOpen ? (
-                          <ul className="mt-1 ml-4 pl-3 border-l border-white/10 space-y-1">
-                            {salesSubItems.map((sub) => {
-                              const subActive = pathname === sub.href
-                              const subClasses = subActive
-                                ? 'flex items-center justify-between px-4 py-2 rounded-lg text-sm bg-[#118df0]/15 border border-[#118df0]/35 text-white transition-colors'
-                                : 'flex items-center justify-between px-4 py-2 rounded-lg text-sm text-white/80 hover:bg-white/10 hover:text-white transition-colors'
-
-                              return (
-                                <li key={sub.label}>
-                                  <Link
-                                    href={sub.href}
-                                    className={subClasses}
-                                    title={sub.label}
-                                  >
-                                    <span>{sub.label}</span>
-                                  </Link>
-                                </li>
-                              )
-                            })}
-                          </ul>
-                        ) : null}
-                      </>
-                    ) : isReports ? (
-                      <>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (collapsed) {
-                              try {
-                                if (typeof window !== 'undefined') {
-                                  window.localStorage.setItem('edc_admin_sidebar_collapsed', 'false')
-                                }
-                              } catch {
-                                // ignore
-                              }
-                              setCollapsed(false)
-                              setReportsOpen(true)
-                              return
-                            }
-                            setReportsOpen((v) => !v)
-                          }}
-                          className={`${classes} w-full ${collapsed ? '' : 'justify-between'}`}
-                          title={item.label}
-                          aria-expanded={reportsOpen}
-                        >
-                          <span className={`flex items-center ${collapsed ? 'justify-center w-full' : 'gap-3'}`}>
-                            <Icon name={item.icon} />
-                            {collapsed ? null : <span>{item.label}</span>}
-                          </span>
-                          {collapsed ? null : (
-                            <svg
-                              className={`w-4 h-4 transition-transform ${reportsOpen ? 'rotate-90' : ''}`}
-                              fill="none"
-                              stroke="currentColor"
-                              viewBox="0 0 24 24"
-                            >
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                            </svg>
-                          )}
-                        </button>
-
-                        {!collapsed && reportsOpen ? (
-                          <ul className="mt-1 ml-4 pl-3 border-l border-white/10 space-y-1">
-                            <li>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setReportsSalesOpen((v) => !v)
-                                  setReportsInventoryOpen(false)
-                                }}
-                                className={`w-full flex items-center justify-between px-4 py-2 rounded-lg text-sm transition-colors ${pathname.startsWith('/admin/reports/sales/') ? 'bg-[#118df0]/15 border border-[#118df0]/35 text-white' : 'text-white/80 hover:bg-white/10 hover:text-white'}`}
-                                aria-expanded={reportsSalesOpen}
-                              >
-                                <span className="flex items-center gap-2">
-                                  <Icon name="dollar" />
-                                  <span>Sales Reports</span>
-                                </span>
-                                <svg
-                                  className={`w-4 h-4 transition-transform ${reportsSalesOpen ? 'rotate-90' : ''}`}
-                                  fill="none"
-                                  stroke="currentColor"
-                                  viewBox="0 0 24 24"
-                                >
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                                </svg>
-                              </button>
-
-                              {reportsSalesOpen ? (
-                                <ul className="mt-1 ml-4 pl-3 border-l border-white/10 space-y-1">
-                                  {reportsSalesItems.map((sub) => {
-                                    const subActive = pathname === sub.href
-                                    const subClasses = subActive
-                                      ? 'flex items-center justify-between px-4 py-2 rounded-lg text-sm bg-[#118df0]/15 border border-[#118df0]/35 text-white transition-colors'
-                                      : 'flex items-center justify-between px-4 py-2 rounded-lg text-sm text-white/80 hover:bg-white/10 hover:text-white transition-colors'
-
-                                    return (
-                                      <li key={sub.label}>
-                                        <Link
-                                          href={sub.href}
-                                          className={subClasses}
-                                          title={sub.label}
-                                        >
-                                          <span className="flex items-center gap-2">
-                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 19h16M7 16V8m5 8V5m5 11v-6" />
-                                            </svg>
-                                            <span>{sub.label}</span>
-                                          </span>
-                                        </Link>
-                                      </li>
-                                    )
-                                  })}
-                                </ul>
-                              ) : null}
-                            </li>
-
-                            <li>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setReportsInventoryOpen((v) => !v)
-                                  setReportsSalesOpen(false)
-                                }}
-                                className={`w-full flex items-center justify-between px-4 py-2 rounded-lg text-sm transition-colors ${pathname.startsWith('/admin/reports/inventory/') ? 'bg-[#118df0]/15 border border-[#118df0]/35 text-white' : 'text-white/80 hover:bg-white/10 hover:text-white'}`}
-                                aria-expanded={reportsInventoryOpen}
-                              >
-                                <span className="flex items-center gap-2">
-                                  <Icon name="car" />
-                                  <span>Inventory Reports</span>
-                                </span>
-                                <svg
-                                  className={`w-4 h-4 transition-transform ${reportsInventoryOpen ? 'rotate-90' : ''}`}
-                                  fill="none"
-                                  stroke="currentColor"
-                                  viewBox="0 0 24 24"
-                                >
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                                </svg>
-                              </button>
-
-                              {reportsInventoryOpen ? (
-                                <ul className="mt-1 ml-4 pl-3 border-l border-white/10 space-y-1">
-                                  {reportsInventoryItems.map((sub) => {
-                                    const subActive = pathname === sub.href
-                                    const subClasses = subActive
-                                      ? 'flex items-center justify-between px-4 py-2 rounded-lg text-sm bg-[#118df0]/15 border border-[#118df0]/35 text-white transition-colors'
-                                      : 'flex items-center justify-between px-4 py-2 rounded-lg text-sm text-white/80 hover:bg-white/10 hover:text-white transition-colors'
-
-                                    return (
-                                      <li key={sub.label}>
-                                        <Link
-                                          href={sub.href}
-                                          className={subClasses}
-                                          title={sub.label}
-                                        >
-                                          <span className="flex items-center gap-2">
-                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h10" />
-                                            </svg>
-                                            <span>{sub.label}</span>
-                                          </span>
-                                        </Link>
-                                      </li>
-                                    )
-                                  })}
-                                </ul>
-                              ) : null}
-                            </li>
-                          </ul>
-                        ) : null}
-                      </>
-                    ) : item.disabled ? (
-                      <div className={classes} title={item.label}>
-                        <Icon name={item.icon} />
-                        {collapsed ? null : <span>{item.label}</span>}
-                      </div>
-                    ) : (
-                      <Link href={item.href} className={classes} title={item.label}>
-                        <Icon name={item.icon} />
-                        {collapsed ? null : <span>{item.label}</span>}
-                      </Link>
-                    )}
-                  </li>
-                )
-              })}
-            </ul>
-          </nav>
-
-          <div className={`${collapsed ? 'p-2' : 'p-4'} border-t border-white/10`}>
-            <button
-              type="button"
-              onClick={() => setShowSignOutModal(true)}
-              className={`w-full flex items-center justify-center gap-2 ${collapsed ? 'px-2' : 'px-4'} py-2.5 rounded-xl bg-white/10 hover:bg-white/15 transition-colors text-sm font-semibold`}
-              title="Sign Out"
-            >
-              <Icon name="logout" />
-              {collapsed ? null : 'Sign Out'}
-            </button>
-          </div>
-        </aside>
-
-        {showSignOutModal ? (
-          <div
-            className="fixed inset-0 z-50 flex items-center justify-center p-4"
-            role="dialog"
-            aria-modal="true"
-            onMouseDown={(e) => {
-              if (e.target === e.currentTarget) setShowSignOutModal(false)
-            }}
+        {isAuthed ? (
+          <aside
+            className={
+              collapsed
+                ? 'w-20 bg-[#0b1220] text-white transition-all duration-300 flex flex-col'
+                : 'w-72 bg-[#0b1220] text-white transition-all duration-300 flex flex-col'
+            }
           >
-            <div className="absolute inset-0 bg-black/50" />
-            <div className="relative w-full max-w-md bg-white rounded-2xl shadow-xl overflow-hidden">
-              <div className="px-6 py-5 border-b border-gray-100 flex items-center justify-between">
-                <div className="text-lg font-semibold text-gray-900">Sign out</div>
-                <button
-                  type="button"
-                  className="w-10 h-10 rounded-xl hover:bg-gray-100 flex items-center justify-center"
-                  onClick={() => setShowSignOutModal(false)}
-                  aria-label="Close"
-                >
-                  <svg className="w-5 h-5 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
-
-              <div className="px-6 py-5">
-                <div className="text-sm text-gray-600">Are you sure you want to sign out?</div>
-              </div>
-
-              <div className="px-6 pb-6 flex items-center justify-end gap-3">
-                <button
-                  type="button"
-                  className="h-10 px-4 rounded-xl border border-gray-200 bg-white text-sm font-semibold text-gray-700 hover:bg-gray-50"
-                  onClick={() => setShowSignOutModal(false)}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  className="h-10 px-4 rounded-xl bg-[#118df0] text-white text-sm font-semibold hover:bg-[#0d6ebd]"
-                  onClick={() => {
-                    setShowSignOutModal(false)
-                    handleSignOut()
-                  }}
-                >
-                  Sign Out
-                </button>
-              </div>
+            <div className={collapsed ? 'p-4 flex items-center justify-center' : 'p-6 flex items-center gap-3'}>
+              <Link href="/admin" className="flex items-center gap-3">
+                <div className="relative h-10 w-10 shrink-0">
+                  <Image src="/images/logo.png" alt="EDC" fill className="object-contain" />
+                </div>
+                {!collapsed ? <div className="font-semibold text-lg">Admin</div> : null}
+              </Link>
             </div>
-          </div>
+
+            <nav className={`${collapsed ? 'px-2 py-3' : 'px-2 py-3'} flex-1`} aria-label="Admin navigation">
+              <ul className="space-y-1">
+                {navItems.map((item) => {
+                  const active = pathname === item.href || (item.href !== '/admin' && pathname.startsWith(item.href))
+                  const base =
+                    `flex items-center ${collapsed ? 'justify-center gap-0 px-2' : 'gap-3 px-4'} py-2.5 rounded-xl text-sm font-medium transition-colors`
+                  const classes = item.disabled
+                    ? `${base} text-white/40 cursor-not-allowed`
+                    : active
+                      ? `${base} bg-white/10 text-white`
+                      : `${base} text-white/80 hover:bg-white/10 hover:text-white`
+
+                  const isSales = item.label === 'Sales'
+                  const isReports = item.label === 'Reports'
+
+                  return (
+                    <li key={item.label}>
+                      {isSales ? (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (collapsed) {
+                                try {
+                                  if (typeof window !== 'undefined') {
+                                    window.localStorage.setItem('edc_admin_sidebar_collapsed', 'false')
+                                  }
+                                } catch {
+                                  // ignore
+                                }
+                                setCollapsed(false)
+                                setSalesOpen(true)
+                                return
+                              }
+                              setSalesOpen((v) => !v)
+                            }}
+                            className={`${classes} w-full ${collapsed ? '' : 'justify-between'}`}
+                            title={item.label}
+                            aria-expanded={salesOpen}
+                          >
+                            <span className={`flex items-center ${collapsed ? 'justify-center w-full' : 'gap-3'}`}>
+                              <Icon name={item.icon} />
+                              {collapsed ? null : <span>{item.label}</span>}
+                            </span>
+                            {collapsed ? null : (
+                              <svg
+                                className={`w-4 h-4 transition-transform ${salesOpen ? 'rotate-90' : ''}`}
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                              >
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                              </svg>
+                            )}
+                          </button>
+
+                          {!collapsed && salesOpen ? (
+                            <ul className="mt-1 ml-4 pl-3 border-l border-white/10 space-y-1">
+                              {salesSubItems.map((sub) => {
+                                const subActive = pathname === sub.href
+                                const subClasses = subActive
+                                  ? 'flex items-center justify-between px-4 py-2 rounded-lg text-sm bg-[#118df0]/15 border border-[#118df0]/35 text-white transition-colors'
+                                  : 'flex items-center justify-between px-4 py-2 rounded-lg text-sm text-white/80 hover:bg-white/10 hover:text-white transition-colors'
+
+                                return (
+                                  <li key={sub.label}>
+                                    <Link
+                                      href={sub.href}
+                                      className={subClasses}
+                                      title={sub.label}
+                                    >
+                                      <span>{sub.label}</span>
+                                    </Link>
+                                  </li>
+                                )
+                              })}
+                            </ul>
+                          ) : null}
+                        </>
+                      ) : isReports ? (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (collapsed) {
+                                try {
+                                  if (typeof window !== 'undefined') {
+                                    window.localStorage.setItem('edc_admin_sidebar_collapsed', 'false')
+                                  }
+                                } catch {
+                                  // ignore
+                                }
+                                setCollapsed(false)
+                                setReportsOpen(true)
+                                return
+                              }
+                              setReportsOpen((v) => !v)
+                            }}
+                            className={`${classes} w-full ${collapsed ? '' : 'justify-between'}`}
+                            title={item.label}
+                            aria-expanded={reportsOpen}
+                          >
+                            <span className={`flex items-center ${collapsed ? 'justify-center w-full' : 'gap-3'}`}>
+                              <Icon name={item.icon} />
+                              {collapsed ? null : <span>{item.label}</span>}
+                            </span>
+                            {collapsed ? null : (
+                              <svg
+                                className={`w-4 h-4 transition-transform ${reportsOpen ? 'rotate-90' : ''}`}
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                              >
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                              </svg>
+                            )}
+                          </button>
+
+                          {!collapsed && reportsOpen ? (
+                            <ul className="mt-1 ml-4 pl-3 border-l border-white/10 space-y-1">
+                              <li>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setReportsSalesOpen((v) => !v)
+                                    setReportsInventoryOpen(false)
+                                  }}
+                                  className={`w-full flex items-center justify-between px-4 py-2 rounded-lg text-sm transition-colors ${pathname.startsWith('/admin/reports/sales/') ? 'bg-[#118df0]/15 border border-[#118df0]/35 text-white' : 'text-white/80 hover:bg-white/10 hover:text-white'}`}
+                                  aria-expanded={reportsSalesOpen}
+                                >
+                                  <span className="flex items-center gap-2">
+                                    <Icon name="dollar" />
+                                    <span>Sales Reports</span>
+                                  </span>
+                                  <svg
+                                    className={`w-4 h-4 transition-transform ${reportsSalesOpen ? 'rotate-90' : ''}`}
+                                    fill="none"
+                                    stroke="currentColor"
+                                    viewBox="0 0 24 24"
+                                  >
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                                  </svg>
+                                </button>
+
+                                {reportsSalesOpen ? (
+                                  <ul className="mt-1 ml-4 pl-3 border-l border-white/10 space-y-1">
+                                    {reportsSalesItems.map((sub) => {
+                                      const subActive = pathname === sub.href
+                                      const subClasses = subActive
+                                        ? 'flex items-center justify-between px-4 py-2 rounded-lg text-sm bg-[#118df0]/15 border border-[#118df0]/35 text-white transition-colors'
+                                        : 'flex items-center justify-between px-4 py-2 rounded-lg text-sm text-white/80 hover:bg-white/10 hover:text-white transition-colors'
+
+                                      return (
+                                        <li key={sub.label}>
+                                          <Link
+                                            href={sub.href}
+                                            className={subClasses}
+                                            title={sub.label}
+                                          >
+                                            <span className="flex items-center gap-2">
+                                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 19h16M7 16V8m5 8V5m5 11v-6" />
+                                              </svg>
+                                              <span>{sub.label}</span>
+                                            </span>
+                                          </Link>
+                                        </li>
+                                      )
+                                    })}
+                                  </ul>
+                                ) : null}
+                              </li>
+
+                              <li>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setReportsInventoryOpen((v) => !v)
+                                    setReportsSalesOpen(false)
+                                  }}
+                                  className={`w-full flex items-center justify-between px-4 py-2 rounded-lg text-sm transition-colors ${pathname.startsWith('/admin/reports/inventory/') ? 'bg-[#118df0]/15 border border-[#118df0]/35 text-white' : 'text-white/80 hover:bg-white/10 hover:text-white'}`}
+                                  aria-expanded={reportsInventoryOpen}
+                                >
+                                  <span className="flex items-center gap-2">
+                                    <Icon name="car" />
+                                    <span>Inventory Reports</span>
+                                  </span>
+                                  <svg
+                                    className={`w-4 h-4 transition-transform ${reportsInventoryOpen ? 'rotate-90' : ''}`}
+                                    fill="none"
+                                    stroke="currentColor"
+                                    viewBox="0 0 24 24"
+                                  >
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                                  </svg>
+                                </button>
+
+                                {reportsInventoryOpen ? (
+                                  <ul className="mt-1 ml-4 pl-3 border-l border-white/10 space-y-1">
+                                    {reportsInventoryItems.map((sub) => {
+                                      const subActive = pathname === sub.href
+                                      const subClasses = subActive
+                                        ? 'flex items-center justify-between px-4 py-2 rounded-lg text-sm bg-[#118df0]/15 border border-[#118df0]/35 text-white transition-colors'
+                                        : 'flex items-center justify-between px-4 py-2 rounded-lg text-sm text-white/80 hover:bg-white/10 hover:text-white transition-colors'
+
+                                      return (
+                                        <li key={sub.label}>
+                                          <Link
+                                            href={sub.href}
+                                            className={subClasses}
+                                            title={sub.label}
+                                          >
+                                            <span className="flex items-center gap-2">
+                                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h10" />
+                                              </svg>
+                                              <span>{sub.label}</span>
+                                            </span>
+                                          </Link>
+                                        </li>
+                                      )
+                                    })}
+                                  </ul>
+                                ) : null}
+                              </li>
+                            </ul>
+                          ) : null}
+                        </>
+                      ) : item.disabled ? (
+                        <div className={classes} title={item.label}>
+                          <Icon name={item.icon} />
+                          {collapsed ? null : <span>{item.label}</span>}
+                        </div>
+                      ) : (
+                        <Link href={item.href} className={classes} title={item.label}>
+                          <Icon name={item.icon} />
+                          {collapsed ? null : <span>{item.label}</span>}
+                        </Link>
+                      )}
+                    </li>
+                  )
+                })}
+              </ul>
+            </nav>
+
+            <div className={`${collapsed ? 'p-2' : 'p-4'} border-t border-white/10`}>
+              <button
+                type="button"
+                onClick={() => setShowSignOutModal(true)}
+                className={`w-full flex items-center justify-center gap-2 ${collapsed ? 'px-2' : 'px-4'} py-2.5 rounded-xl bg-white/10 hover:bg-white/15 transition-colors text-sm font-semibold`}
+                title="Sign Out"
+              >
+                <Icon name="logout" />
+                {collapsed ? null : 'Sign Out'}
+              </button>
+            </div>
+          </aside>
         ) : null}
 
-        <div className="flex-1 min-w-0">
-          <main className="p-0">{children}</main>
-        </div>
+        <main className="flex-1 min-w-0">
+          {children}
+        </main>
       </div>
+
+      {showSignOutModal ? (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center">
+          <button
+            type="button"
+            aria-label="Close"
+            onClick={() => setShowSignOutModal(false)}
+            className="absolute inset-0 bg-black/40"
+          />
+          <div className="relative w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+            <div className="text-lg font-semibold text-gray-900">Sign out</div>
+            <div className="mt-2 text-sm text-gray-600">Are you sure you want to sign out?</div>
+
+            <div className="mt-6 flex items-center justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setShowSignOutModal(false)}
+                className="btn-outline text-sm px-5 py-2.5"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowSignOutModal(false)
+                  handleSignOut()
+                }}
+                className="btn-primary text-sm px-5 py-2.5"
+              >
+                Sign Out
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   )
 }

@@ -16,7 +16,7 @@ export default function Header() {
   const [showAdminSignOutModal, setShowAdminSignOutModal] = useState(false)
   const [showUserSignOutModal, setShowUserSignOutModal] = useState(false)
 
-  if (pathname.startsWith('/admin')) return null
+  const hideHeader = pathname.startsWith('/admin')
 
   useEffect(() => {
     const refreshVerified = () => {
@@ -63,6 +63,10 @@ export default function Header() {
       }
     }
 
+    const onAdminSessionChanged = () => {
+      refreshAdminSession()
+    }
+
     const onFocus = () => {
       refreshVerified()
       refreshAdminSession()
@@ -84,6 +88,7 @@ export default function Header() {
 
     if (typeof window !== 'undefined') {
       window.addEventListener('storage', onStorage)
+      window.addEventListener('edc_admin_session_changed', onAdminSessionChanged)
       window.addEventListener('focus', onFocus)
       document.addEventListener('visibilitychange', onVisibility)
     }
@@ -92,6 +97,7 @@ export default function Header() {
       sub.subscription.unsubscribe()
       if (typeof window !== 'undefined') {
         window.removeEventListener('storage', onStorage)
+        window.removeEventListener('edc_admin_session_changed', onAdminSessionChanged)
         window.removeEventListener('focus', onFocus)
         document.removeEventListener('visibilitychange', onVisibility)
         if (interval) window.clearInterval(interval)
@@ -111,11 +117,14 @@ export default function Header() {
   const handleAdminSignOut = () => {
     if (typeof window !== 'undefined') {
       window.localStorage.removeItem('edc_admin_session')
+      window.dispatchEvent(new Event('edc_admin_session_changed'))
     }
-    router.push('/admin')
+    router.push('/account')
   }
 
   const isAdmin = !!adminRole
+
+  if (hideHeader) return null
 
   return (
     <>
