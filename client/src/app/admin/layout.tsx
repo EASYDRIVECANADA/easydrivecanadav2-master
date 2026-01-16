@@ -19,6 +19,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const [reportsOpen, setReportsOpen] = useState(false)
   const [reportsSalesOpen, setReportsSalesOpen] = useState(false)
   const [reportsInventoryOpen, setReportsInventoryOpen] = useState(false)
+  const [showSignOutModal, setShowSignOutModal] = useState(false)
 
   useEffect(() => {
     const inSales = pathname.startsWith('/admin/sales/')
@@ -68,8 +69,16 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       if (e.key === 'edc_admin_sidebar_collapsed') setCollapsed(e.newValue === 'true')
     }
 
+    const onAdminSessionChanged = () => {
+      read()
+    }
+
     window.addEventListener('storage', onStorage)
-    return () => window.removeEventListener('storage', onStorage)
+    window.addEventListener('edc_admin_session_changed', onAdminSessionChanged)
+    return () => {
+      window.removeEventListener('storage', onStorage)
+      window.removeEventListener('edc_admin_session_changed', onAdminSessionChanged)
+    }
   }, [])
 
   const toggleCollapsed = () => {
@@ -169,15 +178,14 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             ) : (
               <>
                 <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <Image
-                      src="/images/logo.png"
-                      alt="Easy Drive Canada"
-                      width={110}
-                      height={32}
-                      className="w-auto h-auto"
-                      priority
-                    />
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-11 h-11 rounded-xl bg-[#118df0]/25 border border-[#118df0]/40 flex items-center justify-center overflow-hidden shrink-0">
+                      <Image src="/images/logo.png" alt="EDC" width={28} height={28} className="object-contain" priority />
+                    </div>
+                    <div className="min-w-0 leading-tight">
+                      <div className="text-sm font-semibold text-white leading-4">Easy Drive</div>
+                      <div className="text-sm font-semibold text-white leading-4">Canada</div>
+                    </div>
                   </div>
                   <button
                     type="button"
@@ -444,7 +452,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           <div className={`${collapsed ? 'p-2' : 'p-4'} border-t border-white/10`}>
             <button
               type="button"
-              onClick={handleSignOut}
+              onClick={() => setShowSignOutModal(true)}
               className={`w-full flex items-center justify-center gap-2 ${collapsed ? 'px-2' : 'px-4'} py-2.5 rounded-xl bg-white/10 hover:bg-white/15 transition-colors text-sm font-semibold`}
               title="Sign Out"
             >
@@ -453,6 +461,58 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             </button>
           </div>
         </aside>
+
+        {showSignOutModal ? (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center p-4"
+            role="dialog"
+            aria-modal="true"
+            onMouseDown={(e) => {
+              if (e.target === e.currentTarget) setShowSignOutModal(false)
+            }}
+          >
+            <div className="absolute inset-0 bg-black/50" />
+            <div className="relative w-full max-w-md bg-white rounded-2xl shadow-xl overflow-hidden">
+              <div className="px-6 py-5 border-b border-gray-100 flex items-center justify-between">
+                <div className="text-lg font-semibold text-gray-900">Sign out</div>
+                <button
+                  type="button"
+                  className="w-10 h-10 rounded-xl hover:bg-gray-100 flex items-center justify-center"
+                  onClick={() => setShowSignOutModal(false)}
+                  aria-label="Close"
+                >
+                  <svg className="w-5 h-5 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
+              <div className="px-6 py-5">
+                <div className="text-sm text-gray-600">Are you sure you want to sign out?</div>
+              </div>
+
+              <div className="px-6 pb-6 flex items-center justify-end gap-3">
+                <button
+                  type="button"
+                  className="h-10 px-4 rounded-xl border border-gray-200 bg-white text-sm font-semibold text-gray-700 hover:bg-gray-50"
+                  onClick={() => setShowSignOutModal(false)}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="h-10 px-4 rounded-xl bg-[#118df0] text-white text-sm font-semibold hover:bg-[#0d6ebd]"
+                  onClick={() => {
+                    setShowSignOutModal(false)
+                    handleSignOut()
+                  }}
+                >
+                  Sign Out
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
 
         <div className="flex-1 min-w-0">
           <main className="p-0">{children}</main>

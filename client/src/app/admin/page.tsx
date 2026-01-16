@@ -107,6 +107,9 @@ export default function AdminPage() {
 
       const session = { email: data.email, role: data.role }
       localStorage.setItem('edc_admin_session', JSON.stringify(session))
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new Event('edc_admin_session_changed'))
+      }
       setUser({ email: data.email, role: data.role })
       setIsAuthenticated(true)
     } catch {
@@ -118,6 +121,9 @@ export default function AdminPage() {
 
   const handleLogout = async () => {
     localStorage.removeItem('edc_admin_session')
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new Event('edc_admin_session_changed'))
+    }
     setUser(null)
     setIsAuthenticated(false)
   }
