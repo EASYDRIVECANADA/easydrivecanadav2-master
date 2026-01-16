@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabaseClient'
+import { PHASE3_CHANGE_EVENT, getVehicleHoldRecord } from '@/lib/phase3Mock'
 
 interface Vehicle {
   id: string
@@ -28,6 +29,7 @@ type SortOption = 'newest' | 'price-low' | 'price-high' | 'mileage-low' | 'milea
 export default function InventoryPage() {
   const [vehicles, setVehicles] = useState<Vehicle[]>([])
   const [loading, setLoading] = useState(true)
+  const [phase3Tick, setPhase3Tick] = useState(0)
   const [searchQuery, setSearchQuery] = useState('')
   const [showMobileFilters, setShowMobileFilters] = useState(false)
   const [sortBy, setSortBy] = useState<SortOption>('newest')
@@ -47,6 +49,15 @@ export default function InventoryPage() {
   useEffect(() => {
     fetchVehicles()
   }, [])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const onChange = () => setPhase3Tick((t) => t + 1)
+    window.addEventListener(PHASE3_CHANGE_EVENT, onChange)
+    return () => window.removeEventListener(PHASE3_CHANGE_EVENT, onChange)
+  }, [])
+
+  void phase3Tick
 
   const fetchVehicles = async () => {
     try {
@@ -529,6 +540,18 @@ export default function InventoryPage() {
                   <Link key={vehicle.id} href={`/inventory/${vehicle.id}`}>
                     <div className="glass-card-hover rounded-2xl overflow-hidden group h-full flex flex-col">
                       <div className="relative h-52 bg-gradient-to-br from-gray-100 to-gray-200 overflow-hidden flex-shrink-0">
+                        {(() => {
+                          const rec = getVehicleHoldRecord(vehicle.id)
+                          const isOnHold = rec?.status === 'ON_HOLD'
+                          return isOnHold ? (
+                            <div className="absolute top-4 left-4 z-10">
+                              <span className="inline-flex items-center rounded-full bg-amber-500/90 px-3 py-1 text-xs font-semibold text-white shadow">
+                                On Hold
+                              </span>
+                            </div>
+                          ) : null
+                        })()}
+
                         {vehicle.images && vehicle.images.length > 0 ? (
                           <img
                             src={vehicle.images[0]}

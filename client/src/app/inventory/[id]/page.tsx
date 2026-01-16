@@ -4,6 +4,8 @@
 import { useState, useEffect } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
+import { supabase } from '@/lib/supabaseClient'
+import { PHASE3_CHANGE_EVENT, getActiveHoldVehicleId, getVehicleHoldRecord } from '@/lib/phase3Mock'
 
 interface Vehicle {
   id: string
@@ -54,6 +56,10 @@ export default function VehicleDetailPage() {
   const [submitted, setSubmitted] = useState(false)
 
   const [isVerified, setIsVerified] = useState(false)
+  const [userEmail, setUserEmail] = useState<string | null>(null)
+  const [activeHoldVehicleId, setActiveHoldVehicleId] = useState<string | null>(null)
+  const [isOnHold, setIsOnHold] = useState(false)
+  const [onHoldByOther, setOnHoldByOther] = useState(false)
 
   const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'
 
@@ -62,6 +68,38 @@ export default function VehicleDetailPage() {
       setIsVerified(window.localStorage.getItem('edc_account_verified') === 'true')
     }
   }, [])
+
+  useEffect(() => {
+    const init = async () => {
+      const { data } = await supabase.auth.getSession()
+      setUserEmail(data.session?.user?.email || null)
+    }
+    void init()
+  }, [])
+
+  useEffect(() => {
+    if (!vehicle?.id) return
+    const refreshHold = () => {
+      const active = getActiveHoldVehicleId()
+      setActiveHoldVehicleId(active)
+
+      const rec = getVehicleHoldRecord(vehicle.id)
+      const hold = rec?.status === 'ON_HOLD'
+      setIsOnHold(hold)
+
+      const heldByOther = hold && !!rec?.holderEmail && !!userEmail && rec.holderEmail !== userEmail
+      const lockedByOtherVehicle = !!active && active !== vehicle.id
+      setOnHoldByOther(heldByOther || lockedByOtherVehicle)
+    }
+
+    refreshHold()
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener(PHASE3_CHANGE_EVENT, refreshHold)
+      return () => window.removeEventListener(PHASE3_CHANGE_EVENT, refreshHold)
+    }
+    return
+  }, [vehicle?.id, userEmail])
 
   useEffect(() => {
     if (params.id) {
@@ -515,9 +553,10 @@ export default function VehicleDetailPage() {
                   <button
                     type="button"
                     onClick={() => router.push(`/purchase/${vehicle.id}`)}
-                    className="btn-primary w-full flex items-center justify-center"
+                    disabled={onHoldByOther}
+                    className={`btn-primary w-full flex items-center justify-center ${onHoldByOther ? 'opacity-50 cursor-not-allowed' : ''}`}
                   >
-                    Proceed to Deposit
+                    {onHoldByOther ? 'On Hold by another customer' : isOnHold ? 'View Hold Details' : 'Place on Hold'}
                   </button>
                 ) : (
                   <button
