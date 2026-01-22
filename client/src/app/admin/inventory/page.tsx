@@ -21,6 +21,20 @@ interface Vehicle {
   keyNumber?: string
   vin?: string
   createdAt: string
+  updatedAt?: string
+  series?: string
+  equipment?: string
+  fuelType?: string
+  transmission?: string
+  bodyStyle?: string
+  drivetrain?: string
+  city?: string
+  province?: string
+  exteriorColor?: string
+  interiorColor?: string
+  description?: string
+  features?: string[]
+  costsData?: any
 }
 
 export default function AdminInventoryPage() {
@@ -36,6 +50,7 @@ export default function AdminInventoryPage() {
   const [showAddModal, setShowAddModal] = useState(false)
   const [addSubmitting, setAddSubmitting] = useState(false)
   const [addError, setAddError] = useState('')
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [addFormData, setAddFormData] = useState({
     make: '',
     model: '',
@@ -63,6 +78,20 @@ export default function AdminInventoryPage() {
   })
   const itemsPerPage = 20
   const router = useRouter()
+  const [drawerVehicle, setDrawerVehicle] = useState<Vehicle | null>(null)
+  const closeDrawer = () => setDrawerVehicle(null)
+
+  const parseCostsData = (val: any) => {
+    if (!val) return undefined
+    if (typeof val === 'string') {
+      try {
+        return JSON.parse(val)
+      } catch {
+        return undefined
+      }
+    }
+    return val
+  }
 
   useEffect(() => {
     // Check auth
@@ -176,32 +205,75 @@ export default function AdminInventoryPage() {
     try {
       const { data, error } = await supabase
         .from('edc_vehicles')
-        .select('id, make, model, year, trim, stock_number, price, mileage, status, inventory_type, images, key_number, vin, created_at')
+        .select('*')
         .eq('status', statusTab)
-        .order('created_at', { ascending: false })
+        // Order by stock_number descending so the most recent is on top
+        // Note: stock_number is stored as text; server-side order will be lexicographic.
+        // We'll enforce a numeric sort on the client after mapping as a reliable fallback.
+        .order('stock_number', { ascending: false })
 
       if (error) throw error
 
+      // Debug: Inspect a few rows to verify fields coming from Supabase
+      if (process.env.NODE_ENV !== 'production') {
+        try {
+          // Log first three rows and selected fields
+          // eslint-disable-next-line no-console
+          console.log('edc_vehicles sample:', (data || []).slice(0, 3).map((r: any) => ({
+            id: r.id,
+            trim: r.trim,
+            body_style: r.body_style,
+            drivetrain: r.drivetrain,
+            transmission: r.transmission,
+            exterior_color: r.exterior_color,
+            city: r.city,
+            province: r.province,
+          })))
+        } catch {}
+      }
+
+      const safe = (s: any) => typeof s === 'string' ? s.trim() : s
       const mapped: Vehicle[] = (data || []).map((v: any) => ({
         id: v.id,
-        make: v.make,
-        model: v.model,
+        make: safe(v.make),
+        model: safe(v.model),
         year: v.year,
-        trim: v.trim || undefined,
-        stockNumber: v.stock_number || '',
+        trim: safe(v.trim) || undefined,
+        stockNumber: safe(v.stock_number) || '',
         price: v.price,
         mileage: v.mileage,
-        status: v.status,
-        inventoryType: v.inventory_type,
+        status: safe(v.status),
+        inventoryType: safe(v.inventory_type) || safe((v as any).vehicle_type),
         images: Array.isArray(v.images) ? v.images : [],
-        keyNumber: v.key_number || undefined,
-        vin: v.vin || undefined,
+        keyNumber: safe(v.key_number) || undefined,
+        vin: safe(v.vin) || undefined,
         createdAt: v.created_at,
+        updatedAt: v.updated_at || undefined,
+        series: safe(v.series) || undefined,
+        equipment: safe(v.equipment) || undefined,
+        fuelType: safe(v.fuel_type) || undefined,
+        transmission: safe(v.transmission) || safe((v as any).gearbox) || undefined,
+        bodyStyle: safe(v.body_style) || safe((v as any).vehicle_type) || undefined,
+        drivetrain: safe(v.drivetrain) || safe((v as any).drive) || undefined,
+        city: safe(v.city) || undefined,
+        province: safe(v.province) || undefined,
+        exteriorColor: safe(v.exterior_color) || safe((v as any).colour) || safe((v as any).color) || undefined,
+        interiorColor: safe(v.interior_color) || undefined,
+        description: safe(v.description) || undefined,
+        features: Array.isArray(v.features) ? v.features : undefined,
+        costsData: parseCostsData((v as any).costs_data),
       }))
 
-      setVehicles(mapped)
-      setTotalVehicles(mapped.length)
-      setFilteredVehicles(mapped)
+      // Ensure final ordering by numeric stock number desc (recent on top)
+      const toNum = (s: string) => {
+        const n = parseInt((s || '').replace(/[^0-9]/g, ''), 10)
+        return Number.isFinite(n) ? n : -Infinity
+      }
+      const sorted = [...mapped].sort((a, b) => toNum(b.stockNumber) - toNum(a.stockNumber))
+
+      setVehicles(sorted)
+      setTotalVehicles(sorted.length)
+      setFilteredVehicles(sorted)
       setCurrentPage(1)
     } catch (error) {
       console.error('Error fetching vehicles:', error)
@@ -245,6 +317,23 @@ export default function AdminInventoryPage() {
   )
   
   const totalPages = Math.ceil(totalVehicles / itemsPerPage)
+
+  const allSelected = selectedIds.size > 0 && filteredVehicles.length > 0 && selectedIds.size === filteredVehicles.length
+  const toggleSelectAll = (checked: boolean) => {
+    if (checked) {
+      setSelectedIds(new Set(filteredVehicles.map(v => v.id)))
+    } else {
+      setSelectedIds(new Set())
+    }
+  }
+  const toggleSelect = (id: string, checked: boolean) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev)
+      if (checked) next.add(id)
+      else next.delete(id)
+      return next
+    })
+  }
 
   const handleDelete = async (id: string) => {
     if (!confirm('Are you sure you want to delete this vehicle?')) return
@@ -297,6 +386,78 @@ export default function AdminInventoryPage() {
             <div className="flex items-center">
               <h1 className="text-2xl font-bold text-gray-900">Inventory Management</h1>
             </div>
+
+      {/* Right Drawer */}
+      {drawerVehicle && (
+        <div className="fixed inset-y-0 right-0 w-full sm:w-[440px] bg-white shadow-2xl z-50 flex flex-col">
+          {/* Enhanced Header */}
+          <div className="px-5 pt-4 border-b border-gray-200">
+            <div className="flex items-center justify-between">
+              <div className="w-10 h-10"></div>
+              <button onClick={closeDrawer} className="p-2 rounded hover:bg-gray-100" aria-label="Close">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"/></svg>
+              </button>
+            </div>
+            <div className="flex flex-col items-center gap-2 mt-1 mb-3">
+              <div className="w-20 h-20 rounded-full bg-gray-100 flex items-center justify-center text-gray-400">
+                <svg className="w-9 h-9" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+              </div>
+              <div className="self-end mr-3 -mt-6">
+                <span className="px-2 py-0.5 text-[10px] font-semibold rounded-full bg-blue-100 text-blue-700">{drawerVehicle.status || 'In Stock'}</span>
+              </div>
+              <h3 className="text-xl font-bold text-red-600 text-center leading-snug">
+                {drawerVehicle.year} {drawerVehicle.make} {drawerVehicle.model}
+              </h3>
+              <div className="text-xs text-gray-500 text-center">
+                <div>{drawerVehicle.vin || '—'}</div>
+                <div className="flex items-center justify-center gap-2">
+                  <span>{drawerVehicle.stockNumber || '—'}</span>
+                  <span>Certified</span>
+                  <a href={`/admin/inventory/${drawerVehicle.id}`} className="text-blue-600 hover:underline" onClick={(e)=>e.stopPropagation()}>✎</a>
+                </div>
+                <div className="text-sm font-semibold mt-1">{formatPrice(Number(drawerVehicle.price || 0))}</div>
+              </div>
+            </div>
+          </div>
+
+          <div className="p-5 overflow-y-auto">
+            <h4 className="text-base font-semibold text-gray-900 mb-4 text-center">Profit Analysis</h4>
+            {(() => {
+              const cd = drawerVehicle.costsData || {}
+              const additional: any[] = Array.isArray(cd.additionalExpenses) ? cd.additionalExpenses : []
+              const additionalTotal = additional.reduce((s, it) => s + Number(it.total || 0), 0)
+              const taxTotal = additional.reduce((s, it) => s + Number(it.tax || 0), 0)
+              const purchasePrice = Number(cd.purchasePrice || 0)
+              const acv = Number(cd.actualCashValue || 0)
+              const totalInvested = purchasePrice + additionalTotal
+              const allInPrice = totalInvested + taxTotal
+              const selling = Number(drawerVehicle.price || 0)
+              const circumference = 2 * Math.PI * 35
+              const purchasePercent = allInPrice > 0 ? (purchasePrice / allInPrice) * 100 : 100
+              const purchaseDash = (purchasePercent / 100) * circumference
+              return (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-center gap-4">
+                    <svg viewBox="0 0 100 100" className="w-40 h-40 -rotate-90">
+                      <circle cx="50" cy="50" r="35" fill="transparent" stroke="#1f6feb" strokeWidth="20" strokeDasharray={`${purchaseDash} ${circumference}`} />
+                    </svg>
+                  </div>
+                  <div className="text-center text-sm text-gray-600">Selling: {formatPrice(selling)}</div>
+                  <div className="space-y-2 text-[15px]">
+                    <div className="flex justify-between text-gray-700"><span className="font-medium text-gray-600">Vehicle Purchase Price:</span><span>{formatPrice(purchasePrice)}</span></div>
+                    <div className="flex justify-between text-gray-700"><span className="font-medium text-gray-600">Actual Cash Value:</span><span>{formatPrice(acv)}</span></div>
+                    <div className="flex justify-between text-gray-700"><span className="font-medium text-gray-600">Additional Expenses:</span><span>{formatPrice(additionalTotal)}</span></div>
+                    <div className="flex justify-between text-gray-900"><span className="font-semibold">Total Invested:</span><span className="font-semibold">{formatPrice(totalInvested)}</span></div>
+                    <div className="flex justify-between text-gray-700"><span className="font-medium text-gray-600">Vehicle Selling Price:</span><span>{formatPrice(selling)}</span></div>
+                    <div className="flex justify-between text-gray-700"><span className="font-medium text-gray-600">Tax (on vehicle):</span><span>{formatPrice(taxTotal)}</span></div>
+                    <div className="flex justify-between text-gray-900"><span className="font-bold">All In Price:</span><span className="font-bold">{formatPrice(allInPrice)}</span></div>
+                  </div>
+                </div>
+              )
+            })()}
+          </div>
+        </div>
+      )}
             <button
               type="button"
               onClick={handleOpenAddModal}
@@ -432,26 +593,68 @@ export default function AdminInventoryPage() {
         ) : (
           <>
             {/* Desktop Table View */}
-            <div className="hidden lg:block bg-white rounded-xl shadow overflow-hidden overflow-x-auto">
+            <div className="hidden lg:block bg-white rounded-xl shadow overflow-hidden">
               <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
                   <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">Vehicle</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">Stock #</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">Key #</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">Price</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">Mileage</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">Status</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">Photos</th>
-                    <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">Actions</th>
+                    <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap sticky left-0 bg-white z-10">
+                      <div className="flex items-center justify-center gap-2">
+                        <input
+                          type="checkbox"
+                          className="h-4 w-4 rounded border-gray-300 text-[#118df0] focus:ring-[#118df0]"
+                          checked={allSelected}
+                          onChange={(e) => toggleSelectAll(e.target.checked)}
+                          aria-label="Select all"
+                        />
+                        <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 5a2 2 0 012-2h6a2 2 0 012 2v13a2 2 0 01-2 2H6a2 2 0 01-2-2V5zm10 0h4a2 2 0 012 2v11a2 2 0 01-2 2h-4V5z" />
+                        </svg>
+                      </div>
+                    </th>
+                    <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">Vehicle</th>
+                    <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">Trim</th>
+                    <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">Vehicle Type</th>
+                    <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">Drive</th>
+                    <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">Transmission</th>
+                    <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">Colour</th>
+                    <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">Stock #</th>
+                    <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">Key #</th>
+                    <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">Price</th>
+                    <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">Mileage</th>
+                    <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">VIN</th>
+                    <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">City/Prov</th>
+                    <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">Status</th>
+                    <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">Photos</th>
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
                   {paginatedVehicles.map((vehicle) => (
-                  <tr key={vehicle.id} className="hover:bg-gray-50">
-                    <td className="px-6 py-4 whitespace-nowrap">
+                  <tr key={vehicle.id} className="hover:bg-gray-50 cursor-pointer" onClick={() => setDrawerVehicle(vehicle)}>
+                    <td className="px-3 py-2 whitespace-nowrap text-center sticky left-0 bg-white z-10">
+                      <div className="flex items-center justify-center gap-2">
+                        <input
+                          type="checkbox"
+                          className="h-4 w-4 rounded border-gray-300 text-[#118df0] focus:ring-[#118df0]"
+                          aria-label={`Select ${vehicle.year} ${vehicle.make} ${vehicle.model}`}
+                          checked={selectedIds.has(vehicle.id)}
+                          onChange={(e) => toggleSelect(vehicle.id, e.target.checked)}
+                          onClick={(e) => e.stopPropagation()}
+                        />
+                        <Link
+                          href={`/admin/inventory/${vehicle.id}`}
+                          className="p-1.5 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                          title="Edit vehicle"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                          </svg>
+                        </Link>
+                      </div>
+                    </td>
+                    <td className="px-3 py-2 whitespace-nowrap">
                       <div className="flex items-center">
-                        <div className="w-12 h-12 bg-gray-200 rounded-lg overflow-hidden flex-shrink-0">
+                        <div className="w-10 h-10 bg-gray-200 rounded-lg overflow-hidden flex-shrink-0">
                           {vehicle.images && vehicle.images.length > 0 ? (
                             <img
                               src={vehicle.images[0]}
@@ -469,12 +672,12 @@ export default function AdminInventoryPage() {
                             </div>
                           )}
                         </div>
-                        <div className="ml-4">
+                        <div className="ml-3">
                           <a
                             href={`/inventory/${vehicle.id}`}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="text-sm font-medium text-gray-900 hover:text-[#118df0] hover:underline"
+                            className="text-sm font-medium text-gray-900 hover:text-[#118df0] hover:underline leading-tight"
                             title="View on shop"
                           >
                             {vehicle.year} {vehicle.make} {vehicle.model}
@@ -482,10 +685,25 @@ export default function AdminInventoryPage() {
                         </div>
                       </div>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-500">
+                      {vehicle.trim || '—'}
+                    </td>
+                    <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-500">
+                      {vehicle.bodyStyle || vehicle.inventoryType || '—'}
+                    </td>
+                    <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-500">
+                      {vehicle.drivetrain || '—'}
+                    </td>
+                    <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-500">
+                      {vehicle.transmission || '—'}
+                    </td>
+                    <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-500">
+                      {vehicle.exteriorColor || '—'}
+                    </td>
+                    <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-500">
                       {vehicle.stockNumber || '—'}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-500">
                       {vehicle.keyNumber ? (
                         <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
                           🔑 {vehicle.keyNumber}
@@ -494,17 +712,23 @@ export default function AdminInventoryPage() {
                         <span className="text-gray-400">—</span>
                       )}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-900">
                       {formatPrice(vehicle.price)}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-500">
                       {vehicle.mileage?.toLocaleString()} km
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
+                    <td className="px-3 py-2 whitespace-nowrap text-[10px] text-gray-500">
+                      {vehicle.vin || '—'}
+                    </td>
+                    <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-500">
+                      {(vehicle.city || '—')}, {vehicle.province || '—'}
+                    </td>
+                    <td className="px-3 py-2 whitespace-nowrap">
                       <select
                         value={vehicle.status}
                         onChange={(e) => handleStatusChange(vehicle.id, e.target.value as 'ACTIVE' | 'PENDING' | 'SOLD')}
-                        className={`px-2 py-1 text-xs font-medium rounded-full border-0 focus:ring-2 focus:ring-[#118df0] ${
+                        className={`px-2 py-0.5 text-[10px] font-medium rounded-full border-0 focus:ring-2 focus:ring-[#118df0] ${
                           vehicle.status === 'ACTIVE' ? 'bg-green-100 text-green-800' :
                           vehicle.status === 'SOLD' ? 'bg-red-100 text-red-800' :
                           'bg-yellow-100 text-yellow-800'
@@ -515,47 +739,8 @@ export default function AdminInventoryPage() {
                         <option value="SOLD">Sold</option>
                       </select>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-500">
                       {vehicle.images?.length || 0} photos
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-center">
-                      <div className="flex items-center justify-center gap-1">
-                        <Link
-                          href={`/admin/inventory/${vehicle.id}/photos`}
-                          className="p-2 text-[#118df0] hover:bg-blue-50 rounded-lg transition-colors"
-                          title="Manage photos"
-                        >
-                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                          </svg>
-                        </Link>
-                        <Link
-                          href={`/admin/inventory/${vehicle.id}`}
-                          className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
-                          title="Edit vehicle"
-                        >
-                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                          </svg>
-                        </Link>
-                        <button
-                          onClick={() => handleDelete(vehicle.id)}
-                          disabled={deleting === vehicle.id}
-                          className="p-2 text-red-600 hover:bg-red-50 rounded-lg disabled:opacity-50 transition-colors"
-                          title="Delete vehicle"
-                        >
-                          {deleting === vehicle.id ? (
-                            <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
-                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                            </svg>
-                          ) : (
-                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                            </svg>
-                          )}
-                        </button>
-                      </div>
                     </td>
                   </tr>
                 ))}

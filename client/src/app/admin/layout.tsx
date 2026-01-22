@@ -154,25 +154,25 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           <aside
             className={
               collapsed
-                ? 'w-20 bg-[#0b1220] text-white transition-all duration-300 flex flex-col'
-                : 'w-72 bg-[#0b1220] text-white transition-all duration-300 flex flex-col'
+                ? 'fixed inset-y-0 left-0 z-40 w-20 bg-[#0b1220] text-white transition-all duration-300 flex flex-col min-h-0 h-screen'
+                : 'fixed inset-y-0 left-0 z-40 w-56 bg-[#0b1220] text-white transition-all duration-300 flex flex-col min-h-0 h-screen'
             }
           >
-            <div className={collapsed ? 'p-4 flex items-center justify-center' : 'p-6 flex items-center gap-3'}>
+            <div className={collapsed ? 'p-3 flex items-center justify-center' : 'p-4 flex items-center gap-2'}>
               <Link href="/admin" className="flex items-center gap-3">
-                <div className="relative h-10 w-10 shrink-0">
+                <div className="relative h-8 w-8 shrink-0">
                   <Image src="/images/logo.png" alt="EDC" fill className="object-contain" />
                 </div>
-                {!collapsed ? <div className="font-semibold text-lg">Admin</div> : null}
+                {!collapsed ? <div className="font-semibold text-base leading-tight">Admin</div> : null}
               </Link>
             </div>
 
-            <nav className={`${collapsed ? 'px-2 py-3' : 'px-2 py-3'} flex-1`} aria-label="Admin navigation">
+            <nav className={`${collapsed ? 'px-2 py-3' : 'px-2 py-3'} flex-1 overflow-y-auto min-h-0`} aria-label="Admin navigation">
               <ul className="space-y-1">
                 {navItems.map((item) => {
                   const active = pathname === item.href || (item.href !== '/admin' && pathname.startsWith(item.href))
                   const base =
-                    `flex items-center ${collapsed ? 'justify-center gap-0 px-2' : 'gap-3 px-4'} py-2.5 rounded-xl text-sm font-medium transition-colors`
+                    `flex items-center ${collapsed ? 'justify-center gap-0 px-2' : 'gap-2 px-3'} py-2 rounded-xl text-xs font-medium transition-colors`
                   const classes = item.disabled
                     ? `${base} text-white/40 cursor-not-allowed`
                     : active
@@ -412,7 +412,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
               </ul>
             </nav>
 
-            <div className={`${collapsed ? 'p-2' : 'p-4'} border-t border-white/10`}>
+            <div className={`${collapsed ? 'p-2' : 'p-4'} mt-4 border-t border-white/10`}>
               <button
                 type="button"
                 onClick={() => setShowSignOutModal(true)}
@@ -426,7 +426,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           </aside>
         ) : null}
 
-        <main className="flex-1 min-w-0">
+        <main className={`flex-1 min-w-0 ${isAuthed ? (collapsed ? 'ml-20' : 'ml-56') : ''}`}>
           {children}
         </main>
       </div>

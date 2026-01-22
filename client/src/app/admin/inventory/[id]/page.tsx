@@ -5,6 +5,15 @@ import { useRouter, useParams } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabaseClient'
 
+// Tab Components
+import VehicleDetailsTab from './tabs/VehicleDetailsTab'
+import ImagesTab from './tabs/ImagesTab'
+import DisclosuresTab from './tabs/DisclosuresTab'
+import PurchaseTab from './tabs/PurchaseTab'
+import CostsTab from './tabs/CostsTab'
+import WarrantyTab from './tabs/WarrantyTab'
+import FilesTab from './tabs/FilesTab'
+
 interface Vehicle {
   id: string
   make: string
@@ -30,11 +39,24 @@ interface Vehicle {
   province: string
   status: string
   inventoryType: string
+  images: string[]
 }
 
 interface VehicleFormData extends Omit<Partial<Vehicle>, 'features'> {
   features?: string | string[]
 }
+
+type TabType = 'details' | 'images' | 'disclosures' | 'purchase' | 'costs' | 'warranty' | 'files'
+
+const TABS: { id: TabType; label: string; icon: string }[] = [
+  { id: 'details', label: 'Vehicle Details', icon: '🚗' },
+  { id: 'disclosures', label: 'Disclosures', icon: '📋' },
+  { id: 'purchase', label: 'Purchase', icon: '💵' },
+  { id: 'costs', label: 'Costs', icon: '📊' },
+  { id: 'warranty', label: 'Warranty', icon: '🛡️' },
+  { id: 'images', label: 'Images', icon: '🖼️' },
+  { id: 'files', label: 'Files', icon: '📁' },
+]
 
 export default function AdminEditVehiclePage() {
   const params = useParams()
@@ -42,6 +64,8 @@ export default function AdminEditVehiclePage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [formData, setFormData] = useState<VehicleFormData>({})
+  const [images, setImages] = useState<string[]>([])
+  const [activeTab, setActiveTab] = useState<TabType>('details')
 
   useEffect(() => {
     const sessionStr = localStorage.getItem('edc_admin_session')
@@ -91,6 +115,7 @@ export default function AdminEditVehiclePage() {
         status: data.status,
         inventoryType: data.inventory_type,
       })
+      setImages(Array.isArray(data.images) ? data.images : [])
     } catch (error) {
       console.error('Error fetching vehicle:', error)
     } finally {
@@ -145,13 +170,17 @@ export default function AdminEditVehiclePage() {
         .eq('id', String(params.id))
 
       if (!error) {
-        router.push('/admin/inventory')
+        alert('Vehicle saved successfully!')
       }
     } catch (error) {
       console.error('Error saving vehicle:', error)
     } finally {
       setSaving(false)
     }
+  }
+
+  const handleImagesUpdate = (newImages: string[]) => {
+    setImages(newImages)
   }
 
   if (loading) {
@@ -162,360 +191,109 @@ export default function AdminEditVehiclePage() {
     )
   }
 
+  const vehicleTitle = `${formData.year} ${formData.make} ${formData.model}`
+
   return (
     <div className="min-h-screen bg-gray-100">
       {/* Header */}
       <div className="bg-white shadow">
         <div className="w-full px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex justify-between items-center">
-            <div className="flex items-center">
-              <h1 className="text-2xl font-bold text-gray-900">Edit Vehicle</h1>
+            <div className="flex items-center gap-4">
+              <Link
+                href="/admin/inventory"
+                className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+                title="Back to Inventory"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+                </svg>
+              </Link>
+              <div>
+                <h1 className="text-xl font-bold text-gray-900">{vehicleTitle}</h1>
+                <p className="text-sm text-gray-500">Stock: {formData.stockNumber || 'N/A'} • VIN: {formData.vin || 'N/A'}</p>
+              </div>
             </div>
-            <Link
-              href={`/admin/inventory/${params.id}/photos`}
-              className="bg-[#118df0] text-white px-4 py-2 rounded-lg font-medium hover:bg-[#0d6ebd] transition-colors"
-            >
-              Manage Photos
-            </Link>
+            <div className="flex items-center gap-2">
+              <span className={`px-3 py-1 rounded-full text-xs font-medium ${
+                formData.status === 'ACTIVE' ? 'bg-green-100 text-green-800' :
+                formData.status === 'SOLD' ? 'bg-red-100 text-red-800' :
+                'bg-yellow-100 text-yellow-800'
+              }`}>
+                {formData.status}
+              </span>
+              <span className={`px-3 py-1 rounded-full text-xs font-medium ${
+                formData.inventoryType === 'PREMIERE' ? 'bg-purple-100 text-purple-800' : 'bg-blue-100 text-blue-800'
+              }`}>
+                {formData.inventoryType === 'PREMIERE' ? '✨ Premiere' : '🚗 Fleet'}
+              </span>
+            </div>
           </div>
+        </div>
+
+        {/* Tab Navigation */}
+        <div className="w-full px-4 sm:px-6 lg:px-8 border-t border-gray-200">
+          <nav className="flex gap-1 overflow-x-auto" aria-label="Tabs">
+            {TABS.map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
+                  activeTab === tab.id
+                    ? 'border-[#118df0] text-[#118df0]'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                }`}
+              >
+                <span>{tab.icon}</span>
+                <span>{tab.label}</span>
+              </button>
+            ))}
+          </nav>
         </div>
       </div>
 
-      <div className="w-full px-4 sm:px-6 lg:px-8 py-8">
-        <form onSubmit={handleSubmit} className="bg-white rounded-xl shadow p-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* Basic Info */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Make *</label>
-              <input
-                type="text"
-                name="make"
-                required
-                value={formData.make || ''}
-                onChange={handleChange}
-                className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
-              />
-            </div>
+      {/* Tab Content */}
+      <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
+        {activeTab === 'details' && (
+          <VehicleDetailsTab
+            formData={formData}
+            onChange={handleChange}
+            onSubmit={handleSubmit}
+            saving={saving}
+          />
+        )}
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Model *</label>
-              <input
-                type="text"
-                name="model"
-                required
-                value={formData.model || ''}
-                onChange={handleChange}
-                className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
-              />
-            </div>
+        {activeTab === 'images' && (
+          <ImagesTab
+            vehicleId={String(params.id)}
+            images={images}
+            onImagesUpdate={handleImagesUpdate}
+          />
+        )}
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Year *</label>
-              <input
-                type="number"
-                name="year"
-                required
-                value={formData.year || ''}
-                onChange={handleChange}
-                className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
-              />
-            </div>
+        {activeTab === 'disclosures' && (
+          <DisclosuresTab vehicleId={String(params.id)} />
+        )}
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Trim</label>
-              <input
-                type="text"
-                name="trim"
-                value={formData.trim || ''}
-                onChange={handleChange}
-                className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
-              />
-            </div>
+        {activeTab === 'purchase' && (
+          <PurchaseTab vehicleId={String(params.id)} stockNumber={formData.stockNumber || ''} />
+        )}
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Stock Number (Unit ID)</label>
-              <input
-                type="text"
-                name="stockNumber"
-                value={formData.stockNumber || ''}
-                onChange={handleChange}
-                placeholder="e.g., 8FDJTG"
-                className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
-              />
-            </div>
+        {activeTab === 'costs' && (
+          <CostsTab
+            vehicleId={String(params.id)}
+            vehiclePrice={formData.price || 0}
+            stockNumber={formData.stockNumber || ''}
+          />
+        )}
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                🔑 Key Number (Keybox)
-                <span className="text-gray-500 font-normal ml-2">Optional</span>
-              </label>
-              <input
-                type="text"
-                name="keyNumber"
-                value={formData.keyNumber || ''}
-                onChange={handleChange}
-                placeholder="e.g., K-123, FOB-45"
-                className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
-              />
-              <p className="text-xs text-gray-500 mt-1">Track which key/keyfob this vehicle uses from your keybox</p>
-            </div>
+        {activeTab === 'warranty' && (
+          <WarrantyTab vehicleId={String(params.id)} />
+        )}
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Series</label>
-              <input
-                type="text"
-                name="series"
-                value={formData.series || ''}
-                onChange={handleChange}
-                placeholder="e.g., 40K4, 45KF"
-                className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">VIN *</label>
-              <input
-                type="text"
-                name="vin"
-                required
-                value={formData.vin || ''}
-                onChange={handleChange}
-                className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Price ($) *</label>
-              <input
-                type="number"
-                name="price"
-                required
-                value={formData.price || ''}
-                onChange={handleChange}
-                className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Mileage (km) *</label>
-              <input
-                type="number"
-                name="mileage"
-                required
-                value={formData.mileage || ''}
-                onChange={handleChange}
-                className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
-              <select
-                name="status"
-                value={formData.status || 'ACTIVE'}
-                onChange={handleChange}
-                className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
-              >
-                <option value="ACTIVE">Active</option>
-                <option value="SOLD">Sold</option>
-                <option value="PENDING">Pending</option>
-                <option value="DRAFT">Draft</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Inventory Type</label>
-              <select
-                name="inventoryType"
-                value={formData.inventoryType || 'FLEET'}
-                onChange={handleChange}
-                className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
-              >
-                <option value="FLEET">Fleet Cars</option>
-                <option value="PREMIERE">Premiere Cars</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Exterior Color *</label>
-              <input
-                type="text"
-                name="exteriorColor"
-                required
-                value={formData.exteriorColor || ''}
-                onChange={handleChange}
-                className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Interior Color</label>
-              <input
-                type="text"
-                name="interiorColor"
-                value={formData.interiorColor || ''}
-                onChange={handleChange}
-                className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Transmission *</label>
-              <select
-                name="transmission"
-                required
-                value={formData.transmission || ''}
-                onChange={handleChange}
-                className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
-              >
-                <option value="">Select...</option>
-                <option value="Automatic">Automatic</option>
-                <option value="Manual">Manual</option>
-                <option value="CVT">CVT</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Drivetrain</label>
-              <select
-                name="drivetrain"
-                value={formData.drivetrain || ''}
-                onChange={handleChange}
-                className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
-              >
-                <option value="">Select...</option>
-                <option value="FWD">FWD</option>
-                <option value="RWD">RWD</option>
-                <option value="AWD">AWD</option>
-                <option value="4WD">4WD</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Fuel Type *</label>
-              <select
-                name="fuelType"
-                required
-                value={formData.fuelType || ''}
-                onChange={handleChange}
-                className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
-              >
-                <option value="">Select...</option>
-                <option value="Gasoline">Gasoline</option>
-                <option value="Diesel">Diesel</option>
-                <option value="Hybrid">Hybrid</option>
-                <option value="Electric">Electric</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Body Style *</label>
-              <select
-                name="bodyStyle"
-                required
-                value={formData.bodyStyle || ''}
-                onChange={handleChange}
-                className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
-              >
-                <option value="">Select...</option>
-                <option value="Sedan">Sedan</option>
-                <option value="SUV">SUV</option>
-                <option value="Truck">Truck</option>
-                <option value="Coupe">Coupe</option>
-                <option value="Hatchback">Hatchback</option>
-                <option value="Van">Van</option>
-                <option value="Wagon">Wagon</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">City *</label>
-              <input
-                type="text"
-                name="city"
-                required
-                value={formData.city || ''}
-                onChange={handleChange}
-                className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Province *</label>
-              <select
-                name="province"
-                required
-                value={formData.province || ''}
-                onChange={handleChange}
-                className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
-              >
-                <option value="">Select...</option>
-                <option value="ON">Ontario</option>
-                <option value="QC">Quebec</option>
-                <option value="BC">British Columbia</option>
-                <option value="AB">Alberta</option>
-                <option value="MB">Manitoba</option>
-                <option value="SK">Saskatchewan</option>
-                <option value="NS">Nova Scotia</option>
-                <option value="NB">New Brunswick</option>
-                <option value="NL">Newfoundland</option>
-                <option value="PE">PEI</option>
-              </select>
-            </div>
-          </div>
-
-          <div className="mt-6">
-            <label className="block text-sm font-medium text-gray-700 mb-1">Equipment</label>
-            <textarea
-              name="equipment"
-              rows={2}
-              value={formData.equipment || ''}
-              onChange={handleChange}
-              placeholder="e.g., A3 40 KOMFORT AWD SEDAN"
-              className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
-            ></textarea>
-            <p className="mt-1 text-xs text-gray-500">Full equipment description from EDC inventory</p>
-          </div>
-
-          <div className="mt-6">
-            <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
-            <textarea
-              name="description"
-              rows={4}
-              value={formData.description || ''}
-              onChange={handleChange}
-              className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
-            ></textarea>
-          </div>
-
-          <div className="mt-6">
-            <label className="block text-sm font-medium text-gray-700 mb-1">Features (comma-separated)</label>
-            <input
-              type="text"
-              name="features"
-              value={Array.isArray(formData.features) ? formData.features.join(', ') : formData.features || ''}
-              onChange={handleChange}
-              placeholder="Leather seats, Sunroof, Backup camera..."
-              className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
-            />
-          </div>
-
-          <div className="mt-6 flex gap-4">
-            <button
-              type="submit"
-              disabled={saving}
-              className="flex-1 bg-[#118df0] text-white py-3 rounded-lg font-semibold hover:bg-[#0d6ebd] transition-colors disabled:opacity-50"
-            >
-              {saving ? 'Saving...' : 'Save Changes'}
-            </button>
-            <Link
-              href="/admin/inventory"
-              className="px-6 py-3 border border-gray-300 rounded-lg font-semibold text-gray-700 hover:bg-gray-50 transition-colors text-center"
-            >
-              Cancel
-            </Link>
-          </div>
-        </form>
+        {activeTab === 'files' && (
+          <FilesTab vehicleId={String(params.id)} />
+        )}
       </div>
     </div>
   )
