@@ -132,7 +132,7 @@ export default function CostsTab({ vehicleId, vehiclePrice, stockNumber }: Costs
     }
   }, [stockNumber])
 
-  // Polling fallback: periodically refresh when realtime is not firing
+  /// Polling fallback: periodically refresh when realtime is not firing
   useEffect(() => {
     if (!stockNumber) return
     const id = setInterval(() => {
