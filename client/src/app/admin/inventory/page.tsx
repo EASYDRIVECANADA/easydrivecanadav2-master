@@ -499,13 +499,17 @@ export default function AdminInventoryPage() {
               // Pie chart calculations - show breakdown of total invested
               const circumference = 2 * Math.PI * 35
               const netPurchase = purchasePrice - acv
-              const chartTotal = netPurchase + additionalExpenses
+              // Include positive profit in the donut so a green segment appears when profitable.
+              const positiveProfit = profit > 0 ? profit : 0
+              const chartTotal = netPurchase + additionalExpenses + positiveProfit
               
               const purchasePercent = chartTotal > 0 ? (netPurchase / chartTotal) * 100 : 0
               const expensesPercent = chartTotal > 0 ? (additionalExpenses / chartTotal) * 100 : 0
+              const profitPercent = chartTotal > 0 ? (positiveProfit / chartTotal) * 100 : 0
               
               const purchaseDash = (purchasePercent / 100) * circumference
               const expensesDash = (expensesPercent / 100) * circumference
+              const profitDash = (profitPercent / 100) * circumference
               
               return (
                 <div className="space-y-4">
@@ -529,6 +533,17 @@ export default function AdminInventoryPage() {
                         strokeDasharray={`${expensesDash} ${circumference}`}
                         strokeDashoffset={`-${purchaseDash}`}
                       />
+                      {/* Green segment - Profit (only when positive) */}
+                      {profit > 0 && (
+                        <circle 
+                          cx="50" cy="50" r="35" 
+                          fill="transparent" 
+                          stroke="#16a34a" 
+                          strokeWidth="20" 
+                          strokeDasharray={`${profitDash} ${circumference}`}
+                          strokeDashoffset={`-${purchaseDash + expensesDash}`}
+                        />
+                      )}
                     </svg>
                   </div>
                   <div className="flex justify-center gap-4 text-xs">
@@ -540,6 +555,12 @@ export default function AdminInventoryPage() {
                       <div className="w-3 h-3 rounded-full bg-red-600"></div>
                       <span>Expenses</span>
                     </div>
+                    {profit > 0 && (
+                      <div className="flex items-center gap-1">
+                        <div className="w-3 h-3 rounded-full bg-green-600"></div>
+                        <span>Profit</span>
+                      </div>
+                    )}
                   </div>
                   <div className="text-center text-sm text-gray-600">Selling: {formatPrice(selling)}</div>
                   <div className="space-y-2 text-[15px]">
