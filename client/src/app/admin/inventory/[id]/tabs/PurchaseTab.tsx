@@ -77,7 +77,7 @@ export default function PurchaseTab({ vehicleId, stockNumber }: PurchaseTabProps
 
   useEffect(() => {
     fetchPurchaseData()
-  }, [vehicleId])
+  }, [vehicleId, stockNumber])
 
   const fetchPurchaseData = async () => {
     try {
@@ -87,8 +87,63 @@ export default function PurchaseTab({ vehicleId, stockNumber }: PurchaseTabProps
         .eq('id', vehicleId)
         .maybeSingle()
 
-      if (data?.purchase_data) {
-        setFormData(data.purchase_data)
+      if (data?.purchase_data && Object.keys(data.purchase_data || {}).length > 0) {
+        setFormData(prev => ({ ...prev, ...data.purchase_data }))
+        return
+      }
+
+      // Fallback: prefill from edc_purchase using stock number if available
+      if (stockNumber) {
+        const { data: purchaseRow, error: purchaseErr } = await supabase
+          .from('edc_purchase')
+          .select('*')
+          .eq('stock_number', stockNumber)
+          .order('updated_at', { ascending: false })
+          .limit(1)
+          .single()
+
+        if (purchaseRow && !purchaseErr) {
+          // Map columns from edc_purchase to PurchaseData shape
+          const mapped: PurchaseData = {
+            publicOrCompany: purchaseRow.public_or_company || undefined,
+            vendorName: purchaseRow.vendor_name || undefined,
+            salespersonRegistration: purchaseRow.salesperson_registration || undefined,
+            companyMvda: purchaseRow.company_mvda || undefined,
+            taxNumber: purchaseRow.tax_number || undefined,
+            vendorPhone: purchaseRow.vendor_phone || undefined,
+            vendorMobile: purchaseRow.vendor_mobile || undefined,
+            vendorFax: purchaseRow.vendor_fax || undefined,
+            vendorEmail: purchaseRow.vendor_email || undefined,
+            vendorLocation: purchaseRow.vendor_location || undefined,
+            vendorAptSuite: purchaseRow.vendor_apt_suite || undefined,
+            vendorCity: purchaseRow.vendor_city || undefined,
+            vendorProvince: purchaseRow.vendor_province || undefined,
+            vendorPostalCode: purchaseRow.vendor_postal_code || undefined,
+            vendorCountry: purchaseRow.vendor_country || undefined,
+            driverLicense: purchaseRow.driver_license || undefined,
+            rin: purchaseRow.rin || undefined,
+            plateNumber: purchaseRow.plate_number || undefined,
+            saleState: purchaseRow.sale_state || undefined,
+            licenseFee: purchaseRow.license_fee ?? undefined,
+            purchasedThroughAuction: purchaseRow.purchased_through_auction ?? undefined,
+            paymentStatus: purchaseRow.payment_status || undefined,
+            purchasedOn: purchaseRow.purchased_on || undefined,
+            dateReceived: purchaseRow.date_received || undefined,
+            dateDelivered: purchaseRow.date_delivered || undefined,
+            reconCompletedBy: purchaseRow.recon_completed_by || undefined,
+            ownershipStatus: purchaseRow.ownership_status || undefined,
+            titleReceived: purchaseRow.title_received || undefined,
+            ownershipNotes: purchaseRow.ownership_notes || undefined,
+            purchasePrice: purchaseRow.purchase_price ?? undefined,
+            actualCashValue: purchaseRow.actual_cash_value ?? undefined,
+            discount: purchaseRow.discount ?? undefined,
+            taxType: purchaseRow.tax_type || undefined,
+            taxOverride: purchaseRow.tax_override ?? undefined,
+            vehicleTax: purchaseRow.vehicle_tax ?? undefined,
+            totalVehicleTax: purchaseRow.total_vehicle_tax ?? undefined,
+          }
+          setFormData(prev => ({ ...prev, ...mapped }))
+        }
       }
     } catch (error) {
       console.error('Error fetching purchase data:', error)
@@ -131,26 +186,104 @@ export default function PurchaseTab({ vehicleId, stockNumber }: PurchaseTabProps
   const handleSave = async () => {
     setSaving(true)
     try {
-      const res = await fetch('https://primary-production-6722.up.railway.app/webhook/purchase', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          stockNumber: stockNumber || null,
-          vehicleId,
-          purchase: formData,
-        }),
-      })
-      const text = await res.text().catch(() => '')
-      const okText = (text || '').trim().toLowerCase()
-      if (res.ok && okText === 'done') {
+      // Remove undefined values to ensure clean JSON payload
+      const cleanData: PurchaseData = JSON.parse(JSON.stringify(formData))
+
+      const { data: vehRows, error: vehiclesErr } = await supabase
+        .from('edc_vehicles')
+        .update({ purchase_data: cleanData })
+        .eq('id', vehicleId)
+        .select('id')
+
+      if (vehiclesErr) {
+        console.error('Error updating edc_vehicles.purchase_data:', vehiclesErr)
+      }
+
+      // Also persist into edc_purchase keyed by stock number if present
+      let purchaseErr: any = null
+      let purchaseChanged = false
+      if (stockNumber) {
+        // Map full set of known columns in your table
+        const purchaseRow: any = {
+          public_or_company: cleanData.publicOrCompany || null,
+          vendor_name: cleanData.vendorName || null,
+          salesperson_registration: cleanData.salespersonRegistration || null,
+          company_mvda: cleanData.companyMvda || null,
+          tax_number: cleanData.taxNumber || null,
+          vendor_phone: cleanData.vendorPhone || null,
+          vendor_mobile: cleanData.vendorMobile || null,
+          vendor_fax: cleanData.vendorFax || null,
+          vendor_email: cleanData.vendorEmail || null,
+          vendor_location: cleanData.vendorLocation || null,
+          vendor_apt_suite: cleanData.vendorAptSuite || null,
+          vendor_city: cleanData.vendorCity || null,
+          vendor_postal_code: cleanData.vendorPostalCode || null,
+          plate_number: cleanData.plateNumber || null,
+          sale_state: cleanData.saleState || null,
+          purchased_through_auction: cleanData.purchasedThroughAuction ?? null,
+          purchase_price: cleanData.purchasePrice ?? null,
+          actual_cash_value: cleanData.actualCashValue ?? null,
+          discount: cleanData.discount ?? null,
+          tax_type: cleanData.taxType || null,
+          tax_override: cleanData.taxOverride ?? null,
+          vehicle_tax: cleanData.vehicleTax ?? null,
+          total_vehicle_tax: cleanData.totalVehicleTax ?? null,
+          license_fee: cleanData.licenseFee ?? null,
+          purchased_on: cleanData.purchasedOn || null,
+          date_received: cleanData.dateReceived || null,
+          date_delivered: cleanData.dateDelivered || null,
+          recon_completed_by: cleanData.reconCompletedBy || null,
+          title_received: cleanData.titleReceived || null,
+          ownership_status: cleanData.ownershipStatus || null,
+          ownership_notes: cleanData.ownershipNotes || null,
+          driver_license: cleanData.driverLicense || null,
+          rin: cleanData.rin || null,
+          payment_status: cleanData.paymentStatus || null,
+          updated_at: new Date().toISOString(),
+        }
+
+        // First try to update by stock_number
+        const { data: updRows, error: updErr } = await supabase
+          .from('edc_purchase')
+          .update(purchaseRow)
+          .eq('stock_number', stockNumber)
+          .select('id')
+
+        if (updErr) {
+          console.error('Error updating edc_purchase by stock_number:', updErr)
+          purchaseErr = updErr
+        }
+
+        // If no row updated, insert a new one with stock_number
+        if (!purchaseErr && (!updRows || updRows.length === 0)) {
+          const insertPayload = { stock_number: stockNumber, ...purchaseRow }
+          const { data: insRow, error: insErr } = await supabase
+            .from('edc_purchase')
+            .insert(insertPayload)
+            .select('id')
+            .single()
+          if (insErr) {
+            console.error('Error inserting edc_purchase:', insErr)
+            purchaseErr = insErr
+          } else if (insRow?.id) {
+            purchaseChanged = true
+          }
+        } else if (updRows && updRows.length > 0) {
+          purchaseChanged = true
+        }
+      }
+
+      const vehiclesChanged = Array.isArray(vehRows) && vehRows.length > 0
+      const success = vehiclesChanged || purchaseChanged
+      if (success) {
         alert('Purchase information saved successfully!')
+        fetchPurchaseData()
       } else {
-        console.error('Webhook did not confirm success:', { status: res.status, text })
-        alert('Error: webhook did not confirm save')
+        alert('Error saving purchase information. See console for details.')
       }
     } catch (error) {
       console.error('Failed to send purchase to webhook:', error)
-      alert('Error sending purchase info to webhook')
+      alert('Error saving purchase info')
     } finally {
       setSaving(false)
     }
