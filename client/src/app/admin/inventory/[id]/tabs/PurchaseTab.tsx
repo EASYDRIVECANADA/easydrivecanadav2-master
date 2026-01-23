@@ -81,19 +81,9 @@ export default function PurchaseTab({ vehicleId, stockNumber }: PurchaseTabProps
 
   const fetchPurchaseData = async () => {
     try {
-      const { data, error } = await supabase
-        .from('edc_vehicles')
-        .select('purchase_data')
-        .eq('id', vehicleId)
-        .maybeSingle()
-
-      if (data?.purchase_data && Object.keys(data.purchase_data || {}).length > 0) {
-        setFormData(prev => ({ ...prev, ...data.purchase_data }))
-        return
-      }
-
-      // Fallback: prefill from edc_purchase using stock number if available
+      // Primary: prefill from edc_purchase using stock number if available
       if (stockNumber) {
+        try { console.info('[PurchaseTab] Prefill fallback from edc_purchase using stock_number:', stockNumber) } catch {}
         const { data: purchaseRow, error: purchaseErr } = await supabase
           .from('edc_purchase')
           .select('*')
@@ -102,48 +92,76 @@ export default function PurchaseTab({ vehicleId, stockNumber }: PurchaseTabProps
           .limit(1)
           .single()
 
-        if (purchaseRow && !purchaseErr) {
+        let row = purchaseRow
+        if ((!row || purchaseErr) && stockNumber) {
+          // Fallback to created_at in case updated_at is null
+          const { data: purchaseRow2 } = await supabase
+            .from('edc_purchase')
+            .select('*')
+            .eq('stock_number', stockNumber)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .single()
+          row = purchaseRow2 || row
+        }
+
+        if (row) {
           // Map columns from edc_purchase to PurchaseData shape
           const mapped: PurchaseData = {
-            publicOrCompany: purchaseRow.public_or_company || undefined,
-            vendorName: purchaseRow.vendor_name || undefined,
-            salespersonRegistration: purchaseRow.salesperson_registration || undefined,
-            companyMvda: purchaseRow.company_mvda || undefined,
-            taxNumber: purchaseRow.tax_number || undefined,
-            vendorPhone: purchaseRow.vendor_phone || undefined,
-            vendorMobile: purchaseRow.vendor_mobile || undefined,
-            vendorFax: purchaseRow.vendor_fax || undefined,
-            vendorEmail: purchaseRow.vendor_email || undefined,
-            vendorLocation: purchaseRow.vendor_location || undefined,
-            vendorAptSuite: purchaseRow.vendor_apt_suite || undefined,
-            vendorCity: purchaseRow.vendor_city || undefined,
-            vendorProvince: purchaseRow.vendor_province || undefined,
-            vendorPostalCode: purchaseRow.vendor_postal_code || undefined,
-            vendorCountry: purchaseRow.vendor_country || undefined,
-            driverLicense: purchaseRow.driver_license || undefined,
-            rin: purchaseRow.rin || undefined,
-            plateNumber: purchaseRow.plate_number || undefined,
-            saleState: purchaseRow.sale_state || undefined,
-            licenseFee: purchaseRow.license_fee ?? undefined,
-            purchasedThroughAuction: purchaseRow.purchased_through_auction ?? undefined,
-            paymentStatus: purchaseRow.payment_status || undefined,
-            purchasedOn: purchaseRow.purchased_on || undefined,
-            dateReceived: purchaseRow.date_received || undefined,
-            dateDelivered: purchaseRow.date_delivered || undefined,
-            reconCompletedBy: purchaseRow.recon_completed_by || undefined,
-            ownershipStatus: purchaseRow.ownership_status || undefined,
-            titleReceived: purchaseRow.title_received || undefined,
-            ownershipNotes: purchaseRow.ownership_notes || undefined,
-            purchasePrice: purchaseRow.purchase_price ?? undefined,
-            actualCashValue: purchaseRow.actual_cash_value ?? undefined,
-            discount: purchaseRow.discount ?? undefined,
-            taxType: purchaseRow.tax_type || undefined,
-            taxOverride: purchaseRow.tax_override ?? undefined,
-            vehicleTax: purchaseRow.vehicle_tax ?? undefined,
-            totalVehicleTax: purchaseRow.total_vehicle_tax ?? undefined,
+            publicOrCompany: row.public_or_company || undefined,
+            vendorName: row.vendor_name || undefined,
+            salespersonRegistration: row.salesperson_registration || undefined,
+            companyMvda: row.company_mvda || undefined,
+            taxNumber: row.tax_number || undefined,
+            vendorPhone: row.vendor_phone || undefined,
+            vendorMobile: row.vendor_mobile || undefined,
+            vendorFax: row.vendor_fax || undefined,
+            vendorEmail: row.vendor_email || undefined,
+            vendorLocation: row.vendor_location || undefined,
+            vendorAptSuite: row.vendor_apt_suite || undefined,
+            vendorCity: row.vendor_city || undefined,
+            vendorProvince: row.vendor_province || undefined,
+            vendorPostalCode: row.vendor_postal_code || undefined,
+            vendorCountry: row.vendor_country || undefined,
+            driverLicense: row.driver_license || undefined,
+            rin: row.rin || undefined,
+            plateNumber: row.plate_number || undefined,
+            saleState: row.sale_state || undefined,
+            licenseFee: row.license_fee ?? undefined,
+            purchasedThroughAuction: row.purchased_through_auction ?? undefined,
+            paymentStatus: row.payment_status || undefined,
+            purchasedOn: row.purchased_on || undefined,
+            dateReceived: row.date_received || undefined,
+            dateDelivered: row.date_delivered || undefined,
+            reconCompletedBy: row.recon_completed_by || undefined,
+            ownershipStatus: row.ownership_status || undefined,
+            titleReceived: row.title_received || undefined,
+            ownershipNotes: row.ownership_notes || undefined,
+            purchasePrice: row.purchase_price ?? undefined,
+            actualCashValue: row.actual_cash_value ?? undefined,
+            discount: row.discount ?? undefined,
+            taxType: row.tax_type || undefined,
+            taxOverride: row.tax_override ?? undefined,
+            vehicleTax: row.vehicle_tax ?? undefined,
+            totalVehicleTax: row.total_vehicle_tax ?? undefined,
           }
+          try { console.info('[PurchaseTab] Prefilled from edc_purchase for stock:', stockNumber, mapped) } catch {}
           setFormData(prev => ({ ...prev, ...mapped }))
+          return
         }
+      }
+
+      // Secondary: if no stock number data was found, try vehicle's stored purchase_data
+      const { data, error } = await supabase
+        .from('edc_vehicles')
+        .select('purchase_data')
+        .eq('id', vehicleId)
+        .maybeSingle()
+
+      if (data?.purchase_data && Object.keys(data.purchase_data || {}).length > 0) {
+        try { console.info('[PurchaseTab] Prefill from edc_vehicles.purchase_data (secondary)') } catch {}
+        setFormData(prev => ({ ...prev, ...data.purchase_data }))
+        return
       }
     } catch (error) {
       console.error('Error fetching purchase data:', error)

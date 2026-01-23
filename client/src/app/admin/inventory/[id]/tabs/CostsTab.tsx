@@ -427,16 +427,31 @@ export default function CostsTab({ vehicleId, vehiclePrice, stockNumber }: Costs
   const handleSave = async () => {
     setSaving(true)
     try {
-      const { error } = await supabase
+      console.log('Updating price for vehicle:', vehicleId, 'to:', costsData.listPrice)
+      
+      const { data, error } = await supabase
         .from('edc_vehicles')
-        .update({ costs_data: costsData })
+        .update({ price: costsData.listPrice || 0 })
         .eq('id', vehicleId)
+        .select()
 
-      if (error) throw error
-      alert('Costs saved successfully!')
+      console.log('Update response:', { data, error })
+
+      if (error) {
+        console.error('Supabase error:', error)
+        alert(`Error saving: ${error.message}`)
+        return
+      }
+      
+      if (!data || data.length === 0) {
+        alert('No rows were updated. Check if the vehicle ID exists.')
+        return
+      }
+      
+      alert('Price saved successfully!')
     } catch (error) {
-      console.error('Error saving costs:', error)
-      alert('Error saving costs')
+      console.error('Error saving:', error)
+      alert(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`)
     } finally {
       setSaving(false)
     }

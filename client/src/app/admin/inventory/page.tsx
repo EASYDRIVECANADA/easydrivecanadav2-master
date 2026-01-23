@@ -80,6 +80,12 @@ export default function AdminInventoryPage() {
   const router = useRouter()
   const [drawerVehicle, setDrawerVehicle] = useState<Vehicle | null>(null)
   const closeDrawer = () => setDrawerVehicle(null)
+  const [drawerCosts, setDrawerCosts] = useState<any>({
+    purchasePrice: 0,
+    actualCashValue: 0,
+    additionalExpenses: 0,
+    taxTotal: 0,
+  })
 
   const parseCostsData = (val: any) => {
     if (!val) return undefined
@@ -92,6 +98,89 @@ export default function AdminInventoryPage() {
     }
     return val
   }
+
+  const fetchDrawerPurchase = async (stockNumber?: string) => {
+    try {
+      if (!stockNumber) return
+      const { data, error } = await supabase
+        .from('edc_purchase')
+        .select('purchase_price, actual_cash_value')
+        .eq('stock_number', stockNumber)
+        .order('updated_at', { ascending: false })
+        .limit(1)
+        .single()
+      if (error) {
+        console.error('Failed to fetch purchase values:', error)
+        return
+      }
+      const price = Number(data?.purchase_price || 0)
+      const acv = Number(data?.actual_cash_value || 0)
+      setDrawerCosts((prev: any) => ({
+        ...prev,
+        purchasePrice: isNaN(price) ? 0 : price,
+        actualCashValue: isNaN(acv) ? 0 : acv,
+      }))
+    } catch (err) {
+      console.error('Error fetching purchase values:', err)
+    }
+  }
+
+  const fetchDrawerCosts = async (stockNumber?: string) => {
+    if (!stockNumber) return
+    try {
+      const { data, error } = await supabase
+        .from('edc_costs')
+        .select('*')
+        .eq('stock_number', stockNumber)
+        .order('created_at', { ascending: true })
+
+      if (!error && Array.isArray(data)) {
+        const additionalTotal = data.reduce((sum, r: any) => {
+          const total = parseFloat(r.total ?? '0') || 0
+          return sum + total
+        }, 0)
+        const taxTotal = data.reduce((sum, r: any) => {
+          const tax = parseFloat(r.tax ?? '0') || 0
+          return sum + tax
+        }, 0)
+        setDrawerCosts((prev: any) => ({ ...prev, additionalExpenses: additionalTotal, taxTotal }))
+      }
+    } catch (err) {
+      console.error('Error fetching edc_costs by stock number:', err)
+    }
+  }
+
+  useEffect(() => {
+    const stock = drawerVehicle?.stockNumber
+    if (!stock) return
+    setDrawerCosts({
+      purchasePrice: 0,
+      actualCashValue: 0,
+      additionalExpenses: 0,
+      taxTotal: 0,
+    })
+    fetchDrawerPurchase(stock)
+    fetchDrawerCosts(stock)
+
+    const ch1 = supabase
+      .channel(`drawer-costs-${stock}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'edc_costs', filter: `stock_number=eq.${stock}` }, () => {
+        fetchDrawerCosts(stock)
+      })
+      .subscribe()
+
+    const ch2 = supabase
+      .channel(`drawer-purchase-${stock}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'edc_purchase', filter: `stock_number=eq.${stock}` }, () => {
+        fetchDrawerPurchase(stock)
+      })
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(ch1)
+      supabase.removeChannel(ch2)
+    }
+  }, [drawerVehicle?.id, drawerVehicle?.stockNumber])
 
   useEffect(() => {
     // Check auth
@@ -423,34 +512,71 @@ export default function AdminInventoryPage() {
           <div className="p-5 overflow-y-auto">
             <h4 className="text-base font-semibold text-gray-900 mb-4 text-center">Profit Analysis</h4>
             {(() => {
-              const cd = drawerVehicle.costsData || {}
-              const additional: any[] = Array.isArray(cd.additionalExpenses) ? cd.additionalExpenses : []
-              const additionalTotal = additional.reduce((s, it) => s + Number(it.total || 0), 0)
-              const taxTotal = additional.reduce((s, it) => s + Number(it.tax || 0), 0)
-              const purchasePrice = Number(cd.purchasePrice || 0)
-              const acv = Number(cd.actualCashValue || 0)
-              const totalInvested = purchasePrice + additionalTotal
-              const allInPrice = totalInvested + taxTotal
+              const purchasePrice = Number(drawerCosts.purchasePrice || 0)
+              const acv = Number(drawerCosts.actualCashValue || 0)
+              const additionalExpenses = Number(drawerCosts.additionalExpenses || 0)
+              const totalInvested = purchasePrice + additionalExpenses - acv
               const selling = Number(drawerVehicle.price || 0)
+              const taxRate = 0.13 // HST 13%
+              const tax = selling * taxRate
+              const allInPrice = selling + tax
+              const profit = selling - totalInvested
+              
+              // Pie chart calculations - show breakdown of total invested
               const circumference = 2 * Math.PI * 35
-              const purchasePercent = allInPrice > 0 ? (purchasePrice / allInPrice) * 100 : 100
+              const netPurchase = purchasePrice - acv
+              const chartTotal = netPurchase + additionalExpenses
+              
+              const purchasePercent = chartTotal > 0 ? (netPurchase / chartTotal) * 100 : 0
+              const expensesPercent = chartTotal > 0 ? (additionalExpenses / chartTotal) * 100 : 0
+              
               const purchaseDash = (purchasePercent / 100) * circumference
+              const expensesDash = (expensesPercent / 100) * circumference
+              
               return (
                 <div className="space-y-4">
                   <div className="flex items-center justify-center gap-4">
                     <svg viewBox="0 0 100 100" className="w-40 h-40 -rotate-90">
-                      <circle cx="50" cy="50" r="35" fill="transparent" stroke="#1f6feb" strokeWidth="20" strokeDasharray={`${purchaseDash} ${circumference}`} />
+                      {/* Blue segment - Purchase (net of ACV) */}
+                      <circle 
+                        cx="50" cy="50" r="35" 
+                        fill="transparent" 
+                        stroke="#2563eb" 
+                        strokeWidth="20" 
+                        strokeDasharray={`${purchaseDash} ${circumference}`}
+                        strokeDashoffset="0"
+                      />
+                      {/* Red segment - Expenses */}
+                      <circle 
+                        cx="50" cy="50" r="35" 
+                        fill="transparent" 
+                        stroke="#dc2626" 
+                        strokeWidth="20" 
+                        strokeDasharray={`${expensesDash} ${circumference}`}
+                        strokeDashoffset={`-${purchaseDash}`}
+                      />
                     </svg>
+                  </div>
+                  <div className="flex justify-center gap-4 text-xs">
+                    <div className="flex items-center gap-1">
+                      <div className="w-3 h-3 rounded-full bg-blue-600"></div>
+                      <span>Purchase</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <div className="w-3 h-3 rounded-full bg-red-600"></div>
+                      <span>Expenses</span>
+                    </div>
                   </div>
                   <div className="text-center text-sm text-gray-600">Selling: {formatPrice(selling)}</div>
                   <div className="space-y-2 text-[15px]">
                     <div className="flex justify-between text-gray-700"><span className="font-medium text-gray-600">Vehicle Purchase Price:</span><span>{formatPrice(purchasePrice)}</span></div>
                     <div className="flex justify-between text-gray-700"><span className="font-medium text-gray-600">Actual Cash Value:</span><span>{formatPrice(acv)}</span></div>
-                    <div className="flex justify-between text-gray-700"><span className="font-medium text-gray-600">Additional Expenses:</span><span>{formatPrice(additionalTotal)}</span></div>
+                    <div className="flex justify-between text-gray-700"><span className="font-medium text-gray-600">Additional Expenses:</span><span>{formatPrice(additionalExpenses)}</span></div>
                     <div className="flex justify-between text-gray-900"><span className="font-semibold">Total Invested:</span><span className="font-semibold">{formatPrice(totalInvested)}</span></div>
                     <div className="flex justify-between text-gray-700"><span className="font-medium text-gray-600">Vehicle Selling Price:</span><span>{formatPrice(selling)}</span></div>
-                    <div className="flex justify-between text-gray-700"><span className="font-medium text-gray-600">Tax (on vehicle):</span><span>{formatPrice(taxTotal)}</span></div>
+                    <div className="flex justify-between text-gray-700"><span className="font-medium text-gray-600">Tax:</span><span>{formatPrice(tax)}</span></div>
                     <div className="flex justify-between text-gray-900"><span className="font-bold">All In Price:</span><span className="font-bold">{formatPrice(allInPrice)}</span></div>
+                    <div className={`flex justify-between font-bold ${profit >= 0 ? 'text-green-600' : 'text-red-600'}`}><span>Profit:</span><span>{formatPrice(profit)}</span></div>
                   </div>
                 </div>
               )
