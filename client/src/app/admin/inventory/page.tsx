@@ -496,7 +496,7 @@ export default function AdminInventoryPage() {
               const allInPrice = selling + tax
               const profit = selling - totalInvested
               
-              // Pie chart calculations - show breakdown of total invested
+              /// Pie chart calculations - show breakdown of total invested
               const circumference = 2 * Math.PI * 35
               const netPurchase = purchasePrice - acv
               // Include positive profit in the donut so a green segment appears when profitable.
