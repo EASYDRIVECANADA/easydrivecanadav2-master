@@ -193,34 +193,8 @@ export default function AdminInventoryPage() {
   }, [statusTab])
 
   const handleOpenAddModal = () => {
-    setAddError('')
-    setAddSubmitting(false)
-    setAddFormData({
-      make: '',
-      model: '',
-      year: new Date().getFullYear(),
-      trim: '',
-      stockNumber: '',
-      keyNumber: '',
-      series: '',
-      equipment: '',
-      price: '',
-      mileage: '',
-      vin: '',
-      fuelType: 'Gasoline',
-      transmission: 'Automatic',
-      bodyStyle: '',
-      exteriorColor: '',
-      interiorColor: '',
-      drivetrain: 'FWD',
-      city: '',
-      province: 'ON',
-      description: '',
-      features: '',
-      status: 'ACTIVE',
-      inventoryType: 'FLEET',
-    })
-    setShowAddModal(true)
+    // Navigate to the new tabbed Add Vehicle page
+    router.push('/admin/inventory/new')
   }
 
   const handleAddChange = (
