@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useRouter, useParams } from 'next/navigation'
+import { useRouter, useParams, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabaseClient'
 
@@ -61,6 +61,7 @@ const TABS: { id: TabType; label: string; icon: string }[] = [
 export default function AdminEditVehiclePage() {
   const params = useParams()
   const router = useRouter()
+  const searchParams = useSearchParams()
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [formData, setFormData] = useState<VehicleFormData>({})
@@ -75,6 +76,15 @@ export default function AdminEditVehiclePage() {
     }
     fetchVehicle()
   }, [params.id])
+
+  // Pick active tab from URL query param (?tab=disclosures, images, etc.)
+  useEffect(() => {
+    const tab = (searchParams?.get('tab') || '').toLowerCase()
+    const validTabs: TabType[] = ['details', 'images', 'disclosures', 'purchase', 'costs', 'warranty', 'files']
+    if (validTabs.includes(tab as TabType)) {
+      setActiveTab(tab as TabType)
+    }
+  }, [searchParams])
 
   const fetchVehicle = async () => {
     try {

@@ -118,6 +118,8 @@ export default function AdminVehiclePhotosPage() {
       }
 
       setVehicle((prev) => (prev ? { ...prev, images: updatedImages } : prev))
+      // After successful upload, go to Disclosures tab
+      router.push(`/admin/inventory/${String(params.id)}?tab=disclosures`)
     } catch (error) {
       console.error('Error uploading photos:', error)
     } finally {

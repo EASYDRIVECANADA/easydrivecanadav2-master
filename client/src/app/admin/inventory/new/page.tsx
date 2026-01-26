@@ -4,11 +4,19 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabaseClient'
+import DisclosuresTab from './tabs/DisclosuresTab'
+import PurchaseTab from './tabs/PurchaseTab'
+import CostsTab from './tabs/CostsTab'
+import WarrantyTab from './tabs/WarrantyTab'
+import ImagesTab from './tabs/ImagesTab'
+import FilesTab from './tabs/FilesTab'
 
 type TabType = 'details' | 'disclosures' | 'purchase' | 'costs' | 'warranty' | 'images' | 'files'
 
 export default function NewVehiclePage() {
   const [activeTab, setActiveTab] = useState<TabType>('details')
+  const [createdVehicleId, setCreatedVehicleId] = useState<string>('')
+  const [images, setImages] = useState<string[]>([])
   const [formData, setFormData] = useState({
     make: '',
     model: '',
@@ -228,12 +236,26 @@ export default function NewVehiclePage() {
         return
       }
 
-      router.push(`/admin/inventory/${data.id}/photos`)
+      // Save vehicle ID and move to Images tab
+      setCreatedVehicleId(data.id)
+      setActiveTab('images')
     } catch {
       setError('Unable to create vehicle. Please try again.')
     } finally {
       setSubmitting(false)
     }
+  }
+
+  const handleNext = () => {
+    const tabOrder: TabType[] = ['details', 'images', 'disclosures', 'purchase', 'costs', 'warranty', 'files']
+    const currentIndex = tabOrder.indexOf(activeTab)
+    if (currentIndex < tabOrder.length - 1) {
+      setActiveTab(tabOrder[currentIndex + 1])
+    }
+  }
+
+  const handleImagesUpdate = (newImages: string[]) => {
+    setImages(newImages)
   }
 
   return (
@@ -828,35 +850,89 @@ export default function NewVehiclePage() {
             </div>
           )}
 
-          {/* Other Tabs - Placeholder */}
+          {/* Other Tabs */}
+          {activeTab === 'images' && (
+            <div>
+              <ImagesTab vehicleId={createdVehicleId} images={images} onImagesUpdate={handleImagesUpdate} />
+              <div className="mt-6">
+                <button
+                  onClick={handleNext}
+                  className="w-full bg-[#118df0] text-white py-3 rounded-lg font-semibold hover:bg-[#0d6ebd] transition-colors"
+                >
+                  Next: Disclosures →
+                </button>
+              </div>
+            </div>
+          )}
           {activeTab === 'disclosures' && (
-            <div className="text-center py-12 text-gray-500">
-              <p>Disclosures will be available after creating the vehicle</p>
+            <div>
+              <DisclosuresTab vehicleId={createdVehicleId} />
+              <div className="mt-6">
+                <button
+                  onClick={handleNext}
+                  className="w-full bg-[#118df0] text-white py-3 rounded-lg font-semibold hover:bg-[#0d6ebd] transition-colors"
+                >
+                  Next: Purchase →
+                </button>
+              </div>
             </div>
           )}
           {activeTab === 'purchase' && (
-            <div className="text-center py-12 text-gray-500">
-              <p>Purchase information will be available after creating the vehicle</p>
+            <div>
+              <PurchaseTab vehicleId={createdVehicleId} stockNumber={formData.stockNumber} />
+              <div className="mt-6">
+                <button
+                  onClick={handleNext}
+                  className="w-full bg-[#118df0] text-white py-3 rounded-lg font-semibold hover:bg-[#0d6ebd] transition-colors"
+                >
+                  Next: Costs →
+                </button>
+              </div>
             </div>
           )}
           {activeTab === 'costs' && (
-            <div className="text-center py-12 text-gray-500">
-              <p>Costs will be available after creating the vehicle</p>
+            <div>
+              <CostsTab vehicleId={createdVehicleId} vehiclePrice={parseFloat(String(formData.price || 0)) || 0} stockNumber={formData.stockNumber || ''} />
+              <div className="mt-6">
+                <button
+                  onClick={handleNext}
+                  className="w-full bg-[#118df0] text-white py-3 rounded-lg font-semibold hover:bg-[#0d6ebd] transition-colors"
+                >
+                  Next: Warranty →
+                </button>
+              </div>
             </div>
           )}
           {activeTab === 'warranty' && (
-            <div className="text-center py-12 text-gray-500">
-              <p>Warranty information will be available after creating the vehicle</p>
-            </div>
-          )}
-          {activeTab === 'images' && (
-            <div className="text-center py-12 text-gray-500">
-              <p>Images can be uploaded after creating the vehicle</p>
+            <div>
+              <WarrantyTab vehicleId={createdVehicleId} />
+              <div className="mt-6">
+                <button
+                  onClick={handleNext}
+                  className="w-full bg-[#118df0] text-white py-3 rounded-lg font-semibold hover:bg-[#0d6ebd] transition-colors"
+                >
+                  Next: Files →
+                </button>
+              </div>
             </div>
           )}
           {activeTab === 'files' && (
-            <div className="text-center py-12 text-gray-500">
-              <p>Files can be uploaded after creating the vehicle</p>
+            <div>
+              <FilesTab vehicleId={createdVehicleId} />
+              <div className="mt-6 flex gap-4">
+                <Link
+                  href="/admin/inventory"
+                  className="flex-1 bg-green-600 text-white py-3 rounded-lg font-semibold hover:bg-green-700 transition-colors text-center"
+                >
+                  ✓ Complete & View Inventory
+                </Link>
+                <Link
+                  href={`/admin/inventory/${createdVehicleId}`}
+                  className="flex-1 bg-[#118df0] text-white py-3 rounded-lg font-semibold hover:bg-[#0d6ebd] transition-colors text-center"
+                >
+                  Edit Vehicle Details
+                </Link>
+              </div>
             </div>
           )}
 
@@ -868,7 +944,7 @@ export default function NewVehiclePage() {
               disabled={submitting}
               className="flex-1 bg-[#118df0] text-white py-3 rounded-lg font-semibold hover:bg-[#0d6ebd] transition-colors disabled:opacity-50"
             >
-              {submitting ? 'Creating...' : 'Create Vehicle & Add Photos'}
+              {submitting ? 'Creating...' : 'Save & Continue to Images →'}
             </button>
             <Link
               href="/admin/inventory"
