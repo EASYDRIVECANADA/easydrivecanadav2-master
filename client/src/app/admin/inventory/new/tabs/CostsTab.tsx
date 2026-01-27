@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, forwardRef, useImperativeHandle } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 
 // Supported tax rates
@@ -42,9 +42,14 @@ interface CostsTabProps {
   vehicleId: string
   vehiclePrice: number
   stockNumber?: string
+  onError?: (message: string) => void
 }
 
-export default function CostsTab({ vehicleId, vehiclePrice, stockNumber }: CostsTabProps) {
+export interface CostsTabHandle {
+  save: () => Promise<boolean>
+}
+
+const CostsTab = forwardRef<CostsTabHandle, CostsTabProps>(function CostsTab({ vehicleId, vehiclePrice, stockNumber, onError }, ref) {
   const [costsData, setCostsData] = useState<CostsData>({
     listPrice: vehiclePrice || 0,
     salePrice: 0,
@@ -424,38 +429,64 @@ export default function CostsTab({ vehicleId, vehiclePrice, stockNumber }: Costs
     }
   }
 
-  const handleSave = async () => {
+  const handleSave = async (): Promise<boolean> => {
     setSaving(true)
     try {
-      console.log('Updating price for vehicle:', vehicleId, 'to:', costsData.listPrice)
-      
-      const { data, error } = await supabase
-        .from('edc_vehicles')
-        .update({ price: costsData.listPrice || 0 })
-        .eq('id', vehicleId)
-        .select()
-
-      console.log('Update response:', { data, error })
-
-      if (error) {
-        console.error('Supabase error:', error)
-        alert(`Error saving: ${error.message}`)
-        return
+      if (!vehicleId) return false
+      if (!stockNumber || !String(stockNumber).trim()) {
+        const msg = 'Missing stock number. Please set Stock # in Vehicle Details first.'
+        onError?.(msg)
+        return false
       }
-      
-      if (!data || data.length === 0) {
-        alert('No rows were updated. Check if the vehicle ID exists.')
-        return
+
+      const fullPayload: Record<string, any> = {
+        vehicleId: String(vehicleId),
+        stockNumber: String(stockNumber).trim(),
+        listPrice: costsData.listPrice,
+        salePrice: costsData.salePrice,
+        msrp: costsData.msrp,
+        purchasePrice: costsData.purchasePrice,
+        actualCashValue: costsData.actualCashValue,
+        additionalExpenses: Array.isArray(costsData.additionalExpenses) ? costsData.additionalExpenses : [],
       }
-      
-      alert('Price saved successfully!')
+
+      const payload = Object.fromEntries(
+        Object.entries(fullPayload).map(([k, v]) => {
+          if (v === undefined) return [k, null]
+          if (typeof v === 'string') {
+            const trimmed = v.trim()
+            return [k, trimmed === '' ? null : trimmed]
+          }
+          return [k, v]
+        })
+      )
+
+      const res = await fetch('/api/costs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+
+      const text = await res.text().catch(() => '')
+      if (!res.ok) throw new Error(text || `Webhook responded with ${res.status}`)
+
+      if (!String(text).toLowerCase().includes('done')) {
+        throw new Error(text || 'Webhook did not return done')
+      }
+
+      return true
     } catch (error) {
-      console.error('Error saving:', error)
-      alert(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      const msg = error instanceof Error ? error.message : String(error)
+      onError?.(msg)
+      return false
     } finally {
       setSaving(false)
     }
   }
+
+  useImperativeHandle(ref, () => ({
+    save: handleSave,
+  }))
 
   // Calculate totals
   const additionalExpensesTotal = costsData.additionalExpenses.reduce((sum, item) => sum + item.total, 0)
@@ -463,6 +494,23 @@ export default function CostsTab({ vehicleId, vehiclePrice, stockNumber }: Costs
   const totalTax = costsData.additionalExpenses.reduce((sum, item) => sum + item.tax, 0)
   const grandTotal = totalInvested + totalTax
   const potentialProfit = costsData.listPrice - grandTotal
+
+  const normalizedQuery = String(searchQuery || '').trim().toLowerCase()
+  const filteredExpenses = normalizedQuery
+    ? costsData.additionalExpenses.filter((item) => {
+        const haystack = [
+          item.name,
+          item.groupName,
+          item.description,
+          item.vendor,
+          item.invoiceRef,
+        ]
+          .filter(Boolean)
+          .join(' ')
+          .toLowerCase()
+        return haystack.includes(normalizedQuery)
+      })
+    : costsData.additionalExpenses
 
   return (
     <div className="bg-white rounded-xl shadow p-6">
@@ -517,14 +565,14 @@ export default function CostsTab({ vehicleId, vehiclePrice, stockNumber }: Costs
             </tr>
           </thead>
           <tbody>
-            {costsData.additionalExpenses.length === 0 ? (
+            {filteredExpenses.length === 0 ? (
               <tr>
                 <td colSpan={7} className="py-8 text-center text-gray-500">
                   No Costs
                 </td>
               </tr>
             ) : (
-              costsData.additionalExpenses.map((item) => (
+              filteredExpenses.map((item) => (
                 <tr key={item.id} className="border-b border-gray-100 hover:bg-gray-50">
                   <td className="py-2 px-2">
                     <div className="text-sm font-medium text-gray-900">{item.name || '—'}</div>
@@ -721,17 +769,6 @@ export default function CostsTab({ vehicleId, vehiclePrice, stockNumber }: Costs
             />
           </div>
         </div>
-      </div>
-
-      {/* Save Button */}
-      <div className="mt-6 flex justify-end">
-        <button
-          onClick={handleSave}
-          disabled={saving}
-          className="bg-[#118df0] text-white px-8 py-3 rounded-lg font-semibold hover:bg-[#0d6ebd] transition-colors disabled:opacity-50"
-        >
-          {saving ? 'Saving...' : 'Save'}
-        </button>
       </div>
 
       {/* Add/Edit Cost Modal */}
@@ -946,4 +983,6 @@ export default function CostsTab({ vehicleId, vehiclePrice, stockNumber }: Costs
       )}
     </div>
   )
-}
+})
+
+export default CostsTab

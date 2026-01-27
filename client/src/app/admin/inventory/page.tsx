@@ -13,6 +13,7 @@ interface Vehicle {
   trim?: string
   stockNumber: string
   price: number
+  salePrice?: any
   mileage: number
   status: string
   inventoryType: string
@@ -35,9 +36,27 @@ interface Vehicle {
   description?: string
   features?: string[]
   costsData?: any
+  purchaseData?: any
+  cylinders?: string
+  odometer?: number
+  odometerUnit?: string
+  condition?: string
+  certified?: string
+  raw?: any
 }
 
 export default function AdminInventoryPage() {
+  const STATUS_OPTIONS = [
+    'In Stock',
+    'In Stock (No Feed)',
+    'Coming Soon',
+    'In Trade',
+    'Deal Pending',
+    'Sold',
+    'Void',
+    'Other',
+  ] as const
+
   const [vehicles, setVehicles] = useState<Vehicle[]>([])
   const [filteredVehicles, setFilteredVehicles] = useState<Vehicle[]>([])
   const [loading, setLoading] = useState(true)
@@ -46,7 +65,9 @@ export default function AdminInventoryPage() {
   const [inventoryTypeFilter, setInventoryTypeFilter] = useState<'' | 'FLEET' | 'PREMIERE'>('')
   const [currentPage, setCurrentPage] = useState(1)
   const [totalVehicles, setTotalVehicles] = useState(0)
-  const [statusTab, setStatusTab] = useState<'ACTIVE' | 'PENDING' | 'SOLD'>('ACTIVE')
+  const [statusFilter, setStatusFilter] = useState<Set<string>>(new Set())
+  const [statusFilterOpen, setStatusFilterOpen] = useState(false)
+  const [itemsPerPage, setItemsPerPage] = useState(10)
   const [showAddModal, setShowAddModal] = useState(false)
   const [addSubmitting, setAddSubmitting] = useState(false)
   const [addError, setAddError] = useState('')
@@ -76,7 +97,6 @@ export default function AdminInventoryPage() {
     status: 'ACTIVE',
     inventoryType: 'FLEET',
   })
-  const itemsPerPage = 20
   const router = useRouter()
   const [drawerVehicle, setDrawerVehicle] = useState<Vehicle | null>(null)
   const closeDrawer = () => setDrawerVehicle(null)
@@ -97,6 +117,27 @@ export default function AdminInventoryPage() {
       }
     }
     return val
+  }
+
+  const parsePurchaseData = (val: any) => {
+    if (!val) return undefined
+    if (typeof val === 'string') {
+      try {
+        return JSON.parse(val)
+      } catch {
+        return undefined
+      }
+    }
+    return val
+  }
+
+  const normalizeStatus = (raw: any) => {
+    const s = String(raw ?? '').trim()
+    const upper = s.toUpperCase()
+    if (upper === 'ACTIVE') return 'In Stock'
+    if (upper === 'PENDING') return 'Deal Pending'
+    if (upper === 'SOLD') return 'Sold'
+    return s
   }
 
   const fetchDrawerPurchase = async (stockNumber?: string) => {
@@ -190,7 +231,7 @@ export default function AdminInventoryPage() {
       return
     }
     fetchVehicles()
-  }, [statusTab])
+  }, [])
 
   const handleOpenAddModal = () => {
     // Navigate to the new tabbed Add Vehicle page
@@ -269,7 +310,6 @@ export default function AdminInventoryPage() {
       const { data, error } = await supabase
         .from('edc_vehicles')
         .select('*')
-        .eq('status', statusTab)
         // Order by stock_number descending so the most recent is on top
         // Note: stock_number is stored as text; server-side order will be lexicographic.
         // We'll enforce a numeric sort on the client after mapping as a reliable fallback.
@@ -304,10 +344,11 @@ export default function AdminInventoryPage() {
         trim: safe(v.trim) || undefined,
         stockNumber: safe(v.stock_number) || '',
         price: v.price,
+        salePrice: (v as any).saleprice ?? (v as any).sale_price ?? undefined,
         mileage: v.mileage,
         status: safe(v.status),
         inventoryType: safe(v.inventory_type) || safe((v as any).vehicle_type),
-        images: Array.isArray(v.images) ? v.images : [],
+        images: normalizeImages(v.images),
         keyNumber: safe(v.key_number) || undefined,
         vin: safe(v.vin) || undefined,
         createdAt: v.created_at,
@@ -325,6 +366,13 @@ export default function AdminInventoryPage() {
         description: safe(v.description) || undefined,
         features: Array.isArray(v.features) ? v.features : undefined,
         costsData: parseCostsData((v as any).costs_data),
+        purchaseData: parsePurchaseData((v as any).purchase_data),
+        cylinders: safe((v as any).cylinders) || undefined,
+        odometer: typeof (v as any).odometer === 'number' ? (v as any).odometer : Number((v as any).odometer) || undefined,
+        odometerUnit: safe((v as any).odometer_unit) || undefined,
+        condition: safe((v as any).condition) || undefined,
+        certified: safe((v as any).certified) || undefined,
+        raw: v,
       }))
 
       // Ensure final ordering by numeric stock number desc (recent on top)
@@ -338,6 +386,10 @@ export default function AdminInventoryPage() {
       setTotalVehicles(sorted.length)
       setFilteredVehicles(sorted)
       setCurrentPage(1)
+
+      if (statusFilter.size === 0) {
+        setStatusFilter(new Set(STATUS_OPTIONS as unknown as string[]))
+      }
     } catch (error) {
       console.error('Error fetching vehicles:', error)
     } finally {
@@ -352,6 +404,16 @@ export default function AdminInventoryPage() {
     // Filter by inventory type
     if (inventoryTypeFilter) {
       filtered = filtered.filter(vehicle => vehicle.inventoryType === inventoryTypeFilter)
+    }
+
+    if (statusFilter.size > 0 && statusFilter.size < STATUS_OPTIONS.length) {
+      const known = new Set<string>(STATUS_OPTIONS.filter((s) => s !== 'Other') as unknown as string[])
+      filtered = filtered.filter((vehicle) => {
+        const normalized = normalizeStatus(vehicle.status)
+        if (statusFilter.has(normalized)) return true
+        if (statusFilter.has('Other') && normalized && !known.has(normalized)) return true
+        return false
+      })
     }
 
     // Filter by search query
@@ -371,7 +433,7 @@ export default function AdminInventoryPage() {
     setFilteredVehicles(filtered)
     setTotalVehicles(filtered.length)
     setCurrentPage(1)
-  }, [searchQuery, inventoryTypeFilter, vehicles])
+  }, [searchQuery, inventoryTypeFilter, vehicles, statusFilter])
 
   // Get paginated vehicles
   const paginatedVehicles = filteredVehicles.slice(
@@ -380,6 +442,77 @@ export default function AdminInventoryPage() {
   )
   
   const totalPages = Math.ceil(totalVehicles / itemsPerPage)
+
+  const allStatusOptions = [...STATUS_OPTIONS]
+
+  const toggleStatus = (s: string, checked: boolean) => {
+    setStatusFilter(prev => {
+      const next = new Set(prev)
+      if (checked) next.add(s)
+      else next.delete(s)
+      return next
+    })
+  }
+
+  const selectedStatusLabel = (() => {
+    if (statusFilter.size === 0) return 'Status'
+    if (statusFilter.size === allStatusOptions.length) return 'Status'
+    return `${statusFilter.size} Selected`
+  })()
+
+  const getDaysInInventory = (v: Vehicle) => {
+    const raw = (v as any).inStockDate || (v as any).in_stock_date || v.createdAt
+    const d = raw ? new Date(String(raw)) : null
+    if (!d || Number.isNaN(d.getTime())) return '—'
+    const now = new Date()
+    const diff = Math.max(0, now.getTime() - d.getTime())
+    return String(Math.floor(diff / (1000 * 60 * 60 * 24)))
+  }
+
+  const formatMoney = (n: any) => {
+    const num = Number(n || 0)
+    if (Number.isNaN(num)) return '$0.00'
+    return new Intl.NumberFormat('en-CA', { style: 'currency', currency: 'CAD', minimumFractionDigits: 2 }).format(num)
+  }
+
+  const formatPrice = (n: number) =>
+    (Number.isFinite(n) ? Number(n) : 0).toLocaleString('en-CA', {
+      style: 'currency',
+      currency: 'CAD',
+      maximumFractionDigits: 0,
+    })
+
+  const normalizeImages = (raw: any): string[] => {
+    if (!raw) return []
+    if (Array.isArray(raw)) return raw.map(String).filter(Boolean)
+    if (typeof raw === 'string') {
+      const s = raw.trim()
+      if (!s) return []
+      try {
+        const parsed = JSON.parse(s)
+        if (Array.isArray(parsed)) return parsed.map(String).filter(Boolean)
+      } catch {
+        // ignore
+      }
+      return s
+        .split(',')
+        .map((x) => x.trim())
+        .filter(Boolean)
+    }
+    return []
+  }
+
+  const toImageSrc = (value: any) => {
+    const v = typeof value === 'string' ? value.trim() : String(value ?? '').trim()
+    if (!v) return ''
+    if (v.startsWith('http://') || v.startsWith('https://') || v.startsWith('data:')) return v
+    const head = v.slice(0, 10)
+    let mime = 'image/jpeg'
+    if (head.startsWith('iVBOR')) mime = 'image/png'
+    else if (head.startsWith('R0lGOD')) mime = 'image/gif'
+    else if (head.startsWith('UklGR')) mime = 'image/webp'
+    return `data:${mime};base64,${v}`
+  }
 
   const allSelected = selectedIds.size > 0 && filteredVehicles.length > 0 && selectedIds.size === filteredVehicles.length
   const toggleSelectAll = (checked: boolean) => {
@@ -409,34 +542,9 @@ export default function AdminInventoryPage() {
       }
     } catch (error) {
       console.error('Error deleting vehicle:', error)
+      alert('Failed to delete vehicle')
     } finally {
       setDeleting(null)
-    }
-  }
-
-  const formatPrice = (price: number) => {
-    return new Intl.NumberFormat('en-CA', {
-      style: 'currency',
-      currency: 'CAD',
-      minimumFractionDigits: 0,
-    }).format(price)
-  }
-
-  const handleStatusChange = async (vehicleId: string, newStatus: 'ACTIVE' | 'PENDING' | 'SOLD') => {
-    try {
-      const { error } = await supabase.from('edc_vehicles').update({ status: newStatus }).eq('id', vehicleId)
-
-      if (!error) {
-        // Remove from current list since it changed status
-        setVehicles(prev => prev.filter(v => v.id !== vehicleId))
-        setFilteredVehicles(prev => prev.filter(v => v.id !== vehicleId))
-        setTotalVehicles(prev => prev - 1)
-      } else {
-        alert('Failed to update vehicle status')
-      }
-    } catch (error) {
-      console.error('Error updating status:', error)
-      alert('Failed to update vehicle status')
     }
   }
 
@@ -462,9 +570,22 @@ export default function AdminInventoryPage() {
               </button>
             </div>
             <div className="flex flex-col items-center gap-2 mt-1 mb-3">
-              <div className="w-20 h-20 rounded-full bg-gray-100 flex items-center justify-center text-gray-400">
-                <svg className="w-9 h-9" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
-              </div>
+              {(() => {
+                const first = Array.isArray((drawerVehicle as any).images) ? (drawerVehicle as any).images[0] : undefined
+                const src = toImageSrc(first)
+                if (src) {
+                  return (
+                    <div className="w-20 h-20 rounded-full bg-gray-100 overflow-hidden">
+                      <img src={src} alt="Vehicle" className="w-full h-full object-cover" />
+                    </div>
+                  )
+                }
+                return (
+                  <div className="w-20 h-20 rounded-full bg-gray-100 flex items-center justify-center text-gray-400">
+                    <svg className="w-9 h-9" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+                  </div>
+                )
+              })()}
               <div className="self-end mr-3 -mt-6">
                 <span className="px-2 py-0.5 text-[10px] font-semibold rounded-full bg-blue-100 text-blue-700">{drawerVehicle.status || 'In Stock'}</span>
               </div>
@@ -591,94 +712,96 @@ export default function AdminInventoryPage() {
       </div>
 
       <div className="w-full px-4 sm:px-6 lg:px-8 py-8">
-        {/* Status Tabs */}
-        <div className="bg-white rounded-xl shadow mb-6">
-          <div className="border-b border-gray-200">
-            <nav className="flex -mb-px">
-              <button
-                onClick={() => setStatusTab('ACTIVE')}
-                className={`py-4 px-6 text-sm font-medium border-b-2 transition-colors ${
-                  statusTab === 'ACTIVE'
-                    ? 'border-[#118df0] text-[#118df0]'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                }`}
-              >
-                Active
-              </button>
-              <button
-                onClick={() => setStatusTab('PENDING')}
-                className={`py-4 px-6 text-sm font-medium border-b-2 transition-colors ${
-                  statusTab === 'PENDING'
-                    ? 'border-[#118df0] text-[#118df0]'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                }`}
-              >
-                Pending
-              </button>
-              <button
-                onClick={() => setStatusTab('SOLD')}
-                className={`py-4 px-6 text-sm font-medium border-b-2 transition-colors ${
-                  statusTab === 'SOLD'
-                    ? 'border-[#118df0] text-[#118df0]'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                }`}
-              >
-                Sold
-              </button>
-            </nav>
-          </div>
-        </div>
-
-        {/* Search Bar & Filters */}
+        {/* Search / Filters / Page size */}
         <div className="bg-white rounded-xl shadow p-4 mb-6">
-          <div className="flex flex-wrap items-center gap-4">
-            <div className="flex-1 min-w-[200px] relative">
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search by make, model, year, stock #, VIN, or key number..."
-                className="w-full border border-gray-300 rounded-lg pl-10 pr-4 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
-              />
-              <svg className="absolute left-3 top-2.5 w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-              </svg>
+          <div className="flex items-center justify-between gap-4 flex-wrap">
+            <div className="flex items-center gap-3 flex-1 min-w-[320px]">
+              <div className="flex-1 relative">
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search inventory"
+                  className="w-full border border-gray-300 rounded-lg pl-10 pr-4 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+                />
+                <svg className="absolute left-3 top-2.5 w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+              </div>
+
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setStatusFilterOpen((v) => !v)}
+                  className="inline-flex items-center gap-2 px-3 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
+                >
+                  {selectedStatusLabel}
+                  <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
+
+                {statusFilterOpen && (
+                  <div className="absolute z-20 mt-2 w-56 bg-white border border-gray-200 rounded-lg shadow-lg p-3">
+                    <div className="text-xs font-semibold text-gray-500 mb-2">Filter by Status</div>
+                    <div className="max-h-56 overflow-auto space-y-2">
+                      {allStatusOptions.map((s) => (
+                        <label key={s} className="flex items-center gap-2 text-sm text-gray-700">
+                          <input
+                            type="checkbox"
+                            className="h-4 w-4 rounded border-gray-300 text-[#118df0] focus:ring-[#118df0]"
+                            checked={statusFilter.has(s)}
+                            onChange={(e) => toggleStatus(s, e.target.checked)}
+                          />
+                          <span>{s}</span>
+                        </label>
+                      ))}
+                    </div>
+                    <div className="flex items-center justify-between mt-3 pt-3 border-t border-gray-100">
+                      <button
+                        type="button"
+                        onClick={() => setStatusFilter(new Set(allStatusOptions))}
+                        className="text-xs text-gray-600 hover:text-gray-900"
+                      >
+                        Select All
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setStatusFilter(new Set())}
+                        className="text-xs text-gray-600 hover:text-gray-900"
+                      >
+                        Clear
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setStatusFilterOpen(false)}
+                        className="text-xs text-[#118df0] hover:text-[#0d6ebd] font-medium"
+                      >
+                        Close
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
-            {/* Inventory Type Filter */}
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setInventoryTypeFilter('')}
-                className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
-                  inventoryTypeFilter === ''
-                    ? 'bg-gray-900 text-white'
-                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                }`}
+
+            <div className="flex items-center gap-3">
+              <select
+                value={itemsPerPage}
+                onChange={(e) => {
+                  setItemsPerPage(parseInt(e.target.value, 10) || 10)
+                  setCurrentPage(1)
+                }}
+                className="border border-gray-300 rounded-lg px-2 py-2 text-sm text-gray-700 bg-white"
               >
-                All
-              </button>
-              <button
-                onClick={() => setInventoryTypeFilter('FLEET')}
-                className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
-                  inventoryTypeFilter === 'FLEET'
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-blue-50 text-blue-700 hover:bg-blue-100'
-                }`}
-              >
-                🚗 Fleet
-              </button>
-              <button
-                onClick={() => setInventoryTypeFilter('PREMIERE')}
-                className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
-                  inventoryTypeFilter === 'PREMIERE'
-                    ? 'bg-amber-500 text-white'
-                    : 'bg-amber-50 text-amber-700 hover:bg-amber-100'
-                }`}
-              >
-                ✨ Premiere
-              </button>
-            </div>
-            <div className="text-sm text-gray-600">
-              Showing {paginatedVehicles.length} of {totalVehicles} vehicles
+                <option value={10}>10</option>
+                <option value={20}>20</option>
+                <option value={50}>50</option>
+                <option value={100}>100</option>
+              </select>
+              <div className="text-sm text-gray-600 font-medium">
+                Total Inventory: {totalVehicles}
+              </div>
             </div>
           </div>
         </div>
@@ -715,10 +838,10 @@ export default function AdminInventoryPage() {
           <>
             {/* Desktop Table View */}
             <div className="hidden lg:block bg-white rounded-xl shadow overflow-hidden">
-              <table className="min-w-full divide-y divide-gray-200">
+              <table className="min-w-full w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
                   <tr>
-                    <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap sticky left-0 bg-white z-10">
+                    <th className="px-3 py-2 text-center text-sm font-bold text-gray-700 uppercase tracking-wider sticky left-0 bg-white z-10">
                       <div className="flex items-center justify-center gap-2">
                         <input
                           type="checkbox"
@@ -732,20 +855,35 @@ export default function AdminInventoryPage() {
                         </svg>
                       </div>
                     </th>
-                    <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">Vehicle</th>
-                    <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">Trim</th>
-                    <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">Vehicle Type</th>
-                    <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">Drive</th>
-                    <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">Transmission</th>
-                    <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">Colour</th>
-                    <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">Stock #</th>
-                    <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">Key #</th>
-                    <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">Price</th>
-                    <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">Mileage</th>
-                    <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">VIN</th>
-                    <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">City/Prov</th>
-                    <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">Status</th>
-                    <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">Photos</th>
+                    <th className="px-3 py-2 text-left text-sm font-bold text-gray-700 uppercase tracking-wider">Description</th>
+                    <th className="px-3 py-2 text-left text-sm font-bold text-gray-700 uppercase tracking-wider">Trim</th>
+                    <th className="px-3 py-2 text-left text-sm font-bold text-gray-700 uppercase tracking-wider leading-tight">
+                      Vehicle<br />Type
+                    </th>
+                    <th className="px-3 py-2 text-left text-sm font-bold text-gray-700 uppercase tracking-wider">Drive</th>
+                    <th className="px-3 py-2 text-left text-sm font-bold text-gray-700 uppercase tracking-wider leading-tight">
+                      Trans-
+                      <br />mission
+                    </th>
+                    <th className="px-3 py-2 text-left text-sm font-bold text-gray-700 uppercase tracking-wider">Cylinders</th>
+                    <th className="px-3 py-2 text-left text-sm font-bold text-gray-700 uppercase tracking-wider">Colour</th>
+                    <th className="px-3 py-2 text-left text-sm font-bold text-gray-700 uppercase tracking-wider">Odometer</th>
+                    <th className="px-3 py-2 text-left text-sm font-bold text-gray-700 uppercase tracking-wider leading-tight">
+                      Actual Cash<br />Value
+                    </th>
+                    <th className="px-3 py-2 text-left text-sm font-bold text-gray-700 uppercase tracking-wider">List Price</th>
+                    <th className="px-3 py-2 text-left text-sm font-bold text-gray-700 uppercase tracking-wider leading-tight">
+                      Sale<br />Price
+                    </th>
+                    <th className="px-3 py-2 text-left text-sm font-bold text-gray-700 uppercase tracking-wider">DII</th>
+                    <th className="px-3 py-2 text-left text-sm font-bold text-gray-700 uppercase tracking-wider">Stock #</th>
+                    <th className="px-3 py-2 text-left text-sm font-bold text-gray-700 uppercase tracking-wider">Key #</th>
+                    <th className="px-3 py-2 text-left text-sm font-bold text-gray-700 uppercase tracking-wider leading-tight">
+                      Cert/
+                      <br />AS-IS
+                    </th>
+                    <th className="px-3 py-2 text-left text-sm font-bold text-gray-700 uppercase tracking-wider">Status</th>
+                    <th className="px-3 py-2 text-left text-sm font-bold text-gray-700 uppercase tracking-wider">Other</th>
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
@@ -773,95 +911,38 @@ export default function AdminInventoryPage() {
                         </Link>
                       </div>
                     </td>
-                    <td className="px-3 py-2 whitespace-nowrap">
-                      <div className="flex items-center">
-                        <div className="w-10 h-10 bg-gray-200 rounded-lg overflow-hidden flex-shrink-0">
-                          {vehicle.images && vehicle.images.length > 0 ? (
-                            <img
-                              src={vehicle.images[0]}
-                              alt=""
-                              className="w-full h-full object-cover"
-                              onError={(e) => {
-                                e.currentTarget.style.display = 'none'
-                              }}
-                            />
-                          ) : (
-                            <div className="w-full h-full flex items-center justify-center text-gray-400">
-                              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                              </svg>
-                            </div>
-                          )}
-                        </div>
-                        <div className="ml-3">
-                          <a
-                            href={`/inventory/${vehicle.id}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-sm font-medium text-gray-900 hover:text-[#118df0] hover:underline leading-tight"
-                            title="View on shop"
-                          >
-                            {vehicle.year} {vehicle.make} {vehicle.model}
-                          </a>
-                        </div>
-                      </div>
+                    <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-900">
+                      {vehicle.year} {vehicle.make} {vehicle.model}
                     </td>
+                    <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-500">{vehicle.trim || '—'}</td>
+                    <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-500">{vehicle.bodyStyle || vehicle.inventoryType || '—'}</td>
+                    <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-500">{vehicle.drivetrain || '—'}</td>
+                    <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-500">{vehicle.transmission || '—'}</td>
+                    <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-500">{vehicle.cylinders || '—'}</td>
+                    <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-500">{vehicle.exteriorColor || '—'}</td>
                     <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-500">
-                      {vehicle.trim || '—'}
-                    </td>
-                    <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-500">
-                      {vehicle.bodyStyle || vehicle.inventoryType || '—'}
-                    </td>
-                    <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-500">
-                      {vehicle.drivetrain || '—'}
-                    </td>
-                    <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-500">
-                      {vehicle.transmission || '—'}
-                    </td>
-                    <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-500">
-                      {vehicle.exteriorColor || '—'}
-                    </td>
-                    <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-500">
-                      {vehicle.stockNumber || '—'}
-                    </td>
-                    <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-500">
-                      {vehicle.keyNumber ? (
-                        <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                          🔑 {vehicle.keyNumber}
-                        </span>
-                      ) : (
-                        <span className="text-gray-400">—</span>
-                      )}
+                      {typeof vehicle.odometer === 'number' ? vehicle.odometer.toLocaleString() : '—'} {vehicle.odometerUnit || ''}
                     </td>
                     <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-900">
-                      {formatPrice(vehicle.price)}
+                      {formatMoney((vehicle.purchaseData as any)?.actualCashValue ?? (vehicle.purchaseData as any)?.actual_cash_value ?? 0)}
                     </td>
+                    <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-900">{formatMoney(vehicle.price)}</td>
+                    <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-900">
+                      {formatMoney(vehicle.salePrice ?? (vehicle.costsData as any)?.salePrice ?? (vehicle.costsData as any)?.sale_price ?? 0)}
+                    </td>
+                    <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-500">{getDaysInInventory(vehicle)}</td>
+                    <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-500">{vehicle.stockNumber || '—'}</td>
+                    <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-500">{vehicle.keyNumber || '—'}</td>
                     <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-500">
-                      {vehicle.mileage?.toLocaleString()} km
-                    </td>
-                    <td className="px-3 py-2 whitespace-nowrap text-[10px] text-gray-500">
-                      {vehicle.vin || '—'}
-                    </td>
-                    <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-500">
-                      {(vehicle.city || '—')}, {vehicle.province || '—'}
+                      {vehicle.certified || vehicle.condition || '—'}
                     </td>
                     <td className="px-3 py-2 whitespace-nowrap">
-                      <select
-                        value={vehicle.status}
-                        onChange={(e) => handleStatusChange(vehicle.id, e.target.value as 'ACTIVE' | 'PENDING' | 'SOLD')}
-                        className={`px-2 py-0.5 text-[10px] font-medium rounded-full border-0 focus:ring-2 focus:ring-[#118df0] ${
-                          vehicle.status === 'ACTIVE' ? 'bg-green-100 text-green-800' :
-                          vehicle.status === 'SOLD' ? 'bg-red-100 text-red-800' :
-                          'bg-yellow-100 text-yellow-800'
-                        }`}
-                      >
-                        <option value="ACTIVE">Active</option>
-                        <option value="PENDING">Pending</option>
-                        <option value="SOLD">Sold</option>
-                      </select>
+                      <span className="px-2 py-0.5 text-[10px] font-medium rounded-full bg-gray-100 text-gray-800">
+                        {vehicle.status || '—'}
+                      </span>
                     </td>
                     <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-500">
-                      {vehicle.images?.length || 0} photos
+                      {(vehicle as any).raw?.assignment || (vehicle as any).raw?.substatus || (vehicle as any).raw?.lot_location || '—'}
                     </td>
                   </tr>
                 ))}

@@ -1,7 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { supabase } from '@/lib/supabaseClient'
+import { useState, useEffect, useRef, forwardRef, useImperativeHandle } from 'react'
 
 // Supported tax rates for purchase calculations
 const TAX_RATES: Record<string, number> = {
@@ -58,9 +57,16 @@ interface PurchaseData {
 interface PurchaseTabProps {
   vehicleId: string
   stockNumber?: string
+  onError?: (message: string) => void
+  hideSaveButton?: boolean
 }
 
-export default function PurchaseTab({ vehicleId, stockNumber }: PurchaseTabProps) {
+export interface PurchaseTabHandle {
+  save: () => Promise<boolean>
+  getData: () => PurchaseData
+}
+
+const PurchaseTab = forwardRef<PurchaseTabHandle, PurchaseTabProps>(function PurchaseTab({ vehicleId, stockNumber, onError, hideSaveButton }, ref) {
   const [formData, setFormData] = useState<PurchaseData>({
     publicOrCompany: 'public',
     purchasedThroughAuction: false,
@@ -74,99 +80,19 @@ export default function PurchaseTab({ vehicleId, stockNumber }: PurchaseTabProps
   })
   const [saving, setSaving] = useState(false)
   const [vendorSearch, setVendorSearch] = useState('')
+  const isCompany = formData.publicOrCompany === 'company'
+  const [publicIdType, setPublicIdType] = useState<'dl' | 'rin'>('dl')
+  const driverLicenseRef = useRef<HTMLInputElement | null>(null)
+  const rinRef = useRef<HTMLInputElement | null>(null)
+
+  useImperativeHandle(ref, () => ({
+    save: handleSave,
+    getData: () => formData,
+  }))
 
   useEffect(() => {
-    fetchPurchaseData()
+    // webhook-driven: no client-side supabase prefill
   }, [vehicleId, stockNumber])
-
-  const fetchPurchaseData = async () => {
-    try {
-      // Primary: prefill from edc_purchase using stock number if available
-      if (stockNumber) {
-        try { console.info('[PurchaseTab] Prefill fallback from edc_purchase using stock_number:', stockNumber) } catch {}
-        const { data: purchaseRow, error: purchaseErr } = await supabase
-          .from('edc_purchase')
-          .select('*')
-          .eq('stock_number', stockNumber)
-          .order('updated_at', { ascending: false })
-          .limit(1)
-          .single()
-
-        let row = purchaseRow
-        if ((!row || purchaseErr) && stockNumber) {
-          // Fallback to created_at in case updated_at is null
-          const { data: purchaseRow2 } = await supabase
-            .from('edc_purchase')
-            .select('*')
-            .eq('stock_number', stockNumber)
-            .order('created_at', { ascending: false })
-            .limit(1)
-            .single()
-          row = purchaseRow2 || row
-        }
-
-        if (row) {
-          // Map columns from edc_purchase to PurchaseData shape
-          const mapped: PurchaseData = {
-            publicOrCompany: row.public_or_company || undefined,
-            vendorName: row.vendor_name || undefined,
-            salespersonRegistration: row.salesperson_registration || undefined,
-            companyMvda: row.company_mvda || undefined,
-            taxNumber: row.tax_number || undefined,
-            vendorPhone: row.vendor_phone || undefined,
-            vendorMobile: row.vendor_mobile || undefined,
-            vendorFax: row.vendor_fax || undefined,
-            vendorEmail: row.vendor_email || undefined,
-            vendorLocation: row.vendor_location || undefined,
-            vendorAptSuite: row.vendor_apt_suite || undefined,
-            vendorCity: row.vendor_city || undefined,
-            vendorProvince: row.vendor_province || undefined,
-            vendorPostalCode: row.vendor_postal_code || undefined,
-            vendorCountry: row.vendor_country || undefined,
-            driverLicense: row.driver_license || undefined,
-            rin: row.rin || undefined,
-            plateNumber: row.plate_number || undefined,
-            saleState: row.sale_state || undefined,
-            licenseFee: row.license_fee ?? undefined,
-            purchasedThroughAuction: row.purchased_through_auction ?? undefined,
-            paymentStatus: row.payment_status || undefined,
-            purchasedOn: row.purchased_on || undefined,
-            dateReceived: row.date_received || undefined,
-            dateDelivered: row.date_delivered || undefined,
-            reconCompletedBy: row.recon_completed_by || undefined,
-            ownershipStatus: row.ownership_status || undefined,
-            titleReceived: row.title_received || undefined,
-            ownershipNotes: row.ownership_notes || undefined,
-            purchasePrice: row.purchase_price ?? undefined,
-            actualCashValue: row.actual_cash_value ?? undefined,
-            discount: row.discount ?? undefined,
-            taxType: row.tax_type || undefined,
-            taxOverride: row.tax_override ?? undefined,
-            vehicleTax: row.vehicle_tax ?? undefined,
-            totalVehicleTax: row.total_vehicle_tax ?? undefined,
-          }
-          try { console.info('[PurchaseTab] Prefilled from edc_purchase for stock:', stockNumber, mapped) } catch {}
-          setFormData(prev => ({ ...prev, ...mapped }))
-          return
-        }
-      }
-
-      // Secondary: if no stock number data was found, try vehicle's stored purchase_data
-      const { data, error } = await supabase
-        .from('edc_vehicles')
-        .select('purchase_data')
-        .eq('id', vehicleId)
-        .maybeSingle()
-
-      if (data?.purchase_data && Object.keys(data.purchase_data || {}).length > 0) {
-        try { console.info('[PurchaseTab] Prefill from edc_vehicles.purchase_data (secondary)') } catch {}
-        setFormData(prev => ({ ...prev, ...data.purchase_data }))
-        return
-      }
-    } catch (error) {
-      console.error('Error fetching purchase data:', error)
-    }
-  }
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value, type } = e.target
@@ -201,107 +127,88 @@ export default function PurchaseTab({ vehicleId, stockNumber }: PurchaseTabProps
     })
   }
 
-  const handleSave = async () => {
+  const handleSave = async (): Promise<boolean> => {
     setSaving(true)
     try {
-      // Remove undefined values to ensure clean JSON payload
-      const cleanData: PurchaseData = JSON.parse(JSON.stringify(formData))
-
-      const { data: vehRows, error: vehiclesErr } = await supabase
-        .from('edc_vehicles')
-        .update({ purchase_data: cleanData })
-        .eq('id', vehicleId)
-        .select('id')
-
-      if (vehiclesErr) {
-        console.error('Error updating edc_vehicles.purchase_data:', vehiclesErr)
+      if (!vehicleId) return false
+      if (!stockNumber || !String(stockNumber).trim()) {
+        const msg = 'Missing stock number. Please set Stock # in Vehicle Details first.'
+        onError?.(msg)
+        return false
       }
 
-      // Also persist into edc_purchase keyed by stock number if present
-      let purchaseErr: any = null
-      let purchaseChanged = false
-      if (stockNumber) {
-        // Map full set of known columns in your table
-        const purchaseRow: any = {
-          public_or_company: cleanData.publicOrCompany || null,
-          vendor_name: cleanData.vendorName || null,
-          salesperson_registration: cleanData.salespersonRegistration || null,
-          company_mvda: cleanData.companyMvda || null,
-          tax_number: cleanData.taxNumber || null,
-          vendor_phone: cleanData.vendorPhone || null,
-          vendor_mobile: cleanData.vendorMobile || null,
-          vendor_fax: cleanData.vendorFax || null,
-          vendor_email: cleanData.vendorEmail || null,
-          vendor_location: cleanData.vendorLocation || null,
-          vendor_apt_suite: cleanData.vendorAptSuite || null,
-          vendor_city: cleanData.vendorCity || null,
-          vendor_postal_code: cleanData.vendorPostalCode || null,
-          plate_number: cleanData.plateNumber || null,
-          sale_state: cleanData.saleState || null,
-          purchased_through_auction: cleanData.purchasedThroughAuction ?? null,
-          purchase_price: cleanData.purchasePrice ?? null,
-          actual_cash_value: cleanData.actualCashValue ?? null,
-          discount: cleanData.discount ?? null,
-          tax_type: cleanData.taxType || null,
-          tax_override: cleanData.taxOverride ?? null,
-          vehicle_tax: cleanData.vehicleTax ?? null,
-          total_vehicle_tax: cleanData.totalVehicleTax ?? null,
-          license_fee: cleanData.licenseFee ?? null,
-          purchased_on: cleanData.purchasedOn || null,
-          date_received: cleanData.dateReceived || null,
-          date_delivered: cleanData.dateDelivered || null,
-          recon_completed_by: cleanData.reconCompletedBy || null,
-          title_received: cleanData.titleReceived || null,
-          ownership_status: cleanData.ownershipStatus || null,
-          ownership_notes: cleanData.ownershipNotes || null,
-          driver_license: cleanData.driverLicense || null,
-          rin: cleanData.rin || null,
-          payment_status: cleanData.paymentStatus || null,
-          updated_at: new Date().toISOString(),
-        }
+      const fullPayload: Record<string, any> = {
+        vehicleId: String(vehicleId),
+        stockNumber: String(stockNumber).trim(),
+        purchasedOn: formData.purchasedOn,
+        dateReceived: formData.dateReceived,
+        dateDelivered: formData.dateDelivered,
+        reconCompletedBy: formData.reconCompletedBy,
+        ownershipStatus: formData.ownershipStatus,
+        titleReceived: formData.titleReceived,
+        ownershipNotes: formData.ownershipNotes,
+        vendorName: formData.vendorName,
+        vendorCompany: formData.vendorCompany,
+        vendorPhone: formData.vendorPhone,
+        vendorMobile: formData.vendorMobile,
+        vendorFax: formData.vendorFax,
+        vendorEmail: formData.vendorEmail,
+        vendorLocation: formData.vendorLocation,
+        vendorAptSuite: formData.vendorAptSuite,
+        vendorCity: formData.vendorCity,
+        vendorProvince: formData.vendorProvince,
+        vendorPostalCode: formData.vendorPostalCode,
+        salespersonRegistration: formData.salespersonRegistration,
+        companyMvda: formData.companyMvda,
+        rin: formData.rin,
+        taxNumber: formData.taxNumber,
+        plateNumber: formData.plateNumber,
+        saleStatus: formData.saleStatus,
+        licenseFee: formData.licenseFee,
+        purchasedThroughAuction: formData.purchasedThroughAuction,
+        publicOrCompany: formData.publicOrCompany,
+        purchasePrice: formData.purchasePrice,
+        actualCashValue: formData.actualCashValue,
+        discount: formData.discount,
+        taxType: formData.taxType,
+        taxOverride: formData.taxOverride,
+        vehicleTax: formData.vehicleTax,
+        totalVehicleTax: formData.totalVehicleTax,
+        saleState: formData.saleState,
+        paymentStatus: formData.paymentStatus,
+        vendorCountry: formData.vendorCountry,
+        driverLicense: formData.driverLicense,
+      }
 
-        // First try to update by stock_number
-        const { data: updRows, error: updErr } = await supabase
-          .from('edc_purchase')
-          .update(purchaseRow)
-          .eq('stock_number', stockNumber)
-          .select('id')
-
-        if (updErr) {
-          console.error('Error updating edc_purchase by stock_number:', updErr)
-          purchaseErr = updErr
-        }
-
-        // If no row updated, insert a new one with stock_number
-        if (!purchaseErr && (!updRows || updRows.length === 0)) {
-          const insertPayload = { stock_number: stockNumber, ...purchaseRow }
-          const { data: insRow, error: insErr } = await supabase
-            .from('edc_purchase')
-            .insert(insertPayload)
-            .select('id')
-            .single()
-          if (insErr) {
-            console.error('Error inserting edc_purchase:', insErr)
-            purchaseErr = insErr
-          } else if (insRow?.id) {
-            purchaseChanged = true
+      const payload = Object.fromEntries(
+        Object.entries(fullPayload).map(([k, v]) => {
+          if (v === undefined) return [k, null]
+          if (typeof v === 'string') {
+            const trimmed = v.trim()
+            return [k, trimmed === '' ? null : trimmed]
           }
-        } else if (updRows && updRows.length > 0) {
-          purchaseChanged = true
-        }
+          return [k, v]
+        })
+      )
+
+      const res = await fetch('/api/purchase', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+
+      const text = await res.text().catch(() => '')
+      if (!res.ok) throw new Error(text || `Webhook responded with ${res.status}`)
+
+      if (!String(text).toLowerCase().includes('done')) {
+        throw new Error(text || 'Webhook did not return done')
       }
 
-      const vehiclesChanged = Array.isArray(vehRows) && vehRows.length > 0
-      const success = vehiclesChanged || purchaseChanged
-      if (success) {
-        alert('Purchase information saved successfully!')
-        fetchPurchaseData()
-      } else {
-        alert('Error saving purchase information. See console for details.')
-      }
+      return true
     } catch (error) {
-      console.error('Failed to send purchase to webhook:', error)
-      alert('Error saving purchase info')
+      const msg = error instanceof Error ? error.message : String(error)
+      onError?.(msg)
+      return false
     } finally {
       setSaving(false)
     }
@@ -439,26 +346,32 @@ export default function PurchaseTab({ vehicleId, stockNumber }: PurchaseTabProps
         {/* Public or Company Toggle */}
         <div className="flex items-center gap-4 mb-4">
           <span className="text-sm text-gray-700">Public or Company?</span>
-          <label className="flex items-center gap-1.5 cursor-pointer">
-            <input
-              type="radio"
-              name="publicOrCompany"
-              value="public"
-              checked={formData.publicOrCompany === 'public'}
-              onChange={handleChange}
-              className="w-4 h-4 text-[#118df0] focus:ring-[#118df0]"
-            />
-            <span className="text-sm">on</span>
-          </label>
-          <span className="w-8 h-5 bg-green-500 rounded-full relative">
-            <span className="absolute right-0.5 top-0.5 w-4 h-4 bg-white rounded-full"></span>
-          </span>
+          <button
+            type="button"
+            onClick={() => {
+              const nextIsCompany = !isCompany
+              setFormData(prev => ({
+                ...prev,
+                publicOrCompany: nextIsCompany ? 'company' : 'public',
+                ...(nextIsCompany
+                  ? { driverLicense: '' }
+                  : { vendorCompany: '', companyMvda: '', taxNumber: '', rin: '' }),
+              }))
+              if (!nextIsCompany) setPublicIdType('dl')
+            }}
+            className="relative inline-flex items-center px-7 py-1 rounded-full border border-[#118df0] text-[#118df0] text-xs font-medium"
+          >
+            <span>{isCompany ? 'CMP' : 'PUB'}</span>
+            <span
+              className={`absolute top-1/2 -translate-y-1/2 w-3 h-3 rounded-full bg-[#118df0] transition-all ${isCompany ? 'right-1' : 'left-1'}`}
+            ></span>
+          </button>
         </div>
 
         {/* Vendor Details Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+        <div className={`grid grid-cols-1 ${isCompany ? 'md:grid-cols-3' : 'md:grid-cols-2'} gap-4 mb-4`}>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">👤 Name</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
             <div className="flex items-center">
               <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">👤</span>
               <input
@@ -471,79 +384,138 @@ export default function PurchaseTab({ vehicleId, stockNumber }: PurchaseTabProps
               />
             </div>
           </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">🪪 Driver License</label>
-            <div className="flex items-center">
-              <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">🪪</span>
-              <input
-                type="text"
-                name="driverLicense"
-                value={formData.driverLicense || ''}
-                onChange={handleChange}
-                placeholder="driver license"
-                className="flex-1 border border-gray-300 rounded-r-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
-              />
+
+          {!isCompany ? (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Driver License</label>
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPublicIdType(prev => {
+                      const next = prev === 'dl' ? 'rin' : 'dl'
+                      setFormData(fd => ({
+                        ...fd,
+                        ...(next === 'dl' ? { rin: '' } : { driverLicense: '' }),
+                      }))
+                      setTimeout(() => {
+                        if (next === 'dl') driverLicenseRef.current?.focus()
+                        else rinRef.current?.focus()
+                      }, 0)
+                      return next
+                    })
+                  }}
+                  className="relative inline-flex items-center px-7 py-1 rounded-full border border-[#118df0] text-[#118df0] text-xs font-medium"
+                >
+                  {publicIdType === 'dl' ? 'DL' : 'RIN'}
+                  <span
+                    className={`absolute top-1/2 -translate-y-1/2 w-3 h-3 rounded-full bg-[#118df0] transition-all ${publicIdType === 'rin' ? 'right-1' : 'left-1'}`}
+                  ></span>
+                </button>
+                <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">🪪</span>
+                {publicIdType === 'dl' ? (
+                  <input
+                    type="text"
+                    name="driverLicense"
+                    value={formData.driverLicense || ''}
+                    onChange={handleChange}
+                    placeholder="driver license"
+                    ref={driverLicenseRef}
+                    className="flex-1 border border-gray-300 rounded-r-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+                  />
+                ) : (
+                  <input
+                    type="text"
+                    name="rin"
+                    value={formData.rin || ''}
+                    onChange={handleChange}
+                    placeholder="RIN"
+                    ref={rinRef}
+                    className="flex-1 border border-gray-300 rounded-r-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+                  />
+                )}
+              </div>
             </div>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">RIN</label>
-            <div className="flex items-center">
-              <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">🪪</span>
-              <input
-                type="text"
-                name="rin"
-                value={formData.rin || ''}
-                onChange={handleChange}
-                className="flex-1 border border-gray-300 rounded-r-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
-              />
-            </div>
-          </div>
+          ) : (
+            <>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Company</label>
+                <div className="flex items-center">
+                  <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">🏢</span>
+                  <input
+                    type="text"
+                    name="vendorCompany"
+                    value={formData.vendorCompany || ''}
+                    onChange={handleChange}
+                    placeholder="company"
+                    className="flex-1 border border-gray-300 rounded-r-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">RIN</label>
+                <div className="flex items-center">
+                  <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">🪪</span>
+                  <input
+                    type="text"
+                    name="rin"
+                    value={formData.rin || ''}
+                    onChange={handleChange}
+                    ref={rinRef}
+                    className="flex-1 border border-gray-300 rounded-r-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+                  />
+                </div>
+              </div>
+            </>
+          )}
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">👤 Salesperson Registration *</label>
-            <div className="flex items-center">
-              <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">🧑‍💼</span>
-              <input
-                type="text"
-                name="salespersonRegistration"
-                value={formData.salespersonRegistration || ''}
-                onChange={handleChange}
-                placeholder="# Salesperson Registration"
-                className="flex-1 border border-gray-300 rounded-r-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
-              />
+        {isCompany && (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Salesperson Registration *</label>
+              <div className="flex items-center">
+                <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">🧑‍💼</span>
+                <input
+                  type="text"
+                  name="salespersonRegistration"
+                  value={formData.salespersonRegistration || ''}
+                  onChange={handleChange}
+                  placeholder="# Salesperson Registration"
+                  className="flex-1 border border-gray-300 rounded-r-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+                />
+              </div>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Company MVDA #</label>
+              <div className="flex items-center">
+                <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">#</span>
+                <input
+                  type="text"
+                  name="companyMvda"
+                  value={formData.companyMvda || ''}
+                  onChange={handleChange}
+                  placeholder="Company MVDA #"
+                  className="flex-1 border border-gray-300 rounded-r-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+                />
+              </div>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1"># Tax Number</label>
+              <div className="flex items-center">
+                <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">#</span>
+                <input
+                  type="text"
+                  name="taxNumber"
+                  value={formData.taxNumber || ''}
+                  onChange={handleChange}
+                  placeholder="# Tax Number"
+                  className="flex-1 border border-gray-300 rounded-r-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+                />
+              </div>
             </div>
           </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">🏢 Company MVDA #</label>
-            <div className="flex items-center">
-              <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">#</span>
-              <input
-                type="text"
-                name="companyMvda"
-                value={formData.companyMvda || ''}
-                onChange={handleChange}
-                placeholder="Company MVDA #"
-                className="flex-1 border border-gray-300 rounded-r-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
-              />
-            </div>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1"># Tax Number</label>
-            <div className="flex items-center">
-              <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">#</span>
-              <input
-                type="text"
-                name="taxNumber"
-                value={formData.taxNumber || ''}
-                onChange={handleChange}
-                placeholder="# Tax Number"
-                className="flex-1 border border-gray-300 rounded-r-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
-              />
-            </div>
-          </div>
-        </div>
+        )}
 
         {/* QuickBooks Info */}
         <div className="bg-blue-600 text-white rounded-lg p-3 mb-4">
@@ -553,7 +525,7 @@ export default function PurchaseTab({ vehicleId, stockNumber }: PurchaseTabProps
         {/* Contact Details */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">📞 Phone</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
             <div className="flex items-center">
               <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">📞</span>
               <input
@@ -567,7 +539,7 @@ export default function PurchaseTab({ vehicleId, stockNumber }: PurchaseTabProps
             </div>
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">📱 Mobile</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Mobile</label>
             <div className="flex items-center">
               <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">📱</span>
               <input
@@ -581,7 +553,7 @@ export default function PurchaseTab({ vehicleId, stockNumber }: PurchaseTabProps
             </div>
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">📠 Fax</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Fax</label>
             <div className="flex items-center">
               <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">📠</span>
               <input
@@ -595,7 +567,7 @@ export default function PurchaseTab({ vehicleId, stockNumber }: PurchaseTabProps
             </div>
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">✉️ Email</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
             <div className="flex items-center">
               <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">✉️</span>
               <input
@@ -613,7 +585,7 @@ export default function PurchaseTab({ vehicleId, stockNumber }: PurchaseTabProps
         {/* Address */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">📍 Enter a location</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Enter a location</label>
             <div className="flex items-center">
               <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">📍</span>
               <input
@@ -627,7 +599,7 @@ export default function PurchaseTab({ vehicleId, stockNumber }: PurchaseTabProps
             </div>
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">📍 Apt/Suite #</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Apt/Suite #</label>
             <div className="flex items-center">
               <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">#</span>
               <input
@@ -644,7 +616,7 @@ export default function PurchaseTab({ vehicleId, stockNumber }: PurchaseTabProps
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">📍 City</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">City</label>
             <div className="flex items-center">
               <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">📍</span>
               <input
@@ -658,7 +630,7 @@ export default function PurchaseTab({ vehicleId, stockNumber }: PurchaseTabProps
             </div>
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">📍 Postal Code</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Postal Code</label>
             <div className="flex items-center">
               <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">🏷️</span>
               <input
@@ -884,15 +856,19 @@ export default function PurchaseTab({ vehicleId, stockNumber }: PurchaseTabProps
       </div>
 
       {/* Action Buttons */}
-      <div className="flex gap-4">
-        <button
-          onClick={handleSave}
-          disabled={saving}
-          className="flex-1 bg-[#118df0] text-white py-3 rounded-lg font-semibold hover:bg-[#0d6ebd] transition-colors disabled:opacity-50"
-        >
-          {saving ? 'Saving...' : 'Save Purchase Info'}
-        </button>
-      </div>
+      {!hideSaveButton && (
+        <div className="mt-8 flex gap-4">
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            className="flex-1 bg-[#118df0] text-white py-3 rounded-lg font-semibold hover:bg-[#0d6ebd] transition-colors disabled:opacity-50"
+          >
+            {saving ? 'Saving...' : 'Save Purchase Info'}
+          </button>
+        </div>
+      )}
     </div>
   )
-}
+})
+
+export default PurchaseTab

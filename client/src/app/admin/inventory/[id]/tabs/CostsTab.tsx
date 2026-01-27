@@ -155,6 +155,7 @@ export default function CostsTab({ vehicleId, vehiclePrice, stockNumber }: Costs
             ...prev,
             ...(nextCosts || {}),
             listPrice: typeof row.price === 'number' ? row.price : prev.listPrice,
+            salePrice: row.saleprice === null || row.saleprice === undefined ? prev.salePrice : (Number(row.saleprice) || 0),
           }))
         } catch {
           // ignore parse errors
@@ -170,7 +171,7 @@ export default function CostsTab({ vehicleId, vehiclePrice, stockNumber }: Costs
     try {
       const { data, error } = await supabase
         .from('edc_vehicles')
-        .select('costs_data, price')
+        .select('costs_data, price, saleprice')
         .eq('id', vehicleId)
         .maybeSingle()
 
@@ -180,6 +181,10 @@ export default function CostsTab({ vehicleId, vehiclePrice, stockNumber }: Costs
         }
         if (data.price) {
           setCostsData(prev => ({ ...prev, listPrice: data.price }))
+        }
+        if ((data as any).saleprice !== null && (data as any).saleprice !== undefined) {
+          const sp = Number((data as any).saleprice || 0)
+          setCostsData(prev => ({ ...prev, salePrice: Number.isFinite(sp) ? sp : 0 }))
         }
       }
     } catch (error) {
@@ -431,7 +436,7 @@ export default function CostsTab({ vehicleId, vehiclePrice, stockNumber }: Costs
       
       const { data, error } = await supabase
         .from('edc_vehicles')
-        .update({ price: costsData.listPrice || 0 })
+        .update({ price: costsData.listPrice || 0, saleprice: costsData.salePrice || 0 })
         .eq('id', vehicleId)
         .select()
 

@@ -9,50 +9,158 @@ interface ImagesTabProps {
   onImagesUpdate: (images: string[]) => void
 }
 
+type PendingImage = {
+  id: string
+  file: File
+  previewUrl: string
+}
+
 export default function ImagesTab({ vehicleId, images, onImagesUpdate }: ImagesTabProps) {
   const [uploading, setUploading] = useState(false)
   const [deleting, setDeleting] = useState<string | null>(null)
   const [dragOver, setDragOver] = useState(false)
+  const [errorMsg, setErrorMsg] = useState<string>('')
+  const [pendingImages, setPendingImages] = useState<PendingImage[]>([])
 
-  const handleFileUpload = async (files: FileList | null) => {
+  const arrayBufferToBase64 = (buffer: ArrayBuffer) => {
+    let binary = ''
+    const bytes = new Uint8Array(buffer)
+    const chunkSize = 0x8000
+    for (let i = 0; i < bytes.length; i += chunkSize) {
+      const chunk = bytes.subarray(i, i + chunkSize)
+      let s = ''
+      for (let j = 0; j < chunk.length; j++) s += String.fromCharCode(chunk[j])
+      binary += s
+    }
+    return btoa(binary)
+  }
+
+  const normalizeImages = (raw: any): string[] => {
+    if (!raw) return []
+    if (Array.isArray(raw)) return raw.map(String).filter(Boolean)
+    if (typeof raw === 'string') {
+      const s = raw.trim()
+      if (!s) return []
+      try {
+        const parsed = JSON.parse(s)
+        if (Array.isArray(parsed)) return parsed.map(String).filter(Boolean)
+      } catch {
+        // ignore
+      }
+      // comma-separated fallback
+      return s
+        .split(',')
+        .map(x => x.trim())
+        .filter(Boolean)
+    }
+    return []
+  }
+
+  const toImageSrc = (value: string) => {
+    const v = String(value || '').trim()
+    if (!v) return ''
+    if (v.startsWith('http://') || v.startsWith('https://') || v.startsWith('data:')) return v
+    // Assume base64 without prefix
+    const head = v.slice(0, 10)
+    let mime = 'image/jpeg'
+    if (head.startsWith('iVBOR')) mime = 'image/png'
+    else if (head.startsWith('R0lGOD')) mime = 'image/gif'
+    else if (head.startsWith('UklGR')) mime = 'image/webp'
+    return `data:${mime};base64,${v}`
+  }
+
+  const refreshImagesFromDb = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('edc_vehicles')
+        .select('images')
+        .eq('id', vehicleId)
+        .maybeSingle()
+      if (error) throw error
+      const next = normalizeImages((data as any)?.images)
+      onImagesUpdate(next)
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      setErrorMsg(msg || 'Error loading images')
+      console.error('Error refreshing images:', e)
+    }
+  }
+
+  useEffect(() => {
+    refreshImagesFromDb()
+  }, [vehicleId])
+
+  useEffect(() => {
+    return () => {
+      pendingImages.forEach(p => URL.revokeObjectURL(p.previewUrl))
+    }
+  }, [pendingImages])
+
+  const addFilesToPending = (files: FileList | null) => {
     if (!files || files.length === 0) return
+    const next: PendingImage[] = []
+    for (let i = 0; i < files.length; i++) {
+      const f = files[i]
+      next.push({
+        id: `${Date.now()}_${i}_${Math.random().toString(16).slice(2)}`,
+        file: f,
+        previewUrl: URL.createObjectURL(f),
+      })
+    }
+    setPendingImages(prev => [...prev, ...next])
+  }
+
+  const movePending = (id: string, dir: -1 | 1) => {
+    setPendingImages(prev => {
+      const idx = prev.findIndex(p => p.id === id)
+      if (idx === -1) return prev
+      const nextIdx = idx + dir
+      if (nextIdx < 0 || nextIdx >= prev.length) return prev
+      const arr = [...prev]
+      const tmp = arr[idx]
+      arr[idx] = arr[nextIdx]
+      arr[nextIdx] = tmp
+      return arr
+    })
+  }
+
+  const removePending = (id: string) => {
+    setPendingImages(prev => {
+      const item = prev.find(p => p.id === id)
+      if (item) URL.revokeObjectURL(item.previewUrl)
+      return prev.filter(p => p.id !== id)
+    })
+  }
+
+  const handleUploadPending = async () => {
+    if (pendingImages.length === 0) return
 
     setUploading(true)
-    const newImages: string[] = []
+    setErrorMsg('')
 
     try {
-      for (let i = 0; i < files.length; i++) {
-        const file = files[i]
-        const fileExt = file.name.split('.').pop()
-        const fileName = `${vehicleId}/${Date.now()}_${i}.${fileExt}`
-
-        const { error: uploadError } = await supabase.storage
-          .from('vehicle-images')
-          .upload(fileName, file)
-
-        if (!uploadError) {
-          const { data: urlData } = supabase.storage
-            .from('vehicle-images')
-            .getPublicUrl(fileName)
-
-          if (urlData?.publicUrl) {
-            newImages.push(urlData.publicUrl)
-          }
-        }
+      const imagesPayload: string[] = []
+      for (const p of pendingImages) {
+        const ab = await p.file.arrayBuffer()
+        imagesPayload.push(arrayBufferToBase64(ab))
       }
 
-      if (newImages.length > 0) {
-        const updatedImages = [...images, ...newImages]
-        const { error } = await supabase
-          .from('edc_vehicles')
-          .update({ images: updatedImages })
-          .eq('id', vehicleId)
+      const res = await fetch('/api/image', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'upload', vehicleId, images: imagesPayload }),
+      })
 
-        if (!error) {
-          onImagesUpdate(updatedImages)
-        }
-      }
+      const text = await res.text().catch(() => '')
+      if (!res.ok) throw new Error(text || `Webhook responded with ${res.status}`)
+      if (!String(text).toLowerCase().includes('done')) throw new Error(text || 'Webhook did not return done')
+
+      pendingImages.forEach(p => URL.revokeObjectURL(p.previewUrl))
+      setPendingImages([])
+      await refreshImagesFromDb()
     } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error)
+      setErrorMsg(msg || 'Error uploading images')
       console.error('Error uploading images:', error)
     } finally {
       setUploading(false)
@@ -61,17 +169,22 @@ export default function ImagesTab({ vehicleId, images, onImagesUpdate }: ImagesT
 
   const handleDelete = async (imageUrl: string) => {
     setDeleting(imageUrl)
+    setErrorMsg('')
     try {
-      const updatedImages = images.filter(img => img !== imageUrl)
-      const { error } = await supabase
-        .from('edc_vehicles')
-        .update({ images: updatedImages })
-        .eq('id', vehicleId)
+      const res = await fetch('/api/image', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'delete', vehicleId, imageUrl }),
+      })
 
-      if (!error) {
-        onImagesUpdate(updatedImages)
-      }
+      const text = await res.text().catch(() => '')
+      if (!res.ok) throw new Error(text || `Webhook responded with ${res.status}`)
+      if (!String(text).toLowerCase().includes('done')) throw new Error(text || 'Webhook did not return done')
+
+      await refreshImagesFromDb()
     } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error)
+      setErrorMsg(msg || 'Error deleting image')
       console.error('Error deleting image:', error)
     } finally {
       setDeleting(null)
@@ -81,7 +194,7 @@ export default function ImagesTab({ vehicleId, images, onImagesUpdate }: ImagesT
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault()
     setDragOver(false)
-    handleFileUpload(e.dataTransfer.files)
+    addFilesToPending(e.dataTransfer.files)
   }
 
   const handleDragOver = (e: React.DragEvent) => {
@@ -96,6 +209,12 @@ export default function ImagesTab({ vehicleId, images, onImagesUpdate }: ImagesT
   return (
     <div className="bg-white rounded-xl shadow p-6">
       <h2 className="text-lg font-semibold text-gray-900 mb-4">Vehicle Images</h2>
+
+      {errorMsg && (
+        <div className="mb-4 bg-red-50 border border-red-200 text-red-700 rounded-lg p-3 text-sm">
+          {errorMsg}
+        </div>
+      )}
       
       {/* Upload Area */}
       <div
@@ -114,7 +233,10 @@ export default function ImagesTab({ vehicleId, images, onImagesUpdate }: ImagesT
           type="file"
           multiple
           accept="image/*"
-          onChange={(e) => handleFileUpload(e.target.files)}
+          onChange={(e) => {
+            addFilesToPending(e.target.files)
+            e.currentTarget.value = ''
+          }}
           className="hidden"
           id="image-upload"
         />
@@ -122,9 +244,63 @@ export default function ImagesTab({ vehicleId, images, onImagesUpdate }: ImagesT
           htmlFor="image-upload"
           className="inline-block bg-[#118df0] text-white px-6 py-2 rounded-lg font-medium hover:bg-[#0d6ebd] transition-colors cursor-pointer"
         >
-          {uploading ? 'Uploading...' : 'Select Images'}
+          Select Images
         </label>
       </div>
+
+      {pendingImages.length > 0 && (
+        <div className="mt-6">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-medium text-gray-700">Selected Images (Arrange Order)</h3>
+            <button
+              type="button"
+              onClick={handleUploadPending}
+              disabled={uploading}
+              className="bg-[#118df0] text-white px-5 py-2 rounded-lg font-semibold hover:bg-[#0d6ebd] transition-colors disabled:opacity-50"
+            >
+              {uploading ? 'Uploading...' : 'Upload Images'}
+            </button>
+          </div>
+
+          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+            {pendingImages.map((p, idx) => (
+              <div key={p.id} className="relative border border-gray-200 rounded-lg overflow-hidden">
+                <img src={p.previewUrl} alt={p.file.name} className="w-full h-28 object-cover" />
+                <div className="p-2 text-[11px] text-gray-600 truncate">{p.file.name}</div>
+                <div className="absolute top-2 left-2 bg-black/60 text-white text-[11px] px-2 py-0.5 rounded">
+                  {idx + 1}
+                </div>
+                <div className="absolute top-2 right-2 flex gap-1">
+                  <button
+                    type="button"
+                    onClick={() => movePending(p.id, -1)}
+                    className="px-2 py-1 bg-white/90 border border-gray-200 rounded text-xs"
+                    title="Move up"
+                  >
+                    ↑
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => movePending(p.id, 1)}
+                    className="px-2 py-1 bg-white/90 border border-gray-200 rounded text-xs"
+                    title="Move down"
+                  >
+                    ↓
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => removePending(p.id)}
+                    className="px-2 py-1 bg-red-600 text-white rounded text-xs"
+                    title="Remove"
+                  >
+                    ✕
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Image Grid */}
       {images.length > 0 && (
@@ -134,7 +310,7 @@ export default function ImagesTab({ vehicleId, images, onImagesUpdate }: ImagesT
             {images.map((image, index) => (
               <div key={index} className="relative group aspect-square">
                 <img
-                  src={image}
+                  src={toImageSrc(image)}
                   alt={`Vehicle image ${index + 1}`}
                   className="w-full h-full object-cover rounded-lg"
                 />

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, forwardRef, useImperativeHandle, useRef } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 
 interface Disclosure {
@@ -11,6 +11,11 @@ interface Disclosure {
 
 interface DisclosuresTabProps {
   vehicleId: string
+  hideSaveButton?: boolean
+}
+
+export interface DisclosuresTabHandle {
+  save: () => Promise<boolean>
 }
 
 const PRESET_DISCLOSURES = [
@@ -21,29 +26,171 @@ const PRESET_DISCLOSURES = [
   { id: '5', title: 'Previous Damage Disclosure', content: 'This vehicle has been in a previous accident and has been repaired.' },
 ]
 
-export default function DisclosuresTab({ vehicleId }: DisclosuresTabProps) {
+const NOTES_DISCLOSURE_ID = '__custom_note__'
+
+const DisclosuresTab = forwardRef<DisclosuresTabHandle, DisclosuresTabProps>(function DisclosuresTab({ vehicleId, hideSaveButton }, ref) {
   const [brandType, setBrandType] = useState<'N/A' | 'None' | 'Rebuilt' | 'Salvage' | 'Irreparable'>('N/A')
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedDisclosures, setSelectedDisclosures] = useState<Disclosure[]>([])
   const [customNote, setCustomNote] = useState('')
+  const [currentStockNumber, setCurrentStockNumber] = useState<string>('')
   const [saving, setSaving] = useState(false)
+  const editorRef = useRef<HTMLDivElement | null>(null)
+  const [toolbarState, setToolbarState] = useState({
+    bold: false,
+    italic: false,
+    underline: false,
+    strike: false,
+    ul: false,
+    ol: false,
+    left: false,
+    center: false,
+    right: false,
+  })
+
+  useImperativeHandle(ref, () => ({
+    save: handleSave,
+  }))
 
   useEffect(() => {
     fetchDisclosures()
   }, [vehicleId])
 
+  useEffect(() => {
+    const el = editorRef.current
+    if (!el) return
+    const active = typeof document !== 'undefined' ? document.activeElement : null
+    if (active === el) return
+    if (el.innerHTML !== (customNote || '')) {
+      el.innerHTML = customNote || ''
+    }
+  }, [customNote])
+
+  const refreshToolbarState = () => {
+    try {
+      setToolbarState({
+        bold: document.queryCommandState('bold'),
+        italic: document.queryCommandState('italic'),
+        underline: document.queryCommandState('underline'),
+        strike: document.queryCommandState('strikeThrough'),
+        ul: document.queryCommandState('insertUnorderedList'),
+        ol: document.queryCommandState('insertOrderedList'),
+        left: document.queryCommandState('justifyLeft'),
+        center: document.queryCommandState('justifyCenter'),
+        right: document.queryCommandState('justifyRight'),
+      })
+    } catch {}
+  }
+
+  useEffect(() => {
+    const onSel = () => refreshToolbarState()
+    document.addEventListener('selectionchange', onSel)
+    return () => document.removeEventListener('selectionchange', onSel)
+  }, [])
+
+  const escapeHtml = (s: string) =>
+    String(s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;')
+
+  const insertHtmlAtCursor = (html: string) => {
+    const el = editorRef.current
+    if (!el) return
+    el.focus()
+    try {
+      document.execCommand('insertHTML', false, html)
+    } catch {
+      el.innerHTML = `${el.innerHTML || ''}${html}`
+    }
+    setCustomNote(el.innerHTML)
+  }
+
+  const runCmd = (cmd: string, value?: string) => {
+    const el = editorRef.current
+    if (!el) return
+    el.focus()
+    try {
+      document.execCommand(cmd, false, value)
+    } catch {}
+    setCustomNote(el.innerHTML)
+    refreshToolbarState()
+  }
+
+  const normalizeDisclosures = (raw: any): Disclosure[] | null => {
+    if (!raw) return null
+    if (Array.isArray(raw)) return raw as Disclosure[]
+    if (typeof raw === 'string') {
+      try {
+        const parsed = JSON.parse(raw)
+        return normalizeDisclosures(parsed)
+      } catch {
+        return null
+      }
+    }
+    if (typeof raw === 'object') {
+      if (Array.isArray((raw as any).disclosures)) return (raw as any).disclosures as Disclosure[]
+      if (Array.isArray((raw as any).items)) return (raw as any).items as Disclosure[]
+    }
+    return null
+  }
+
   const fetchDisclosures = async () => {
     try {
       const { data, error } = await supabase
         .from('edc_vehicles')
-        .select('disclosures, brand_type')
+        .select('stock_number')
         .eq('id', vehicleId)
         .maybeSingle()
 
-      if (data) {
-        if (data.brand_type) setBrandType(data.brand_type)
-        if (data.disclosures && Array.isArray(data.disclosures)) {
-          setSelectedDisclosures(data.disclosures)
+      if (error) {
+        console.error('Error fetching disclosures:', error)
+      }
+
+      if (!data) return
+
+      const stockNumberRaw = (data as any).stock_number
+      const stockNumber = stockNumberRaw === null || stockNumberRaw === undefined ? '' : String(stockNumberRaw).trim()
+      setCurrentStockNumber(stockNumber)
+      console.log('[DisclosuresTab] vehicleId', vehicleId, 'stockNumber', stockNumber)
+
+      // Prefer prefill from edc_disclosures table when available (matches how some saves are stored)
+      if (stockNumber) {
+        const { data: dRows, error: dErr } = await supabase
+          .from('edc_disclosures')
+          .select('brandtype, disclosures_tittle, disclosures_body, created_at')
+          .eq('stock_number', stockNumber)
+          .order('created_at', { ascending: false })
+          .limit(1)
+
+        if (dErr) {
+          console.error('Error fetching edc_disclosures:', dErr)
+        }
+
+        const d = Array.isArray(dRows) ? dRows[0] : null
+        console.log('[DisclosuresTab] edc_disclosures rows', Array.isArray(dRows) ? dRows.length : 0)
+        if (d) {
+          if ((d as any).brandtype) setBrandType((d as any).brandtype)
+          const title = String((d as any).disclosures_tittle || '').trim()
+          const body = String((d as any).disclosures_body || '').trim()
+          const combined = body ? (title ? `${title}\n${body}` : body) : title
+          console.log('[DisclosuresTab] edc_disclosures prefill length', combined.length)
+          if (combined) {
+            const isLikelyHtml = /<[^>]+>/.test(combined)
+            setCustomNote(
+              isLikelyHtml
+                ? combined
+                : `<div>${combined
+                    .replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;')
+                    .replace(/\n/g, '<br/>')}</div>`
+            )
+            setSelectedDisclosures([])
+            return
+          }
         }
       }
     } catch (error) {
@@ -51,39 +198,79 @@ export default function DisclosuresTab({ vehicleId }: DisclosuresTabProps) {
     }
   }
 
+  const getDisclosureText = (d: Disclosure) => {
+    const title = String(d.title || '').trim()
+    const content = String(d.content || '').trim()
+    if (content) return `${title}\n${content}`.trim()
+    return title
+  }
+
+  const appendToNotes = (text: string) => {
+    const t = String(text || '').trim()
+    if (!t) return
+    const parts = t.split(/\n+/g).map(s => s.trim()).filter(Boolean)
+    const html = parts.map(p => `<div>${escapeHtml(p)}</div>`).join('') + '<div><br/></div>'
+    insertHtmlAtCursor(html)
+  }
+
   const handleAddDisclosure = (disclosure: Disclosure) => {
-    if (!selectedDisclosures.find(d => d.id === disclosure.id)) {
-      setSelectedDisclosures([...selectedDisclosures, disclosure])
+    const safeDisclosure: Disclosure = {
+      id: String((disclosure as any)?.id || ''),
+      title: String((disclosure as any)?.title || ''),
+      content: String((disclosure as any)?.content || ''),
     }
+    if (!safeDisclosure.id) return
+    if (!selectedDisclosures.find(d => d.id === safeDisclosure.id)) {
+      setSelectedDisclosures([...selectedDisclosures, safeDisclosure])
+    }
+    appendToNotes(getDisclosureText(safeDisclosure))
   }
 
   const handleRemoveDisclosure = (id: string) => {
     setSelectedDisclosures(selectedDisclosures.filter(d => d.id !== id))
   }
 
-  const handleSave = async () => {
+  const handleSave = async (): Promise<boolean> => {
     setSaving(true)
     try {
-      const { error } = await supabase
-        .from('edc_vehicles')
-        .update({
-          brand_type: brandType,
-          disclosures: selectedDisclosures,
-        })
-        .eq('id', vehicleId)
+      const sn = String(currentStockNumber || '').trim()
+      if (!sn) {
+        alert('Missing stock number. Please set Stock # in Vehicle Details first.')
+        return false
+      }
 
-      if (error) throw error
+      const title = selectedDisclosures.map(d => String(d?.title || '').trim()).filter(Boolean).join('\n')
+      const body = String(customNote || '').trim()
+
+      const payload = {
+        stock_number: sn,
+        brandtype: brandType,
+        disclosures_tittle: title || null,
+        disclosures_body: body || null,
+      }
+
+      const res = await fetch('/api/updatedisclosures', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+
+      const text = await res.text().catch(() => '')
+      if (!res.ok) throw new Error(text || `Webhook responded with ${res.status}`)
+      if (!String(text).toLowerCase().includes('done')) throw new Error('Webhook did not return Done')
       alert('Disclosures saved successfully!')
+      return true
     } catch (error) {
       console.error('Error saving disclosures:', error)
       alert('Error saving disclosures')
+      return false
     } finally {
       setSaving(false)
     }
   }
 
   const filteredPresets = PRESET_DISCLOSURES.filter(d =>
-    d.title.toLowerCase().includes(searchQuery.toLowerCase())
+    String(d?.title || '').toLowerCase().includes(String(searchQuery || '').toLowerCase())
   )
 
   return (
@@ -136,7 +323,16 @@ export default function DisclosuresTab({ vehicleId }: DisclosuresTabProps) {
 
           <div className="border border-gray-200 rounded-lg max-h-80 overflow-y-auto">
             {filteredPresets.map((preset) => (
-              <div key={preset.id} className="p-3 border-b border-gray-100 last:border-b-0 hover:bg-gray-50">
+              <div
+                key={preset.id}
+                draggable
+                onDragStart={(e) => {
+                  e.dataTransfer.effectAllowed = 'copy'
+                  e.dataTransfer.setData('text/plain', getDisclosureText(preset))
+                  e.dataTransfer.setData('application/json', JSON.stringify(preset))
+                }}
+                className="p-3 border-b border-gray-100 last:border-b-0 hover:bg-gray-50"
+              >
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-gray-700">{preset.title}</span>
                   <button
@@ -175,43 +371,108 @@ export default function DisclosuresTab({ vehicleId }: DisclosuresTabProps) {
 
         {/* Right: Notes Editor */}
         <div>
-          <div className="border border-gray-200 rounded-lg">
-            <div className="flex items-center gap-1 p-2 border-b border-gray-200 bg-gray-50">
-              <button className="p-1.5 hover:bg-gray-200 rounded" title="Bold">
-                <span className="font-bold text-sm">B</span>
-              </button>
-              <button className="p-1.5 hover:bg-gray-200 rounded" title="Italic">
-                <span className="italic text-sm">I</span>
-              </button>
-              <button className="p-1.5 hover:bg-gray-200 rounded" title="Underline">
-                <span className="underline text-sm">U</span>
-              </button>
-              <span className="w-px h-5 bg-gray-300 mx-1"></span>
-              <button className="p-1.5 hover:bg-gray-200 rounded" title="Strikethrough">
-                <span className="line-through text-sm">S</span>
+          <div className="border border-gray-300 rounded-lg">
+            <div className="flex flex-wrap items-center gap-1 p-2 border-b border-gray-300 bg-gray-50">
+              <button type="button" onClick={() => runCmd('bold')} className={`px-2 py-1 border border-gray-300 rounded text-sm font-bold ${toolbarState.bold ? 'bg-[#118df0] text-white' : 'bg-white'}`}>B</button>
+              <button type="button" onClick={() => runCmd('italic')} className={`px-2 py-1 border border-gray-300 rounded text-sm italic ${toolbarState.italic ? 'bg-[#118df0] text-white' : 'bg-white'}`}>I</button>
+              <button type="button" onClick={() => runCmd('underline')} className={`px-2 py-1 border border-gray-300 rounded text-sm underline ${toolbarState.underline ? 'bg-[#118df0] text-white' : 'bg-white'}`}>U</button>
+              <button type="button" onClick={() => runCmd('strikeThrough')} className={`px-2 py-1 border border-gray-300 rounded text-sm line-through ${toolbarState.strike ? 'bg-[#118df0] text-white' : 'bg-white'}`}>S</button>
+              <span className="w-px h-6 bg-gray-300 mx-1"></span>
+              <button type="button" onClick={() => runCmd('insertUnorderedList')} className={`px-2 py-1 border border-gray-300 rounded text-sm ${toolbarState.ul ? 'bg-[#118df0] text-white' : 'bg-white'}`}>•</button>
+              <button type="button" onClick={() => runCmd('insertOrderedList')} className={`px-2 py-1 border border-gray-300 rounded text-sm ${toolbarState.ol ? 'bg-[#118df0] text-white' : 'bg-white'}`}>1.</button>
+              <span className="w-px h-6 bg-gray-300 mx-1"></span>
+              <button type="button" onClick={() => runCmd('justifyLeft')} className={`px-2 py-1 border border-gray-300 rounded text-sm ${toolbarState.left ? 'bg-[#118df0] text-white' : 'bg-white'}`}>≡</button>
+              <button type="button" onClick={() => runCmd('justifyCenter')} className={`px-2 py-1 border border-gray-300 rounded text-sm ${toolbarState.center ? 'bg-[#118df0] text-white' : 'bg-white'}`}>≣</button>
+              <button type="button" onClick={() => runCmd('justifyRight')} className={`px-2 py-1 border border-gray-300 rounded text-sm ${toolbarState.right ? 'bg-[#118df0] text-white' : 'bg-white'}`}>≡</button>
+              <span className="w-px h-6 bg-gray-300 mx-1"></span>
+              <select
+                value=""
+                onChange={(e) => {
+                  const v = e.target.value
+                  if (v) runCmd('fontSize', v)
+                  e.target.value = ''
+                }}
+                className="border border-gray-300 bg-white rounded px-2 py-1 text-sm"
+              >
+                <option value="">Size</option>
+                <option value="1">10</option>
+                <option value="2">13</option>
+                <option value="3">16</option>
+                <option value="4">18</option>
+                <option value="5">24</option>
+                <option value="6">32</option>
+                <option value="7">48</option>
+              </select>
+              <input
+                type="color"
+                onChange={(e) => runCmd('foreColor', e.target.value)}
+                className="w-8 h-8 p-0 border border-gray-300 bg-white rounded"
+              />
+              <button type="button" onClick={() => runCmd('removeFormat')} className="px-2 py-1 border border-gray-300 bg-white rounded text-sm">Tx</button>
+              <button
+                type="button"
+                onClick={() => {
+                  const html = `<pre>${escapeHtml(editorRef.current?.innerHTML ? editorRef.current?.innerText || '' : '')}</pre>`
+                  insertHtmlAtCursor(html)
+                }}
+                className="px-2 py-1 border border-gray-300 bg-white rounded text-sm"
+              >
+                &lt;/&gt;
               </button>
             </div>
-            <textarea
-              value={customNote}
-              onChange={(e) => setCustomNote(e.target.value)}
-              placeholder="Add custom notes or drag disclosures here..."
-              rows={10}
-              className="w-full p-4 focus:outline-none resize-none"
-            />
+            <div
+              ref={editorRef}
+              contentEditable
+              suppressContentEditableWarning
+              onInput={() => {
+                setCustomNote(editorRef.current?.innerHTML || '')
+                refreshToolbarState()
+              }}
+              onMouseUp={refreshToolbarState}
+              onKeyUp={refreshToolbarState}
+              onDragOver={(e) => {
+                e.preventDefault()
+                e.dataTransfer.dropEffect = 'copy'
+              }}
+              onDrop={(e) => {
+                e.preventDefault()
+                const json = e.dataTransfer.getData('application/json')
+                if (json) {
+                  try {
+                    const d = JSON.parse(json)
+                    if (d?.id) {
+                      handleAddDisclosure({
+                        id: String(d.id),
+                        title: String(d.title || ''),
+                        content: String(d.content || ''),
+                      })
+                      return
+                    }
+                  } catch {}
+                }
+                const text = e.dataTransfer.getData('text/plain')
+                if (text) appendToNotes(text)
+              }}
+              className="w-full min-h-[420px] p-4 focus:outline-none bg-white overflow-auto"
+            ></div>
           </div>
         </div>
       </div>
 
       {/* Save Button */}
-      <div className="mt-6">
-        <button
-          onClick={handleSave}
-          disabled={saving}
-          className="w-full bg-[#118df0] text-white py-3 rounded-lg font-semibold hover:bg-[#0d6ebd] transition-colors disabled:opacity-50"
-        >
-          {saving ? 'Saving...' : 'Save Disclosures'}
-        </button>
-      </div>
+      {!hideSaveButton && (
+        <div className="mt-6">
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            className="w-full bg-[#118df0] text-white py-3 rounded-lg font-semibold hover:bg-[#0d6ebd] transition-colors disabled:opacity-50"
+          >
+            {saving ? 'Saving...' : 'Save Disclosures'}
+          </button>
+        </div>
+      )}
     </div>
   )
-}
+})
+
+export default DisclosuresTab

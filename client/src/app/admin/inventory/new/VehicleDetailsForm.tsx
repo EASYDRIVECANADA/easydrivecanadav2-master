@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 
 type Props = {
   formData: any
@@ -12,12 +12,80 @@ export default function VehicleDetailsForm({ formData, handleChange, setFormData
   const [sendingVin, setSendingVin] = useState(false)
   const [vinPrefilled, setVinPrefilled] = useState(false)
   const [lastVinSent, setLastVinSent] = useState<string>('')
+  const adEditorRef = useRef<HTMLDivElement | null>(null)
+  const lastAdHtmlRef = useRef<string>('')
+  const [adToolbar, setAdToolbar] = useState({
+    bold: false,
+    italic: false,
+    underline: false,
+    strike: false,
+    superscript: false,
+    subscript: false,
+    ordered: false,
+    unordered: false,
+    foreColor: '#000000',
+  })
+
+  const adHtml = useMemo(() => String((formData as any)?.adDescription || ''), [formData])
 
   useEffect(() => {
     if (!formData?.vin || formData.vin !== lastVinSent) {
       setVinPrefilled(false)
     }
   }, [formData?.vin, lastVinSent])
+
+  useEffect(() => {
+    const el = adEditorRef.current
+    if (!el) return
+    if (lastAdHtmlRef.current === adHtml) return
+    if (el.innerHTML !== adHtml) {
+      el.innerHTML = adHtml
+    }
+    lastAdHtmlRef.current = adHtml
+  }, [adHtml])
+
+  const refreshAdToolbar = () => {
+    try {
+      setAdToolbar(prev => ({
+        ...prev,
+        bold: document.queryCommandState('bold'),
+        italic: document.queryCommandState('italic'),
+        underline: document.queryCommandState('underline'),
+        strike: document.queryCommandState('strikeThrough'),
+        superscript: document.queryCommandState('superscript'),
+        subscript: document.queryCommandState('subscript'),
+        ordered: document.queryCommandState('insertOrderedList'),
+        unordered: document.queryCommandState('insertUnorderedList'),
+        foreColor: (document.queryCommandValue('foreColor') as string) || prev.foreColor,
+      }))
+    } catch {}
+  }
+
+  const preventToolbarMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault()
+  }
+
+  const exec = (command: string, value?: string) => {
+    const el = adEditorRef.current
+    if (!el) return
+    el.focus()
+    try {
+      document.execCommand(command, false, value)
+      const html = el.innerHTML
+      lastAdHtmlRef.current = html
+      setFormData((prev: any) => ({ ...prev, adDescription: html }))
+      refreshAdToolbar()
+    } catch {}
+  }
+
+  const handleAdInput = () => {
+    const el = adEditorRef.current
+    if (!el) return
+    const html = el.innerHTML
+    lastAdHtmlRef.current = html
+    setFormData((prev: any) => ({ ...prev, adDescription: html }))
+    refreshAdToolbar()
+  }
 
   const handleSendVin = async () => {
     if (!formData?.vin || String(formData.vin).trim().length < 5) {
@@ -53,6 +121,7 @@ export default function VehicleDetailsForm({ formData, handleChange, setFormData
       const mapBodyToBodyStyle = (val: string | undefined) => {
         if (!val) return ''
         const s = val.toLowerCase()
+        if (s.includes('pickup')) return 'Truck'
         if (s.includes('suv')) return 'SUV'
         if (s.includes('truck')) return 'Truck'
         if (s.includes('coupe')) return 'Coupe'
@@ -136,10 +205,14 @@ export default function VehicleDetailsForm({ formData, handleChange, setFormData
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
           <select name="status" value={formData.status} onChange={handleChange} className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent">
-            <option value="ACTIVE">Active</option>
-            <option value="PENDING">Pending</option>
-            <option value="SOLD">Sold</option>
-            <option value="DRAFT">Draft</option>
+            <option value="In Stock">In Stock</option>
+            <option value="In Stock (No Feed)">In Stock (No Feed)</option>
+            <option value="Coming Soon">Coming Soon</option>
+            <option value="In Trade">In Trade</option>
+            <option value="Deal Pending">Deal Pending</option>
+            <option value="Sold">Sold</option>
+            <option value="Void">Void</option>
+            <option value="Other">Other</option>
           </select>
         </div>
         <div>
@@ -396,7 +469,57 @@ export default function VehicleDetailsForm({ formData, handleChange, setFormData
 
       <div className="mt-8">
         <h2 className="text-lg font-semibold mb-4 border-b pb-2">Advertisement Description</h2>
-        <textarea name="adDescription" rows={8} value={(formData as any).adDescription || ''} onChange={handleChange} className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent" />
+        <div className="border border-gray-300 rounded-lg overflow-hidden">
+          <div className="flex flex-wrap items-center gap-1 p-2 border-b border-gray-300 bg-gray-50">
+            <button type="button" onMouseDown={preventToolbarMouseDown} onClick={() => exec('bold')} className={`px-2 py-1 border border-gray-300 rounded text-sm font-bold ${adToolbar.bold ? 'bg-[#118df0] text-white' : 'bg-white'}`}>B</button>
+            <button type="button" onMouseDown={preventToolbarMouseDown} onClick={() => exec('italic')} className={`px-2 py-1 border border-gray-300 rounded text-sm italic ${adToolbar.italic ? 'bg-[#118df0] text-white' : 'bg-white'}`}>I</button>
+            <button type="button" onMouseDown={preventToolbarMouseDown} onClick={() => exec('underline')} className={`px-2 py-1 border border-gray-300 rounded text-sm underline ${adToolbar.underline ? 'bg-[#118df0] text-white' : 'bg-white'}`}>U</button>
+            <button type="button" onClick={() => exec('justifyLeft')} className="px-2 py-1 border border-gray-300 bg-white rounded text-sm">≡</button>
+            <span className="w-px h-6 bg-gray-300 mx-1"></span>
+            <button type="button" onMouseDown={preventToolbarMouseDown} onClick={() => exec('strikeThrough')} className={`px-2 py-1 border border-gray-300 rounded text-sm line-through ${adToolbar.strike ? 'bg-[#118df0] text-white' : 'bg-white'}`}>S</button>
+            <button type="button" onMouseDown={preventToolbarMouseDown} onClick={() => exec('superscript')} className={`px-2 py-1 border border-gray-300 rounded text-sm ${adToolbar.superscript ? 'bg-[#118df0] text-white' : 'bg-white'}`}>X²</button>
+            <button type="button" onMouseDown={preventToolbarMouseDown} onClick={() => exec('subscript')} className={`px-2 py-1 border border-gray-300 rounded text-sm ${adToolbar.subscript ? 'bg-[#118df0] text-white' : 'bg-white'}`}>X₂</button>
+            <span className="w-px h-6 bg-gray-300 mx-1"></span>
+            <select
+              className="border border-gray-300 bg-white rounded px-2 py-1 text-sm"
+              onChange={(e) => {
+                const v = e.target.value
+                if (!v) return
+                exec('fontSize', v)
+                e.currentTarget.selectedIndex = 0
+              }}
+              defaultValue=""
+            >
+              <option value="">16</option>
+              <option value="2">12</option>
+              <option value="3">14</option>
+              <option value="4">16</option>
+              <option value="5">18</option>
+              <option value="6">24</option>
+            </select>
+            <input
+              type="color"
+              value={adToolbar.foreColor}
+              onChange={(e) => {
+                setAdToolbar(prev => ({ ...prev, foreColor: e.target.value }))
+                exec('foreColor', e.target.value)
+              }}
+              className="w-8 h-8 p-0 border border-gray-300 rounded"
+            />
+            <button type="button" onMouseDown={preventToolbarMouseDown} onClick={() => exec('insertUnorderedList')} className={`px-2 py-1 border border-gray-300 rounded text-sm ${adToolbar.unordered ? 'bg-[#118df0] text-white' : 'bg-white'}`}>•</button>
+            <button type="button" onMouseDown={preventToolbarMouseDown} onClick={() => exec('insertOrderedList')} className={`px-2 py-1 border border-gray-300 rounded text-sm ${adToolbar.ordered ? 'bg-[#118df0] text-white' : 'bg-white'}`}>1.</button>
+          </div>
+          <div
+            ref={adEditorRef}
+            contentEditable
+            suppressContentEditableWarning
+            onInput={handleAdInput}
+            onMouseUp={refreshAdToolbar}
+            onKeyUp={refreshAdToolbar}
+            onFocus={refreshAdToolbar}
+            className="w-full p-4 focus:outline-none text-sm min-h-[200px]"
+          />
+        </div>
       </div>
     </div>
   )
