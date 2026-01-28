@@ -72,6 +72,12 @@ export default function AdminInventoryPage() {
   const [addSubmitting, setAddSubmitting] = useState(false)
   const [addError, setAddError] = useState('')
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [modalOpen, setModalOpen] = useState(false)
+  const [modalMode, setModalMode] = useState<'confirm' | 'alert'>('alert')
+  const [modalTitle, setModalTitle] = useState('')
+  const [modalMessage, setModalMessage] = useState('')
+  const [modalBusy, setModalBusy] = useState(false)
+  const [modalOnConfirm, setModalOnConfirm] = useState<(() => Promise<void> | void) | null>(null)
   const [addFormData, setAddFormData] = useState({
     make: '',
     model: '',
@@ -531,21 +537,79 @@ export default function AdminInventoryPage() {
     })
   }
 
-  const handleDelete = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this vehicle?')) return
+  const closeModal = () => {
+    if (modalBusy) return
+    setModalOpen(false)
+    setModalOnConfirm(null)
+    setModalTitle('')
+    setModalMessage('')
+    setModalMode('alert')
+  }
 
-    setDeleting(id)
+  const openAlert = (title: string, message: string) => {
+    setModalMode('alert')
+    setModalTitle(title)
+    setModalMessage(message)
+    setModalOnConfirm(null)
+    setModalOpen(true)
+  }
+
+  const openConfirm = (title: string, message: string, onConfirm: () => Promise<void> | void) => {
+    setModalMode('confirm')
+    setModalTitle(title)
+    setModalMessage(message)
+    setModalOnConfirm(() => onConfirm)
+    setModalOpen(true)
+  }
+
+  const performDelete = async (vehicle: Vehicle) => {
+    setDeleting(vehicle.id)
     try {
-      const { error } = await supabase.from('edc_vehicles').delete().eq('id', id)
-      if (!error) {
-        setVehicles(vehicles.filter((v) => v.id !== id))
+      const stockNumber = String(vehicle.stockNumber || '').trim()
+
+      if (stockNumber) {
+        const { error: costsError } = await supabase.from('edc_costs').delete().eq('stock_number', stockNumber)
+        if (costsError) throw costsError
+
+        const { error: disclosuresError } = await supabase.from('edc_disclosures').delete().eq('stock_number', stockNumber)
+        if (disclosuresError) throw disclosuresError
+
+        const { error: purchaseByStockError } = await supabase.from('edc_purchase').delete().eq('stock_number', stockNumber)
+        if (purchaseByStockError) throw purchaseByStockError
       }
+
+      const { error: purchaseByIdError } = await supabase.from('edc_purchase').delete().eq('id', vehicle.id)
+      if (purchaseByIdError) throw purchaseByIdError
+
+      const { error: vehicleError } = await supabase.from('edc_vehicles').delete().eq('id', vehicle.id)
+      if (vehicleError) throw vehicleError
+
+      setVehicles((prev) => prev.filter((v) => v.id !== vehicle.id))
+      setFilteredVehicles((prev) => prev.filter((v) => v.id !== vehicle.id))
+      setSelectedIds((prev) => {
+        const next = new Set(prev)
+        next.delete(vehicle.id)
+        return next
+      })
+      if (drawerVehicle?.id === vehicle.id) closeDrawer()
     } catch (error) {
       console.error('Error deleting vehicle:', error)
-      alert('Failed to delete vehicle')
+      openAlert('Delete failed', 'Failed to delete vehicle')
     } finally {
       setDeleting(null)
     }
+  }
+
+  const handleDelete = (vehicle: Vehicle) => {
+    openConfirm('Confirm delete', 'Are you sure you want to delete this vehicle and all related records?', async () => {
+      setModalBusy(true)
+      try {
+        await performDelete(vehicle)
+        closeModal()
+      } finally {
+        setModalBusy(false)
+      }
+    })
   }
 
   return (
@@ -909,6 +973,28 @@ export default function AdminInventoryPage() {
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                           </svg>
                         </Link>
+
+                        <button
+                          type="button"
+                          className="p-1.5 text-red-600 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-50"
+                          title="Delete vehicle"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            void handleDelete(vehicle)
+                          }}
+                          disabled={deleting === vehicle.id}
+                        >
+                          {deleting === vehicle.id ? (
+                            <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                          ) : (
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                          )}
+                        </button>
                       </div>
                     </td>
                     <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-900">
@@ -960,7 +1046,7 @@ export default function AdminInventoryPage() {
                   <div className="w-28 h-28 bg-gray-100 rounded-lg overflow-hidden flex-shrink-0">
                     {vehicle.images && vehicle.images.length > 0 ? (
                       <img
-                        src={vehicle.images[0]}
+                        src={toImageSrc(vehicle.images[0])}
                         alt={`${vehicle.year} ${vehicle.make} ${vehicle.model}`}
                         className="w-full h-full object-cover"
                         onError={(e) => {
@@ -1051,7 +1137,7 @@ export default function AdminInventoryPage() {
                     Edit
                   </button>
                   <button
-                    onClick={() => handleDelete(vehicle.id)}
+                    onClick={() => handleDelete(vehicle)}
                     disabled={deleting === vehicle.id}
                     className="flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-medium text-red-600 hover:bg-red-50 active:bg-red-100 transition-colors disabled:opacity-50"
                   >
@@ -1138,6 +1224,54 @@ export default function AdminInventoryPage() {
         </>
         )}
       </div>
+
+      {modalOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/50" onClick={closeModal}></div>
+          <div className="relative w-[92vw] max-w-md rounded-2xl bg-white shadow-xl border border-gray-200">
+            <div className="px-5 py-4 border-b border-gray-100">
+              <h3 className="text-base font-semibold text-gray-900">{modalTitle}</h3>
+            </div>
+            <div className="px-5 py-4">
+              <p className="text-sm text-gray-700 whitespace-pre-line">{modalMessage}</p>
+            </div>
+            <div className="px-5 py-4 border-t border-gray-100 flex items-center justify-end gap-2">
+              {modalMode === 'confirm' ? (
+                <>
+                  <button
+                    type="button"
+                    className="px-4 py-2 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-100 disabled:opacity-50"
+                    onClick={closeModal}
+                    disabled={modalBusy}
+                  >
+                    No
+                  </button>
+                  <button
+                    type="button"
+                    className="px-4 py-2 rounded-lg text-sm font-semibold text-white bg-red-600 hover:bg-red-700 disabled:opacity-50"
+                    onClick={async () => {
+                      if (!modalOnConfirm) return
+                      await modalOnConfirm()
+                    }}
+                    disabled={modalBusy}
+                  >
+                    {modalBusy ? 'Deleting…' : 'Yes'}
+                  </button>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  className="px-4 py-2 rounded-lg text-sm font-semibold text-white bg-[#118df0] hover:bg-[#0a7dd4] disabled:opacity-50"
+                  onClick={closeModal}
+                  disabled={modalBusy}
+                >
+                  OK
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {showAddModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
