@@ -11,7 +11,7 @@ type ImportRowResult = {
   error?: string
   imageGenerated?: boolean
 }
-
+//dfsafsa
 type ImportResult = {
   summary: { total: number; successful: number; failed: number }
   rows: ImportRowResult[]
