@@ -118,7 +118,7 @@ export default function CostsTab({ vehicleId, vehiclePrice, stockNumber }: Costs
     }
   }, [stockNumber])
 
-  // Realtime: refresh purchase price when edc_purchase changes for this stock number
+  /// Realtime: refresh purchase price when edc_purchase changes for this stock number
   useEffect(() => {
     if (!stockNumber) return
     const channel = supabase
