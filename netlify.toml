@@ -5,3 +5,15 @@
 
 [[plugins]]
   package = "@netlify/plugin-nextjs"
+
+[[redirects]]
+  from = "https://www.easydrivecanada.com/*"
+  to = "https://easydrivecanada.com/:splat"
+  status = 301
+  force = true
+
+[[redirects]]
+  from = "http://www.easydrivecanada.com/*"
+  to = "https://easydrivecanada.com/:splat"
+  status = 301
+  force = true
