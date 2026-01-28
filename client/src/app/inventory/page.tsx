@@ -13,18 +13,30 @@ interface Vehicle {
   year: number
   price: number
   mileage: number
+  odometer?: number
+  odometerUnit?: string
   fuelType: string
   transmission: string
   bodyStyle: string
   exteriorColor: string
   city: string
   province: string
+  features?: string[]
   images: string[]
   status: string
   inventoryType?: string
 }
 
-type SortOption = 'newest' | 'price-low' | 'price-high' | 'mileage-low' | 'mileage-high' | 'year-new' | 'year-old'
+type SortOption =
+  | 'newest'
+  | 'price-low'
+  | 'price-high'
+  | 'mileage-low'
+  | 'mileage-high'
+  | 'year-new'
+  | 'year-old'
+  | 'features-most'
+  | 'features-least'
 
 export default function InventoryPage() {
   const [vehicles, setVehicles] = useState<Vehicle[]>([])
@@ -40,11 +52,73 @@ export default function InventoryPage() {
     bodyStyle: '',
     exteriorColor: '',
     inventoryType: '',
+    features: [] as string[],
     minPrice: '',
     maxPrice: '',
     minYear: '',
     maxYear: '',
   })
+
+  const normalizeImages = (raw: any): string[] => {
+    if (!raw) return []
+    if (Array.isArray(raw)) return raw.map(String).filter(Boolean)
+    if (typeof raw === 'string') {
+      const s = raw.trim()
+      if (!s) return []
+      try {
+        const parsed = JSON.parse(s)
+        if (Array.isArray(parsed)) return parsed.map(String).filter(Boolean)
+      } catch {
+        // ignore
+      }
+      return s
+        .split(',')
+        .map(x => x.trim())
+        .filter(Boolean)
+    }
+    return []
+  }
+
+  const toImageSrc = (value: string) => {
+    const v = String(value || '').trim()
+    if (!v) return ''
+    if (v.startsWith('http://') || v.startsWith('https://') || v.startsWith('data:')) return v
+    const head = v.slice(0, 10)
+    let mime = 'image/jpeg'
+    if (head.startsWith('iVBOR')) mime = 'image/png'
+    else if (head.startsWith('R0lGOD')) mime = 'image/gif'
+    else if (head.startsWith('UklGR')) mime = 'image/webp'
+    return `data:${mime};base64,${v}`
+  }
+
+  const normalizeFeatures = (raw: any): string[] => {
+    if (!raw) return []
+    if (Array.isArray(raw)) return raw.map(String).map((s) => s.trim()).filter(Boolean)
+    if (typeof raw === 'string') {
+      const s = raw.trim()
+      if (!s) return []
+      try {
+        const parsed = JSON.parse(s)
+        if (Array.isArray(parsed)) return parsed.map(String).map((x) => x.trim()).filter(Boolean)
+      } catch {
+        // ignore
+      }
+      return s
+        .split(',')
+        .map((x) => x.trim())
+        .filter(Boolean)
+    }
+    return []
+  }
+
+  const formatLocation = (city?: string, province?: string) => {
+    const c = String(city || '').trim()
+    const p = String(province || '').trim()
+    if (c && p) return `${c}, ${p}`
+    if (c) return c
+    if (p) return p
+    return ''
+  }
 
   useEffect(() => {
     fetchVehicles()
@@ -64,9 +138,9 @@ export default function InventoryPage() {
       const { data, error } = await supabase
         .from('edc_vehicles')
         .select(
-          'id, make, model, series, year, price, mileage, fuel_type, transmission, body_style, exterior_color, city, province, images, status, inventory_type'
+          'id, make, model, series, year, price, mileage, odometer, odometer_unit, fuel_type, transmission, body_style, exterior_color, city, province, images, status, inventory_type, features'
         )
-        .eq('status', 'ACTIVE')
+        .not('status', 'in', '("SOLD","Sold","VOID","Void")')
         .order('created_at', { ascending: false })
 
       if (error) throw error
@@ -78,14 +152,17 @@ export default function InventoryPage() {
         series: v.series || '',
         year: v.year,
         price: Number(v.price || 0),
-        mileage: Number(v.mileage || 0),
+        mileage: Number((v.odometer ?? v.mileage) || 0),
+        odometer: v.odometer === null || v.odometer === undefined ? undefined : Number(v.odometer || 0),
+        odometerUnit: v.odometer_unit || '',
         fuelType: v.fuel_type || '',
         transmission: v.transmission || '',
         bodyStyle: v.body_style || '',
         exteriorColor: v.exterior_color || '',
         city: v.city || '',
         province: v.province || '',
-        images: Array.isArray(v.images) ? v.images : [],
+        features: normalizeFeatures(v.features),
+        images: normalizeImages(v.images),
         status: v.status,
         inventoryType: v.inventory_type || '',
       }))
@@ -106,6 +183,13 @@ export default function InventoryPage() {
     }).format(price)
   }
 
+  const formatOdometer = (vehicle: Vehicle) => {
+    const value = Number((vehicle.odometer ?? vehicle.mileage) || 0)
+    const unitRaw = String(vehicle.odometerUnit || '').trim().toLowerCase()
+    const unit = unitRaw === 'miles' || unitRaw === 'mi' ? 'mi' : 'km'
+    return `${value.toLocaleString()} ${unit}`
+  }
+
   // Get unique values from vehicles dynamically
   const uniqueMakes = useMemo(() => {
     const makes = Array.from(new Set(vehicles.map((v) => v.make).filter(Boolean)))
@@ -120,6 +204,12 @@ export default function InventoryPage() {
   const uniqueColors = useMemo(() => {
     const colors = Array.from(new Set(vehicles.map((v) => v.exteriorColor).filter(Boolean)))
     return colors.sort()
+  }, [vehicles])
+
+  const uniqueFeatures = useMemo(() => {
+    const all = vehicles.flatMap((v) => (Array.isArray(v.features) ? v.features : []))
+    const uniq = Array.from(new Set(all.map((f) => String(f).trim()).filter(Boolean)))
+    return uniq.sort((a, b) => a.localeCompare(b))
   }, [vehicles])
 
   // Get year range from actual vehicle data
@@ -152,6 +242,13 @@ export default function InventoryPage() {
       if (filters.bodyStyle && vehicle.bodyStyle !== filters.bodyStyle) return false
       if (filters.exteriorColor && vehicle.exteriorColor !== filters.exteriorColor) return false
       if (filters.inventoryType && vehicle.inventoryType !== filters.inventoryType) return false
+      if (filters.features.length > 0) {
+        const vehicleFeatures = Array.isArray(vehicle.features)
+          ? vehicle.features.map((f) => String(f).trim())
+          : []
+        const hasAll = filters.features.every((f) => vehicleFeatures.includes(String(f).trim()))
+        if (!hasAll) return false
+      }
       if (filters.minPrice && vehicle.price < parseInt(filters.minPrice)) return false
       if (filters.maxPrice && vehicle.price > parseInt(filters.maxPrice)) return false
       if (filters.minYear && vehicle.year < parseInt(filters.minYear)) return false
@@ -180,6 +277,16 @@ export default function InventoryPage() {
       case 'year-old':
         result.sort((a, b) => a.year - b.year)
         break
+      case 'features-most':
+        result.sort(
+          (a, b) => (Array.isArray(b.features) ? b.features.length : 0) - (Array.isArray(a.features) ? a.features.length : 0)
+        )
+        break
+      case 'features-least':
+        result.sort(
+          (a, b) => (Array.isArray(a.features) ? a.features.length : 0) - (Array.isArray(b.features) ? b.features.length : 0)
+        )
+        break
       default:
         break
     }
@@ -204,6 +311,7 @@ export default function InventoryPage() {
       bodyStyle: '',
       exteriorColor: '',
       inventoryType: '',
+      features: [],
       minPrice: '',
       maxPrice: '',
       minYear: '',
@@ -212,7 +320,17 @@ export default function InventoryPage() {
     setSearchQuery('')
   }
 
-  const activeFilterCount = Object.values(filters).filter(Boolean).length + (searchQuery ? 1 : 0)
+  const activeFilterCount =
+    (searchQuery ? 1 : 0) +
+    (filters.make ? 1 : 0) +
+    (filters.bodyStyle ? 1 : 0) +
+    (filters.exteriorColor ? 1 : 0) +
+    (filters.inventoryType ? 1 : 0) +
+    (filters.minPrice ? 1 : 0) +
+    (filters.maxPrice ? 1 : 0) +
+    (filters.minYear ? 1 : 0) +
+    (filters.maxYear ? 1 : 0) +
+    (filters.features.length > 0 ? 1 : 0)
 
   const FilterSidebar = ({ mobile = false }: { mobile?: boolean }) => (
     <div className={mobile ? '' : 'glass-card rounded-2xl p-6 sticky top-24'}>
@@ -284,6 +402,28 @@ export default function InventoryPage() {
             <option value="">All Colors</option>
             {uniqueColors.map((color) => (
               <option key={color} value={color}>{color}</option>
+            ))}
+          </select>
+        </div>
+
+        {/* Features */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">Features</label>
+          <select
+            value={filters.features[0] || ''}
+            onChange={(e) => {
+              const v = String(e.target.value || '').trim()
+              if (!v) {
+                setFilters({ ...filters, features: [] })
+                return
+              }
+              setFilters({ ...filters, features: [v] })
+            }}
+            className="select-field"
+          >
+            <option value="">All Features</option>
+            {uniqueFeatures.map((f) => (
+              <option key={f} value={f}>{f}</option>
             ))}
           </select>
         </div>
@@ -466,6 +606,8 @@ export default function InventoryPage() {
                   <option value="mileage-high">Mileage: High to Low</option>
                   <option value="year-new">Year: Newest First</option>
                   <option value="year-old">Year: Oldest First</option>
+                  <option value="features-most">Features: Most</option>
+                  <option value="features-least">Features: Least</option>
                 </select>
               </div>
             </div>
@@ -513,6 +655,16 @@ export default function InventoryPage() {
                     </button>
                   </span>
                 )}
+                {filters.features.length > 0 && (
+                  <span className="inline-flex items-center gap-1 px-3 py-1 bg-[#118df0]/10 text-[#118df0] rounded-full text-sm">
+                    Feature: {filters.features[0]}
+                    <button onClick={() => setFilters({ ...filters, features: [] })} className="hover:text-[#0a7dd4]">
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </span>
+                )}
               </div>
             )}
 
@@ -554,7 +706,7 @@ export default function InventoryPage() {
 
                         {vehicle.images && vehicle.images.length > 0 ? (
                           <img
-                            src={vehicle.images[0]}
+                            src={toImageSrc(vehicle.images[0])}
                             alt={`${vehicle.year} ${vehicle.make} ${vehicle.model}`}
                             className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
                           />
@@ -577,17 +729,17 @@ export default function InventoryPage() {
                         <h3 className="text-lg font-bold text-gray-900 group-hover:text-[#118df0] transition-colors line-clamp-2">
                           {vehicle.year} {vehicle.make} {vehicle.model} {vehicle.series}
                         </h3>
-                        {vehicle.city && vehicle.province && (
+                        {formatLocation(vehicle.city, vehicle.province) && (
                           <p className="text-sm text-gray-500 mt-1 flex items-center gap-1">
                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
                             </svg>
-                            {vehicle.city}, {vehicle.province}
+                            {formatLocation(vehicle.city, vehicle.province)}
                           </p>
                         )}
                         <div className="flex flex-wrap gap-2 mt-3">
                           <span className="inline-flex items-center text-sm text-gray-500 bg-gray-100/80 px-3 py-1.5 rounded-lg">
-                            {vehicle.mileage?.toLocaleString()} km
+                            {formatOdometer(vehicle)}
                           </span>
                           {vehicle.transmission && vehicle.transmission.trim() !== '' && (
                             <span className="inline-flex items-center text-sm text-gray-500 bg-gray-100/80 px-3 py-1.5 rounded-lg">

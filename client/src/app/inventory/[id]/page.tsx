@@ -15,9 +15,10 @@ interface Vehicle {
   year: number
   price: number
   mileage: number
+  odometer?: number
+  odometerUnit?: string
   fuelType: string
   transmission: string
-  bodyType: string
   bodyStyle: string
   exteriorColor: string
   interiorColor: string
@@ -62,6 +63,82 @@ export default function VehicleDetailPage() {
   const [onHoldByOther, setOnHoldByOther] = useState(false)
 
   const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'
+
+  const normalizeImages = (raw: any): string[] => {
+    if (!raw) return []
+    if (Array.isArray(raw)) return raw.map(String).filter(Boolean)
+    if (typeof raw === 'string') {
+      const s = raw.trim()
+      if (!s) return []
+      try {
+        const parsed = JSON.parse(s)
+        if (Array.isArray(parsed)) return parsed.map(String).filter(Boolean)
+      } catch {
+        // ignore
+      }
+      return s
+        .split(',')
+        .map(x => x.trim())
+        .filter(Boolean)
+    }
+    return []
+  }
+
+  const toImageSrc = (value: string) => {
+    const v = String(value || '').trim()
+    if (!v) return ''
+    if (v.startsWith('http://') || v.startsWith('https://') || v.startsWith('data:')) return v
+    const head = v.slice(0, 10)
+    let mime = 'image/jpeg'
+    if (head.startsWith('iVBOR')) mime = 'image/png'
+    else if (head.startsWith('R0lGOD')) mime = 'image/gif'
+    else if (head.startsWith('UklGR')) mime = 'image/webp'
+    return `data:${mime};base64,${v}`
+  }
+
+  const formatLocation = (city?: string, province?: string) => {
+    const c = String(city || '').trim()
+    const p = String(province || '').trim()
+    if (c && p) return `${c}, ${p}`
+    if (c) return c
+    if (p) return p
+    return ''
+  }
+
+  const formatOdometer = (v: Vehicle) => {
+    const value = Number((v.odometer ?? v.mileage) || 0)
+    const unitRaw = String(v.odometerUnit || '').trim().toLowerCase()
+    const unit = unitRaw === 'miles' || unitRaw === 'mi' ? 'mi' : 'km'
+    return `${value.toLocaleString()} ${unit}`
+  }
+
+  const odometerLabel = (v: Vehicle) => {
+    const unitRaw = String(v.odometerUnit || '').trim().toLowerCase()
+    const unit = unitRaw === 'miles' || unitRaw === 'mi' ? 'Miles' : 'Kilometers'
+    return unit
+  }
+
+  const normalizeFeatures = (raw: any): string[] => {
+    if (!raw) return []
+    if (Array.isArray(raw)) return raw.map(String).map(s => s.trim()).filter(Boolean)
+    if (typeof raw === 'string') {
+      const s = raw.trim()
+      if (!s) return []
+      try {
+        const parsed = JSON.parse(s)
+        if (Array.isArray(parsed)) return parsed.map(String).map(x => x.trim()).filter(Boolean)
+      } catch {
+        // ignore
+      }
+      return s
+        .split('|')
+        .join(',')
+        .split(',')
+        .map(x => x.trim())
+        .filter(Boolean)
+    }
+    return []
+  }
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -110,11 +187,53 @@ export default function VehicleDetailPage() {
 
   const fetchVehicle = async () => {
     try {
-      const res = await fetch(`${API_URL}/api/vehicles/${params.id}`)
-      if (res.ok) {
-        const data = await res.json()
-        setVehicle(data)
+      const { data, error } = await supabase
+        .from('edc_vehicles')
+        .select('*')
+        .eq('id', String(params.id))
+        .maybeSingle()
+
+      if (error) {
+        console.error('Supabase error fetching vehicle:', error)
       }
+
+      if (error || !data) {
+        setVehicle(null)
+        return
+      }
+
+      const anyData = data as any
+      const mapped: Vehicle = {
+        id: String(anyData.id || ''),
+        make: String(anyData.make || ''),
+        model: String(anyData.model || ''),
+        series: String(anyData.series || ''),
+        year: Number(anyData.year || 0),
+        price: Number(anyData.price || 0),
+        mileage: Number((anyData.odometer ?? anyData.mileage) || 0),
+        odometer: anyData.odometer === null || anyData.odometer === undefined ? undefined : Number(anyData.odometer || 0),
+        odometerUnit: String(anyData.odometer_unit ?? anyData.odometerUnit ?? ''),
+        fuelType: String(anyData.fuel_type ?? anyData.fuelType ?? ''),
+        transmission: String(anyData.transmission || ''),
+        bodyStyle: String(anyData.body_style ?? anyData.bodyStyle ?? ''),
+        exteriorColor: String(anyData.exterior_color ?? anyData.exteriorColor ?? ''),
+        interiorColor: String(anyData.interior_color ?? anyData.interiorColor ?? ''),
+        vin: String(anyData.vin || ''),
+        stockNumber: String(anyData.stock_number ?? anyData.stockNumber ?? ''),
+        engine: String(anyData.engine || ''),
+        drivetrain: String(anyData.drivetrain || ''),
+        doors: Number(anyData.doors || 0),
+        seats: Number(anyData.seats || 0),
+        features: normalizeFeatures(anyData.features),
+        description: String(anyData.description || anyData.ad_description || anyData.adDescription || ''),
+        images: normalizeImages(anyData.images),
+        status: String(anyData.status || ''),
+        city: String(anyData.city || ''),
+        province: String(anyData.province || ''),
+        inventoryType: String(anyData.inventory_type ?? anyData.inventoryType ?? ''),
+      }
+
+      setVehicle(mapped)
     } catch (_error) {
       console.error('Error fetching vehicle:', _error)
     } finally {
@@ -228,7 +347,7 @@ export default function VehicleDetailPage() {
               <div className="relative h-[400px] md:h-[500px] bg-gradient-to-br from-gray-100 to-gray-200">
                 {vehicle.images && vehicle.images.length > 0 ? (
                   <img
-                    src={`${API_URL}${vehicle.images[selectedImage]}`}
+                    src={toImageSrc(vehicle.images[selectedImage])}
                     alt={`${vehicle.year} ${vehicle.make} ${vehicle.model} ${vehicle.series}`}
                     className="w-full h-full object-cover"
                   />
@@ -286,7 +405,7 @@ export default function VehicleDetailPage() {
                     }`}
                   >
                     <img
-                      src={`${API_URL}${image}`}
+                      src={toImageSrc(image)}
                       alt={`View ${index + 1}`}
                       className="w-full h-full object-cover"
                     />
@@ -303,8 +422,8 @@ export default function VehicleDetailPage() {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
                   </svg>
                 </div>
-                <p className="text-xl font-bold text-gray-900">{vehicle.mileage?.toLocaleString()}</p>
-                <p className="text-xs text-gray-500 mt-1">Kilometers</p>
+                <p className="text-xl font-bold text-gray-900">{formatOdometer(vehicle)}</p>
+                <p className="text-xs text-gray-500 mt-1">{odometerLabel(vehicle)}</p>
               </div>
               <div className="glass-card rounded-xl p-5 text-center">
                 <div className="icon-container w-10 h-10 mx-auto mb-2">
@@ -377,8 +496,8 @@ export default function VehicleDetailPage() {
                     </svg>
                   </div>
                   <div>
-                    <span className="text-gray-500 text-sm">Mileage</span>
-                    <p className="font-semibold text-gray-900">{vehicle.mileage?.toLocaleString()} km</p>
+                    <span className="text-gray-500 text-sm">Odometer</span>
+                    <p className="font-semibold text-gray-900">{formatOdometer(vehicle)}</p>
                   </div>
                 </div>
                 {vehicle.transmission && vehicle.transmission.trim() !== '' && (
@@ -460,7 +579,7 @@ export default function VehicleDetailPage() {
                     </div>
                   </div>
                 )}
-                {(vehicle.bodyType || vehicle.bodyStyle) && (
+                {vehicle.bodyStyle && (
                   <div className="flex items-start gap-3">
                     <div className="w-8 h-8 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0">
                       <svg className="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -469,7 +588,7 @@ export default function VehicleDetailPage() {
                     </div>
                     <div>
                       <span className="text-gray-500 text-sm">Body Style</span>
-                      <p className="font-semibold text-gray-900">{vehicle.bodyType || vehicle.bodyStyle}</p>
+                      <p className="font-semibold text-gray-900">{vehicle.bodyStyle}</p>
                     </div>
                   </div>
                 )}
@@ -537,7 +656,7 @@ export default function VehicleDetailPage() {
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
                     </svg>
-                    {vehicle.city}, {vehicle.province}
+                    {formatLocation(vehicle.city, vehicle.province)}
                   </p>
                 )}
                 <div className="inline-block bg-gradient-to-r from-[#118df0] to-[#0a6bc4] text-white text-3xl font-bold px-6 py-3 rounded-xl shadow-lg shadow-[#118df0]/25">

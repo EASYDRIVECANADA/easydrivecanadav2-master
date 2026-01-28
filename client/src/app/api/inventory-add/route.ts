@@ -11,10 +11,12 @@ export async function POST(request: Request) {
     })
 
     const text = await res.text().catch(() => '')
-    const contentType = res.headers.get('content-type') || ''
-    const parsed = contentType.includes('application/json') ? JSON.parse(text || '{}') : { raw: text }
-
-    return NextResponse.json(parsed, { status: res.status })
+    return new NextResponse(text, {
+      status: res.status,
+      headers: {
+        'Content-Type': 'text/plain; charset=utf-8',
+      },
+    })
   } catch (err) {
     console.error('inventory-add proxy error', err)
     return NextResponse.json({ error: 'Server error' }, { status: 500 })
