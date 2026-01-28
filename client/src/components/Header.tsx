@@ -159,20 +159,6 @@ export default function Header() {
                   Admin Dashboard
                   <span className="absolute -bottom-1 left-0 w-0 h-0.5 bg-gradient-to-r from-primary-600 to-primary-700 group-hover:w-full transition-all duration-300"></span>
                 </Link>
-                <Link href="/admin/inventory" className="text-gray-600 hover:text-primary-600 focus-visible:text-primary-600 transition-all duration-300 font-medium relative group focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary-600 rounded">
-                  Inventory
-                  <span className="absolute -bottom-1 left-0 w-0 h-0.5 bg-gradient-to-r from-primary-600 to-primary-700 group-hover:w-full transition-all duration-300"></span>
-                </Link>
-                <Link href="/admin/leads" className="text-gray-600 hover:text-primary-600 focus-visible:text-primary-600 transition-all duration-300 font-medium relative group focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary-600 rounded">
-                  Leads
-                  <span className="absolute -bottom-1 left-0 w-0 h-0.5 bg-gradient-to-r from-primary-600 to-primary-700 group-hover:w-full transition-all duration-300"></span>
-                </Link>
-                {adminRole === 'ADMIN' ? (
-                  <Link href="/admin/users" className="text-gray-600 hover:text-primary-600 focus-visible:text-primary-600 transition-all duration-300 font-medium relative group focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary-600 rounded">
-                    Users
-                    <span className="absolute -bottom-1 left-0 w-0 h-0.5 bg-gradient-to-r from-primary-600 to-primary-700 group-hover:w-full transition-all duration-300"></span>
-                  </Link>
-                ) : null}
               </>
             ) : userEmail && isVerified ? (
               <>
@@ -212,11 +198,7 @@ export default function Header() {
 
           {/* CTA Buttons */}
           <div className="hidden md:flex items-center gap-3">
-            {isAdmin ? (
-              <button type="button" onClick={() => setShowAdminSignOutModal(true)} className="btn-secondary text-sm px-5 py-2.5">
-                Admin Sign Out
-              </button>
-            ) : userEmail ? (
+            {userEmail ? (
               <button type="button" onClick={() => setShowUserSignOutModal(true)} className="btn-secondary text-sm px-5 py-2.5">
                 Sign Out
               </button>
@@ -252,23 +234,12 @@ export default function Header() {
         {/* Mobile Navigation */}
         {isMenuOpen && (
           <div className="md:hidden py-4 border-t" role="navigation" aria-label="Mobile navigation">
-            <nav className="flex flex-col space-y-4">
+            <div className="mt-3 space-y-3">
               {isAdmin ? (
                 <>
                   <Link href="/admin" className="text-gray-700 hover:text-primary-600 focus-visible:text-primary-600 transition-colors font-medium px-2 py-1 rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600">
                     Admin Dashboard
                   </Link>
-                  <Link href="/admin/inventory" className="text-gray-700 hover:text-primary-600 focus-visible:text-primary-600 transition-colors font-medium px-2 py-1 rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600">
-                    Inventory
-                  </Link>
-                  <Link href="/admin/leads" className="text-gray-700 hover:text-primary-600 focus-visible:text-primary-600 transition-colors font-medium px-2 py-1 rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600">
-                    Leads
-                  </Link>
-                  {adminRole === 'ADMIN' ? (
-                    <Link href="/admin/users" className="text-gray-700 hover:text-primary-600 focus-visible:text-primary-600 transition-colors font-medium px-2 py-1 rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600">
-                      Users
-                    </Link>
-                  ) : null}
                 </>
               ) : userEmail && isVerified ? (
                 <>
@@ -295,21 +266,8 @@ export default function Header() {
                   </Link>
                 </>
               )}
-              {isAdmin ? (
-                <button
-                  type="button"
-                  onClick={() => setShowAdminSignOutModal(true)}
-                  className="text-left text-gray-700 hover:text-primary-600 focus-visible:text-primary-600 transition-colors font-medium px-2 py-1 rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600"
-                >
-                  Admin Sign Out
-                </button>
-              ) : userEmail ? (
+              {isAdmin ? null : userEmail ? (
                 <>
-                  {isVerified ? null : (
-                    <Link href="/account" className="text-gray-700 hover:text-primary-600 focus-visible:text-primary-600 transition-colors font-medium px-2 py-1 rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600">
-                      Account
-                    </Link>
-                  )}
                   <button
                     type="button"
                     onClick={() => setShowUserSignOutModal(true)}
@@ -319,9 +277,20 @@ export default function Header() {
                   </button>
                 </>
               ) : (
-                <Link href="/account" className="text-gray-700 hover:text-primary-600 focus-visible:text-primary-600 transition-colors font-medium px-2 py-1 rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600">
-                  Login
-                </Link>
+                <>
+                  <Link
+                    href="/account"
+                    className="block text-left text-gray-700 hover:text-primary-600 focus-visible:text-primary-600 transition-colors font-medium px-2 py-1 rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600"
+                  >
+                    Login
+                  </Link>
+                  <Link
+                    href="/financing"
+                    className="block text-left text-gray-700 hover:text-primary-600 focus-visible:text-primary-600 transition-colors font-medium px-2 py-1 rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600"
+                  >
+                    Get Pre-Approved
+                  </Link>
+                </>
               )}
               {isAdmin || userEmail ? null : (
                 <Link 
@@ -331,7 +300,7 @@ export default function Header() {
                   Get Pre-Approved
                 </Link>
               )}
-            </nav>
+            </div>
           </div>
         )}
       </div>

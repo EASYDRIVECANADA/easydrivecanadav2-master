@@ -4,6 +4,7 @@ import Link from 'next/link'
 import Image from 'next/image'
 import { usePathname, useRouter } from 'next/navigation'
 import { useEffect, useMemo, useState } from 'react'
+import { supabase } from '@/lib/supabaseClient'
 
 type AdminSession = {
   email?: string
@@ -139,12 +140,20 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     []
   )
 
-  const handleSignOut = () => {
+  const handleSignOut = async () => {
     if (typeof window !== 'undefined') {
       window.localStorage.removeItem('edc_admin_session')
+      window.localStorage.removeItem('edc_customer_verification')
+      window.localStorage.removeItem('edc_account_verified')
+      window.dispatchEvent(new Event('edc_admin_session_changed'))
     }
     setSession(null)
-    router.push('/account')
+    try {
+      await supabase.auth.signOut()
+    } catch {
+      // ignore
+    }
+    router.replace('/account')
   }
 
   return (
@@ -413,6 +422,23 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             </nav>
 
             <div className={`${collapsed ? 'p-2' : 'p-4'} mt-4 border-t border-white/10`}>
+              {(() => {
+                const item = { href: '/admin/account', label: 'Account', icon: 'account' }
+                const active = pathname === item.href || pathname.startsWith('/admin/account')
+                const base =
+                  `flex items-center ${collapsed ? 'justify-center gap-0 px-2' : 'gap-2 px-3'} py-2 rounded-xl text-xs font-medium transition-colors`
+                const classes = active
+                  ? `${base} bg-white/10 text-white`
+                  : `${base} text-white/80 hover:bg-white/10 hover:text-white`
+
+                return (
+                  <Link href={item.href} className={classes} title={item.label}>
+                    <Icon name={item.icon} />
+                    {collapsed ? null : <span>{item.label}</span>}
+                  </Link>
+                )
+              })()}
+
               <button
                 type="button"
                 onClick={() => setShowSignOutModal(true)}
@@ -525,6 +551,14 @@ function Icon({ name }: { name: string }) {
     return (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h7l5 5v11a2 2 0 01-2 2z" />
+      </svg>
+    )
+  }
+  if (name === 'account') {
+    return (
+      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.121 17.804A13.937 13.937 0 0112 16c2.5 0 4.847.655 6.879 1.804M15 10a3 3 0 11-6 0 3 3 0 016 0z" />
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z" />
       </svg>
     )
   }

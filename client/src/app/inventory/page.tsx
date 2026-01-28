@@ -322,83 +322,6 @@ export default function InventoryPage() {
     setSearchQuery('')
   }
 
-  const [deletingId, setDeletingId] = useState<string | null>(null)
-
-  const [modalOpen, setModalOpen] = useState(false)
-  const [modalMode, setModalMode] = useState<'confirm' | 'alert'>('alert')
-  const [modalTitle, setModalTitle] = useState('')
-  const [modalMessage, setModalMessage] = useState('')
-  const [modalBusy, setModalBusy] = useState(false)
-  const [modalOnConfirm, setModalOnConfirm] = useState<(() => Promise<void> | void) | null>(null)
-
-  const closeModal = () => {
-    if (modalBusy) return
-    setModalOpen(false)
-    setModalOnConfirm(null)
-    setModalTitle('')
-    setModalMessage('')
-    setModalMode('alert')
-  }
-
-  const openAlert = (title: string, message: string) => {
-    setModalMode('alert')
-    setModalTitle(title)
-    setModalMessage(message)
-    setModalOnConfirm(null)
-    setModalOpen(true)
-  }
-
-  const openConfirm = (title: string, message: string, onConfirm: () => Promise<void> | void) => {
-    setModalMode('confirm')
-    setModalTitle(title)
-    setModalMessage(message)
-    setModalOnConfirm(() => onConfirm)
-    setModalOpen(true)
-  }
-
-  const performDeleteVehicle = async (vehicle: Vehicle) => {
-    setDeletingId(vehicle.id)
-    try {
-      const stockNumber = String(vehicle.stockNumber || '').trim()
-
-      if (stockNumber) {
-        const { error: costsError } = await supabase.from('edc_costs').delete().eq('stock_number', stockNumber)
-        if (costsError) throw costsError
-
-        const { error: disclosuresError } = await supabase.from('edc_disclosures').delete().eq('stock_number', stockNumber)
-        if (disclosuresError) throw disclosuresError
-
-        const { error: purchaseByStockError } = await supabase.from('edc_purchase').delete().eq('stock_number', stockNumber)
-        if (purchaseByStockError) throw purchaseByStockError
-      }
-
-      const { error: purchaseByIdError } = await supabase.from('edc_purchase').delete().eq('id', vehicle.id)
-      if (purchaseByIdError) throw purchaseByIdError
-
-      const { error: vehicleError } = await supabase.from('edc_vehicles').delete().eq('id', vehicle.id)
-      if (vehicleError) throw vehicleError
-
-      setVehicles((prev) => prev.filter((v) => v.id !== vehicle.id))
-    } catch (err) {
-      console.error('Delete failed:', err)
-      openAlert('Delete failed', 'Delete failed. Check console for details.')
-    } finally {
-      setDeletingId(null)
-    }
-  }
-
-  const handleDeleteVehicle = (vehicle: Vehicle) => {
-    openConfirm('Confirm delete', 'Delete this vehicle and all related records?', async () => {
-      setModalBusy(true)
-      try {
-        await performDeleteVehicle(vehicle)
-        closeModal()
-      } finally {
-        setModalBusy(false)
-      }
-    })
-  }
-
   const activeFilterCount =
     (searchQuery ? 1 : 0) +
     (filters.make ? 1 : 0) +
@@ -803,23 +726,6 @@ export default function InventoryPage() {
                         <div className="absolute top-4 right-4 price-tag">
                           {formatPrice(vehicle.price)}
                         </div>
-
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.preventDefault()
-                            e.stopPropagation()
-                            void handleDeleteVehicle(vehicle)
-                          }}
-                          disabled={deletingId === vehicle.id}
-                          className={`absolute top-4 right-4 translate-y-10 px-3 py-1 rounded-lg text-xs font-semibold shadow transition-all ${
-                            deletingId === vehicle.id
-                              ? 'bg-red-300 text-white cursor-not-allowed'
-                              : 'bg-red-600 text-white hover:bg-red-700'
-                          }`}
-                        >
-                          {deletingId === vehicle.id ? 'Deleting…' : 'Delete'}
-                        </button>
                       </div>
                       <div className="p-5 flex flex-col flex-1">
                         <h3 className="text-lg font-bold text-gray-900 group-hover:text-[#118df0] transition-colors line-clamp-2">
@@ -959,53 +865,6 @@ export default function InventoryPage() {
                 </button>
               </div>
               <FilterSidebar mobile />
-            </div>
-          </div>
-        </div>
-      )}
-      {modalOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center">
-          <div className="absolute inset-0 bg-black/50" onClick={closeModal}></div>
-          <div className="relative w-[92vw] max-w-md rounded-2xl bg-white shadow-xl border border-gray-200">
-            <div className="px-5 py-4 border-b border-gray-100">
-              <h3 className="text-base font-semibold text-gray-900">{modalTitle}</h3>
-            </div>
-            <div className="px-5 py-4">
-              <p className="text-sm text-gray-700 whitespace-pre-line">{modalMessage}</p>
-            </div>
-            <div className="px-5 py-4 border-t border-gray-100 flex items-center justify-end gap-2">
-              {modalMode === 'confirm' ? (
-                <>
-                  <button
-                    type="button"
-                    className="px-4 py-2 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-100 disabled:opacity-50"
-                    onClick={closeModal}
-                    disabled={modalBusy}
-                  >
-                    No
-                  </button>
-                  <button
-                    type="button"
-                    className="px-4 py-2 rounded-lg text-sm font-semibold text-white bg-red-600 hover:bg-red-700 disabled:opacity-50"
-                    onClick={async () => {
-                      if (!modalOnConfirm) return
-                      await modalOnConfirm()
-                    }}
-                    disabled={modalBusy}
-                  >
-                    {modalBusy ? 'Deleting…' : 'Yes'}
-                  </button>
-                </>
-              ) : (
-                <button
-                  type="button"
-                  className="px-4 py-2 rounded-lg text-sm font-semibold text-white bg-[#118df0] hover:bg-[#0a7dd4] disabled:opacity-50"
-                  onClick={closeModal}
-                  disabled={modalBusy}
-                >
-                  OK
-                </button>
-              )}
             </div>
           </div>
         </div>

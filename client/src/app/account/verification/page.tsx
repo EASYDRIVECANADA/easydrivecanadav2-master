@@ -37,6 +37,13 @@ const clearDraft = () => {
   window.localStorage.removeItem(VERIFICATION_KEY)
 }
 
+const setStaffAdminSession = (email: string) => {
+  if (typeof window === 'undefined') return
+  const session = { email: email.trim().toLowerCase(), role: 'STAFF' }
+  window.localStorage.setItem('edc_admin_session', JSON.stringify(session))
+  window.dispatchEvent(new Event('edc_admin_session_changed'))
+}
+
 export default function AccountVerificationPage() {
   const router = useRouter()
   const didInitRef = useRef(false)
@@ -85,7 +92,8 @@ export default function AccountVerificationPage() {
           if (typeof window !== 'undefined') {
             window.localStorage.setItem(VERIFIED_KEY, 'true')
           }
-          router.replace('/inventory')
+          setStaffAdminSession(user.email)
+          router.replace('/admin')
           return
         }
       }
@@ -341,7 +349,8 @@ export default function AccountVerificationPage() {
         window.localStorage.setItem(VERIFIED_KEY, 'true')
       }
 
-      router.push('/inventory')
+      setStaffAdminSession(userEmail)
+      router.push('/admin')
     } catch {
       setInsertError('Failed to save verification. Please try again.')
     } finally {

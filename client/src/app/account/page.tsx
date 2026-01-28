@@ -23,6 +23,14 @@ function AccountPageInner() {
   const [loading, setLoading] = useState(false)
   const [initLoading, setInitLoading] = useState(true)
   const [isVerified, setIsVerified] = useState(false)
+  const [hasAdminSession, setHasAdminSession] = useState(false)
+
+  const setStaffAdminSession = (email: string) => {
+    if (typeof window === 'undefined') return
+    const session = { email: email.trim().toLowerCase(), role: 'STAFF' }
+    window.localStorage.setItem('edc_admin_session', JSON.stringify(session))
+    window.dispatchEvent(new Event('edc_admin_session_changed'))
+  }
 
   const [customerAuthEmail, setCustomerAuthEmail] = useState('')
   const [customerAuthPassword, setCustomerAuthPassword] = useState('')
@@ -184,7 +192,8 @@ function AccountPageInner() {
             await loadLatestVerification(user.email)
             if (fromOauth) {
               if (hasRow === true) {
-                router.replace('/inventory')
+                setStaffAdminSession(user.email)
+                router.replace('/admin')
                 return
               }
               if (hasRow === false) {
@@ -203,6 +212,7 @@ function AccountPageInner() {
 
     if (typeof window !== 'undefined') {
       setIsVerified(window.localStorage.getItem('edc_account_verified') === 'true')
+      setHasAdminSession(!!window.localStorage.getItem('edc_admin_session'))
     }
 
     const { data: sub } = supabase.auth.onAuthStateChange((_event: AuthChangeEvent, session: Session | null) => {
@@ -217,9 +227,13 @@ function AccountPageInner() {
       setIsEditingProfile(false)
 
       if (user?.email) {
+        const email = user.email
         void syncVerifiedFromDb(user.email).then((hasRow) => {
           if (fromOauth) {
-            if (hasRow === true) router.replace('/inventory')
+            if (hasRow === true) {
+              setStaffAdminSession(email)
+              router.replace('/admin')
+            }
             if (hasRow === false) router.replace('/account/verification')
           }
         })
@@ -228,6 +242,7 @@ function AccountPageInner() {
       }
 
       if (typeof window !== 'undefined') setIsVerified(window.localStorage.getItem('edc_account_verified') === 'true')
+      if (typeof window !== 'undefined') setHasAdminSession(!!window.localStorage.getItem('edc_admin_session'))
     })
 
     return () => {
@@ -259,6 +274,9 @@ function AccountPageInner() {
     await supabase.auth.signOut()
     window.localStorage.removeItem('edc_customer_verification')
     window.localStorage.removeItem('edc_account_verified')
+    window.localStorage.removeItem('edc_admin_session')
+    window.dispatchEvent(new Event('edc_admin_session_changed'))
+    setHasAdminSession(false)
   }
 
   const handleSaveProfile = async () => {
@@ -637,12 +655,16 @@ function AccountPageInner() {
 
           {/* Navigation */}
           <div className="flex items-center justify-between mt-10 pt-6 border-t border-gray-200/60">
-            <Link href="/" className="text-sm text-[#118df0] hover:underline flex items-center gap-1">
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-              </svg>
-              Back to Home
-            </Link>
+            {!hasAdminSession ? (
+              <Link href="/" className="text-sm text-[#118df0] hover:underline flex items-center gap-1">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+                </svg>
+                Back to Home
+              </Link>
+            ) : (
+              <div />
+            )}
             <div />
           </div>
         </div>
