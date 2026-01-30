@@ -3,7 +3,7 @@
 import { useState, useEffect, forwardRef, useImperativeHandle } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 
-// Supported tax rates
+/// Supported tax rates
 const TAX_RATES: Record<string, number> = {
   HST: 0.13,
   RST: 0.08,
