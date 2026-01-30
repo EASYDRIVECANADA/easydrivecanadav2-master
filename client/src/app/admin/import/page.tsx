@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import { supabase } from '@/lib/supabaseClient'
 
 type ImportRowResult = {
   row: number
@@ -18,15 +19,46 @@ type ImportResult = {
   message?: string
 }
 
+type VendorInventoryRow = {
+  id: string
+  d: number | null
+  location: string | null
+  unit_id: string | null
+  year: number | null
+  make: string | null
+  model: string | null
+  series: string | null
+  kilometers: number | null
+  ext_color: string | null
+  vin: string
+  price: number | null
+  equip: string | null
+  created_at: string
+  updated_at: string
+  image_url: string | null
+  image_generated: boolean
+}
+
 export default function AdminImportPage() {
   const [file, setFile] = useState<File | null>(null)
   const [inventoryType, setInventoryType] = useState<'FLEET' | 'PREMIERE'>('FLEET')
   const [importing, setImporting] = useState(false)
+  const [processing, setProcessing] = useState(false)
+  const [processingText, setProcessingText] = useState('Processing…')
   const [result, setResult] = useState<ImportResult | null>(null)
   const [errors, setErrors] = useState<string[]>([])
   const [dragging, setDragging] = useState(false)
+  const [vendorsRows, setVendorsRows] = useState<VendorInventoryRow[]>([])
+  const [vendorsLoading, setVendorsLoading] = useState(false)
+  const [vendorsError, setVendorsError] = useState<string | null>(null)
+  const [vendorsSearch, setVendorsSearch] = useState('')
+  const [vendorsMake, setVendorsMake] = useState('')
+  const [vendorsModel, setVendorsModel] = useState('')
+  const [vendorsYear, setVendorsYear] = useState('')
+  const [vendorsLocation, setVendorsLocation] = useState('')
   const fileInputRef = useRef<HTMLInputElement>(null)
   const router = useRouter()
+  const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'
 
@@ -37,6 +69,91 @@ export default function AdminImportPage() {
       return
     }
   }, [router])
+
+  useEffect(() => {
+    return () => {
+      if (pollTimerRef.current) clearInterval(pollTimerRef.current)
+    }
+  }, [])
+
+  useEffect(() => {
+    let mounted = true
+
+    const load = async () => {
+      setVendorsLoading(true)
+      setVendorsError(null)
+      try {
+        const { data, error } = await supabase
+          .from('edc_vendors_inventory')
+          .select(
+            'id, d, location, unit_id, year, make, model, series, kilometers, ext_color, vin, price, equip, created_at, updated_at, image_url, image_generated'
+          )
+          .order('created_at', { ascending: false })
+          .limit(200)
+
+        if (error) throw error
+        if (!mounted) return
+        setVendorsRows((data || []) as VendorInventoryRow[])
+      } catch (e) {
+        const message = e instanceof Error ? e.message : 'Failed to load vendors inventory'
+        if (mounted) setVendorsError(message)
+      } finally {
+        if (mounted) setVendorsLoading(false)
+      }
+    }
+
+    load()
+    return () => {
+      mounted = false
+    }
+  }, [])
+
+  const makeOptions = Array.from(new Set(vendorsRows.map((r) => String(r.make || '').trim()).filter(Boolean))).sort(
+    (a, b) => a.localeCompare(b)
+  )
+  const modelOptions = Array.from(new Set(vendorsRows.map((r) => String(r.model || '').trim()).filter(Boolean))).sort(
+    (a, b) => a.localeCompare(b)
+  )
+  const yearOptions = Array.from(
+    new Set(
+      vendorsRows
+        .map((r) => (typeof r.year === 'number' ? String(r.year) : ''))
+        .map((v) => v.trim())
+        .filter(Boolean)
+    )
+  ).sort((a, b) => Number(b) - Number(a))
+  const locationOptions = Array.from(
+    new Set(vendorsRows.map((r) => String(r.location || '').trim()).filter(Boolean))
+  ).sort((a, b) => a.localeCompare(b))
+
+  const filteredVendorsRows = vendorsRows.filter((row) => {
+    if (vendorsMake && String(row.make || '').toLowerCase() !== vendorsMake.toLowerCase()) return false
+    if (vendorsModel && String(row.model || '').toLowerCase() !== vendorsModel.toLowerCase()) return false
+    if (vendorsYear && String(row.year ?? '') !== vendorsYear) return false
+    if (vendorsLocation && String(row.location || '').toLowerCase() !== vendorsLocation.toLowerCase()) return false
+
+    const q = vendorsSearch.trim().toLowerCase()
+    if (!q) return true
+
+    const haystack = [
+      row.d != null ? String(row.d) : '',
+      row.location || '',
+      row.unit_id || '',
+      row.year != null ? String(row.year) : '',
+      row.make || '',
+      row.model || '',
+      row.series || '',
+      row.kilometers != null ? String(row.kilometers) : '',
+      row.ext_color || '',
+      row.vin || '',
+      row.price != null ? String(row.price) : '',
+      row.equip || '',
+    ]
+      .join(' ')
+      .toLowerCase()
+
+    return haystack.includes(q)
+  })
 
   const failedRows = result ? result.rows.filter((row) => !row.success) : []
 
@@ -72,6 +189,8 @@ export default function AdminImportPage() {
   const handleImport = async () => {
     if (!file) return
 
+    const baselineLatest = vendorsRows.length > 0 ? vendorsRows[0].created_at : null
+
     setImporting(true)
     setResult(null)
     setErrors([])
@@ -102,6 +221,9 @@ export default function AdminImportPage() {
         setErrors([message])
         return
       }
+
+      setProcessing(true)
+      setProcessingText('Processing…')
 
       const message =
         (typeof data === 'object' && data && 'message' in data && typeof (data as any).message === 'string'
@@ -134,6 +256,100 @@ export default function AdminImportPage() {
       if (fileInputRef.current) {
         fileInputRef.current.value = ''
       }
+
+      const maybeCompleted =
+        typeof data === 'object' &&
+        data &&
+        ((('status' in data && typeof (data as any).status === 'string' && (data as any).status.toLowerCase() === 'completed') as boolean) ||
+          (('completed' in data && typeof (data as any).completed === 'boolean' && (data as any).completed) as boolean))
+
+      if (maybeCompleted) {
+        setProcessing(false)
+        setVendorsLoading(true)
+        setVendorsError(null)
+        try {
+          const { data: rows, error } = await supabase
+            .from('edc_vendors_inventory')
+            .select(
+              'id, d, location, unit_id, year, make, model, series, kilometers, ext_color, vin, price, equip, created_at, updated_at, image_url, image_generated'
+            )
+            .order('created_at', { ascending: false })
+            .limit(200)
+          if (error) throw error
+          setVendorsRows((rows || []) as VendorInventoryRow[])
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : 'Failed to load vendors inventory'
+          setVendorsError(msg)
+        } finally {
+          setVendorsLoading(false)
+        }
+        return
+      }
+
+      if (pollTimerRef.current) clearInterval(pollTimerRef.current)
+      const startedAt = Date.now()
+      pollTimerRef.current = setInterval(async () => {
+        try {
+          const { data: latestRows, error } = await supabase
+            .from('edc_vendors_inventory')
+            .select('created_at')
+            .order('created_at', { ascending: false })
+            .limit(1)
+          if (error) throw error
+
+          const latest = latestRows && latestRows[0] ? String((latestRows[0] as any).created_at || '') : ''
+          const changed = !!latest && (!baselineLatest || latest !== baselineLatest)
+
+          if (changed) {
+            if (pollTimerRef.current) {
+              clearInterval(pollTimerRef.current)
+              pollTimerRef.current = null
+            }
+
+            setVendorsLoading(true)
+            setVendorsError(null)
+            try {
+              const { data: rows, error: rowsError } = await supabase
+                .from('edc_vendors_inventory')
+                .select(
+                  'id, d, location, unit_id, year, make, model, series, kilometers, ext_color, vin, price, equip, created_at, updated_at, image_url, image_generated'
+                )
+                .order('created_at', { ascending: false })
+                .limit(200)
+              if (rowsError) throw rowsError
+              setVendorsRows((rows || []) as VendorInventoryRow[])
+            } finally {
+              setVendorsLoading(false)
+              setProcessing(false)
+              setProcessingText('Processing…')
+            }
+            return
+          }
+
+          const elapsedMs = Date.now() - startedAt
+          if (elapsedMs > 10 * 60 * 1000) {
+            if (pollTimerRef.current) {
+              clearInterval(pollTimerRef.current)
+              pollTimerRef.current = null
+            }
+            setProcessing(false)
+            setErrors(['Still processing. Please wait a bit more then press Refresh.'])
+          } else {
+            const seconds = Math.floor(elapsedMs / 1000)
+            setProcessingText(`Processing… (${seconds}s)`)
+          }
+        } catch {
+          const elapsedMs = Date.now() - startedAt
+          if (elapsedMs > 10 * 60 * 1000) {
+            if (pollTimerRef.current) {
+              clearInterval(pollTimerRef.current)
+              pollTimerRef.current = null
+            }
+            setProcessing(false)
+            setErrors(['Still processing. Please wait a bit more then press Refresh.'])
+          }
+        }
+      }, 2000)
     } catch {
       setErrors(['Failed to connect to server'])
     } finally {
@@ -143,6 +359,20 @@ export default function AdminImportPage() {
 
   return (
     <div className="min-h-screen bg-gray-100">
+      {processing ? (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/40" />
+          <div className="relative w-full max-w-sm rounded-2xl bg-white p-6 shadow-xl">
+            <div className="flex items-center gap-3">
+              <div className="h-10 w-10 rounded-full border-4 border-gray-200 border-t-[#118df0] animate-spin" />
+              <div>
+                <div className="text-base font-semibold text-gray-900">Processing</div>
+                <div className="mt-1 text-sm text-gray-600">{processingText}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
       {/* Header */}
       <div className="bg-white shadow">
         <div className="w-full px-4 sm:px-6 lg:px-8 py-4">
@@ -346,7 +576,162 @@ export default function AdminImportPage() {
                   )}
                 </div>
               )}
+
             </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="w-full px-4 sm:px-6 lg:px-8 pb-10">
+        <div className="bg-white rounded-xl shadow p-6">
+          <div className="flex items-center justify-between gap-3">
+            <h3 className="text-lg font-semibold text-gray-900">Vendors Inventory</h3>
+            <button
+              type="button"
+              onClick={async () => {
+                setVendorsLoading(true)
+                setVendorsError(null)
+                try {
+                  const { data, error } = await supabase
+                    .from('edc_vendors_inventory')
+                    .select(
+                      'id, d, location, unit_id, year, make, model, series, kilometers, ext_color, vin, price, equip, created_at, updated_at, image_url, image_generated'
+                    )
+                    .order('created_at', { ascending: false })
+                    .limit(200)
+                  if (error) throw error
+                  setVendorsRows((data || []) as VendorInventoryRow[])
+                } catch (e) {
+                  const message = e instanceof Error ? e.message : 'Failed to load vendors inventory'
+                  setVendorsError(message)
+                } finally {
+                  setVendorsLoading(false)
+                }
+              }}
+              className="text-sm font-medium text-[#118df0] hover:underline"
+            >
+              Refresh
+            </button>
+          </div>
+
+          <div className="mt-4 grid grid-cols-1 md:grid-cols-5 gap-3">
+            <input
+              value={vendorsSearch}
+              onChange={(e) => setVendorsSearch(e.target.value)}
+              placeholder="Search..."
+              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-[#118df0]/40"
+            />
+
+            <select
+              value={vendorsMake}
+              onChange={(e) => setVendorsMake(e.target.value)}
+              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-[#118df0]/40"
+            >
+              <option value="">All Makes</option>
+              {makeOptions.map((v) => (
+                <option key={v} value={v}>
+                  {v}
+                </option>
+              ))}
+            </select>
+
+            <select
+              value={vendorsModel}
+              onChange={(e) => setVendorsModel(e.target.value)}
+              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-[#118df0]/40"
+            >
+              <option value="">All Models</option>
+              {modelOptions.map((v) => (
+                <option key={v} value={v}>
+                  {v}
+                </option>
+              ))}
+            </select>
+
+            <select
+              value={vendorsYear}
+              onChange={(e) => setVendorsYear(e.target.value)}
+              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-[#118df0]/40"
+            >
+              <option value="">All Years</option>
+              {yearOptions.map((v) => (
+                <option key={v} value={v}>
+                  {v}
+                </option>
+              ))}
+            </select>
+
+            <select
+              value={vendorsLocation}
+              onChange={(e) => setVendorsLocation(e.target.value)}
+              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-[#118df0]/40"
+            >
+              <option value="">All Locations</option>
+              {locationOptions.map((v) => (
+                <option key={v} value={v}>
+                  {v}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {vendorsError ? <div className="mt-3 text-sm text-red-600">{vendorsError}</div> : null}
+
+          <div className="mt-4 overflow-x-auto rounded-xl border border-gray-200 bg-white">
+            <table className="min-w-full text-sm">
+              <thead className="bg-gray-50 text-gray-700">
+                <tr>
+                  <th className="px-4 py-3 text-left font-semibold">D</th>
+                  <th className="px-4 py-3 text-left font-semibold">Location</th>
+                  <th className="px-4 py-3 text-left font-semibold">Unit ID</th>
+                  <th className="px-4 py-3 text-left font-semibold">Year</th>
+                  <th className="px-4 py-3 text-left font-semibold">Make</th>
+                  <th className="px-4 py-3 text-left font-semibold">Model</th>
+                  <th className="px-4 py-3 text-left font-semibold">Series</th>
+                  <th className="px-4 py-3 text-left font-semibold">Kilometers</th>
+                  <th className="px-4 py-3 text-left font-semibold">Ext Color</th>
+                  <th className="px-4 py-3 text-left font-semibold">VIN</th>
+                  <th className="px-4 py-3 text-left font-semibold">Price</th>
+                  <th className="px-4 py-3 text-left font-semibold">Equip</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {vendorsLoading ? (
+                  <tr>
+                    <td className="px-4 py-4 text-gray-600" colSpan={12}>
+                      Loading…
+                    </td>
+                  </tr>
+                ) : filteredVendorsRows.length === 0 ? (
+                  <tr>
+                    <td className="px-4 py-4 text-gray-600" colSpan={12}>
+                      No records found.
+                    </td>
+                  </tr>
+                ) : (
+                  filteredVendorsRows.map((row) => (
+                    <tr key={row.id} className="hover:bg-gray-50">
+                      <td className="px-4 py-3 whitespace-nowrap">{row.d ?? ''}</td>
+                      <td className="px-4 py-3 whitespace-nowrap">{row.location || ''}</td>
+                      <td className="px-4 py-3 whitespace-nowrap">{row.unit_id || ''}</td>
+                      <td className="px-4 py-3 whitespace-nowrap">{row.year ?? ''}</td>
+                      <td className="px-4 py-3 whitespace-nowrap">{row.make || ''}</td>
+                      <td className="px-4 py-3 whitespace-nowrap">{row.model || ''}</td>
+                      <td className="px-4 py-3 whitespace-nowrap">{row.series || ''}</td>
+                      <td className="px-4 py-3 whitespace-nowrap">{row.kilometers ?? ''}</td>
+                      <td className="px-4 py-3 whitespace-nowrap">{row.ext_color || ''}</td>
+                      <td className="px-4 py-3 whitespace-nowrap font-mono text-xs">{row.vin}</td>
+                      <td className="px-4 py-3 whitespace-nowrap">
+                        {typeof row.price === 'number'
+                          ? new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(row.price)
+                          : ''}
+                      </td>
+                      <td className="px-4 py-3 whitespace-nowrap">{row.equip || ''}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
           </div>
         </div>
       </div>

@@ -48,7 +48,14 @@ function AccountPageInner() {
   const [originalAddress, setOriginalAddress] = useState('')
   const [originalLicenseNumber, setOriginalLicenseNumber] = useState('')
 
-  const fromOauth = searchParams.get('from') === 'oauth'
+  const isOauthFlow = () => {
+    if (typeof window === 'undefined') return false
+    try {
+      return new URLSearchParams(window.location.search).get('from') === 'oauth'
+    } catch {
+      return false
+    }
+  }
 
   const syncVerifiedFromDb = async (email: string) => {
     const { data, error: dbError } = await supabase
@@ -190,7 +197,7 @@ function AccountPageInner() {
           if (user.email) {
             const hasRow = await syncVerifiedFromDb(user.email)
             await loadLatestVerification(user.email)
-            if (fromOauth) {
+            if (isOauthFlow()) {
               if (hasRow === true) {
                 setStaffAdminSession(user.email)
                 router.replace('/admin')
@@ -229,7 +236,7 @@ function AccountPageInner() {
       if (user?.email) {
         const email = user.email
         void syncVerifiedFromDb(user.email).then((hasRow) => {
-          if (fromOauth) {
+          if (isOauthFlow()) {
             if (hasRow === true) {
               setStaffAdminSession(email)
               router.replace('/admin')
