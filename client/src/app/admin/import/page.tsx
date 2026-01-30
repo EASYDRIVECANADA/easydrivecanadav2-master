@@ -24,6 +24,7 @@ export default function AdminImportPage() {
   const [importing, setImporting] = useState(false)
   const [result, setResult] = useState<ImportResult | null>(null)
   const [errors, setErrors] = useState<string[]>([])
+  const [dragging, setDragging] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const router = useRouter()
 
@@ -47,6 +48,27 @@ export default function AdminImportPage() {
     }
   }
 
+  const acceptDroppedFile = (next: File) => {
+    const name = String(next.name || '')
+    const lower = name.toLowerCase()
+    const ok = lower.endsWith('.csv') || lower.endsWith('.xlsx')
+    if (!ok) {
+      setErrors(['Please upload a .csv or .xlsx file'])
+      return
+    }
+    setFile(next)
+    setResult(null)
+    setErrors([])
+  }
+
+  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    setDragging(false)
+    const next = e.dataTransfer.files?.[0]
+    if (!next) return
+    acceptDroppedFile(next)
+  }
+
   const handleImport = async () => {
     if (!file) return
 
@@ -59,29 +81,58 @@ export default function AdminImportPage() {
       formData.append('file', file)
       formData.append('inventoryType', inventoryType)
 
-      const res = await fetch(`${API_URL}/api/vehicles/import/csv`, {
+      const res = await fetch('/api/vendors-webhook', {
         method: 'POST',
         body: formData,
       })
 
-      const data = await res.json()
+      const raw = await res.text()
+      let data: unknown = null
+      try {
+        data = raw ? JSON.parse(raw) : null
+      } catch {
+        data = null
+      }
 
-      if (res.ok) {
-        setResult({
-          summary: data.summary || {
-            total: data.imported || 0,
-            successful: data.imported || 0,
-            failed: data.failed || 0,
-          },
-          rows: data.results || [],
-          message: data.message,
-        })
-        setFile(null)
-        if (fileInputRef.current) {
-          fileInputRef.current.value = ''
-        }
-      } else {
-        setErrors([data.error || 'Import failed'])
+      if (!res.ok) {
+        const message =
+          (typeof data === 'object' && data && 'error' in data && typeof (data as any).error === 'string'
+            ? (data as any).error
+            : raw) || 'Upload failed'
+        setErrors([message])
+        return
+      }
+
+      const message =
+        (typeof data === 'object' && data && 'message' in data && typeof (data as any).message === 'string'
+          ? (data as any).message
+          : 'File uploaded successfully')
+
+      setResult({
+        summary: {
+          total:
+            typeof data === 'object' && data && 'summary' in data && (data as any).summary && typeof (data as any).summary.total === 'number'
+              ? (data as any).summary.total
+              : 1,
+          successful:
+            typeof data === 'object' && data && 'summary' in data && (data as any).summary && typeof (data as any).summary.successful === 'number'
+              ? (data as any).summary.successful
+              : 1,
+          failed:
+            typeof data === 'object' && data && 'summary' in data && (data as any).summary && typeof (data as any).summary.failed === 'number'
+              ? (data as any).summary.failed
+              : 0,
+        },
+        rows:
+          typeof data === 'object' && data && 'rows' in data && Array.isArray((data as any).rows)
+            ? (data as any).rows
+            : [],
+        message,
+      })
+
+      setFile(null)
+      if (fileInputRef.current) {
+        fileInputRef.current.value = ''
       }
     } catch {
       setErrors(['Failed to connect to server'])
@@ -185,7 +236,17 @@ export default function AdminImportPage() {
                 </div>
               </div>
 
-              <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center">
+              <div
+                className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${
+                  dragging ? 'border-[#118df0] bg-blue-50' : 'border-gray-300'
+                }`}
+                onDragOver={(e) => {
+                  e.preventDefault()
+                  setDragging(true)
+                }}
+                onDragLeave={() => setDragging(false)}
+                onDrop={handleDrop}
+              >
                 <input
                   ref={fileInputRef}
                   type="file"
