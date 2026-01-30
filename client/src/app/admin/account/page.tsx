@@ -101,6 +101,11 @@ export default function AdminAccountPage() {
 
   const isFromVerification = !!verification
 
+  const displayRoleLabel = useMemo(() => {
+    if (!isFromVerification && displayRole === 'STAFF') return `NOT VALIDATED ${displayRole}`
+    return displayRole
+  }, [displayRole, isFromVerification])
+
   return (
     <div className="min-h-screen bg-gray-100">
       <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
@@ -138,7 +143,7 @@ export default function AdminAccountPage() {
                       : 'inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-blue-100 text-blue-800'
                   }
                 >
-                  {displayRole}
+                  {displayRoleLabel}
                 </span>
                 <span
                   className={
@@ -188,6 +193,13 @@ export default function AdminAccountPage() {
                 className="px-4 py-2 rounded-lg text-sm font-medium bg-white border border-gray-200 hover:bg-gray-50"
               >
                 Open Customer Account Page
+              </button>
+              <button
+                type="button"
+                onClick={() => router.push('/account/verification')}
+                className="px-4 py-2 rounded-lg text-sm font-medium bg-white border border-gray-200 hover:bg-gray-50"
+              >
+                Validate ID
               </button>
               <button
                 type="button"

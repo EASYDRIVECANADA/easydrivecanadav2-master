@@ -15,6 +15,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname()
   const router = useRouter()
   const [session, setSession] = useState<AdminSession | null>(null)
+  const [isVerified, setIsVerified] = useState(false)
   const [collapsed, setCollapsed] = useState(false)
   const [salesOpen, setSalesOpen] = useState(false)
   const [reportsOpen, setReportsOpen] = useState(false)
@@ -54,6 +55,12 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
       } catch {
         setSession(null)
       }
+
+      try {
+        setIsVerified(window.localStorage.getItem('edc_account_verified') === 'true')
+      } catch {
+        setIsVerified(false)
+      }
     }
 
     read()
@@ -68,6 +75,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
     const onStorage = (e: StorageEvent) => {
       if (e.key === 'edc_admin_session') read()
       if (e.key === 'edc_admin_sidebar_collapsed') setCollapsed(e.newValue === 'true')
+      if (e.key === 'edc_account_verified') setIsVerified(e.newValue === 'true')
     }
 
     const onAdminSessionChanged = () => {
@@ -106,10 +114,10 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
       { href: '/admin/import', label: 'Vendors', icon: 'briefcase' },
       { href: '/admin/inventory', label: 'Inventory', icon: 'car' },
       { href: '/admin/sales', label: 'Sales', icon: 'dollar' },
-      { href: '/admin', label: 'Service', icon: 'wrench', disabled: true },
+      { href: '/admin', label: 'Service', icon: 'wrench', disabled: !isVerified },
       { href: '/admin/reports', label: 'Reports', icon: 'file' },
     ],
-    []
+    [isVerified]
   )
 
   const salesSubItems = useMemo(

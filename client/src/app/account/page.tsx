@@ -222,7 +222,8 @@ function AccountPageInner() {
                 return
               }
               if (hasRow === false) {
-                router.replace('/account/verification')
+                setStaffAdminSession(user.email)
+                router.replace('/admin')
                 return
               }
             }
@@ -259,7 +260,10 @@ function AccountPageInner() {
               setStaffAdminSession(email)
               router.replace('/admin')
             }
-            if (hasRow === false) router.replace('/account/verification')
+            if (hasRow === false) {
+              setStaffAdminSession(email)
+              router.replace('/admin')
+            }
           }
         })
         void loadLatestVerification(user.email)
