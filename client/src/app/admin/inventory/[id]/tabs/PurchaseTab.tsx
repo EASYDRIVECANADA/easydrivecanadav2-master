@@ -55,6 +55,28 @@ interface PurchaseData {
   driverLicense?: string
 }
 
+interface VendorRow {
+  id: string
+  company_name: string | null
+  vendor_name: string | null
+  contact_first_name: string | null
+  contact_last_name: string | null
+  street_address: string | null
+  suite_apt: string | null
+  city: string | null
+  province: string | null
+  postal_code: string | null
+  country: string | null
+  rin: string | null
+  salesperson_registration: string | null
+  company_mvda: string | null
+  tax_number: string | null
+  phone: string | null
+  mobile: string | null
+  email: string | null
+  fax: string | null
+}
+
 interface PurchaseTabProps {
   vehicleId: string
   stockNumber?: string
@@ -75,6 +97,30 @@ export default function PurchaseTab({ vehicleId, stockNumber, onError }: Purchas
   })
   const [saving, setSaving] = useState(false)
   const [vendorSearch, setVendorSearch] = useState('')
+  const [vendorResults, setVendorResults] = useState<VendorRow[]>([])
+  const [vendorLoading, setVendorLoading] = useState(false)
+  const [showVendorDropdown, setShowVendorDropdown] = useState(false)
+  const [showNewVendorModal, setShowNewVendorModal] = useState(false)
+  const [savingNewVendor, setSavingNewVendor] = useState(false)
+  const [newVendorForm, setNewVendorForm] = useState({
+    companyName: '',
+    contactFirstName: '',
+    contactLastName: '',
+    streetAddress: '',
+    suiteApt: '',
+    city: '',
+    province: '',
+    postalCode: '',
+    country: 'CA',
+    rin: '',
+    salespersonRegistration: '',
+    companyMvda: '',
+    taxNumber: '',
+    phone: '',
+    mobile: '',
+    email: '',
+    fax: '',
+  })
   const isCompany = formData.publicOrCompany === 'company'
   const [publicIdType, setPublicIdType] = useState<'dl' | 'rin'>('dl')
   const driverLicenseRef = useRef<HTMLInputElement | null>(null)
@@ -203,6 +249,95 @@ export default function PurchaseTab({ vehicleId, stockNumber, onError }: Purchas
     run()
   }, [vehicleId, stockNumber])
 
+  useEffect(() => {
+    const q = vendorSearch.trim()
+    if (!q) {
+      setVendorResults([])
+      setVendorLoading(false)
+      setShowVendorDropdown(false)
+      return
+    }
+
+    setVendorLoading(true)
+    setShowVendorDropdown(true)
+    const id = setTimeout(async () => {
+      try {
+        const safe = q.replace(/[%_]/g, '\\$&')
+        const like = `%${safe}%`
+
+        const { data, error } = await supabase
+          .from('edc_vendors')
+          .select(
+            'id, company_name, vendor_name, contact_first_name, contact_last_name, street_address, suite_apt, city, province, postal_code, country, rin, salesperson_registration, company_mvda, tax_number, phone, mobile, email, fax'
+          )
+          .or(
+            [
+              `company_name.ilike.${like}`,
+              `vendor_name.ilike.${like}`,
+              `contact_first_name.ilike.${like}`,
+              `contact_last_name.ilike.${like}`,
+              `phone.ilike.${like}`,
+              `email.ilike.${like}`,
+            ].join(',')
+          )
+          .limit(10)
+
+        if (error) throw error
+        setVendorResults(Array.isArray(data) ? (data as VendorRow[]) : [])
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e)
+        onError?.(msg)
+        setVendorResults([])
+      } finally {
+        setVendorLoading(false)
+      }
+    }, 250)
+
+    return () => clearTimeout(id)
+  }, [vendorSearch, onError])
+
+  const applyVendorToPurchase = (v: VendorRow) => {
+    const company = (v.company_name || '').trim()
+    const fullName = (v.vendor_name || `${v.contact_first_name || ''} ${v.contact_last_name || ''}`)
+      .replace(/\s+/g, ' ')
+      .trim()
+
+    const isCompanyVendor = Boolean(
+      company ||
+        (v.salesperson_registration || '').trim() ||
+        (v.company_mvda || '').trim() ||
+        (v.tax_number || '').trim()
+    )
+
+    setFormData(prev => ({
+      ...prev,
+      publicOrCompany: isCompanyVendor ? 'company' : 'public',
+      vendorCompany: isCompanyVendor ? (company || prev.vendorCompany) : '',
+      vendorName: fullName || prev.vendorName,
+      vendorLocation: v.street_address || prev.vendorLocation,
+      vendorAptSuite: v.suite_apt || prev.vendorAptSuite,
+      vendorCity: v.city || prev.vendorCity,
+      vendorProvince: v.province || prev.vendorProvince,
+      vendorPostalCode: v.postal_code || prev.vendorPostalCode,
+      vendorCountry: v.country || prev.vendorCountry,
+      rin: v.rin || prev.rin,
+      salespersonRegistration: v.salesperson_registration || prev.salespersonRegistration,
+      companyMvda: v.company_mvda || prev.companyMvda,
+      taxNumber: v.tax_number || prev.taxNumber,
+      vendorPhone: v.phone || prev.vendorPhone,
+      vendorMobile: v.mobile || prev.vendorMobile,
+      vendorEmail: v.email || prev.vendorEmail,
+      vendorFax: v.fax || prev.vendorFax,
+    }))
+
+    if (!isCompanyVendor) {
+      if (v.rin) setPublicIdType('rin')
+    }
+
+    setVendorSearch(company || fullName)
+    setShowVendorDropdown(false)
+  }
+
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value, type } = e.target
     const checked = (e.target as HTMLInputElement).checked
@@ -277,6 +412,85 @@ export default function PurchaseTab({ vehicleId, stockNumber, onError }: Purchas
       publicOrCompany: 'public',
       purchasedThroughAuction: false,
     })
+  }
+
+  const openNewVendorModal = () => {
+    setNewVendorForm({
+      companyName: '',
+      contactFirstName: '',
+      contactLastName: '',
+      streetAddress: '',
+      suiteApt: '',
+      city: '',
+      province: '',
+      postalCode: '',
+      country: 'CA',
+      rin: '',
+      salespersonRegistration: '',
+      companyMvda: '',
+      taxNumber: '',
+      phone: '',
+      mobile: '',
+      email: '',
+      fax: '',
+    })
+    setShowNewVendorModal(true)
+  }
+
+  const applyNewVendorToPurchase = () => {
+    const fullName = `${newVendorForm.contactFirstName} ${newVendorForm.contactLastName}`.trim()
+    setFormData(prev => ({
+      ...prev,
+      vendorCompany: newVendorForm.companyName || prev.vendorCompany,
+      vendorName: fullName || prev.vendorName,
+      vendorLocation: newVendorForm.streetAddress || prev.vendorLocation,
+      vendorAptSuite: newVendorForm.suiteApt || prev.vendorAptSuite,
+      vendorCity: newVendorForm.city || prev.vendorCity,
+      vendorProvince: newVendorForm.province || prev.vendorProvince,
+      vendorPostalCode: newVendorForm.postalCode || prev.vendorPostalCode,
+      vendorCountry: newVendorForm.country || prev.vendorCountry,
+      rin: newVendorForm.rin || prev.rin,
+      salespersonRegistration: newVendorForm.salespersonRegistration || prev.salespersonRegistration,
+      companyMvda: newVendorForm.companyMvda || prev.companyMvda,
+      taxNumber: newVendorForm.taxNumber || prev.taxNumber,
+      vendorPhone: newVendorForm.phone || prev.vendorPhone,
+      vendorMobile: newVendorForm.mobile || prev.vendorMobile,
+      vendorEmail: newVendorForm.email || prev.vendorEmail,
+      vendorFax: newVendorForm.fax || prev.vendorFax,
+    }))
+    setShowNewVendorModal(false)
+  }
+
+  const submitNewVendor = async () => {
+    setSavingNewVendor(true)
+    try {
+      const fullName = `${newVendorForm.contactFirstName} ${newVendorForm.contactLastName}`.trim()
+      const payload = {
+        ...newVendorForm,
+        vendorName: fullName,
+      }
+
+      const res = await fetch('/api/addvendor', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+
+      const text = await res.text().catch(() => '')
+      if (!res.ok) throw new Error(text || `Webhook responded with ${res.status}`)
+    } finally {
+      setSavingNewVendor(false)
+    }
+  }
+
+  const handleNewVendorOk = async () => {
+    try {
+      await submitNewVendor()
+      applyNewVendorToPurchase()
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      onError?.(msg)
+    }
   }
 
   return (
@@ -387,18 +601,57 @@ export default function PurchaseTab({ vehicleId, stockNumber, onError }: Purchas
         {/* Vendor Search */}
         <div className="flex items-center justify-between gap-4 mb-4">
           <div className="flex-1">
-            <div className="flex items-center">
-              <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">🔍</span>
-              <input
-                type="text"
-                placeholder="vendor search"
-                value={vendorSearch}
-                onChange={(e) => setVendorSearch(e.target.value)}
-                className="flex-1 border border-gray-300 rounded-r-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
-              />
+            <div className="relative">
+              <div className="flex items-center">
+                <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">🔍</span>
+                <input
+                  type="text"
+                  placeholder="vendor search"
+                  value={vendorSearch}
+                  onChange={(e) => setVendorSearch(e.target.value)}
+                  onFocus={() => {
+                    if (vendorSearch.trim()) setShowVendorDropdown(true)
+                  }}
+                  className="flex-1 border border-gray-300 rounded-r-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+                />
+              </div>
+
+              {showVendorDropdown && (vendorLoading || vendorResults.length > 0) && (
+                <div className="absolute z-20 mt-1 w-full rounded-lg border border-gray-200 bg-white shadow-lg">
+                  {vendorLoading && (
+                    <div className="px-3 py-2 text-sm text-gray-500">Searching...</div>
+                  )}
+
+                  {!vendorLoading && vendorResults.map((v) => {
+                    const company = (v.company_name || '').trim()
+                    const fullName = (v.vendor_name || `${v.contact_first_name || ''} ${v.contact_last_name || ''}`)
+                      .replace(/\s+/g, ' ')
+                      .trim()
+                    const primary = company || fullName || '(Unnamed vendor)'
+                    const secondary = company && fullName ? fullName : (v.email || v.phone || '')
+                    return (
+                      <button
+                        key={v.id}
+                        type="button"
+                        onClick={() => applyVendorToPurchase(v)}
+                        className="w-full px-3 py-2 text-left hover:bg-gray-50"
+                      >
+                        <div className="text-sm text-gray-900">{primary}</div>
+                        {secondary ? <div className="text-xs text-gray-500">{secondary}</div> : null}
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
             </div>
           </div>
-          <a href="#" className="text-sm text-[#118df0] hover:underline">Didn't find what you're looking for? Add new</a>
+          <button
+            type="button"
+            onClick={openNewVendorModal}
+            className="text-sm text-[#118df0] hover:underline"
+          >
+            Didn't find what you're looking for? Add new
+          </button>
         </div>
 
         {/* Public or Company Toggle */}
@@ -909,12 +1162,17 @@ export default function PurchaseTab({ vehicleId, stockNumber, onError }: Purchas
             <option value="problem">Problem</option>
             <option value="voided">Voided</option>
           </select>
-          <a className="text-sm text-gray-500 hover:underline" href="#">More »</a>
+          <a
+            className="text-sm text-gray-500 hover:underline cursor-pointer"
+            onClick={() => setShowNewVendorModal(true)}
+          >
+            Add new »
+          </a>
         </div>
       </div>
 
       {/* Action Buttons */}
-      <div className="flex gap-4">
+      <div className="mt-8 flex gap-4">
         <button
           onClick={handleSave}
           disabled={saving}
@@ -923,6 +1181,251 @@ export default function PurchaseTab({ vehicleId, stockNumber, onError }: Purchas
           {saving ? 'Saving...' : 'Save Purchase Info'}
         </button>
       </div>
+
+      {showNewVendorModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-3xl rounded-lg bg-white shadow-lg">
+            <div className="px-6 py-4">
+              <h3 className="text-lg font-semibold text-gray-900">New Vendor</h3>
+            </div>
+
+            <div className="max-h-[70vh] overflow-y-auto px-6 pb-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Company Name</label>
+                  <div className="flex items-center">
+                    <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">🏢</span>
+                    <input
+                      type="text"
+                      value={newVendorForm.companyName}
+                      onChange={(e) => setNewVendorForm(prev => ({ ...prev, companyName: e.target.value }))}
+                      className="flex-1 border border-gray-300 rounded-r-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Contact First Name</label>
+                  <div className="flex items-center">
+                    <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">👤</span>
+                    <input
+                      type="text"
+                      value={newVendorForm.contactFirstName}
+                      onChange={(e) => setNewVendorForm(prev => ({ ...prev, contactFirstName: e.target.value }))}
+                      className="flex-1 border border-gray-300 rounded-r-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Contact Last Name</label>
+                  <div className="flex items-center">
+                    <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">👤</span>
+                    <input
+                      type="text"
+                      value={newVendorForm.contactLastName}
+                      onChange={(e) => setNewVendorForm(prev => ({ ...prev, contactLastName: e.target.value }))}
+                      className="flex-1 border border-gray-300 rounded-r-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+                    />
+                  </div>
+                </div>
+
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Street Address</label>
+                  <div className="flex items-center">
+                    <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">📍</span>
+                    <input
+                      type="text"
+                      value={newVendorForm.streetAddress}
+                      onChange={(e) => setNewVendorForm(prev => ({ ...prev, streetAddress: e.target.value }))}
+                      className="flex-1 border border-gray-300 rounded-r-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Suite/Apt</label>
+                  <div className="flex items-center">
+                    <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">#</span>
+                    <input
+                      type="text"
+                      value={newVendorForm.suiteApt}
+                      onChange={(e) => setNewVendorForm(prev => ({ ...prev, suiteApt: e.target.value }))}
+                      className="flex-1 border border-gray-300 rounded-r-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">City</label>
+                  <div className="flex items-center">
+                    <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">📍</span>
+                    <input
+                      type="text"
+                      value={newVendorForm.city}
+                      onChange={(e) => setNewVendorForm(prev => ({ ...prev, city: e.target.value }))}
+                      className="flex-1 border border-gray-300 rounded-r-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Province</label>
+                  <div className="flex items-center">
+                    <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">📍</span>
+                    <input
+                      type="text"
+                      value={newVendorForm.province}
+                      onChange={(e) => setNewVendorForm(prev => ({ ...prev, province: e.target.value }))}
+                      className="flex-1 border border-gray-300 rounded-r-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Postal Code</label>
+                  <div className="flex items-center">
+                    <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">🏷️</span>
+                    <input
+                      type="text"
+                      value={newVendorForm.postalCode}
+                      onChange={(e) => setNewVendorForm(prev => ({ ...prev, postalCode: e.target.value }))}
+                      className="flex-1 border border-gray-300 rounded-r-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Country</label>
+                  <select
+                    value={newVendorForm.country}
+                    onChange={(e) => setNewVendorForm(prev => ({ ...prev, country: e.target.value }))}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+                  >
+                    <option value="CA">CA</option>
+                    <option value="US">US</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">RIN</label>
+                  <div className="flex items-center">
+                    <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">🪪</span>
+                    <input
+                      type="text"
+                      value={newVendorForm.rin}
+                      onChange={(e) => setNewVendorForm(prev => ({ ...prev, rin: e.target.value }))}
+                      className="flex-1 border border-gray-300 rounded-r-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+                    />
+                  </div>
+                </div>
+
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Salesperson Registration #</label>
+                  <div className="flex items-center">
+                    <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">🧑‍💼</span>
+                    <input
+                      type="text"
+                      value={newVendorForm.salespersonRegistration}
+                      onChange={(e) => setNewVendorForm(prev => ({ ...prev, salespersonRegistration: e.target.value }))}
+                      className="flex-1 border border-gray-300 rounded-r-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+                    />
+                  </div>
+                </div>
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Company MVDA #</label>
+                  <div className="flex items-center">
+                    <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">#</span>
+                    <input
+                      type="text"
+                      value={newVendorForm.companyMvda}
+                      onChange={(e) => setNewVendorForm(prev => ({ ...prev, companyMvda: e.target.value }))}
+                      className="flex-1 border border-gray-300 rounded-r-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+                    />
+                  </div>
+                </div>
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Tax Number</label>
+                  <div className="flex items-center">
+                    <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">#</span>
+                    <input
+                      type="text"
+                      value={newVendorForm.taxNumber}
+                      onChange={(e) => setNewVendorForm(prev => ({ ...prev, taxNumber: e.target.value }))}
+                      className="flex-1 border border-gray-300 rounded-r-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
+                  <div className="flex items-center">
+                    <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">📞</span>
+                    <input
+                      type="text"
+                      value={newVendorForm.phone}
+                      onChange={(e) => setNewVendorForm(prev => ({ ...prev, phone: e.target.value }))}
+                      className="flex-1 border border-gray-300 rounded-r-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Mobile</label>
+                  <div className="flex items-center">
+                    <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">📱</span>
+                    <input
+                      type="text"
+                      value={newVendorForm.mobile}
+                      onChange={(e) => setNewVendorForm(prev => ({ ...prev, mobile: e.target.value }))}
+                      className="flex-1 border border-gray-300 rounded-r-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                  <div className="flex items-center">
+                    <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">✉️</span>
+                    <input
+                      type="email"
+                      value={newVendorForm.email}
+                      onChange={(e) => setNewVendorForm(prev => ({ ...prev, email: e.target.value }))}
+                      className="flex-1 border border-gray-300 rounded-r-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Fax</label>
+                  <div className="flex items-center">
+                    <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">📠</span>
+                    <input
+                      type="text"
+                      value={newVendorForm.fax}
+                      onChange={(e) => setNewVendorForm(prev => ({ ...prev, fax: e.target.value }))}
+                      className="flex-1 border border-gray-300 rounded-r-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 px-6 py-4">
+              <button
+                type="button"
+                onClick={() => setShowNewVendorModal(false)}
+                disabled={savingNewVendor}
+                className="rounded-md bg-red-500 px-4 py-2 text-sm font-medium text-white hover:bg-red-600"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleNewVendorOk}
+                disabled={savingNewVendor}
+                className="rounded-md bg-[#118df0] px-4 py-2 text-sm font-medium text-white hover:bg-[#0d6ebd]"
+              >
+                {savingNewVendor ? 'Saving...' : 'OK'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
