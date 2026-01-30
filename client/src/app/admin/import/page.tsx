@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabaseClient'
@@ -24,6 +24,7 @@ type VendorInventoryRow = {
   d: number | null
   location: string | null
   unit_id: string | null
+  type: string | null
   year: number | null
   make: string | null
   model: string | null
@@ -45,6 +46,7 @@ export default function AdminImportPage() {
   const [importing, setImporting] = useState(false)
   const [processing, setProcessing] = useState(false)
   const [processingText, setProcessingText] = useState('Processing…')
+  const [processingFileName, setProcessingFileName] = useState('')
   const [result, setResult] = useState<ImportResult | null>(null)
   const [errors, setErrors] = useState<string[]>([])
   const [dragging, setDragging] = useState(false)
@@ -52,10 +54,34 @@ export default function AdminImportPage() {
   const [vendorsLoading, setVendorsLoading] = useState(false)
   const [vendorsError, setVendorsError] = useState<string | null>(null)
   const [vendorsSearch, setVendorsSearch] = useState('')
+  const [vendorsType, setVendorsType] = useState<'FLEET' | 'PREMIERE'>('FLEET')
   const [vendorsMake, setVendorsMake] = useState('')
   const [vendorsModel, setVendorsModel] = useState('')
   const [vendorsYear, setVendorsYear] = useState('')
   const [vendorsLocation, setVendorsLocation] = useState('')
+  const [vendorsPage, setVendorsPage] = useState(1)
+  const [vendorsPageSize, setVendorsPageSize] = useState(10)
+  const [selectedVendorIds, setSelectedVendorIds] = useState<Record<string, boolean>>({})
+  const selectAllRef = useRef<HTMLInputElement>(null)
+  const [confirmOpen, setConfirmOpen] = useState(false)
+  const [confirmTitle, setConfirmTitle] = useState('')
+  const [confirmMessage, setConfirmMessage] = useState('')
+  const confirmActionRef = useRef<null | (() => Promise<void>)>(null)
+  const [confirmLoading, setConfirmLoading] = useState(false)
+  const [editingVendor, setEditingVendor] = useState<VendorInventoryRow | null>(null)
+  const [editingD, setEditingD] = useState('')
+  const [editingLocation, setEditingLocation] = useState('')
+  const [editingUnitId, setEditingUnitId] = useState('')
+  const [editingYear, setEditingYear] = useState('')
+  const [editingMake, setEditingMake] = useState('')
+  const [editingModel, setEditingModel] = useState('')
+  const [editingSeries, setEditingSeries] = useState('')
+  const [editingKilometers, setEditingKilometers] = useState('')
+  const [editingExtColor, setEditingExtColor] = useState('')
+  const [editingVin, setEditingVin] = useState('')
+  const [editingPrice, setEditingPrice] = useState('')
+  const [editingEquip, setEditingEquip] = useState('')
+  const [savingVendor, setSavingVendor] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const router = useRouter()
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -76,37 +102,34 @@ export default function AdminImportPage() {
     }
   }, [])
 
-  useEffect(() => {
-    let mounted = true
+  const fetchVendorsRows = useCallback(async (type: 'FLEET' | 'PREMIERE') => {
+    setVendorsLoading(true)
+    setVendorsError(null)
+    try {
+      const { data, error } = await supabase
+        .from('edc_vendors_inventory')
+        .select(
+          'id, d, location, unit_id, type, year, make, model, series, kilometers, ext_color, vin, price, equip, created_at, updated_at, image_url, image_generated'
+        )
+        .eq('type', type)
+        .order('created_at', { ascending: false })
+        .limit(200)
 
-    const load = async () => {
-      setVendorsLoading(true)
-      setVendorsError(null)
-      try {
-        const { data, error } = await supabase
-          .from('edc_vendors_inventory')
-          .select(
-            'id, d, location, unit_id, year, make, model, series, kilometers, ext_color, vin, price, equip, created_at, updated_at, image_url, image_generated'
-          )
-          .order('created_at', { ascending: false })
-          .limit(200)
-
-        if (error) throw error
-        if (!mounted) return
-        setVendorsRows((data || []) as VendorInventoryRow[])
-      } catch (e) {
-        const message = e instanceof Error ? e.message : 'Failed to load vendors inventory'
-        if (mounted) setVendorsError(message)
-      } finally {
-        if (mounted) setVendorsLoading(false)
-      }
-    }
-
-    load()
-    return () => {
-      mounted = false
+      if (error) throw error
+      setVendorsRows((data || []) as VendorInventoryRow[])
+      setSelectedVendorIds({})
+    } catch (e) {
+      const message = e instanceof Error ? e.message : 'Failed to load vendors inventory'
+      setVendorsError(message)
+    } finally {
+      setVendorsLoading(false)
     }
   }, [])
+
+  useEffect(() => {
+    void fetchVendorsRows(vendorsType)
+    setVendorsPage(1)
+  }, [vendorsType, fetchVendorsRows])
 
   const makeOptions = Array.from(new Set(vendorsRows.map((r) => String(r.make || '').trim()).filter(Boolean))).sort(
     (a, b) => a.localeCompare(b)
@@ -155,6 +178,193 @@ export default function AdminImportPage() {
     return haystack.includes(q)
   })
 
+  useEffect(() => {
+    setVendorsPage(1)
+  }, [vendorsSearch, vendorsType, vendorsMake, vendorsModel, vendorsYear, vendorsLocation])
+
+  useEffect(() => {
+    setVendorsPage(1)
+  }, [vendorsPageSize])
+
+  const totalVendorsPages = Math.max(1, Math.ceil(filteredVendorsRows.length / vendorsPageSize))
+  const currentVendorsPage = Math.min(vendorsPage, totalVendorsPages)
+  const pagedVendorsRows = filteredVendorsRows.slice(
+    (currentVendorsPage - 1) * vendorsPageSize,
+    currentVendorsPage * vendorsPageSize
+  )
+
+  const pageRowIds = pagedVendorsRows.map((r) => r.id)
+  const selectedCount = Object.values(selectedVendorIds).filter(Boolean).length
+  const pageSelectedCount = pageRowIds.filter((id) => selectedVendorIds[id]).length
+  const allOnPageSelected = pageRowIds.length > 0 && pageSelectedCount === pageRowIds.length
+  const someOnPageSelected = pageSelectedCount > 0 && pageSelectedCount < pageRowIds.length
+
+  useEffect(() => {
+    if (selectAllRef.current) {
+      selectAllRef.current.indeterminate = someOnPageSelected
+    }
+  }, [someOnPageSelected, pageSelectedCount, pageRowIds.length])
+
+  const toggleSelectAllOnPage = () => {
+    setSelectedVendorIds((prev) => {
+      const next = { ...prev }
+      if (allOnPageSelected) {
+        pageRowIds.forEach((id) => {
+          delete next[id]
+        })
+      } else {
+        pageRowIds.forEach((id) => {
+          next[id] = true
+        })
+      }
+      return next
+    })
+  }
+
+  const toggleSelectRow = (id: string) => {
+    setSelectedVendorIds((prev) => {
+      const next = { ...prev }
+      if (next[id]) delete next[id]
+      else next[id] = true
+      return next
+    })
+  }
+
+  const bulkDeleteSelected = async () => {
+    const ids = Object.keys(selectedVendorIds).filter((k) => selectedVendorIds[k])
+    if (ids.length === 0) return
+
+    setConfirmTitle('Delete selected rows?')
+    setConfirmMessage(`Delete ${ids.length} selected row(s)? This action cannot be undone.`)
+    confirmActionRef.current = async () => {
+      setVendorsLoading(true)
+      setVendorsError(null)
+      try {
+        const { error } = await supabase.from('edc_vendors_inventory').delete().in('id', ids)
+        if (error) throw error
+        setVendorsRows((prev) => prev.filter((r) => !ids.includes(r.id)))
+        setSelectedVendorIds({})
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : 'Failed to delete selected rows'
+        setVendorsError(msg)
+      } finally {
+        setVendorsLoading(false)
+      }
+    }
+    setConfirmOpen(true)
+  }
+
+  const openEditVendor = (row: VendorInventoryRow) => {
+    setVendorsError(null)
+    setEditingVendor(row)
+    setEditingD(row.d != null ? String(row.d) : '')
+    setEditingLocation(row.location || '')
+    setEditingUnitId(row.unit_id || '')
+    setEditingYear(row.year != null ? String(row.year) : '')
+    setEditingMake(row.make || '')
+    setEditingModel(row.model || '')
+    setEditingSeries(row.series || '')
+    setEditingKilometers(row.kilometers != null ? String(row.kilometers) : '')
+    setEditingExtColor(row.ext_color || '')
+    setEditingVin(row.vin || '')
+    setEditingPrice(row.price != null ? String(row.price) : '')
+    setEditingEquip(row.equip || '')
+  }
+
+  const closeEditVendor = () => {
+    if (savingVendor) return
+    setEditingVendor(null)
+  }
+
+  const saveEditVendor = async () => {
+    if (!editingVendor) return
+    setSavingVendor(true)
+    setVendorsError(null)
+
+    const parseIntOrNull = (v: string) => {
+      const n = Number.parseInt(String(v).trim(), 10)
+      return Number.isFinite(n) ? n : null
+    }
+    const parseFloatOrNull = (v: string) => {
+      const n = Number.parseFloat(String(v).trim())
+      return Number.isFinite(n) ? n : null
+    }
+
+    const payload = {
+      d: editingD.trim() ? parseIntOrNull(editingD) : null,
+      location: editingLocation.trim() || null,
+      unit_id: editingUnitId.trim() || null,
+      year: editingYear.trim() ? parseIntOrNull(editingYear) : null,
+      make: editingMake.trim() || null,
+      model: editingModel.trim() || null,
+      series: editingSeries.trim() || null,
+      kilometers: editingKilometers.trim() ? parseIntOrNull(editingKilometers) : null,
+      ext_color: editingExtColor.trim() || null,
+      vin: editingVin.trim(),
+      price: editingPrice.trim() ? parseFloatOrNull(editingPrice) : null,
+      equip: editingEquip.trim() || null,
+      updated_at: new Date().toISOString(),
+    }
+
+    if (!payload.vin) {
+      setVendorsError('VIN is required')
+      setSavingVendor(false)
+      return
+    }
+
+    try {
+      const { error } = await supabase.from('edc_vendors_inventory').update(payload).eq('id', editingVendor.id)
+      if (error) throw error
+
+      setVendorsRows((prev) =>
+        prev.map((r) =>
+          r.id === editingVendor.id
+            ? {
+                ...r,
+                ...payload,
+                price: payload.price as any,
+                d: payload.d as any,
+                year: payload.year as any,
+                kilometers: payload.kilometers as any,
+              }
+            : r
+        )
+      )
+
+      setEditingVendor(null)
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Failed to update row'
+      setVendorsError(msg)
+    } finally {
+      setSavingVendor(false)
+    }
+  }
+
+  const deleteVendor = async (row: VendorInventoryRow) => {
+    setConfirmTitle('Delete row?')
+    setConfirmMessage(`Delete this row? This action cannot be undone.\n\nVIN: ${row.vin}`)
+    confirmActionRef.current = async () => {
+      setVendorsLoading(true)
+      setVendorsError(null)
+      try {
+        const { error } = await supabase.from('edc_vendors_inventory').delete().eq('id', row.id)
+        if (error) throw error
+        setVendorsRows((prev) => prev.filter((r) => r.id !== row.id))
+        setSelectedVendorIds((prev) => {
+          const next = { ...prev }
+          delete next[row.id]
+          return next
+        })
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : 'Failed to delete row'
+        setVendorsError(msg)
+      } finally {
+        setVendorsLoading(false)
+      }
+    }
+    setConfirmOpen(true)
+  }
+
   const failedRows = result ? result.rows.filter((row) => !row.success) : []
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -192,6 +402,9 @@ export default function AdminImportPage() {
     const baselineLatest = vendorsRows.length > 0 ? vendorsRows[0].created_at : null
 
     setImporting(true)
+    setProcessing(true)
+    setProcessingFileName(file.name)
+    setProcessingText('Uploading…')
     setResult(null)
     setErrors([])
 
@@ -219,10 +432,11 @@ export default function AdminImportPage() {
             ? (data as any).error
             : raw) || 'Upload failed'
         setErrors([message])
+        setProcessing(false)
+        setProcessingText('Processing…')
         return
       }
 
-      setProcessing(true)
       setProcessingText('Processing…')
 
       const message =
@@ -265,24 +479,7 @@ export default function AdminImportPage() {
 
       if (maybeCompleted) {
         setProcessing(false)
-        setVendorsLoading(true)
-        setVendorsError(null)
-        try {
-          const { data: rows, error } = await supabase
-            .from('edc_vendors_inventory')
-            .select(
-              'id, d, location, unit_id, year, make, model, series, kilometers, ext_color, vin, price, equip, created_at, updated_at, image_url, image_generated'
-            )
-            .order('created_at', { ascending: false })
-            .limit(200)
-          if (error) throw error
-          setVendorsRows((rows || []) as VendorInventoryRow[])
-        } catch (e) {
-          const msg = e instanceof Error ? e.message : 'Failed to load vendors inventory'
-          setVendorsError(msg)
-        } finally {
-          setVendorsLoading(false)
-        }
+        await fetchVendorsRows(vendorsType)
         return
       }
 
@@ -293,6 +490,7 @@ export default function AdminImportPage() {
           const { data: latestRows, error } = await supabase
             .from('edc_vendors_inventory')
             .select('created_at')
+            .eq('type', vendorsType)
             .order('created_at', { ascending: false })
             .limit(1)
           if (error) throw error
@@ -309,19 +507,17 @@ export default function AdminImportPage() {
             setVendorsLoading(true)
             setVendorsError(null)
             try {
-              const { data: rows, error: rowsError } = await supabase
-                .from('edc_vendors_inventory')
-                .select(
-                  'id, d, location, unit_id, year, make, model, series, kilometers, ext_color, vin, price, equip, created_at, updated_at, image_url, image_generated'
-                )
-                .order('created_at', { ascending: false })
-                .limit(200)
-              if (rowsError) throw rowsError
-              setVendorsRows((rows || []) as VendorInventoryRow[])
+              await fetchVendorsRows(vendorsType)
+              setProcessing(false)
+              if (pollTimerRef.current) {
+                clearInterval(pollTimerRef.current)
+                pollTimerRef.current = null
+              }
+            } catch (e) {
+              const message = e instanceof Error ? e.message : 'Failed to load vendors inventory'
+              setVendorsError(message)
             } finally {
               setVendorsLoading(false)
-              setProcessing(false)
-              setProcessingText('Processing…')
             }
             return
           }
@@ -352,6 +548,8 @@ export default function AdminImportPage() {
       }, 2000)
     } catch {
       setErrors(['Failed to connect to server'])
+      setProcessing(false)
+      setProcessingText('Processing…')
     } finally {
       setImporting(false)
     }
@@ -360,14 +558,232 @@ export default function AdminImportPage() {
   return (
     <div className="min-h-screen bg-gray-100">
       {processing ? (
-        <div className="fixed inset-0 z-[200] flex items-center justify-center">
-          <div className="absolute inset-0 bg-black/40" />
-          <div className="relative w-full max-w-sm rounded-2xl bg-white p-6 shadow-xl">
-            <div className="flex items-center gap-3">
-              <div className="h-10 w-10 rounded-full border-4 border-gray-200 border-t-[#118df0] animate-spin" />
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/30" />
+          <div className="relative w-full max-w-2xl rounded-2xl bg-white px-8 py-7 shadow-xl">
+            <div className="flex items-center gap-5">
+              <div className="relative h-14 w-14 shrink-0">
+                <div className="absolute inset-0 rounded-full border-[6px] border-gray-200" />
+                <div className="absolute inset-0 rounded-full border-[6px] border-transparent border-t-[#118df0] animate-spin" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="text-base font-semibold text-gray-900">Processing your file</div>
+                <div className="mt-1 text-sm text-gray-600">Please keep this tab open while we finish the import.</div>
+
+                {processingFileName ? (
+                  <div className="mt-4 rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-xs text-gray-700">
+                    <div className="font-semibold text-gray-900">File</div>
+                    <div className="mt-0.5 font-mono break-all">{processingFileName}</div>
+                  </div>
+                ) : null}
+                <div className="mt-5 text-xs text-gray-500">
+                  Once completed, the Vendors Inventory table will refresh automatically.
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {editingVendor ? (
+        <div className="fixed inset-0 z-[210] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/40" onClick={closeEditVendor} />
+          <div className="relative w-full max-w-3xl rounded-2xl bg-white shadow-xl">
+            <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4">
               <div>
-                <div className="text-base font-semibold text-gray-900">Processing</div>
-                <div className="mt-1 text-sm text-gray-600">{processingText}</div>
+                <div className="text-base font-semibold text-gray-900">Edit Row</div>
+                <div className="mt-1 text-xs font-semibold text-gray-600">
+                  {String(editingVendor.type || '').toUpperCase() === 'PREMIERE' ? 'Premiere Cars' : 'Fleet Cars'}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={closeEditVendor}
+                className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                disabled={savingVendor}
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="px-6 py-5">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700">D</label>
+                  <input
+                    value={editingD}
+                    onChange={(e) => setEditingD(e.target.value)}
+                    className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700">Location</label>
+                  <input
+                    value={editingLocation}
+                    onChange={(e) => setEditingLocation(e.target.value)}
+                    className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700">Unit ID</label>
+                  <input
+                    value={editingUnitId}
+                    onChange={(e) => setEditingUnitId(e.target.value)}
+                    className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700">Year</label>
+                  <input
+                    value={editingYear}
+                    onChange={(e) => setEditingYear(e.target.value)}
+                    className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700">Make</label>
+                  <input
+                    value={editingMake}
+                    onChange={(e) => setEditingMake(e.target.value)}
+                    className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700">Model</label>
+                  <input
+                    value={editingModel}
+                    onChange={(e) => setEditingModel(e.target.value)}
+                    className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700">Series</label>
+                  <input
+                    value={editingSeries}
+                    onChange={(e) => setEditingSeries(e.target.value)}
+                    className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700">Kilometers</label>
+                  <input
+                    value={editingKilometers}
+                    onChange={(e) => setEditingKilometers(e.target.value)}
+                    className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700">Ext Color</label>
+                  <input
+                    value={editingExtColor}
+                    onChange={(e) => setEditingExtColor(e.target.value)}
+                    className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+                  />
+                </div>
+
+                <div className="md:col-span-2">
+                  <label className="block text-xs font-semibold text-gray-700">VIN</label>
+                  <input
+                    value={editingVin}
+                    onChange={(e) => setEditingVin(e.target.value)}
+                    className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700">Price</label>
+                  <input
+                    value={editingPrice}
+                    onChange={(e) => setEditingPrice(e.target.value)}
+                    className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+                  />
+                </div>
+
+                <div className="md:col-span-3">
+                  <label className="block text-xs font-semibold text-gray-700">Equip</label>
+                  <input
+                    value={editingEquip}
+                    onChange={(e) => setEditingEquip(e.target.value)}
+                    className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+                  />
+                </div>
+              </div>
+
+              {vendorsError ? <div className="mt-4 text-sm text-red-600">{vendorsError}</div> : null}
+
+              <div className="mt-6 flex items-center justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={closeEditVendor}
+                  className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+                  disabled={savingVendor}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={saveEditVendor}
+                  disabled={savingVendor}
+                  className="rounded-lg bg-[#118df0] px-4 py-2 text-sm font-semibold text-white hover:bg-[#0d6ebd] disabled:opacity-50"
+                >
+                  {savingVendor ? 'Saving…' : 'Save'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {confirmOpen ? (
+        <div className="fixed inset-0 z-[220] flex items-center justify-center p-4">
+          <div
+            className="absolute inset-0 bg-black/40"
+            onClick={() => {
+              if (confirmLoading) return
+              setConfirmOpen(false)
+              confirmActionRef.current = null
+            }}
+          />
+          <div className="relative w-full max-w-md rounded-2xl bg-white shadow-xl">
+            <div className="border-b border-gray-200 px-6 py-4">
+              <div className="text-base font-semibold text-gray-900">{confirmTitle}</div>
+            </div>
+            <div className="px-6 py-5">
+              <div className="whitespace-pre-line text-sm text-gray-700">{confirmMessage}</div>
+              <div className="mt-6 flex items-center justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setConfirmOpen(false)
+                    confirmActionRef.current = null
+                  }}
+                  disabled={confirmLoading}
+                  className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (!confirmActionRef.current) {
+                      setConfirmOpen(false)
+                      return
+                    }
+                    setConfirmLoading(true)
+                    try {
+                      await confirmActionRef.current()
+                      setConfirmOpen(false)
+                      confirmActionRef.current = null
+                    } finally {
+                      setConfirmLoading(false)
+                    }
+                  }}
+                  disabled={confirmLoading}
+                  className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50"
+                >
+                  {confirmLoading ? 'Deleting…' : 'Delete'}
+                </button>
               </div>
             </div>
           </div>
@@ -505,10 +921,10 @@ export default function AdminImportPage() {
               {file && (
                 <button
                   onClick={handleImport}
-                  disabled={importing}
+                  disabled={importing || processing}
                   className="mt-4 w-full bg-[#118df0] text-white py-3 rounded-lg font-semibold hover:bg-[#0d6ebd] transition-colors disabled:opacity-50"
                 >
-                  {importing ? 'Importing vehicles…' : 'Import Vehicles'}
+                  Import Vehicles
                 </button>
               )}
 
@@ -586,41 +1002,90 @@ export default function AdminImportPage() {
         <div className="bg-white rounded-xl shadow p-6">
           <div className="flex items-center justify-between gap-3">
             <h3 className="text-lg font-semibold text-gray-900">Vendors Inventory</h3>
-            <button
-              type="button"
-              onClick={async () => {
-                setVendorsLoading(true)
-                setVendorsError(null)
-                try {
-                  const { data, error } = await supabase
-                    .from('edc_vendors_inventory')
-                    .select(
-                      'id, d, location, unit_id, year, make, model, series, kilometers, ext_color, vin, price, equip, created_at, updated_at, image_url, image_generated'
-                    )
-                    .order('created_at', { ascending: false })
-                    .limit(200)
-                  if (error) throw error
-                  setVendorsRows((data || []) as VendorInventoryRow[])
-                } catch (e) {
-                  const message = e instanceof Error ? e.message : 'Failed to load vendors inventory'
-                  setVendorsError(message)
-                } finally {
-                  setVendorsLoading(false)
-                }
-              }}
-              className="text-sm font-medium text-[#118df0] hover:underline"
-            >
-              Refresh
-            </button>
+            <div className="flex items-center gap-3">
+              <div className="hidden sm:flex items-center gap-2">
+                <select
+                  value={vendorsPageSize}
+                  onChange={(e) => setVendorsPageSize(Number(e.target.value) || 10)}
+                  className="h-9 rounded-lg border border-gray-200 bg-white px-2 text-sm font-semibold text-gray-700 outline-none focus:ring-2 focus:ring-[#118df0]/40"
+                  title="Rows per page"
+                  aria-label="Rows per page"
+                >
+                  <option value={10}>10</option>
+                  <option value={20}>20</option>
+                  <option value={50}>50</option>
+                  <option value={100}>100</option>
+                  <option value={500}>500</option>
+                  <option value={1000}>1000</option>
+                </select>
+                <button
+                  type="button"
+                  onClick={() => setVendorsPage(1)}
+                  disabled={vendorsLoading || currentVendorsPage <= 1}
+                  className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                >
+                  First
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setVendorsPage((p) => Math.max(1, p - 1))}
+                  disabled={vendorsLoading || currentVendorsPage <= 1}
+                  className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                >
+                  Prev
+                </button>
+                <div className="text-xs text-gray-600">
+                  Page {currentVendorsPage} of {totalVendorsPages}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setVendorsPage((p) => Math.min(totalVendorsPages, p + 1))}
+                  disabled={vendorsLoading || currentVendorsPage >= totalVendorsPages}
+                  className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                >
+                  Next
+                </button>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => void bulkDeleteSelected()}
+                disabled={vendorsLoading || selectedCount === 0}
+                className="rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-sm font-semibold text-red-700 hover:bg-red-100 disabled:opacity-50"
+              >
+                Delete Selected ({selectedCount})
+              </button>
+
+              <button
+                type="button"
+                onClick={async () => {
+                  await fetchVendorsRows(vendorsType)
+                }}
+                className="text-sm font-medium text-[#118df0] hover:underline"
+              >
+                Refresh
+              </button>
+            </div>
           </div>
 
-          <div className="mt-4 grid grid-cols-1 md:grid-cols-5 gap-3">
+          <div className="mt-4 grid grid-cols-1 md:grid-cols-6 gap-3">
             <input
               value={vendorsSearch}
               onChange={(e) => setVendorsSearch(e.target.value)}
               placeholder="Search..."
               className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-[#118df0]/40"
             />
+
+            <select
+              value={vendorsType}
+              onChange={(e) => setVendorsType(e.target.value === 'PREMIERE' ? 'PREMIERE' : 'FLEET')}
+              className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-[#118df0]/40"
+              aria-label="Inventory Type"
+              title="Inventory Type"
+            >
+              <option value="FLEET">Fleet</option>
+              <option value="PREMIERE">Premiere</option>
+            </select>
 
             <select
               value={vendorsMake}
@@ -677,56 +1142,139 @@ export default function AdminImportPage() {
 
           {vendorsError ? <div className="mt-3 text-sm text-red-600">{vendorsError}</div> : null}
 
-          <div className="mt-4 overflow-x-auto rounded-xl border border-gray-200 bg-white">
-            <table className="min-w-full text-sm">
+          <div className="mt-4 overflow-hidden rounded-xl border border-gray-200 bg-white">
+            <table className="w-full table-fixed text-sm">
               <thead className="bg-gray-50 text-gray-700">
                 <tr>
-                  <th className="px-4 py-3 text-left font-semibold">D</th>
-                  <th className="px-4 py-3 text-left font-semibold">Location</th>
-                  <th className="px-4 py-3 text-left font-semibold">Unit ID</th>
-                  <th className="px-4 py-3 text-left font-semibold">Year</th>
-                  <th className="px-4 py-3 text-left font-semibold">Make</th>
-                  <th className="px-4 py-3 text-left font-semibold">Model</th>
-                  <th className="px-4 py-3 text-left font-semibold">Series</th>
-                  <th className="px-4 py-3 text-left font-semibold">Kilometers</th>
-                  <th className="px-4 py-3 text-left font-semibold">Ext Color</th>
-                  <th className="px-4 py-3 text-left font-semibold">VIN</th>
-                  <th className="px-4 py-3 text-left font-semibold">Price</th>
-                  <th className="px-4 py-3 text-left font-semibold">Equip</th>
+                  <th className="w-10 px-3 py-3 text-left font-semibold">
+                    <input
+                      ref={selectAllRef}
+                      type="checkbox"
+                      checked={allOnPageSelected}
+                      onChange={toggleSelectAllOnPage}
+                      className="h-4 w-4 rounded border-gray-300"
+                      aria-label="Select all rows on this page"
+                      title="Select all"
+                    />
+                  </th>
+                  <th className="w-10 px-2 py-3 text-left font-semibold">D</th>
+                  <th className="w-32 px-2 py-3 text-left font-semibold">Location</th>
+                  <th className="w-20 px-2 py-3 text-left font-semibold">Unit ID</th>
+                  <th className="w-14 px-2 py-3 text-left font-semibold">Year</th>
+                  <th className="w-20 px-2 py-3 text-left font-semibold">Make</th>
+                  <th className="w-20 px-2 py-3 text-left font-semibold">Model</th>
+                  <th className="w-16 px-2 py-3 text-left font-semibold">Series</th>
+                  <th className="w-20 px-2 py-3 text-left font-semibold">KM</th>
+                  <th className="w-20 px-2 py-3 text-left font-semibold">Color</th>
+                  <th className="w-44 px-2 py-3 text-left font-semibold">VIN</th>
+                  <th className="w-24 px-2 py-3 text-left font-semibold">Price</th>
+                  <th className="px-2 py-3 text-left font-semibold">Equip</th>
+                  <th className="w-36 px-2 py-3 text-left font-semibold">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {vendorsLoading ? (
                   <tr>
-                    <td className="px-4 py-4 text-gray-600" colSpan={12}>
+                    <td className="px-4 py-4 text-gray-600" colSpan={14}>
                       Loading…
                     </td>
                   </tr>
-                ) : filteredVendorsRows.length === 0 ? (
+                ) : pagedVendorsRows.length === 0 ? (
                   <tr>
-                    <td className="px-4 py-4 text-gray-600" colSpan={12}>
+                    <td className="px-4 py-4 text-gray-600" colSpan={14}>
                       No records found.
                     </td>
                   </tr>
                 ) : (
-                  filteredVendorsRows.map((row) => (
+                  pagedVendorsRows.map((row) => (
                     <tr key={row.id} className="hover:bg-gray-50">
-                      <td className="px-4 py-3 whitespace-nowrap">{row.d ?? ''}</td>
-                      <td className="px-4 py-3 whitespace-nowrap">{row.location || ''}</td>
-                      <td className="px-4 py-3 whitespace-nowrap">{row.unit_id || ''}</td>
-                      <td className="px-4 py-3 whitespace-nowrap">{row.year ?? ''}</td>
-                      <td className="px-4 py-3 whitespace-nowrap">{row.make || ''}</td>
-                      <td className="px-4 py-3 whitespace-nowrap">{row.model || ''}</td>
-                      <td className="px-4 py-3 whitespace-nowrap">{row.series || ''}</td>
-                      <td className="px-4 py-3 whitespace-nowrap">{row.kilometers ?? ''}</td>
-                      <td className="px-4 py-3 whitespace-nowrap">{row.ext_color || ''}</td>
-                      <td className="px-4 py-3 whitespace-nowrap font-mono text-xs">{row.vin}</td>
+                      <td className="px-3 py-3">
+                        <input
+                          type="checkbox"
+                          checked={!!selectedVendorIds[row.id]}
+                          onChange={() => toggleSelectRow(row.id)}
+                          className="h-4 w-4 rounded border-gray-300"
+                          aria-label={`Select row ${row.vin}`}
+                          title="Select"
+                        />
+                      </td>
+                      <td className="px-2 py-3">{row.d ?? ''}</td>
+                      <td className="px-2 py-3 whitespace-normal break-words" title={row.location || ''}>
+                        {row.location || ''}
+                      </td>
+                      <td className="px-2 py-3 whitespace-normal break-words" title={row.unit_id || ''}>
+                        {row.unit_id || ''}
+                      </td>
+                      <td className="px-2 py-3">{row.year ?? ''}</td>
+                      <td className="px-2 py-3 whitespace-normal break-words" title={row.make || ''}>
+                        {row.make || ''}
+                      </td>
+                      <td className="px-2 py-3 whitespace-normal break-words" title={row.model || ''}>
+                        {row.model || ''}
+                      </td>
+                      <td className="px-2 py-3 whitespace-normal break-words" title={row.series || ''}>
+                        {row.series || ''}
+                      </td>
+                      <td className="px-2 py-3">{row.kilometers ?? ''}</td>
+                      <td className="px-2 py-3 whitespace-normal break-words" title={row.ext_color || ''}>
+                        {row.ext_color || ''}
+                      </td>
+                      <td className="px-2 py-3 font-mono text-xs break-all" title={row.vin}>
+                        {row.vin}
+                      </td>
                       <td className="px-4 py-3 whitespace-nowrap">
                         {typeof row.price === 'number'
                           ? new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(row.price)
                           : ''}
                       </td>
-                      <td className="px-4 py-3 whitespace-nowrap">{row.equip || ''}</td>
+                      <td className="px-2 py-3 text-xs leading-snug break-words">{row.equip || ''}</td>
+                      <td className="px-2 py-3">
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            disabled
+                            title="AI Generated"
+                            aria-label="AI Generated"
+                            className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-gray-200 bg-gray-50 text-gray-700 disabled:opacity-60"
+                          >
+                            <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M12 2l1.5 4.5L18 8l-4.5 1.5L12 14l-1.5-4.5L6 8l4.5-1.5L12 2z" />
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M5 14l.75 2.25L8 17l-2.25.75L5 20l-.75-2.25L2 17l2.25-.75L5 14z" />
+                            </svg>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => openEditVendor(row)}
+                            title="Edit"
+                            aria-label="Edit"
+                            className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-gray-200 text-gray-700 hover:bg-gray-50"
+                          >
+                            <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M12 20h9" />
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                d="M16.5 3.5a2.121 2.121 0 113 3L7 19l-4 1 1-4 12.5-12.5z"
+                              />
+                            </svg>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void deleteVendor(row)}
+                            title="Delete"
+                            aria-label="Delete"
+                            className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-red-200 bg-red-50 text-red-700 hover:bg-red-100"
+                          >
+                            <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M3 6h18" />
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M8 6V4h8v2" />
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M19 6l-1 14H6L5 6" />
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M10 11v6" />
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M14 11v6" />
+                            </svg>
+                          </button>
+                        </div>
+                      </td>
                     </tr>
                   ))
                 )}

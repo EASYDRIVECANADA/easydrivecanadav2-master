@@ -48,10 +48,28 @@ function AccountPageInner() {
   const [originalAddress, setOriginalAddress] = useState('')
   const [originalLicenseNumber, setOriginalLicenseNumber] = useState('')
 
+  const consumeOauthFlag = () => {
+    if (typeof window === 'undefined') return false
+    try {
+      const key = 'edc_oauth_flow'
+      const val = window.localStorage.getItem(key)
+      if (val === 'true') {
+        window.localStorage.removeItem(key)
+        return true
+      }
+    } catch {
+      // ignore
+    }
+    return false
+  }
+
   const isOauthFlow = () => {
     if (typeof window === 'undefined') return false
     try {
-      return new URLSearchParams(window.location.search).get('from') === 'oauth'
+      const params = new URLSearchParams(window.location.search)
+      const fromParam = params.get('from') === 'oauth'
+      const hasCode = !!params.get('code')
+      return fromParam || hasCode || consumeOauthFlag()
     } catch {
       return false
     }
@@ -150,7 +168,7 @@ function AccountPageInner() {
           email,
           password: passwordOrAccessCode,
           options: {
-            emailRedirectTo: `${window.location.origin}/account?from=oauth`,
+            emailRedirectTo: `${window.location.origin}/account`,
           },
         })
         if (signUpError) {
@@ -265,10 +283,15 @@ function AccountPageInner() {
     setError('')
     setLoading(true)
     try {
+      try {
+        if (typeof window !== 'undefined') window.localStorage.setItem('edc_oauth_flow', 'true')
+      } catch {
+        // ignore
+      }
       const { error: oauthError } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: `${window.location.origin}/account?from=oauth`,
+          redirectTo: `${window.location.origin}/account`,
         },
       })
       if (oauthError) setError(oauthError.message)
