@@ -16,8 +16,9 @@ export default function AdminCostumerPage() {
   const [activeTab, setActiveTab] = useState<'customer' | 'credit'>('customer')
   const [saving, setSaving] = useState(false)
   const [rows, setRows] = useState<CustomerRow[]>([])
+  const [editingId, setEditingId] = useState<string | null>(null)
 
-  const [form, setForm] = useState<CustomerForm>({
+  const getDefaultForm = (): CustomerForm => ({
     customerType: 'IND',
     idType: 'RIN',
     firstName: '',
@@ -50,7 +51,7 @@ export default function AdminCostumerPage() {
     notes: '',
   })
 
-  const [credit, setCredit] = useState<CreditForm>({
+  const getDefaultCredit = (): CreditForm => ({
     salutation: '',
     gender: '',
     maritalStatus: '',
@@ -91,6 +92,10 @@ export default function AdminCostumerPage() {
     financialInstitution: '',
     desiredMonthlyPayment: '0',
   })
+
+  const [form, setForm] = useState<CustomerForm>(getDefaultForm)
+
+  const [credit, setCredit] = useState<CreditForm>(getDefaultCredit)
 
   useEffect(() => {
     let cancelled = false
@@ -158,7 +163,122 @@ export default function AdminCostumerPage() {
 
   const handleOpenCreate = () => {
     setActiveTab('customer')
+    setEditingId(null)
+    setForm(getDefaultForm())
+    setCredit(getDefaultCredit())
     setShowCreate(true)
+  }
+
+  const handleEdit = async (id: string) => {
+    setActiveTab('customer')
+    setEditingId(id)
+    setShowCreate(true)
+    try {
+      const { data, error } = await supabase.from('edc_customer').select('*').eq('id', id).single()
+      if (error || !data) return
+
+      const r: any = data
+
+      setForm((prev) => ({
+        ...prev,
+        customerType: (r.customer_type || r.customerType || prev.customerType) as any,
+        idType: (r.id_type || r.idType || prev.idType) as any,
+        firstName: r.first_name ?? r.firstName ?? prev.firstName,
+        middleName: r.middle_name ?? r.middleName ?? prev.middleName,
+        lastName: r.last_name ?? r.lastName ?? prev.lastName,
+        rin: r.rin ?? prev.rin,
+        driversLicense: r.drivers_license ?? r.driversLicense ?? prev.driversLicense,
+        dlExpiry: r.dl_expiry ?? r.dlExpiry ?? prev.dlExpiry,
+        dateOfBirth: r.date_of_birth ?? r.dateOfBirth ?? prev.dateOfBirth,
+        legalName: r.legal_name ?? r.legalName ?? prev.legalName,
+        companyName: r.company_name ?? r.companyName ?? prev.companyName,
+        mvda: r.mvda ?? prev.mvda,
+        yearEnd: r.year_end ?? r.yearEnd ?? prev.yearEnd,
+        taxNumber: r.tax_number ?? r.taxNumber ?? prev.taxNumber,
+        contactFirstName: r.contact_first_name ?? r.contactFirstName ?? prev.contactFirstName,
+        contactLastName: r.contact_last_name ?? r.contactLastName ?? prev.contactLastName,
+        salespersonReg: r.salesperson_reg ?? r.salespersonReg ?? prev.salespersonReg,
+        fax: r.fax ?? prev.fax,
+        streetAddress: r.street_address ?? r.streetAddress ?? prev.streetAddress,
+        suiteApt: r.suite_apt ?? r.suiteApt ?? prev.suiteApt,
+        city: r.city ?? prev.city,
+        province: r.province ?? prev.province,
+        postalCode: r.postal_code ?? r.postalCode ?? prev.postalCode,
+        country: r.country ?? prev.country,
+        phone: r.phone ?? prev.phone,
+        mobile: r.mobile ?? prev.mobile,
+        email: r.email ?? prev.email,
+        salesperson: r.salesperson ?? prev.salesperson,
+        visibility: r.visibility ?? prev.visibility,
+        notes: r.notes ?? prev.notes,
+      }))
+
+      const toArray = (raw: any) => {
+        if (!raw) return null
+        if (Array.isArray(raw)) return raw
+        if (typeof raw === 'string') {
+          const s = raw.trim()
+          if (!s) return null
+          try {
+            const parsed = JSON.parse(s)
+            if (Array.isArray(parsed)) return parsed
+          } catch {
+            return null
+          }
+        }
+        return null
+      }
+
+      const emp = toArray(r.employments) as any[] | null
+      const inc = toArray(r.incomes) as any[] | null
+
+      setCredit((prev) => ({
+        ...prev,
+        salutation: r.salutation ?? prev.salutation,
+        gender: r.gender ?? prev.gender,
+        maritalStatus: r.marital_status ?? r.maritalStatus ?? prev.maritalStatus,
+        residenceOwnership: r.residence_ownership ?? r.residenceOwnership ?? prev.residenceOwnership,
+        marketValue: String(r.market_value ?? r.marketValue ?? prev.marketValue ?? '0'),
+        mortgageAmount: String(r.mortgage_amount ?? r.mortgageAmount ?? prev.mortgageAmount ?? '0'),
+        monthlyPayment: String(r.monthly_payment ?? r.monthlyPayment ?? prev.monthlyPayment ?? '0'),
+        bank: r.bank ?? prev.bank,
+        yearsAtPresentAddress: r.years_at_present_address ?? r.yearsAtPresentAddress ?? prev.yearsAtPresentAddress,
+        employments: emp
+          ? emp.map((e: any) => ({
+              employmentType: e.employment_type ?? e.employmentType ?? 'Full Time',
+              position: e.position ?? '',
+              occupation: e.occupation ?? '',
+              employerName: e.employer_name ?? e.employerName ?? '',
+              employerPhone: e.employer_phone ?? e.employerPhone ?? '',
+              yearsEmployed: e.years_employed ?? e.yearsEmployed ?? '',
+              streetAddress: e.street_address ?? e.streetAddress ?? '',
+              suiteApt: e.suite_apt ?? e.suiteApt ?? '',
+              city: e.city ?? '',
+              province: e.province ?? 'ON',
+              postalCode: e.postal_code ?? e.postalCode ?? '',
+              country: e.country ?? 'CA',
+            }))
+          : prev.employments,
+        incomes: inc
+          ? inc.map((i: any) => ({
+              incomeType: i.income_type ?? i.incomeType ?? 'Employment',
+              rateHr: String(i.rate_hr ?? i.rateHr ?? '0'),
+              hrsWeek: String(i.hrs_week ?? i.hrsWeek ?? '0'),
+              monthlyGross: String(i.monthly_gross ?? i.monthlyGross ?? '0'),
+              annualGross: String(i.annual_gross ?? i.annualGross ?? '0'),
+              incomeNotes: i.income_notes ?? i.incomeNotes ?? '',
+            }))
+          : prev.incomes,
+        declaredBankruptcy: Boolean(r.declared_bankruptcy ?? r.declaredBankruptcy ?? prev.declaredBankruptcy),
+        bankruptcyDuration: r.bankruptcy_duration ?? r.bankruptcyDuration ?? prev.bankruptcyDuration,
+        hasCollections: Boolean(r.has_collections ?? r.hasCollections ?? prev.hasCollections),
+        collectionNotes: r.collection_notes ?? r.collectionNotes ?? prev.collectionNotes,
+        financialInstitution: r.financial_institution ?? r.financialInstitution ?? prev.financialInstitution,
+        desiredMonthlyPayment: String(r.desired_monthly_payment ?? r.desiredMonthlyPayment ?? prev.desiredMonthlyPayment ?? '0'),
+      }))
+    } catch {
+      // ignore
+    }
   }
 
   const handleBackToList = () => {
@@ -420,7 +540,7 @@ export default function AdminCostumerPage() {
                   {pageRows.map((r) => (
                     <tr key={r.id} className="hover:bg-gray-50">
                       <td className="px-3 py-3">
-                        <button type="button" className="text-gray-400 hover:text-gray-600" aria-label="Edit">
+                        <button type="button" className="text-gray-400 hover:text-gray-600" aria-label="Edit" onClick={() => handleEdit(r.id)}>
                           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path
                               strokeLinecap="round"
