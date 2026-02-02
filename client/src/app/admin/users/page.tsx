@@ -38,7 +38,7 @@ export default function AdminUsersPage() {
 
     try {
       const parsed = JSON.parse(sessionStr) as { email?: string; role?: string }
-      if (parsed?.role !== 'ADMIN') {
+      if (parsed?.role !== 'ADMIN' && parsed?.role !== 'STAFF') {
         router.push('/admin')
         return
       }

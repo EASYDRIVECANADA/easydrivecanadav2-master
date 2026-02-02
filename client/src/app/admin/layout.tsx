@@ -110,7 +110,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
     () => [
       { href: '/admin', label: 'Home', icon: 'home' },
       { href: '/admin/leads', label: 'Leads', icon: 'phone' },
-      { href: '/admin/users', label: 'Customers', icon: 'users' },
+      { href: '/admin/costumer', label: 'Customers', icon: 'users' },
       { href: '/admin/import', label: 'Vendors', icon: 'briefcase' },
       { href: '/admin/inventory', label: 'Inventory', icon: 'car' },
       { href: '/admin/sales', label: 'Sales', icon: 'dollar' },

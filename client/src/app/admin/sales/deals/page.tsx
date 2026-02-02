@@ -17,6 +17,18 @@ export default function DealsPage() {
   const [state, setState] = useState<'ALL' | DealRow['state']>('ALL')
   const [selected, setSelected] = useState<DealRow | null>(null)
 
+  const handleCreateNewDeal = () => {
+    setSelected({
+      id: 'NEW',
+      primaryCustomer: '',
+      vehicle: '',
+      type: 'Cash',
+      state: 'Open',
+      dealDate: '',
+      primarySalesperson: '',
+    })
+  }
+
   const rows = useMemo<DealRow[]>(
     () => [
       {
@@ -73,7 +85,21 @@ export default function DealsPage() {
             <h1 className="text-2xl font-bold text-gray-900">Deals</h1>
             <p className="text-sm text-gray-500">Mock data only (UI design)</p>
           </div>
-          <div className="text-sm text-gray-600">Total Deals: <span className="font-semibold">{filtered.length}</span></div>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={handleCreateNewDeal}
+              className="h-10 px-4 rounded-lg bg-[#118df0] text-white text-sm font-semibold hover:bg-[#0d6ebd] flex items-center gap-2"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+              Create New Deal
+            </button>
+            <div className="text-sm text-gray-600">
+              Total Deals: <span className="font-semibold">{filtered.length}</span>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -213,7 +239,7 @@ export default function DealsPage() {
           >
             <div className="w-full max-w-6xl max-h-[90vh] bg-white rounded-2xl shadow-xl overflow-hidden flex flex-col">
               <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
-                <div className="text-sm font-semibold text-gray-900">Deal #{selected.id}</div>
+                <div className="text-sm font-semibold text-gray-900">{selected.id === 'NEW' ? 'Create New Deal' : `Deal #${selected.id}`}</div>
                 <button
                   type="button"
                   className="w-10 h-10 rounded-xl hover:bg-gray-100 flex items-center justify-center"
