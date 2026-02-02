@@ -17,11 +17,31 @@ interface Vehicle {
 
 interface VehicleCardProps {
   vehicle: Vehicle
+  hideFooter?: boolean
+  onClick?: () => void
 }
 
-export default function VehicleCard({ vehicle }: VehicleCardProps) {
+export default function VehicleCard({ vehicle, hideFooter, onClick }: VehicleCardProps) {
   const [imageError, setImageError] = useState(false)
   const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'
+
+  const toImageSrc = (value: string) => {
+    const v = String(value || '').trim()
+    if (!v) return ''
+    if (v.startsWith('http://') || v.startsWith('https://') || v.startsWith('data:')) return v
+    // Infer MIME from base64 header if possible
+    const head = v.slice(0, 10)
+    if (/^[A-Za-z0-9+/=]+$/.test(v) && v.length > 100) {
+      let mime = 'image/jpeg'
+      if (head.startsWith('iVBOR')) mime = 'image/png'
+      else if (head.startsWith('R0lGOD')) mime = 'image/gif'
+      else if (head.startsWith('UklGR')) mime = 'image/webp'
+      return `data:${mime};base64,${v}`
+    }
+    // Relative path
+    const path = v.startsWith('/') ? v : `/${v}`
+    return `${API_URL}${path}`
+  }
 
   const formatPrice = (price: number) => {
     return new Intl.NumberFormat('en-CA', {
@@ -35,15 +55,20 @@ export default function VehicleCard({ vehicle }: VehicleCardProps) {
     return new Intl.NumberFormat('en-CA').format(mileage)
   }
 
+  const CardContainer: any = onClick ? 'div' : Link
+  const containerProps: any = onClick
+    ? { onClick, role: 'button', className: 'glass-card-hover rounded-2xl overflow-hidden group cursor-pointer' }
+    : { href: `/inventory/${vehicle.id}` }
+
   return (
-    <Link href={`/inventory/${vehicle.id}`}>
-      <div className="glass-card-hover rounded-2xl overflow-hidden group">
+    <CardContainer {...containerProps}>
+      <div className={onClick ? '' : 'glass-card-hover rounded-2xl overflow-hidden group'}>
         {/* Image */}
         <div className="relative h-52 bg-gradient-to-br from-gray-100 to-gray-200 overflow-hidden">
           {vehicle.images && vehicle.images.length > 0 && !imageError ? (
             <img
-              src={`${API_URL}${vehicle.images[0]}`}
-              alt=""
+              src={toImageSrc(vehicle.images[0])}
+              alt={`${vehicle.year} ${vehicle.make} ${vehicle.model}`}
               className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
               onError={() => setImageError(true)}
             />
@@ -92,13 +117,15 @@ export default function VehicleCard({ vehicle }: VehicleCardProps) {
             </span>
           </div>
 
-          <div className="mt-4 flex items-center justify-between">
-            <span className="text-[#118df0] font-semibold group-hover:underline">
-              View Details →
-            </span>
-          </div>
+          {!hideFooter ? (
+            <div className="mt-4 flex items-center justify-between">
+              <span className="text-[#118df0] font-semibold group-hover:underline">
+                View Details →
+              </span>
+            </div>
+          ) : null}
         </div>
       </div>
-    </Link>
+    </CardContainer>
   )
 }

@@ -112,6 +112,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
       { href: '/admin/leads', label: 'Leads', icon: 'phone' },
       { href: '/admin/costumer', label: 'Customers', icon: 'users' },
       { href: '/admin/import', label: 'Vendors', icon: 'briefcase' },
+      { href: '/admin/marketplace', label: 'Market Place', icon: 'briefcase' },
       { href: '/admin/inventory', label: 'Inventory', icon: 'car' },
       { href: '/admin/sales', label: 'Sales', icon: 'dollar' },
       { href: '/admin', label: 'Service', icon: 'wrench', disabled: !isVerified },
