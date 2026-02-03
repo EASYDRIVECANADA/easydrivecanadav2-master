@@ -17,6 +17,7 @@ export default function AdminCostumerPage() {
   const [saving, setSaving] = useState(false)
   const [rows, setRows] = useState<CustomerRow[]>([])
   const [editingId, setEditingId] = useState<string | null>(null)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
 
   const getDefaultForm = (): CustomerForm => ({
     customerType: 'IND',
@@ -102,7 +103,7 @@ export default function AdminCostumerPage() {
     const load = async () => {
       const { data, error } = await supabase
         .from('edc_customer')
-        .select('id, first_name, last_name, phone, mobile, email, drivers_license, date_of_birth')
+        .select('id, first_name, last_name, phone, mobile, email, drivers_license, rin, date_of_birth')
         .order('created_at', { ascending: false })
         .limit(100)
       if (error) {
@@ -110,15 +111,19 @@ export default function AdminCostumerPage() {
         return
       }
       if (cancelled || !data) return
-      const mapped: CustomerRow[] = data.map((r: any) => ({
-        id: r.id,
-        name: [r.first_name, r.last_name].filter(Boolean).join(' ').trim(),
-        phone: r.phone || '',
-        mobile: r.mobile || '',
-        email: r.email || '',
-        dl: r.drivers_license || '',
-        dob: r.date_of_birth || '',
-      }))
+      const mapped: CustomerRow[] = data.map((r: any) => {
+        console.log('Supabase row:', { id: r.id, drivers_license: r.drivers_license, rin: r.rin })
+        return {
+          id: r.id,
+          name: [r.first_name, r.last_name].filter(Boolean).join(' ').trim(),
+          phone: r.phone || '',
+          mobile: r.mobile || '',
+          email: r.email || '',
+          dl: r.drivers_license || '',
+          rin: r.rin || '',
+          dob: r.date_of_birth || '',
+        }
+      })
       setRows(mapped)
     }
     load()
@@ -285,10 +290,37 @@ export default function AdminCostumerPage() {
     setShowCreate(false)
   }
 
+  const handleDelete = async (id: string) => {
+    if (deletingId) return
+    const ok = confirm('Delete this customer?')
+    if (!ok) return
+    setDeletingId(id)
+    try {
+      const { error } = await supabase.from('edc_customer').delete().eq('id', id)
+      if (error) throw error
+      setRows((prev) => prev.filter((r) => r.id !== id))
+      setChecked((prev) => {
+        const next = { ...prev }
+        delete next[id]
+        return next
+      })
+      if (editingId === id) {
+        setShowCreate(false)
+        setEditingId(null)
+      }
+    } catch (err) {
+      alert(`Failed to delete: ${err instanceof Error ? err.message : String(err)}`)
+    } finally {
+      setDeletingId(null)
+    }
+  }
+
   const handleSave = async () => {
     if (saving) return
     setSaving(true)
     try {
+      const operation = editingId ? 'edit' : 'create'
+
       const toNulls = (obj: Record<string, unknown>) => {
         const out: Record<string, unknown> = {}
         for (const [k, v] of Object.entries(obj)) {
@@ -298,7 +330,11 @@ export default function AdminCostumerPage() {
         return out
       }
 
-      const payload = toNulls(form as unknown as Record<string, unknown>)
+      const payload = {
+        ...toNulls(form as unknown as Record<string, unknown>),
+        operation,
+        customerId: editingId ?? null,
+      }
 
       const res = await fetch('/api/proxy/info', {
         method: 'POST',
@@ -371,8 +407,9 @@ export default function AdminCostumerPage() {
       // Prepare and send the Credit App payload including the customerId if known
       const creditToNulls = toNulls(credit as unknown as Record<string, unknown>)
       const creditPayload = {
-        customerId: createdId ?? null,
+        customerId: createdId ?? editingId ?? null,
         ...creditToNulls,
+        operation,
         // Extra snake_case fields expected by webhook schema
         bankruptcy_duration: (credit as any).bankruptcyDuration ?? null,
         collection_notes: (credit as any).collectionNotes ?? null,
@@ -533,6 +570,7 @@ export default function AdminCostumerPage() {
                     <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Email</th>
                     <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">DL</th>
                     <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">DOB</th>
+                    <th className="px-3 py-3 w-10"></th>
                   </tr>
                 </thead>
 
@@ -573,14 +611,34 @@ export default function AdminCostumerPage() {
                       <td className="px-6 py-3 text-sm text-[#118df0] whitespace-nowrap">{r.phone}</td>
                       <td className="px-6 py-3 text-sm text-gray-700 whitespace-nowrap">{r.mobile}</td>
                       <td className="px-6 py-3 text-sm text-[#118df0] whitespace-nowrap">{r.email}</td>
-                      <td className="px-6 py-3 text-sm text-gray-700 whitespace-nowrap">{r.dl}</td>
+                      <td className="px-6 py-3 text-sm text-gray-700 whitespace-nowrap">{r.dl || r.rin || '—'}</td>
                       <td className="px-6 py-3 text-sm text-gray-700 whitespace-nowrap">{r.dob}</td>
+                      <td className="px-3 py-3 text-right">
+                        <button
+                          type="button"
+                          className={
+                            deletingId === r.id
+                              ? 'text-gray-300 cursor-not-allowed'
+                              : 'text-gray-400 hover:text-red-600'
+                          }
+                          aria-label="Delete"
+                          disabled={deletingId === r.id}
+                          onClick={() => handleDelete(r.id)}
+                          title="Delete"
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7" />
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 11v6m4-6v6" />
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 7h6m2 0H7m2 0V5a2 2 0 012-2h2a2 2 0 012 2v2" />
+                          </svg>
+                        </button>
+                      </td>
                     </tr>
                   ))}
 
                   {pageRows.length === 0 ? (
                     <tr>
-                      <td className="px-6 py-10 text-center text-sm text-gray-500" colSpan={8}>
+                      <td className="px-6 py-10 text-center text-sm text-gray-500" colSpan={9}>
                         No results.
                       </td>
                     </tr>

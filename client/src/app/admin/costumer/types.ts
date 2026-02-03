@@ -5,6 +5,7 @@ export type CustomerRow = {
   mobile: string
   email: string
   dl: string
+  rin?: string
   dob: string
 }
 
