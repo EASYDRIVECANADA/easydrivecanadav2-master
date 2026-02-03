@@ -1,6 +1,7 @@
 'use client'
 
 import { useMemo, useState } from 'react'
+import { useRouter } from 'next/navigation'
 
 type DealRow = {
   id: string
@@ -13,20 +14,12 @@ type DealRow = {
 }
 
 export default function DealsPage() {
+  const router = useRouter()
   const [query, setQuery] = useState('')
   const [state, setState] = useState<'ALL' | DealRow['state']>('ALL')
-  const [selected, setSelected] = useState<DealRow | null>(null)
 
   const handleCreateNewDeal = () => {
-    setSelected({
-      id: 'NEW',
-      primaryCustomer: '',
-      vehicle: '',
-      type: 'Cash',
-      state: 'Open',
-      dealDate: '',
-      primarySalesperson: '',
-    })
+    router.push('/admin/sales/deals/new')
   }
 
   const rows = useMemo<DealRow[]>(
@@ -174,7 +167,7 @@ export default function DealsPage() {
                     <td className="px-3 py-3">
                       <button
                         type="button"
-                        onClick={() => setSelected(r)}
+                        onClick={() => router.push('/admin/sales/deals/new')}
                         className="w-9 h-9 rounded-lg bg-gray-100 hover:bg-gray-200 flex items-center justify-center transition-colors"
                         title="Edit deal"
                         aria-label="Edit deal"
@@ -228,166 +221,6 @@ export default function DealsPage() {
           </div>
         </div>
 
-        {selected ? (
-          <div
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-            role="dialog"
-            aria-modal="true"
-            onMouseDown={(e) => {
-              if (e.target === e.currentTarget) setSelected(null)
-            }}
-          >
-            <div className="w-full max-w-6xl max-h-[90vh] bg-white rounded-2xl shadow-xl overflow-hidden flex flex-col">
-              <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
-                <div className="text-sm font-semibold text-gray-900">{selected.id === 'NEW' ? 'Create New Deal' : `Deal #${selected.id}`}</div>
-                <button
-                  type="button"
-                  className="w-10 h-10 rounded-xl hover:bg-gray-100 flex items-center justify-center"
-                  onClick={() => setSelected(null)}
-                  aria-label="Close"
-                >
-                  <svg className="w-5 h-5 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
-
-              <div className="px-6 py-4 border-b border-gray-100">
-                <div className="flex flex-col lg:flex-row lg:items-center gap-3">
-                  <div className="flex items-center gap-2">
-                    <label className="text-xs font-semibold text-gray-600">Deal Date</label>
-                    <input type="date" defaultValue="2026-01-14" className="border border-gray-200 rounded-lg px-3 py-2 text-sm" />
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <label className="text-xs font-semibold text-gray-600">Deal Type</label>
-                    <select defaultValue={selected.type} className="border border-gray-200 rounded-lg px-3 py-2 text-sm">
-                      <option value="Cash">Cash</option>
-                      <option value="Finance">Finance</option>
-                      <option value="Lease">Lease</option>
-                    </select>
-                  </div>
-                  <div className="flex-1" />
-                  <div className="flex items-center gap-2">
-                    <div className="text-xs font-semibold text-gray-600">Reports</div>
-                    <button type="button" className="h-9 px-3 rounded-lg bg-white border border-gray-200 text-sm hover:bg-gray-50">Email</button>
-                    <button type="button" className="h-9 px-3 rounded-lg bg-white border border-gray-200 text-sm hover:bg-gray-50">Print</button>
-                  </div>
-                  <button type="button" className="h-9 px-4 rounded-lg bg-[#118df0] text-white text-sm font-semibold hover:bg-[#0d6ebd]">Share</button>
-                </div>
-              </div>
-
-              <div className="flex-1 overflow-y-auto">
-                <div className="px-6 py-5 bg-gray-50">
-                  <div className="bg-white rounded-xl shadow p-5">
-                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-                      <div>
-                        <label className="block text-xs font-semibold text-gray-600 mb-1">First Name</label>
-                        <input
-                          defaultValue={selected.primaryCustomer.split(' ')[0]}
-                          className="w-full border border-gray-200 rounded-lg px-3 py-2"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-semibold text-gray-600 mb-1">Middle Name</label>
-                        <input defaultValue="" className="w-full border border-gray-200 rounded-lg px-3 py-2" />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-semibold text-gray-600 mb-1">Last Name</label>
-                        <input
-                          defaultValue={selected.primaryCustomer.split(' ').slice(1).join(' ')}
-                          className="w-full border border-gray-200 rounded-lg px-3 py-2"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-xs font-semibold text-gray-600 mb-1">Driver's License</label>
-                        <input defaultValue="" className="w-full border border-gray-200 rounded-lg px-3 py-2" />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-semibold text-gray-600 mb-1">Exp. Date</label>
-                        <input type="date" defaultValue="" className="w-full border border-gray-200 rounded-lg px-3 py-2" />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-semibold text-gray-600 mb-1">Date of Birth</label>
-                        <input type="date" defaultValue="" className="w-full border border-gray-200 rounded-lg px-3 py-2" />
-                      </div>
-
-                      <div className="lg:col-span-3">
-                        <label className="block text-xs font-semibold text-gray-600 mb-1">Street Address</label>
-                        <input defaultValue="" className="w-full border border-gray-200 rounded-lg px-3 py-2" />
-                      </div>
-
-                      <div>
-                        <label className="block text-xs font-semibold text-gray-600 mb-1">City</label>
-                        <input defaultValue="" className="w-full border border-gray-200 rounded-lg px-3 py-2" />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-semibold text-gray-600 mb-1">Province</label>
-                        <select defaultValue="ON" className="w-full border border-gray-200 rounded-lg px-3 py-2">
-                          <option value="ON">ON</option>
-                          <option value="BC">BC</option>
-                          <option value="AB">AB</option>
-                          <option value="MB">MB</option>
-                          <option value="QC">QC</option>
-                        </select>
-                      </div>
-                      <div>
-                        <label className="block text-xs font-semibold text-gray-600 mb-1">Postal Code</label>
-                        <input defaultValue="" className="w-full border border-gray-200 rounded-lg px-3 py-2" />
-                      </div>
-
-                      <div>
-                        <label className="block text-xs font-semibold text-gray-600 mb-1">Country</label>
-                        <select defaultValue="CA" className="w-full border border-gray-200 rounded-lg px-3 py-2">
-                          <option value="CA">CA</option>
-                          <option value="US">US</option>
-                        </select>
-                      </div>
-                      <div>
-                        <label className="block text-xs font-semibold text-gray-600 mb-1">Email</label>
-                        <input defaultValue="" className="w-full border border-gray-200 rounded-lg px-3 py-2" />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-semibold text-gray-600 mb-1">Mobile</label>
-                        <input defaultValue="" className="w-full border border-gray-200 rounded-lg px-3 py-2" />
-                      </div>
-                    </div>
-
-                    <div className="mt-5">
-                      <label className="block text-xs font-semibold text-gray-600 mb-2">Notes</label>
-                      <div className="border border-gray-200 rounded-xl overflow-hidden">
-                        <div className="bg-gray-50 px-3 py-2 flex items-center gap-2 text-xs text-gray-500">
-                          <button type="button" className="px-2 py-1 rounded bg-white border border-gray-200">B</button>
-                          <button type="button" className="px-2 py-1 rounded bg-white border border-gray-200">I</button>
-                          <button type="button" className="px-2 py-1 rounded bg-white border border-gray-200">U</button>
-                          <button type="button" className="px-2 py-1 rounded bg-white border border-gray-200">Tx</button>
-                        </div>
-                        <textarea
-                          rows={8}
-                          className="w-full px-4 py-3 text-sm focus:outline-none"
-                          defaultValue={''}
-                          placeholder="Write notes here... (mock UI)"
-                        />
-                      </div>
-                      <div className="mt-4 flex items-center justify-end gap-3">
-                        <button
-                          type="button"
-                          onClick={() => setSelected(null)}
-                          className="h-10 px-4 rounded-lg bg-red-600 text-white text-sm font-semibold hover:bg-red-700"
-                        >
-                          Close
-                        </button>
-                        <button type="button" className="h-10 px-4 rounded-lg bg-green-600 text-white text-sm font-semibold hover:bg-green-700">
-                          Save
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        ) : null}
       </div>
     </div>
   )

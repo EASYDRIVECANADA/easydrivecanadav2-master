@@ -8,9 +8,11 @@ import { CustomerDateIconField, CustomerIconField, PillIdToggle, PillModeToggle 
 export default function CustomerInformationTab({
   form,
   setForm,
+  hideVisibility,
 }: {
   form: CustomerForm
   setForm: Dispatch<SetStateAction<CustomerForm>>
+  hideVisibility?: boolean
 }) {
   const editorRef = useRef<HTMLDivElement | null>(null)
   const colorRef = useRef<HTMLInputElement | null>(null)
@@ -79,17 +81,19 @@ export default function CustomerInformationTab({
             }
           />
         </div>
-        <div className="w-64">
-          <div className="text-xs font-semibold text-gray-600 mb-1">Visibility</div>
-          <select
-            value={form.visibility}
-            onChange={(e) => setForm((p: CustomerForm) => ({ ...p, visibility: e.target.value }))}
-            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
-          >
-            <option value="Private">Private</option>
-            <option value="Public">Public</option>
-          </select>
-        </div>
+        {hideVisibility ? null : (
+          <div className="w-64">
+            <div className="text-xs font-semibold text-gray-600 mb-1">Visibility</div>
+            <select
+              value={form.visibility}
+              onChange={(e) => setForm((p: CustomerForm) => ({ ...p, visibility: e.target.value }))}
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
+            >
+              <option value="Private">Private</option>
+              <option value="Public">Public</option>
+            </select>
+          </div>
+        )}
       </div>
 
       {form.customerType === 'IND' ? (

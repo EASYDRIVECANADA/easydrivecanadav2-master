@@ -111,19 +111,16 @@ export default function AdminCostumerPage() {
         return
       }
       if (cancelled || !data) return
-      const mapped: CustomerRow[] = data.map((r: any) => {
-        console.log('Supabase row:', { id: r.id, drivers_license: r.drivers_license, rin: r.rin })
-        return {
-          id: r.id,
-          name: [r.first_name, r.last_name].filter(Boolean).join(' ').trim(),
-          phone: r.phone || '',
-          mobile: r.mobile || '',
-          email: r.email || '',
-          dl: r.drivers_license || '',
-          rin: r.rin || '',
-          dob: r.date_of_birth || '',
-        }
-      })
+      const mapped: CustomerRow[] = data.map((r: any) => ({
+        id: r.id,
+        name: [r.first_name, r.last_name].filter(Boolean).join(' ').trim(),
+        phone: r.phone || '',
+        mobile: r.mobile || '',
+        email: r.email || '',
+        dl: r.drivers_license || '',
+        rin: r.rin || '',
+        dob: r.date_of_birth || '',
+      }))
       setRows(mapped)
     }
     load()
