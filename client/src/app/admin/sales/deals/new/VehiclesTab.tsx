@@ -1,12 +1,275 @@
 'use client'
 
+import { useEffect, useState } from 'react'
+
+import { supabase } from '@/lib/supabaseClient'
+
+type VehicleRow = {
+  id: string
+  year?: number | null
+  make?: string | null
+  model?: string | null
+  trim?: string | null
+  stock_number?: string | null
+  key_number?: string | null
+  vin?: string | null
+  status?: string | null
+  exterior_color?: string | null
+  interior_color?: string | null
+  mileage?: number | null
+  odometer?: number | null
+  odometer_unit?: string | null
+  created_at?: string | null
+}
+
 export default function VehiclesTab() {
+  const [query, setQuery] = useState('')
+  const [open, setOpen] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [results, setResults] = useState<VehicleRow[]>([])
+  const [selected, setSelected] = useState<VehicleRow | null>(null)
+  const [odoEditing, setOdoEditing] = useState(false)
+  const [odoDraft, setOdoDraft] = useState('')
+  const [tradeOpen, setTradeOpen] = useState(false)
+  const [tradeStep, setTradeStep] = useState<1 | 2 | 3 | 4>(1)
+  const [tradeDisclosuresDetail, setTradeDisclosuresDetail] = useState(false)
+  const [addOpen, setAddOpen] = useState(false)
+  const [tradeForm, setTradeForm] = useState({
+    vin: '',
+    year: '',
+    make: '',
+    model: '',
+    odometer: '',
+    odometerUnit: 'kms',
+    trim: '',
+    colour: '',
+    disclosures: Array.from({ length: 14 }, () => false),
+    disclosuresNotes: '',
+    isCompany: false,
+    ownerName: '',
+    ownerCompany: '',
+    ownerStreet: '',
+    ownerSuite: '',
+    ownerCity: '',
+    ownerProvince: 'ON',
+    ownerPostal: '',
+    ownerCountry: 'CA',
+    ownerPhone: '',
+    ownerMobile: '',
+    ownerEmail: '',
+    isRin: false,
+    ownerDl: '',
+    ownerPlate: '',
+    tradeValue: '0.00',
+    actualCashValue: '0.00',
+    lienAmount: '0.00',
+    tradeEquity: '0.00',
+  })
+  const [tradeDisclosuresBrandType, setTradeDisclosuresBrandType] = useState<'na' | 'none' | 'rebuilt' | 'salvage' | 'irreparable'>('na')
+  const [tradeDisclosuresSearch, setTradeDisclosuresSearch] = useState('')
+  const [tradeDisclosuresEditor, setTradeDisclosuresEditor] = useState('')
+
+  const [addForm, setAddForm] = useState({
+    inStockDate: '',
+    stockNumber: '',
+    vin: '',
+    odometer: '',
+    odometerUnit: 'kms',
+    year: '',
+    make: '',
+    model: '',
+    trim: '',
+    exteriorColour: '',
+    fuelType: '',
+    notes: '',
+  })
+
+  const [addDecodeLoading, setAddDecodeLoading] = useState(false)
+  const [addDecodeError, setAddDecodeError] = useState<string | null>(null)
+
+  const handleAddDecode = async () => {
+    try {
+      setAddDecodeError(null)
+      const vin = addForm.vin?.trim()
+      if (!vin) {
+        setAddDecodeError('Enter a VIN to decode')
+        return
+      }
+      setAddDecodeLoading(true)
+
+      const res = await fetch('https://primary-production-6722.up.railway.app/webhook/Vincode', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ vin }),
+      })
+      if (!res.ok) {
+        throw new Error(`Decode failed (${res.status})`)
+      }
+      const data = (await res.json()) as any[]
+      const first = Array.isArray(data) && data.length > 0 ? data[0] : null
+      if (!first) {
+        throw new Error('No data returned')
+      }
+
+      setAddForm((p) => ({
+        ...p,
+        vin: first.VIN || p.vin,
+        make: first.Make ? String(first.Make) : p.make,
+        model: first.Model ? String(first.Model) : p.model,
+        year: first.Year != null ? String(first.Year) : p.year,
+        trim: first.Trim ? String(first.Trim) : p.trim,
+        fuelType: first['Fuel Type'] ? String(first['Fuel Type']) : p.fuelType,
+      }))
+    } catch (e: any) {
+      setAddDecodeError(e?.message || 'Failed to decode VIN')
+    } finally {
+      setAddDecodeLoading(false)
+    }
+  }
+
+  const nextTradeStep = () => setTradeStep((s) => (s === 4 ? 4 : ((s + 1) as 2 | 3 | 4)))
+  const prevTradeStep = () => setTradeStep((s) => (s === 1 ? 1 : ((s - 1) as 1 | 2 | 3)))
+
+  useEffect(() => {
+    // Auto-calc Trade Equity = Actual Cash Value - Trade Value
+    const toNum = (v: string) => {
+      if (!v) return 0
+      const n = parseFloat(String(v).replace(/,/g, ''))
+      return isNaN(n) ? 0 : n
+    }
+    const acv = toNum(tradeForm.actualCashValue)
+    const tv = toNum(tradeForm.tradeValue)
+    const eq = acv - tv
+    setTradeForm((p) => ({ ...p, tradeEquity: eq.toFixed(2) }))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tradeForm.actualCashValue, tradeForm.tradeValue])
+
+  const handleMoneyFocus = (key: 'tradeValue' | 'actualCashValue' | 'lienAmount') => {
+    setTradeForm((p) => {
+      const current = (p as unknown as Record<string, string>)[key] || ''
+      const cleared = current === '0.00' || current === '0' ? '' : current
+      return { ...(p as any), [key]: cleared }
+    })
+  }
+
+  const handleMoneyBlur = (key: 'tradeValue' | 'actualCashValue' | 'lienAmount') => {
+    setTradeForm((p) => {
+      const raw = ((p as unknown as Record<string, string>)[key] || '').trim()
+      const n = parseFloat(raw.replace(/,/g, ''))
+      const formatted = !raw || isNaN(n) ? '0.00' : n.toFixed(2)
+      return { ...(p as any), [key]: formatted }
+    })
+  }
+
+  const loadVehicles = async (q: string) => {
+    const term = q.trim()
+    setLoading(true)
+    setError(null)
+    try {
+      const selectCols = [
+        'id',
+        'year',
+        'make',
+        'model',
+        'trim',
+        'stock_number',
+        'key_number',
+        'vin',
+        'status',
+        'exterior_color',
+        'interior_color',
+        'mileage',
+        'odometer',
+        'odometer_unit',
+        'created_at',
+      ].join(',')
+
+      let req = supabase.from('edc_vehicles').select(selectCols)
+      if (term) {
+        req = req.or(
+          [`make.ilike.%${term}%`, `model.ilike.%${term}%`, `trim.ilike.%${term}%`, `stock_number.ilike.%${term}%`, `vin.ilike.%${term}%`].join(
+            ','
+          )
+        )
+      } else {
+        req = req.order('created_at', { ascending: false })
+      }
+
+      const { data, error: supaErr } = await req.limit(10)
+      if (supaErr) {
+        setError(supaErr.message)
+        setResults([])
+        return
+      }
+      const rows = (Array.isArray(data) ? data : []) as unknown as VehicleRow[]
+      setResults(rows)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    const term = query.trim()
+    if (!term) {
+      return
+    }
+    const handle = window.setTimeout(async () => {
+      await loadVehicles(term)
+    }, 250)
+    return () => window.clearTimeout(handle)
+  }, [query])
+
+  const selectVehicle = (v: VehicleRow) => {
+    setSelected(v)
+    const label = [v.year ? String(v.year) : '', v.make ?? '', v.model ?? '', v.trim ?? '']
+      .filter(Boolean)
+      .join(' ')
+      .trim()
+    setQuery(label)
+    setOpen(false)
+
+    const mv = v.odometer ?? v.mileage
+    setOdoDraft(mv !== null && mv !== undefined ? String(mv) : '')
+    setOdoEditing(false)
+  }
+
+  const clearSelected = () => {
+    setSelected(null)
+    setQuery('')
+    setResults([])
+    setError(null)
+    setOpen(false)
+    setOdoEditing(false)
+    setOdoDraft('')
+  }
+
+  const mileageValue = selected?.odometer ?? selected?.mileage
+  const mileageUnit = selected?.odometer_unit || 'kms'
+
+  const applyOdo = () => {
+    if (!selected) return
+    const parsed = odoDraft.trim() === '' ? null : Number(odoDraft)
+    const nextOdo = odoDraft.trim() === '' || Number.isNaN(parsed) ? selected.odometer ?? selected.mileage ?? null : parsed
+    setSelected((p) => (p ? { ...p, odometer: nextOdo } : p))
+    setOdoEditing(false)
+  }
+
   return (
     <div className="w-full">
       <div className="w-full">
         <div className="relative">
           <input
             placeholder="search inventory"
+            value={query}
+            onChange={(e) => {
+              setQuery(e.target.value)
+              setOpen(true)
+            }}
+            onFocus={() => {
+              setOpen(true)
+              if (!query.trim()) loadVehicles('')
+            }}
             className="w-full h-10 border border-gray-200 rounded bg-white pl-10 pr-3 text-sm shadow-sm"
           />
           <svg
@@ -22,18 +285,403 @@ export default function VehiclesTab() {
               d="M21 21l-4.35-4.35m1.35-5.65a7 7 0 11-14 0 7 7 0 0114 0z"
             />
           </svg>
+
+          {open && (loading || results.length > 0 || !!error) ? (
+            <div className="absolute left-0 right-0 top-[44px] z-20 rounded border border-gray-200 bg-white shadow-lg overflow-hidden">
+              {loading ? <div className="px-3 py-2 text-xs text-gray-500">Searching...</div> : null}
+              {error ? <div className="px-3 py-2 text-xs text-red-600">{error}</div> : null}
+              {!loading && !error && results.length === 0 ? (
+                <div className="px-3 py-2 text-xs text-gray-500">No vehicles found</div>
+              ) : null}
+
+      {addOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="w-[980px] max-w-[calc(100vw-48px)] max-h-[90vh] bg-white rounded shadow-xl flex flex-col">
+            <div className="relative border-b border-gray-200 px-6 py-4 flex items-center gap-3">
+              <svg className="w-5 h-5 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7h18M5 7v10a2 2 0 002 2h10a2 2 0 002-2V7" />
+              </svg>
+              <div className="font-semibold text-gray-800">Add Vehicle</div>
+              <button
+                type="button"
+                aria-label="Close"
+                onClick={() => setAddOpen(false)}
+                className="absolute right-4 top-4 text-gray-500 hover:text-gray-700"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="px-6 py-5 flex-1 overflow-y-auto">
+              <div className="grid grid-cols-12 gap-4">
+                <div className="col-span-4">
+                  <div className="text-xs text-gray-700 mb-1">In Stock Date</div>
+                  <input
+                    type="date"
+                    value={addForm.inStockDate}
+                    onChange={(e) => setAddForm((p) => ({ ...p, inStockDate: e.target.value }))}
+                    className="w-full h-9 border border-gray-200 rounded px-3 text-sm"
+                  />
+                </div>
+                <div className="col-span-4">
+                  <div className="text-xs text-gray-700 mb-1">Stock #</div>
+                  <input
+                    value={addForm.stockNumber}
+                    onChange={(e) => setAddForm((p) => ({ ...p, stockNumber: e.target.value }))}
+                    className="w-full h-9 border border-gray-200 rounded px-3 text-sm"
+                  />
+                </div>
+              </div>
+
+              <div className="mt-3 grid grid-cols-12 gap-4">
+                <div className="col-span-4">
+                  <div className="text-xs text-gray-700 mb-1">VIN</div>
+                  <div className="flex gap-2">
+                    <input
+                      value={addForm.vin}
+                      onChange={(e) => setAddForm((p) => ({ ...p, vin: e.target.value }))}
+                      className="flex-1 h-9 border border-gray-200 rounded px-3 text-sm"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleAddDecode}
+                      disabled={addDecodeLoading}
+                      className="h-9 px-4 rounded bg-[#118df0] text-white text-sm font-semibold hover:bg-[#0d6ebd] disabled:opacity-60 disabled:cursor-not-allowed"
+                    >
+                      {addDecodeLoading ? 'Decoding...' : 'Decode'}
+                    </button>
+                  </div>
+                  {addDecodeError ? <div className="mt-1 text-xs text-red-600">{addDecodeError}</div> : null}
+                </div>
+                <div className="col-span-4">
+                  <div className="text-xs text-gray-700 mb-1">Odometer</div>
+                  <div className="flex items-stretch border border-gray-200 rounded overflow-hidden">
+                    <input
+                      value={addForm.odometer}
+                      onChange={(e) => setAddForm((p) => ({ ...p, odometer: e.target.value }))}
+                      className="flex-1 h-9 px-3 text-sm outline-none"
+                    />
+                    <select
+                      value={addForm.odometerUnit}
+                      onChange={(e) => setAddForm((p) => ({ ...p, odometerUnit: e.target.value }))}
+                      className="h-9 px-2 text-sm bg-white border-l border-gray-200"
+                    >
+                      <option value="kms">kms</option>
+                      <option value="miles">miles</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-3 grid grid-cols-12 gap-4">
+                <div className="col-span-3">
+                  <div className="text-xs text-gray-700 mb-1">Year</div>
+                  <input
+                    value={addForm.year}
+                    onChange={(e) => setAddForm((p) => ({ ...p, year: e.target.value }))}
+                    className="w-full h-9 border border-gray-200 rounded px-3 text-sm"
+                  />
+                </div>
+                <div className="col-span-3">
+                  <div className="text-xs text-gray-700 mb-1">Make</div>
+                  <input
+                    value={addForm.make}
+                    onChange={(e) => setAddForm((p) => ({ ...p, make: e.target.value }))}
+                    className="w-full h-9 border border-gray-200 rounded px-3 text-sm"
+                  />
+                </div>
+                <div className="col-span-3">
+                  <div className="text-xs text-gray-700 mb-1">Model</div>
+                  <input
+                    value={addForm.model}
+                    onChange={(e) => setAddForm((p) => ({ ...p, model: e.target.value }))}
+                    className="w-full h-9 border border-gray-200 rounded px-3 text-sm"
+                  />
+                </div>
+                <div className="col-span-3">
+                  <div className="text-xs text-gray-700 mb-1">Trim</div>
+                  <input
+                    value={addForm.trim}
+                    onChange={(e) => setAddForm((p) => ({ ...p, trim: e.target.value }))}
+                    className="w-full h-9 border border-gray-200 rounded px-3 text-sm"
+                  />
+                </div>
+              </div>
+
+              <div className="mt-3 grid grid-cols-12 gap-4">
+                <div className="col-span-6">
+                  <div className="text-xs text-gray-700 mb-1">Exterior Colour</div>
+                  <input
+                    value={addForm.exteriorColour}
+                    onChange={(e) => setAddForm((p) => ({ ...p, exteriorColour: e.target.value }))}
+                    className="w-full h-9 border border-gray-200 rounded px-3 text-sm"
+                  />
+                </div>
+                <div className="col-span-6">
+                  <div className="text-xs text-gray-700 mb-1">Fuel Type</div>
+                  <select
+                    value={addForm.fuelType}
+                    onChange={(e) => setAddForm((p) => ({ ...p, fuelType: e.target.value }))}
+                    className="w-full h-9 border border-gray-200 rounded px-3 text-sm bg-white"
+                  >
+                    <option value="" />
+                    <option value="Gasoline">Gasoline</option>
+                    <option value="Diesel">Diesel</option>
+                    <option value="Hybrid">Hybrid</option>
+                    <option value="Electric">Electric</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="mt-6">
+                <div className="text-sm font-semibold text-gray-800">Disclosures</div>
+                <div className="mt-3 grid grid-cols-12 gap-4">
+                  <div className="col-span-5">
+                    <div className="flex items-stretch border border-gray-200 rounded overflow-hidden">
+                      <div className="w-10 flex items-center justify-center bg-gray-100 text-gray-700 border-r border-gray-200">
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35" />
+                          <circle cx="10" cy="10" r="6" strokeWidth={2} />
+                        </svg>
+                      </div>
+                      <input className="flex-1 h-10 px-3 text-sm outline-none" placeholder="Search" />
+                    </div>
+
+                    <div className="mt-3 h-[260px] overflow-y-auto border border-gray-200 rounded">
+                      <div className="p-3">
+                        <div className="border border-gray-200 rounded p-3">
+                          <div className="text-sm italic text-gray-700">The vehicle was previously from another Province</div>
+                          <div className="mt-3">
+                            <button type="button" className="w-full h-10 rounded bg-[#118df0] text-white text-sm font-semibold hover:bg-[#0d6ebd]">
+                              Add
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="mt-4 border border-gray-200 rounded p-3">
+                          <div className="text-sm font-semibold text-gray-800">Customer Acknowledgment Clause</div>
+                          <div className="mt-2 text-sm text-gray-700 leading-5">
+                            The Buyer confirms that they have inspected the vehicle, provided the car fax report, reviewed the Bill of Sale,
+                            test-driven the vehicle with a salesperson, explained all questions, and had all questions answered.
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="col-span-7">
+                    <div className="border border-gray-200 rounded overflow-hidden">
+                      <div className="h-10 border-b border-gray-200 flex items-center gap-1 px-2 bg-white">
+                        {['B', 'I', 'U', 'S', 'X', '17', 'A', '≡', 'T', '</>'].map((t) => (
+                          <button key={t} type="button" className="h-8 px-2 border border-gray-200 rounded text-xs text-gray-700 hover:bg-gray-50">
+                            {t}
+                          </button>
+                        ))}
+                      </div>
+                      <textarea className="w-full h-[290px] p-3 text-sm outline-none bg-[#f7fbff]" />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-4">
+                <div className="text-xs text-gray-700 mb-1">Notes</div>
+                <textarea
+                  value={addForm.notes}
+                  onChange={(e) => setAddForm((p) => ({ ...p, notes: e.target.value }))}
+                  className="w-full h-24 border border-gray-200 rounded p-3 text-sm"
+                  placeholder="Ex. Has funny smell."
+                />
+              </div>
+            </div>
+
+            <div className="px-6 py-4 flex justify-end gap-2 border-t border-gray-100">
+              <button
+                type="button"
+                onClick={() => setAddOpen(false)}
+                className="h-9 px-4 rounded bg-[#e74c3c] text-white text-sm font-semibold hover:bg-[#cf3e2e]"
+              >
+                Cancel
+              </button>
+              <button type="button" className="h-9 px-4 rounded bg-[#118df0] text-white text-sm font-semibold hover:bg-[#0d6ebd]">
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+              {!loading && !error
+                ? results.map((r) => {
+                    const title = [r.year ? String(r.year) : '', r.make ?? '', r.model ?? '', r.trim ?? '']
+                      .filter(Boolean)
+                      .join(' ')
+                      .trim()
+                    return (
+                      <button
+                        key={r.id}
+                        type="button"
+                        onClick={() => selectVehicle(r)}
+                        className="w-full text-left px-3 py-2 hover:bg-gray-50"
+                      >
+                        <div className="text-sm text-gray-900">{title || 'Vehicle'}</div>
+                      </button>
+                    )
+                  })
+                : null}
+            </div>
+          ) : null}
         </div>
 
         <div className="mt-2 text-xs text-gray-600">
           Didn't find what you're looking for?
-          <button type="button" className="ml-1 text-[#118df0] hover:underline">
+          <button
+            type="button"
+            className="ml-1 text-[#118df0] hover:underline"
+            onClick={() => setAddOpen(true)}
+          >
             Add new
           </button>
         </div>
 
-        <div className="mt-4 border border-gray-200 bg-white">
-          <div className="h-12 flex items-center justify-center text-gray-500">No Vehicle Selected</div>
-        </div>
+        {selected ? (
+          <div className="mt-4 border border-gray-200 bg-white">
+            <div className="relative px-4 py-3">
+              <button
+                type="button"
+                onClick={clearSelected}
+                aria-label="Remove vehicle"
+                className="absolute right-3 top-3 text-[#118df0] hover:text-[#0d6ebd]"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+
+              <div className="grid grid-cols-4 gap-10 text-sm text-gray-800 pr-8">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <svg className="w-4 h-4 text-gray-900" fill="none" stroke="currentColor" strokeWidth={3} viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3M5 11h14" />
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
+                    <div>{selected.year ?? ''}</div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <svg className="w-4 h-4 text-gray-900" fill="none" stroke="currentColor" strokeWidth={3} viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-1v-4h-1m1-4h.01M12 2a10 10 0 100 20 10 10 0 000-20z" />
+                    </svg>
+                    <div>{selected.status ?? 'In Stock'}</div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <svg className="w-4 h-4 text-gray-900" fill="none" stroke="currentColor" strokeWidth={3} viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M7 7h10M7 11h10M7 15h6" />
+                    </svg>
+                    <div>{selected.stock_number ?? ''}</div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <svg className="w-4 h-4 text-gray-900" fill="none" stroke="currentColor" strokeWidth={3} viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 8c-1.657 0-3 1.343-3 3 0 1.657 1.343 3 3 3s3-1.343 3-3c0-1.657-1.343-3-3-3z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M19.4 15a7.97 7.97 0 00.1-2l2-1-2-4-2 1a8.06 8.06 0 00-1.7-1l.3-2h-4l.3 2a8.06 8.06 0 00-1.7 1l-2-1-2 4 2 1a7.97 7.97 0 00.1 2l-2 1 2 4 2-1a8.06 8.06 0 001.7 1l-.3 2h4l-.3-2a8.06 8.06 0 001.7-1l2 1 2-4-2-1z" />
+                    </svg>
+                    <div className="truncate">{selected.trim ?? ''}</div>
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <svg className="w-4 h-4 text-gray-800" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 16l-1.5-4.5A2 2 0 015.4 9h13.2a2 2 0 011.9 2.5L19 16" />
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M7 16h10l1 4H6l1-4z" />
+                    </svg>
+                    <div>{selected.make ?? ''}</div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <svg className="w-4 h-4 text-gray-800" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6" />
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 5h6M9 19h6" />
+                    </svg>
+                    <div className="truncate">{selected.vin ?? ''}</div>
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <svg className="w-4 h-4 text-gray-800" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 5h6m-6 4h6m-6 4h6m-6 4h6" />
+                    </svg>
+                    <div>{selected.model ?? ''}</div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <svg className="w-4 h-4 text-gray-800" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v18m9-9H3" />
+                    </svg>
+                    <div>{selected.exterior_color ?? ''}</div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <svg className="w-4 h-4 text-gray-800" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                    </svg>
+                    <div className="flex items-center gap-2">
+                      {odoEditing ? (
+                        <input
+                          value={odoDraft}
+                          onChange={(e) => setOdoDraft(e.target.value)}
+                          onBlur={applyOdo}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              ;(e.target as HTMLInputElement).blur()
+                            }
+                            if (e.key === 'Escape') {
+                              setOdoDraft(
+                                mileageValue !== null && mileageValue !== undefined ? String(mileageValue) : ''
+                              )
+                              setOdoEditing(false)
+                            }
+                          }}
+                          className="h-7 w-24 border border-gray-200 rounded px-2 text-sm outline-none"
+                        />
+                      ) : (
+                        <div>
+                          {mileageValue !== null && mileageValue !== undefined ? String(mileageValue) : ''} {mileageUnit}
+                        </div>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setOdoEditing(true)
+                          setOdoDraft(mileageValue !== null && mileageValue !== undefined ? String(mileageValue) : '')
+                        }}
+                        className="text-[#118df0] hover:text-[#0d6ebd]"
+                        aria-label="Edit odometer"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M11 4h2M4 20h16" />
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 3.5l4 4L8 20H4v-4L16.5 3.5z" />
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <svg className="w-4 h-4 text-gray-800" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 8c-1.657 0-3 1.343-3 3 0 1.657 1.343 3 3 3s3-1.343 3-3c0-1.657-1.343-3-3-3z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M19.4 15a7.97 7.97 0 00.1-2l2-1-2-4-2 1a8.06 8.06 0 00-1.7-1l.3-2h-4l.3 2a8.06 8.06 0 00-1.7 1l-2-1-2 4 2 1a7.97 7.97 0 00.1 2l-2 1 2 4 2-1a8.06 8.06 0 001.7 1l-.3 2h4l-.3-2a8.06 8.06 0 001.7-1l2 1 2-4-2-1z" />
+                    </svg>
+                    <div className="truncate">{selected.trim ?? ''}</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="mt-4 border border-gray-200 bg-white">
+            <div className="h-12 flex items-center justify-center text-gray-500">No Vehicle Selected</div>
+          </div>
+        )}
 
         <div className="mt-6 flex items-center gap-2">
           <div className="text-sm text-gray-700">Trades</div>
@@ -41,6 +689,11 @@ export default function VehiclesTab() {
             type="button"
             className="h-8 w-8 rounded bg-[#118df0] text-white flex items-center justify-center hover:bg-[#0d6ebd]"
             aria-label="Add trade"
+            onClick={() => {
+              setTradeOpen(true)
+              setTradeStep(1)
+              setTradeDisclosuresDetail(false)
+            }}
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -61,6 +714,707 @@ export default function VehiclesTab() {
           </button>
         </div>
       </div>
+
+      {tradeOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="w-[980px] max-w-[calc(100vw-48px)] max-h-[85vh] bg-white rounded shadow-xl flex flex-col">
+            <div className="relative border-b border-gray-200 px-6 py-4">
+              <button
+                type="button"
+                aria-label="Close"
+                onClick={() => setTradeOpen(false)}
+                className="absolute right-4 top-4 text-gray-500 hover:text-gray-700"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+
+              <div className="grid grid-cols-4 gap-6">
+                {(
+                  [
+                    { n: 1 as const, t: 'VEHICLE INFORMATION' },
+                    { n: 2 as const, t: 'DISCLOSURES' },
+                    { n: 3 as const, t: 'OWNER INFORMATION' },
+                    { n: 4 as const, t: 'TRADE VALUE' },
+                  ] as const
+                ).map((s) => (
+                  <button
+                    key={s.n}
+                    type="button"
+                    onClick={() => setTradeStep(s.n)}
+                    className="text-left"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div
+                        className={
+                          s.n === tradeStep
+                            ? 'h-7 w-7 rounded-full border border-green-500 text-green-600 flex items-center justify-center text-xs font-semibold bg-white'
+                            : 'h-7 w-7 rounded-full border border-gray-300 flex items-center justify-center text-xs font-semibold bg-white text-gray-600'
+                        }
+                      >
+                        {s.n}
+                      </div>
+                      <div className={s.n === tradeStep ? 'text-[11px] font-semibold text-gray-700' : 'text-[11px] font-semibold text-gray-400'}>
+                        {s.t}
+                      </div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="px-8 py-6 flex-1 overflow-y-auto">
+              {tradeStep === 1 ? (
+                <>
+                  <div className="text-sm font-semibold text-gray-800">Step 1 - Vehicle Information</div>
+
+                  <div className="mt-4 grid grid-cols-12 gap-4">
+                    <div className="col-span-6">
+                      <div className="text-xs text-gray-700 mb-1">Vin</div>
+                      <input
+                        value={tradeForm.vin}
+                        onChange={(e) => setTradeForm((p) => ({ ...p, vin: e.target.value }))}
+                        className="w-full h-9 border border-gray-200 rounded px-3 text-sm"
+                      />
+                    </div>
+                    <div className="col-span-2 flex items-end">
+                      <button type="button" className="h-9 px-4 rounded bg-[#118df0] text-white text-sm font-semibold hover:bg-[#0d6ebd]">
+                        Decode
+                      </button>
+                    </div>
+
+                    <div className="col-span-3">
+                      <div className="text-xs text-gray-700 mb-1">Year</div>
+                      <input
+                        value={tradeForm.year}
+                        onChange={(e) => setTradeForm((p) => ({ ...p, year: e.target.value }))}
+                        className="w-full h-9 border border-gray-200 rounded px-3 text-sm"
+                      />
+                    </div>
+                    <div className="col-span-3">
+                      <div className="text-xs text-gray-700 mb-1">Make</div>
+                      <input
+                        value={tradeForm.make}
+                        onChange={(e) => setTradeForm((p) => ({ ...p, make: e.target.value }))}
+                        className="w-full h-9 border border-gray-200 rounded px-3 text-sm"
+                      />
+                    </div>
+                    <div className="col-span-4">
+                      <div className="text-xs text-gray-700 mb-1">Model</div>
+                      <input
+                        value={tradeForm.model}
+                        onChange={(e) => setTradeForm((p) => ({ ...p, model: e.target.value }))}
+                        className="w-full h-9 border border-gray-200 rounded px-3 text-sm"
+                      />
+                    </div>
+
+                    <div className="col-span-4">
+                      <div className="text-xs text-gray-700 mb-1">odometer</div>
+                      <div className="flex items-stretch border border-gray-200 rounded overflow-hidden">
+                        <div className="w-10 flex items-center justify-center bg-gray-100 text-gray-700 border-r border-gray-200">
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3" />
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 2a10 10 0 100 20 10 10 0 000-20z" />
+                          </svg>
+                        </div>
+                        <input
+                          value={tradeForm.odometer}
+                          onChange={(e) => setTradeForm((p) => ({ ...p, odometer: e.target.value }))}
+                          className="flex-1 h-9 px-3 text-sm outline-none"
+                        />
+                        <select
+                          value={tradeForm.odometerUnit}
+                          onChange={(e) => setTradeForm((p) => ({ ...p, odometerUnit: e.target.value }))}
+                          className="h-9 px-2 text-sm bg-white border-l border-gray-200"
+                        >
+                          <option value="kms">kms</option>
+                          <option value="miles">miles</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="col-span-4">
+                      <div className="text-xs text-gray-700 mb-1">Trim</div>
+                      <select
+                        value={tradeForm.trim}
+                        onChange={(e) => setTradeForm((p) => ({ ...p, trim: e.target.value }))}
+                        className="w-full h-9 border border-gray-200 rounded px-3 text-sm bg-white"
+                      >
+                        <option value="" />
+                        <option value="Base">Base</option>
+                      </select>
+                    </div>
+
+                    <div className="col-span-4">
+                      <div className="text-xs text-gray-700 mb-1">colour</div>
+                      <input
+                        value={tradeForm.colour}
+                        onChange={(e) => setTradeForm((p) => ({ ...p, colour: e.target.value }))}
+                        className="w-full h-9 border border-gray-200 rounded px-3 text-sm"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="mt-6 border-t border-gray-200" />
+                </>
+              ) : null}
+
+              {tradeStep === 2 ? (
+                <>
+                  <div className="text-sm font-semibold text-gray-800">Step 2 - Disclosures</div>
+
+                  <div className="mt-4 border border-gray-200 bg-[#e8f1fb] px-4 py-3 text-sm text-[#1f4f7a]">
+                    <div className="flex items-start gap-2">
+                      <div className="mt-0.5 text-[#1f4f7a]">
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01" />
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 2a10 10 0 100 20 10 10 0 000-20z" />
+                        </svg>
+                      </div>
+                      <div>
+                        This checklist can be used to identify common disclosures and to print a trade appraisal form. Click the{' '}
+                        <span className="italic font-semibold">Update Disclosures</span> button below to automatically populate your disclosures for the
+                        traded vehicle based on these items selected.
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-4">
+                    {[
+                      'Has the trade-in previously been used as a daily rental, police, taxi, limo, or emergency vehicle?',
+                      'Does the trade-in have a lien registered against it?',
+                      'Has the trade-in sustained any structural damage?',
+                      'Has the trade-in sustained any accident damage that resulted in an insurance claim, estimate or police report?',
+                      'Has the vehicle previously been branded as irreparable, salvage, or rebuilt?',
+                      'Has the trade-in sustained any fire or water damage?',
+                      'Has the vehicle had previous paintwork?',
+                      'Has the trade-in ever been registered outside of your local jurisdiction (i.e. Province or State)?',
+                      'Is the odometer faulty, broken, or rolled back?',
+                      'Manufacturer equipment/badges altered or replaced?',
+                      'Was the vehicle ever stolen and/or reported as stolen?',
+                      "Has the manufacturers warranty been cancelled?",
+                      'Has the vehicle ever been declared a total loss by an insurance company?',
+                      'Has the vehicle had any body panel painted and or replaced?',
+                    ].map((q, idx) => (
+                      <div key={idx} className="flex items-center justify-between py-1 text-sm">
+                        <div className="pr-6">
+                          {idx + 1}. {q}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setTradeForm((p) => {
+                              const next = [...p.disclosures]
+                              next[idx] = !next[idx]
+                              return { ...p, disclosures: next }
+                            })
+                          }
+                          className={
+                            tradeForm.disclosures[idx]
+                              ? 'h-6 w-12 rounded-full bg-[#118df0] text-white text-[10px] font-semibold'
+                              : 'h-6 w-12 rounded-full border border-gray-300 bg-white text-gray-700 text-[10px] font-semibold'
+                          }
+                        >
+                          {tradeForm.disclosures[idx] ? 'YES' : 'NO'}
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="mt-3 text-xs text-red-600 leading-5">
+                    Please read over the following list to confirm that the items listed are in working order. If they are NOT working please indicate the
+                    issue(s) in the box below:
+                    <div className="mt-2 uppercase">
+                      ENGINE, SUSPENSION, SUB FRAME (because of possible structural damage), TRANSMISSION, FUEL SYSTEM,
+                      POLLUTION CONTROL SYSTEM, POWER-TRAIN, COMPUTER, ELECTRICAL SYSTEM, AIR CONDITIONING, WINDSHIELD NOT CRACKED,
+                      ABS, AIRBAGS, DASH INDICATOR LIGHTS
+                    </div>
+                    <div className="mt-2">
+                      Note: If using the UCDA trade appraisal form, you can use some of the terms above to trigger the appropriate selection on that form
+                    </div>
+                  </div>
+
+                  <textarea
+                    value={tradeForm.disclosuresNotes}
+                    onChange={(e) => setTradeForm((p) => ({ ...p, disclosuresNotes: e.target.value }))}
+                    className="mt-3 w-full h-24 border border-gray-200 rounded p-3 text-sm"
+                  />
+
+                  <div className="mt-4 flex items-center justify-between">
+                    <button
+                      type="button"
+                      className="text-sm text-[#118df0] hover:underline"
+                      onClick={() => setTradeDisclosuresDetail((v) => !v)}
+                    >
+                      Disclosures &gt;
+                    </button>
+                    <button type="button" className="h-9 px-4 rounded bg-[#118df0] text-white text-sm font-semibold hover:bg-[#0d6ebd]">
+                      Update Disclosures
+                    </button>
+                  </div>
+
+                  {tradeDisclosuresDetail ? (
+                    <>
+                      <div className="mt-4 flex items-center justify-between">
+                        <div />
+                        <button type="button" className="h-9 px-4 rounded bg-[#118df0] text-white text-sm font-semibold hover:bg-[#0d6ebd]">
+                          Update Disclosures
+                        </button>
+                      </div>
+
+                      <div className="mt-3 flex items-center gap-3 text-sm text-gray-700">
+                        <div className="font-semibold">Brand Type:</div>
+                        {(
+                          [
+                            { k: 'na' as const, l: 'N/A' },
+                            { k: 'none' as const, l: 'None' },
+                            { k: 'rebuilt' as const, l: 'Rebuilt' },
+                            { k: 'salvage' as const, l: 'Salvage' },
+                            { k: 'irreparable' as const, l: 'Irreparable' },
+                          ] as const
+                        ).map((o) => (
+                          <label key={o.k} className="flex items-center gap-1.5">
+                            <input
+                              type="radio"
+                              name="trade-brand-type"
+                              checked={tradeDisclosuresBrandType === o.k}
+                              onChange={() => setTradeDisclosuresBrandType(o.k)}
+                            />
+                            <span>{o.l}</span>
+                          </label>
+                        ))}
+                      </div>
+
+                      <div className="mt-3 grid grid-cols-12 gap-4">
+                        <div className="col-span-5">
+                          <div className="flex items-stretch border border-gray-200 rounded overflow-hidden">
+                            <div className="w-10 flex items-center justify-center bg-gray-100 text-gray-700 border-r border-gray-200">
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35" />
+                                <circle cx="10" cy="10" r="6" strokeWidth={2} />
+                              </svg>
+                            </div>
+                            <input
+                              value={tradeDisclosuresSearch}
+                              onChange={(e) => setTradeDisclosuresSearch(e.target.value)}
+                              className="flex-1 h-10 px-3 text-sm outline-none"
+                            />
+                          </div>
+
+                          <div className="mt-3 h-[320px] overflow-y-auto border border-gray-200 rounded">
+                            <div className="p-3">
+                              <div className="border border-gray-200 rounded p-3">
+                                <div className="text-sm italic text-gray-700">The vehicle was previously from another Province</div>
+                                <div className="mt-3">
+                                  <button
+                                    type="button"
+                                    className="w-full h-10 rounded bg-[#118df0] text-white text-sm font-semibold hover:bg-[#0d6ebd]"
+                                    onClick={() => setTradeDisclosuresEditor('The vehicle was previously from another Province')}
+                                  >
+                                    Add
+                                  </button>
+                                </div>
+                              </div>
+
+                              <div className="mt-4 border border-gray-200 rounded p-3">
+                                <div className="text-sm font-semibold text-gray-800">Customer Acknowledgment Clause</div>
+                                <div className="mt-2 text-sm text-gray-700 leading-5">
+                                  The Buyer confirms that they have inspected the vehicle, provided the car fax report, reviewed the Bill of Sale,
+                                  test-driven the vehicle with a salesperson, explained all questions, including the bill of sale, by the salesperson,
+                                  and had all questions answered to their satisfaction.
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="col-span-7">
+                          <div className="border border-gray-200 rounded overflow-hidden">
+                            <div className="h-10 border-b border-gray-200 flex items-center gap-1 px-2 bg-white">
+                              {['B', 'I', 'U', 'S', 'X', '16', 'A', '≡', 'T', '</>'].map((t) => (
+                                <button
+                                  key={t}
+                                  type="button"
+                                  className="h-8 px-2 border border-gray-200 rounded text-xs text-gray-700 hover:bg-gray-50"
+                                >
+                                  {t}
+                                </button>
+                              ))}
+                            </div>
+                            <textarea
+                              value={tradeDisclosuresEditor}
+                              onChange={(e) => setTradeDisclosuresEditor(e.target.value)}
+                              className="w-full h-[344px] p-3 text-sm outline-none bg-[#f7fbff]"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    </>
+                  ) : null}
+                </>
+              ) : null}
+
+              {tradeStep === 3 ? (
+                <>
+                  <div className="text-sm font-semibold text-gray-800">Step 3 - Owner Information</div>
+
+                  <div className="mt-4">
+                    <button type="button" className="h-10 w-10 rounded bg-[#118df0] text-white flex items-center justify-center">
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 5v14m7-7H5" />
+                      </svg>
+                    </button>
+                  </div>
+
+                  <div className="mt-4 flex items-center gap-4">
+                    <div className="text-sm text-gray-700">Is Company</div>
+                    <button
+                      type="button"
+                      onClick={() => setTradeForm((p) => ({ ...p, isCompany: !p.isCompany }))}
+                      className={
+                        tradeForm.isCompany
+                          ? 'h-6 w-11 rounded-full bg-[#118df0] relative'
+                          : 'h-6 w-11 rounded-full bg-gray-200 relative'
+                      }
+                    >
+                      <div
+                        className={
+                          tradeForm.isCompany
+                            ? 'h-5 w-5 bg-white rounded-full absolute right-0.5 top-0.5'
+                            : 'h-5 w-5 bg-white rounded-full absolute left-0.5 top-0.5'
+                        }
+                      />
+                    </button>
+                  </div>
+
+                  <div className="mt-4 grid grid-cols-12 gap-4">
+                    <div className="col-span-4">
+                      <div className="flex items-stretch border border-gray-200 rounded overflow-hidden">
+                        <div className="w-10 flex items-center justify-center bg-gray-100 text-gray-700 border-r border-gray-200">
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2" />
+                            <circle cx="12" cy="7" r="4" strokeWidth={2} />
+                          </svg>
+                        </div>
+                        <input
+                          value={tradeForm.ownerName}
+                          onChange={(e) => setTradeForm((p) => ({ ...p, ownerName: e.target.value }))}
+                          placeholder="Name of owner"
+                          className="flex-1 h-10 px-3 text-sm outline-none"
+                        />
+                      </div>
+                    </div>
+
+                    {tradeForm.isCompany ? (
+                      <div className="col-span-4">
+                        <div className="flex items-stretch border border-gray-200 rounded overflow-hidden">
+                          <div className="w-10 flex items-center justify-center bg-gray-100 text-gray-700 border-r border-gray-200">
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7h18M5 7v10a2 2 0 002 2h10a2 2 0 002-2V7" />
+                            </svg>
+                          </div>
+                          <input
+                            value={tradeForm.ownerCompany}
+                            onChange={(e) => setTradeForm((p) => ({ ...p, ownerCompany: e.target.value }))}
+                            placeholder="Name of company"
+                            className="flex-1 h-10 px-3 text-sm outline-none"
+                          />
+                        </div>
+                      </div>
+                    ) : null}
+
+                    <div className="col-span-5">
+                      <div className="flex items-stretch border border-gray-200 rounded overflow-hidden">
+                        <div className="w-10 flex items-center justify-center bg-gray-100 text-gray-700 border-r border-gray-200">
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 11c1.657 0 3-1.343 3-3S13.657 5 12 5 9 6.343 9 8s1.343 3 3 3z" />
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.5 8c0 7-7.5 13-7.5 13S4.5 15 4.5 8a7.5 7.5 0 1115 0z" />
+                          </svg>
+                        </div>
+                        <input
+                          value={tradeForm.ownerStreet}
+                          onChange={(e) => setTradeForm((p) => ({ ...p, ownerStreet: e.target.value }))}
+                          placeholder="Enter a location"
+                          className="flex-1 h-10 px-3 text-sm outline-none"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="col-span-3">
+                      <div className="flex items-stretch border border-gray-200 rounded overflow-hidden">
+                        <div className="w-10 flex items-center justify-center bg-gray-100 text-gray-700 border-r border-gray-200">
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 11c1.657 0 3-1.343 3-3S13.657 5 12 5 9 6.343 9 8s1.343 3 3 3z" />
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.5 8c0 7-7.5 13-7.5 13S4.5 15 4.5 8a7.5 7.5 0 1115 0z" />
+                          </svg>
+                        </div>
+                        <input
+                          value={tradeForm.ownerSuite}
+                          onChange={(e) => setTradeForm((p) => ({ ...p, ownerSuite: e.target.value }))}
+                          placeholder="Apt/suite #"
+                          className="flex-1 h-10 px-3 text-sm outline-none"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="col-span-12">
+                      <div className="flex items-stretch border border-gray-200 rounded overflow-hidden">
+                        <div className="w-10 flex items-center justify-center bg-gray-100 text-gray-700 border-r border-gray-200">
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 11c1.657 0 3-1.343 3-3S13.657 5 12 5 9 6.343 9 8s1.343 3 3 3z" />
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.5 8c0 7-7.5 13-7.5 13S4.5 15 4.5 8a7.5 7.5 0 1115 0z" />
+                          </svg>
+                        </div>
+                        <input
+                          value={tradeForm.ownerCity}
+                          onChange={(e) => setTradeForm((p) => ({ ...p, ownerCity: e.target.value }))}
+                          placeholder="City"
+                          className="flex-1 h-10 px-3 text-sm outline-none"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="col-span-12">
+                      <select
+                        value={tradeForm.ownerProvince}
+                        onChange={(e) => setTradeForm((p) => ({ ...p, ownerProvince: e.target.value }))}
+                        className="w-full h-10 border border-gray-200 rounded px-3 text-sm bg-white"
+                      >
+                        <option value="ON">ON</option>
+                        <option value="BC">BC</option>
+                        <option value="AB">AB</option>
+                        <option value="MB">MB</option>
+                        <option value="QC">QC</option>
+                      </select>
+                    </div>
+
+                    <div className="col-span-3">
+                      <div className="flex items-stretch border border-gray-200 rounded overflow-hidden">
+                        <div className="w-10 flex items-center justify-center bg-gray-100 text-gray-700 border-r border-gray-200">
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 11c1.657 0 3-1.343 3-3S13.657 5 12 5 9 6.343 9 8s1.343 3 3 3z" />
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.5 8c0 7-7.5 13-7.5 13S4.5 15 4.5 8a7.5 7.5 0 1115 0z" />
+                          </svg>
+                        </div>
+                        <input
+                          value={tradeForm.ownerPostal}
+                          onChange={(e) => setTradeForm((p) => ({ ...p, ownerPostal: e.target.value }))}
+                          placeholder="Postal code"
+                          className="flex-1 h-10 px-3 text-sm outline-none"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="col-span-9">
+                      <select
+                        value={tradeForm.ownerCountry}
+                        onChange={(e) => setTradeForm((p) => ({ ...p, ownerCountry: e.target.value }))}
+                        className="w-full h-10 border border-gray-200 rounded px-3 text-sm bg-white"
+                      >
+                        <option value="CA">CA</option>
+                        <option value="US">US</option>
+                      </select>
+                    </div>
+
+                    <div className="col-span-4">
+                      <div className="flex items-stretch border border-gray-200 rounded overflow-hidden">
+                        <div className="w-10 flex items-center justify-center bg-gray-100 text-gray-700 border-r border-gray-200">
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h2.28a1 1 0 01.948.684l1.5 4.5a1 1 0 01-.272 1.06l-1.7 1.7a16 16 0 006.586 6.586l1.7-1.7a1 1 0 011.06-.272l4.5 1.5a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+                          </svg>
+                        </div>
+                        <input
+                          value={tradeForm.ownerPhone}
+                          onChange={(e) => setTradeForm((p) => ({ ...p, ownerPhone: e.target.value }))}
+                          placeholder="(  ) _ _ _ _"
+                          className="flex-1 h-10 px-3 text-sm outline-none"
+                        />
+                      </div>
+                    </div>
+                    <div className="col-span-4">
+                      <div className="flex items-stretch border border-gray-200 rounded overflow-hidden">
+                        <div className="w-10 flex items-center justify-center bg-gray-100 text-gray-700 border-r border-gray-200">
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 4h10a2 2 0 012 2v12a2 2 0 01-2 2H7a2 2 0 01-2-2V6a2 2 0 012-2z" />
+                          </svg>
+                        </div>
+                        <input
+                          value={tradeForm.ownerMobile}
+                          onChange={(e) => setTradeForm((p) => ({ ...p, ownerMobile: e.target.value }))}
+                          placeholder="(  ) _ _ _ _"
+                          className="flex-1 h-10 px-3 text-sm outline-none"
+                        />
+                      </div>
+                    </div>
+                    <div className="col-span-4">
+                      <div className="flex items-stretch border border-gray-200 rounded overflow-hidden">
+                        <div className="w-10 flex items-center justify-center bg-gray-100 text-gray-700 border-r border-gray-200">
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l9 6 9-6" />
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 8v10a2 2 0 01-2 2H5a2 2 0 01-2-2V8" />
+                          </svg>
+                        </div>
+                        <input
+                          value={tradeForm.ownerEmail}
+                          onChange={(e) => setTradeForm((p) => ({ ...p, ownerEmail: e.target.value }))}
+                          placeholder="email"
+                          className="flex-1 h-10 px-3 text-sm outline-none"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="col-span-12 mt-1 flex items-center gap-4">
+                      <div className="text-sm text-gray-700">Is RIN</div>
+                      <button
+                        type="button"
+                        onClick={() => setTradeForm((p) => ({ ...p, isRin: !p.isRin }))}
+                        className={
+                          tradeForm.isRin
+                            ? 'h-6 w-11 rounded-full bg-[#118df0] relative'
+                            : 'h-6 w-11 rounded-full bg-gray-200 relative'
+                        }
+                      >
+                        <div
+                          className={
+                            tradeForm.isRin
+                              ? 'h-5 w-5 bg-white rounded-full absolute right-0.5 top-0.5'
+                              : 'h-5 w-5 bg-white rounded-full absolute left-0.5 top-0.5'
+                          }
+                        />
+                      </button>
+                    </div>
+
+                    <div className="col-span-6">
+                      <div className="text-xs text-gray-700 mb-1">{tradeForm.isRin ? 'RIN' : 'Drivers License #'}</div>
+                      <input
+                        value={tradeForm.ownerDl}
+                        onChange={(e) => setTradeForm((p) => ({ ...p, ownerDl: e.target.value }))}
+                        className="w-full h-9 border border-gray-200 rounded px-3 text-sm"
+                      />
+                    </div>
+                    <div className="col-span-6">
+                      <div className="text-xs text-gray-700 mb-1">Plate #</div>
+                      <input
+                        value={tradeForm.ownerPlate}
+                        onChange={(e) => setTradeForm((p) => ({ ...p, ownerPlate: e.target.value }))}
+                        className="w-full h-9 border border-gray-200 rounded px-3 text-sm"
+                      />
+                    </div>
+                  </div>
+                </>
+              ) : null}
+
+              {tradeStep === 4 ? (
+                <>
+                  <div className="text-sm font-semibold text-gray-800">Step 4 - Trade Value</div>
+                  <div className="mt-6 grid grid-cols-4 gap-6">
+                    <div>
+                      <div className="text-xs text-gray-700 mb-1 flex items-center gap-1">
+                        <span>Trade Value</span>
+                      </div>
+                      <div className="flex items-stretch border border-gray-200 rounded overflow-hidden bg-white">
+                        <div className="w-10 flex items-center justify-center bg-gray-100 text-gray-700 border-r border-gray-200">$</div>
+                        <input
+                          value={tradeForm.tradeValue}
+                          onChange={(e) => setTradeForm((p) => ({ ...p, tradeValue: e.target.value }))}
+                          onFocus={() => handleMoneyFocus('tradeValue')}
+                          onBlur={() => handleMoneyBlur('tradeValue')}
+                          className="flex-1 h-10 px-3 text-sm outline-none"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <div className="text-xs text-gray-700 mb-1 flex items-center gap-1">
+                        <span>Actual Cash Value</span>
+                        <svg className="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01" />
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 2a10 10 0 100 20 10 10 0 000-20z" />
+                        </svg>
+                      </div>
+                      <div className="flex items-stretch border border-gray-200 rounded overflow-hidden bg-white">
+                        <div className="w-10 flex items-center justify-center bg-gray-100 text-gray-700 border-r border-gray-200">$</div>
+                        <input
+                          value={tradeForm.actualCashValue}
+                          onChange={(e) => setTradeForm((p) => ({ ...p, actualCashValue: e.target.value }))}
+                          onFocus={() => handleMoneyFocus('actualCashValue')}
+                          onBlur={() => handleMoneyBlur('actualCashValue')}
+                          className="flex-1 h-10 px-3 text-sm outline-none"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <div className="text-xs text-gray-700 mb-1 flex items-center gap-1">
+                        <span>Lien Amount</span>
+                      </div>
+                      <div className="flex items-stretch border border-gray-200 rounded overflow-hidden bg-white">
+                        <div className="w-10 flex items-center justify-center bg-gray-100 text-gray-700 border-r border-gray-200">$</div>
+                        <input
+                          value={tradeForm.lienAmount}
+                          onChange={(e) => setTradeForm((p) => ({ ...p, lienAmount: e.target.value }))}
+                          onFocus={() => handleMoneyFocus('lienAmount')}
+                          onBlur={() => handleMoneyBlur('lienAmount')}
+                          className="flex-1 h-10 px-3 text-sm outline-none"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <div className="text-xs text-gray-700 mb-1 flex items-center gap-1">
+                        <span>Trade Equity</span>
+                        <svg className="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01" />
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 2a10 10 0 100 20 10 10 0 000-20z" />
+                        </svg>
+                      </div>
+                      <div className="flex items-stretch border border-gray-200 rounded overflow-hidden bg-white">
+                        <div className="w-10 flex items-center justify-center bg-gray-100 text-gray-700 border-r border-gray-200">$</div>
+                        <input
+                          value={tradeForm.tradeEquity}
+                          readOnly
+                          className="flex-1 h-10 px-3 text-sm outline-none bg-gray-50"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                  <div className="mt-6 border-t border-gray-200" />
+                </>
+              ) : null}
+            </div>
+
+            <div className="px-8 pb-6 flex justify-end">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={prevTradeStep}
+                  className="h-9 px-4 rounded bg-[#3b3b3b] text-white text-sm font-semibold hover:bg-black"
+                >
+                  Back
+                </button>
+                {tradeStep === 4 ? (
+                  <button
+                    type="button"
+                    onClick={() => setTradeOpen(false)}
+                    className="h-9 px-4 rounded bg-green-600 text-white text-sm font-semibold hover:bg-green-700"
+                  >
+                    Finish
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={nextTradeStep}
+                    className="h-9 px-4 rounded bg-[#118df0] text-white text-sm font-semibold hover:bg-[#0d6ebd]"
+                  >
+                    Next
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   )
 }
