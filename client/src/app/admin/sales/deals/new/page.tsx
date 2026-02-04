@@ -14,7 +14,7 @@ export default function SalesNewDealPage() {
   const [activeTab, setActiveTab] = useState<DealTab>('customers')
   const [isRetail, setIsRetail] = useState(true)
   const [dealDate, setDealDate] = useState('2026-02-03')
-  const [dealType, setDealType] = useState<'Cash' | 'Finance' | 'Lease'>('Cash')
+  const [dealType, setDealType] = useState<'Cash' | 'Finance'>('Cash')
 
   return (
     <div className="w-full min-h-[calc(100vh-64px)] bg-gradient-to-b from-[#f6f7f9] to-[#e9eaee]">
@@ -58,12 +58,11 @@ export default function SalesNewDealPage() {
               <div className="text-xs font-semibold text-gray-600 mb-1">Deal Type</div>
               <select
                 value={dealType}
-                onChange={(e) => setDealType(e.target.value as 'Cash' | 'Finance' | 'Lease')}
+                onChange={(e) => setDealType(e.target.value as 'Cash' | 'Finance')}
                 className="w-full border border-gray-200 rounded px-3 py-2 text-sm bg-white"
               >
                 <option value="Cash">Cash</option>
                 <option value="Finance">Finance</option>
-                <option value="Lease">Lease</option>
               </select>
             </div>
             <div className="flex items-end justify-end gap-2">
@@ -109,7 +108,7 @@ export default function SalesNewDealPage() {
             />
           )}
           {activeTab === 'vehicles' && <VehiclesTab />}
-          {activeTab === 'worksheet' && <WorksheetTab />}
+          {activeTab === 'worksheet' && <WorksheetTab dealMode={isRetail ? 'RTL' : 'WHL'} dealType={dealType} />}
           {activeTab === 'disclosures' && <DisclosuresTab />}
           {activeTab === 'delivery' && <DeliveryTab />}
         </div>
