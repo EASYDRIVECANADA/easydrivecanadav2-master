@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 
 import { supabase } from '@/lib/supabaseClient'
 
@@ -70,6 +70,59 @@ export default function VehiclesTab() {
   const [tradeDisclosuresSearch, setTradeDisclosuresSearch] = useState('')
   const [tradeDisclosuresEditor, setTradeDisclosuresEditor] = useState('')
 
+  // Saved trades created from the modal; displayed on the page after webhook confirms 'Done'.
+  const [savedTrades, setSavedTrades] = useState<any[]>([])
+  const [openSavedDisclosureIdx, setOpenSavedDisclosureIdx] = useState<number | null>(null)
+  const inlineEditorRef = useRef<HTMLDivElement | null>(null)
+  const execInline = (cmd: string, value?: string) => {
+    const el = inlineEditorRef.current
+    if (!el) return
+    el.focus()
+    try {
+      document.execCommand(cmd, false, value)
+      const html = el.innerHTML
+      setSavedTrades((prev) =>
+        prev.map((it, i) => (i === (openSavedDisclosureIdx ?? -1) ? { ...it, disclosuresEditor: html } : it))
+      )
+    } catch {}
+  }
+
+  const makeSelectedVehicleSnapshot = () => {
+    const v = selected
+    if (!v) return null as any
+    return {
+      id: v.id ?? null,
+      year: v.year ?? null,
+      make: v.make ?? null,
+      model: v.model ?? null,
+      trim: v.trim ?? null,
+      vin: v.vin ?? null,
+      exteriorColor: v.exterior_color ?? null,
+      interiorColor: v.interior_color ?? null,
+      odometer: v.odometer ?? v.mileage ?? null,
+      odometerUnit: v.odometer_unit ?? null,
+      status: v.status ?? null,
+      stockNumber: v.stock_number ?? null,
+      createdAt: v.created_at ?? null,
+    }
+  }
+  const disclosureQuestions: string[] = [
+    'Has the trade-in previously been used as a daily rental, police, taxi, limo, or emergency vehicle?',
+    'Does the trade-in have a lien registered against it?',
+    'Has the trade-in sustained any structural damage?',
+    'Has the trade-in sustained any accident damage that resulted in an insurance claim, estimate or police report?',
+    'Has the vehicle previously been branded as irreparable, salvage, or rebuilt?',
+    'Has the trade-in sustained any fire or water damage?',
+    'Has the vehicle had previous paintwork?',
+    'Has the trade-in ever been registered outside of your local jurisdiction (i.e. Province or State)?',
+    'Is the odometer faulty, broken, or rolled back?',
+    'Manufacturer equipment/badges altered or replaced?',
+    'Was the vehicle ever stolen and/or reported as stolen?',
+    'Has the manufacturers warranty been cancelled?',
+    'Has the vehicle ever been declared a total loss by an insurance company?',
+    'Has the vehicle had any body panel painted and or replaced?',
+  ]
+
   const [addForm, setAddForm] = useState({
     inStockDate: '',
     stockNumber: '',
@@ -88,6 +141,14 @@ export default function VehiclesTab() {
   const [addDecodeLoading, setAddDecodeLoading] = useState(false)
   const [addDecodeError, setAddDecodeError] = useState<string | null>(null)
 
+  const [tradeDecodeLoading, setTradeDecodeLoading] = useState(false)
+  const [tradeDecodeError, setTradeDecodeError] = useState<string | null>(null)
+
+  const [tradeSubmitting, setTradeSubmitting] = useState(false)
+  const [tradeSubmitError, setTradeSubmitError] = useState<string | null>(null)
+  const [savingTrades, setSavingTrades] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
+
   const handleAddDecode = async () => {
     try {
       setAddDecodeError(null)
@@ -98,29 +159,53 @@ export default function VehiclesTab() {
       }
       setAddDecodeLoading(true)
 
-      const res = await fetch('https://primary-production-6722.up.railway.app/webhook/Vincode', {
+      const res = await fetch('/api/vincode', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ vin }),
       })
       if (!res.ok) {
+        const errorText = await res.text().catch(() => '')
+        console.error('[Add Decode] Error response:', errorText)
         throw new Error(`Decode failed (${res.status})`)
       }
-      const data = (await res.json()) as any[]
-      const first = Array.isArray(data) && data.length > 0 ? data[0] : null
-      if (!first) {
-        throw new Error('No data returned')
+      const data = await res.json()
+      console.log('[Add Decode] Webhook response:', data)
+      
+      // Handle different response formats
+      let vehicleData = null
+      if (Array.isArray(data) && data.length > 0) {
+        vehicleData = data[0]
+      } else if (data && typeof data === 'object') {
+        // If it's an object, check if it has the vehicle fields directly
+        if (data.Make || data.VIN || data.Model) {
+          vehicleData = data
+        } else if (data.data) {
+          // Check if data is nested in a 'data' property
+          vehicleData = Array.isArray(data.data) ? data.data[0] : data.data
+        } else if (data.result) {
+          // Check if data is nested in a 'result' property
+          vehicleData = Array.isArray(data.result) ? data.result[0] : data.result
+        }
+      }
+      
+      if (!vehicleData) {
+        console.error('[Add Decode] No vehicle data found in response:', data)
+        throw new Error('No vehicle data returned from webhook')
       }
 
+      console.log('[Add Decode] Mapping fields:', vehicleData)
       setAddForm((p) => ({
         ...p,
-        vin: first.VIN || p.vin,
-        make: first.Make ? String(first.Make) : p.make,
-        model: first.Model ? String(first.Model) : p.model,
-        year: first.Year != null ? String(first.Year) : p.year,
-        trim: first.Trim ? String(first.Trim) : p.trim,
-        fuelType: first['Fuel Type'] ? String(first['Fuel Type']) : p.fuelType,
+        vin: vehicleData.VIN || p.vin,
+        make: vehicleData.Make ? String(vehicleData.Make) : p.make,
+        model: vehicleData.Model ? String(vehicleData.Model) : p.model,
+        year: vehicleData.Year != null ? String(vehicleData.Year) : p.year,
+        trim: vehicleData.Trim ? String(vehicleData.Trim) : p.trim,
+        fuelType: vehicleData['Fuel Type'] ? String(vehicleData['Fuel Type']) : p.fuelType,
+        exteriorColour: vehicleData['Exterior Color'] || p.exteriorColour,
       }))
+      console.log('[Add Decode] Form updated successfully')
     } catch (e: any) {
       setAddDecodeError(e?.message || 'Failed to decode VIN')
     } finally {
@@ -128,8 +213,217 @@ export default function VehiclesTab() {
     }
   }
 
+  const handleTradeDecode = async () => {
+    try {
+      setTradeDecodeError(null)
+      const vin = tradeForm.vin?.trim()
+      if (!vin) {
+        setTradeDecodeError('Enter a VIN to decode')
+        return
+      }
+      setTradeDecodeLoading(true)
+
+      const res = await fetch('/api/vincode', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ vin }),
+      })
+      if (!res.ok) {
+        const errorText = await res.text().catch(() => '')
+        console.error('[Trade Decode] Error response:', errorText)
+        throw new Error(`Decode failed (${res.status})`)
+      }
+      const data = await res.json()
+      console.log('[Trade Decode] Webhook response:', data)
+      
+      // Handle different response formats
+      let vehicleData = null
+      if (Array.isArray(data) && data.length > 0) {
+        vehicleData = data[0]
+      } else if (data && typeof data === 'object') {
+        // If it's an object, check if it has the vehicle fields directly
+        if (data.Make || data.VIN || data.Model) {
+          vehicleData = data
+        } else if (data.data) {
+          // Check if data is nested in a 'data' property
+          vehicleData = Array.isArray(data.data) ? data.data[0] : data.data
+        } else if (data.result) {
+          // Check if data is nested in a 'result' property
+          vehicleData = Array.isArray(data.result) ? data.result[0] : data.result
+        }
+      }
+      
+      if (!vehicleData) {
+        console.error('[Trade Decode] No vehicle data found in response:', data)
+        throw new Error('No vehicle data returned from webhook')
+      }
+
+      console.log('[Trade Decode] Mapping fields:', vehicleData)
+      setTradeForm((p) => ({
+        ...p,
+        vin: vehicleData.VIN || p.vin,
+        make: vehicleData.Make ? String(vehicleData.Make) : p.make,
+        model: vehicleData.Model ? String(vehicleData.Model) : p.model,
+        year: vehicleData.Year != null ? String(vehicleData.Year) : p.year,
+        trim: vehicleData.Trim ? String(vehicleData.Trim) : p.trim,
+        colour: vehicleData['Exterior Color'] || p.colour,
+      }))
+      console.log('[Trade Decode] Form updated successfully')
+    } catch (e: any) {
+      setTradeDecodeError(e?.message || 'Failed to decode VIN')
+    } finally {
+      setTradeDecodeLoading(false)
+    }
+  }
+
   const nextTradeStep = () => setTradeStep((s) => (s === 4 ? 4 : ((s + 1) as 2 | 3 | 4)))
   const prevTradeStep = () => setTradeStep((s) => (s === 1 ? 1 : ((s - 1) as 1 | 2 | 3)))
+
+  const handleTradeSubmit = async () => {
+    try {
+      setTradeSubmitError(null)
+      setTradeSubmitting(true)
+
+      const payload = {
+        vin: tradeForm.vin,
+        year: tradeForm.year,
+        make: tradeForm.make,
+        model: tradeForm.model,
+        odometer: tradeForm.odometer,
+        odometerUnit: tradeForm.odometerUnit,
+        trim: tradeForm.trim,
+        colour: tradeForm.colour,
+        disclosures: tradeForm.disclosures,
+        disclosuresNumbers: Array.isArray(tradeForm.disclosures)
+          ? tradeForm.disclosures.map((v, i) => (v ? i + 1 : null)).filter((n) => n !== null)
+          : [],
+        disclosuresNotes: tradeForm.disclosuresNotes,
+        brandType: tradeDisclosuresBrandType || null,
+        disclosuresEditor: tradeDisclosuresEditor || null,
+        disclosuresSearch: tradeDisclosuresSearch || null,
+        disclosuresDetailOpen: tradeDisclosuresDetail || false,
+        isCompany: tradeForm.isCompany,
+        ownerName: tradeForm.ownerName,
+        ownerCompany: tradeForm.ownerCompany,
+        ownerStreet: tradeForm.ownerStreet,
+        ownerSuite: tradeForm.ownerSuite,
+        ownerCity: tradeForm.ownerCity,
+        ownerProvince: tradeForm.ownerProvince,
+        ownerPostal: tradeForm.ownerPostal,
+        ownerCountry: tradeForm.ownerCountry,
+        ownerPhone: tradeForm.ownerPhone,
+        ownerMobile: tradeForm.ownerMobile,
+        ownerEmail: tradeForm.ownerEmail,
+        isRin: tradeForm.isRin,
+        // Always send both DL and RIN fields. The single input stores into ownerDl; map to both keys based on isRin.
+        // Use nulls when not provided so the webhook receives explicit nulls, not missing fields.
+        ownerDl: tradeForm.isRin ? null : (tradeForm.ownerDl ?? null),
+        ownerRin: tradeForm.isRin ? (tradeForm.ownerDl ?? null) : null,
+        ownerPlate: tradeForm.ownerPlate,
+        tradeValue: tradeForm.tradeValue,
+        actualCashValue: tradeForm.actualCashValue,
+        lienAmount: tradeForm.lienAmount,
+        tradeEquity: tradeForm.tradeEquity,
+        // Snapshot of the selected inventory vehicle at the time this trade is created
+        selectedVehicle: makeSelectedVehicleSnapshot(),
+      }
+
+      // Do not send to webhook here. Just reflect created trade on page.
+      setSavedTrades((prev) => [...prev, payload])
+
+      // Close the modal after creating card
+      setTradeOpen(false)
+      
+      // Optionally reset the form
+      setTradeForm({
+        vin: '',
+        year: '',
+        make: '',
+        model: '',
+        odometer: '',
+        odometerUnit: 'kms',
+        trim: '',
+        colour: '',
+        disclosures: Array.from({ length: 14 }, () => false),
+        disclosuresNotes: '',
+        isCompany: false,
+        ownerName: '',
+        ownerCompany: '',
+        ownerStreet: '',
+        ownerSuite: '',
+        ownerCity: '',
+        ownerProvince: 'ON',
+        ownerPostal: '',
+        ownerCountry: 'CA',
+        ownerPhone: '',
+        ownerMobile: '',
+        ownerEmail: '',
+        isRin: false,
+        ownerDl: '',
+        ownerPlate: '',
+        tradeValue: '0.00',
+        actualCashValue: '0.00',
+        lienAmount: '0.00',
+        tradeEquity: '0.00',
+      })
+      setTradeStep(1)
+    } catch (e: any) {
+      console.error('[Trade Submit] Error:', e)
+      setTradeSubmitError(e?.message || 'Failed to submit trade')
+    } finally {
+      setTradeSubmitting(false)
+    }
+  }
+
+  const handleSaveAllTrades = async () => {
+    try {
+      setSaveError(null)
+      setSavingTrades(true)
+      // Send every saved trade to webhook sequentially so we can stop at first error
+      for (const t of savedTrades) {
+        const body = {
+          ...t,
+          selectedVehicle: t.selectedVehicle ?? makeSelectedVehicleSnapshot() ?? null,
+        }
+        const res = await fetch('https://primary-production-6722.up.railway.app/webhook/vehicles-deals', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        })
+        if (!res.ok) {
+          const errText = await res.text().catch(() => '')
+          throw new Error(errText || `Save failed (${res.status})`)
+        }
+        const raw = await res.text().catch(() => '')
+        let ok = false
+        if (raw.trim().toLowerCase() === 'done') ok = true
+        else {
+          try {
+            const parsed = JSON.parse(raw)
+            const statusStr = String(parsed?.status || parsed?.message || '').toLowerCase()
+            if (statusStr.includes('done')) ok = true
+          } catch {}
+        }
+        if (!ok) throw new Error('Webhook did not confirm save. Expected "Done"')
+      }
+      console.log('[Save Trades] All trades saved: Done')
+      // Reset UI after successful save of all trades
+      setSavedTrades([])
+      setOpenSavedDisclosureIdx(null)
+      // Clear the selected inventory vehicle as well
+      clearSelected()
+      // Reset disclosure helper controls
+      setTradeDisclosuresBrandType('na')
+      setTradeDisclosuresEditor('')
+      setTradeDisclosuresSearch('')
+      setTradeDisclosuresDetail(false)
+    } catch (e: any) {
+      console.error('[Save Trades] Error:', e)
+      setSaveError(e?.message || 'Failed to save trades')
+    } finally {
+      setSavingTrades(false)
+    }
+  }
 
   useEffect(() => {
     // Auto-calc Trade Equity = Actual Cash Value - Trade Value
@@ -702,15 +996,235 @@ export default function VehiclesTab() {
         </div>
 
         <div className="mt-3 border border-gray-200 bg-white">
-          <div className="h-12 flex items-center justify-center text-gray-500">No Trades</div>
+          {savedTrades.length === 0 ? (
+            <div className="h-12 flex items-center justify-center text-gray-500">No Trades</div>
+          ) : (
+            <div className="p-4 space-y-4">
+              {savedTrades.map((t, idx) => (
+                <div key={idx} className="border border-gray-200 rounded p-3 grid grid-cols-12 gap-3 items-center">
+                  <div className="col-span-4 flex items-center gap-2">
+                    <svg className="w-4 h-4 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.2} d="M9 12h6M9 5h6M9 19h6"/></svg>
+                    <input readOnly className="h-9 w-full border border-gray-200 rounded px-3 text-sm bg-gray-50" value={t.vin || ''} />
+                  </div>
+                  <input readOnly className="col-span-2 h-9 border border-gray-200 rounded px-3 text-sm bg-gray-50" value={t.year || ''} />
+                  <input readOnly className="col-span-2 h-9 border border-gray-200 rounded px-3 text-sm bg-gray-50" value={t.make || ''} />
+                  <input readOnly className="col-span-4 h-9 border border-gray-200 rounded px-3 text-sm bg-gray-50" value={t.model || ''} />
+
+                  <input readOnly className="col-span-3 h-9 border border-gray-200 rounded px-3 text-sm bg-gray-50" value={t.trim || ''} />
+                  <input readOnly className="col-span-3 h-9 border border-gray-200 rounded px-3 text-sm bg-gray-50" value={t.colour || ''} />
+                  <div className="col-span-3 flex items-stretch border border-gray-200 rounded overflow-hidden">
+                    <div className="w-10 flex items-center justify-center bg-gray-100 text-gray-700 border-r border-gray-200">
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3"/><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 2a10 10 0 100 20 10 10 0 000-20z"/></svg>
+                    </div>
+                    <input readOnly className="flex-1 h-9 px-3 text-sm bg-gray-50" value={t.odometer || ''} />
+                    <input readOnly className="w-16 h-9 px-2 text-sm bg-gray-50 border-l border-gray-200" value={t.odometerUnit || ''} />
+                  </div>
+
+                  <div className="col-span-3">
+                    <div className="text-[11px] text-gray-600">Trade Value</div>
+                    <input readOnly className="h-9 w-full border border-gray-200 rounded px-3 text-sm bg-gray-50" value={t.tradeValue || ''} />
+                  </div>
+                  <div className="col-span-3">
+                    <div className="text-[11px] text-gray-600">Actual Cash Value</div>
+                    <input readOnly className="h-9 w-full border border-gray-200 rounded px-3 text-sm bg-gray-50" value={t.actualCashValue || ''} />
+                  </div>
+                  <div className="col-span-3">
+                    <div className="text-[11px] text-gray-600">Lien Amount</div>
+                    <input readOnly className="h-9 w-full border border-gray-200 rounded px-3 text-sm bg-gray-50" value={t.lienAmount || ''} />
+                  </div>
+                  <div className="col-span-3">
+                    <div className="text-[11px] text-gray-600">Trade Equity</div>
+                    <input readOnly className="h-9 w-full border border-gray-200 rounded px-3 text-sm bg-gray-50" value={t.tradeEquity || ''} />
+                  </div>
+
+                  <div className="col-span-6">
+                    <div className="text-[11px] text-gray-600">Owner Name</div>
+                    <input readOnly className="h-9 w-full border border-gray-200 rounded px-3 text-sm bg-gray-50" value={t.ownerName || ''} />
+                  </div>
+                  <div className="col-span-3">
+                    <div className="text-[11px] text-gray-600">{t.isRin ? 'RIN #' : 'DL #'}</div>
+                    <input readOnly className="h-9 w-full border border-gray-200 rounded px-3 text-sm bg-gray-50" value={(t.isRin ? (t.ownerRin ?? '') : (t.ownerDl ?? ''))} />
+                  </div>
+                  <div className="col-span-3">
+                    <div className="text-[11px] text-gray-600">Plate #</div>
+                    <input readOnly className="h-9 w-full border border-gray-200 rounded px-3 text-sm bg-gray-50" value={t.ownerPlate || ''} />
+                  </div>
+
+                  <div className="col-span-3">
+                    <div className="text-[11px] text-gray-600">Phone</div>
+                    <input readOnly className="h-9 w-full border border-gray-200 rounded px-3 text-sm bg-gray-50" value={t.ownerPhone || ''} />
+                  </div>
+                  <div className="col-span-3">
+                    <div className="text-[11px] text-gray-600">Mobile</div>
+                    <input readOnly className="h-9 w-full border border-gray-200 rounded px-3 text-sm bg-gray-50" value={t.ownerMobile || ''} />
+                  </div>
+                  <div className="col-span-6">
+                    <div className="text-[11px] text-gray-600">Email</div>
+                    <input readOnly className="h-9 w-full border border-gray-200 rounded px-3 text-sm bg-gray-50" value={t.ownerEmail || ''} />
+                  </div>
+
+                  <div className="col-span-6">
+                    <div className="text-[11px] text-gray-600">Street Address</div>
+                    <input readOnly className="h-9 w-full border border-gray-200 rounded px-3 text-sm bg-gray-50" value={t.ownerStreet || ''} />
+                  </div>
+                  <div className="col-span-3">
+                    <div className="text-[11px] text-gray-600">Apt/Suite</div>
+                    <input readOnly className="h-9 w-full border border-gray-200 rounded px-3 text-sm bg-gray-50" value={t.ownerSuite || ''} />
+                  </div>
+                  <div className="col-span-3">
+                    <div className="text-[11px] text-gray-600">City</div>
+                    <input readOnly className="h-9 w-full border border-gray-200 rounded px-3 text-sm bg-gray-50" value={t.ownerCity || ''} />
+                  </div>
+                  <div className="col-span-3">
+                    <div className="text-[11px] text-gray-600">Province</div>
+                    <input readOnly className="h-9 w-full border border-gray-200 rounded px-3 text-sm bg-gray-50" value={t.ownerProvince || ''} />
+                  </div>
+                  <div className="col-span-3">
+                    <div className="text-[11px] text-gray-600">Postal Code</div>
+                    <input readOnly className="h-9 w-full border border-gray-200 rounded px-3 text-sm bg-gray-50" value={t.ownerPostal || ''} />
+                  </div>
+                  <div className="col-span-3">
+                    <div className="text-[11px] text-gray-600">Country</div>
+                    <input readOnly className="h-9 w-full border border-gray-200 rounded px-3 text-sm bg-gray-50" value={t.ownerCountry || ''} />
+                  </div>
+
+                  <div className="col-span-12 text-[11px] text-[#118df0]">
+                    <button
+                      type="button"
+                      className="text-[#118df0] hover:underline"
+                      onClick={() => setOpenSavedDisclosureIdx(openSavedDisclosureIdx === idx ? null : idx)}
+                    >
+                      Disclosures &gt;
+                    </button>
+                  </div>
+
+                  {openSavedDisclosureIdx === idx ? (
+                    <div className="col-span-12 mt-2 border-t border-gray-200 pt-3">
+                      <div className="text-[12px] text-[#1f4f7a] bg-[#e8f1fb] border border-[#cfe3f9] rounded px-3 py-2 mb-3">
+                        This checklist can be used to identify common disclosures.
+                      </div>
+                      <div className="space-y-1">
+                        {disclosureQuestions.map((q, i) => {
+                          const val = Array.isArray(t.disclosures) ? !!t.disclosures[i] : false
+                          return (
+                            <div key={i} className="flex items-center justify-between py-1 text-sm">
+                              <div className="pr-6">
+                                {i + 1}. {q}
+                              </div>
+                              <span className={val ? 'h-6 w-12 rounded-full bg-[#118df0] text-white text-[10px] font-semibold flex items-center justify-center' : 'h-6 w-12 rounded-full border border-gray-300 bg-white text-gray-700 text-[10px] font-semibold flex items-center justify-center'}>
+                                {val ? 'YES' : 'NO'}
+                              </span>
+                            </div>
+                          )
+                        })}
+                      </div>
+
+                      <div className="mt-3 text-xs text-red-600 leading-5">
+                        Please read over the following list to confirm that the items listed are in working order. If they are NOT working please indicate the issue(s) in the box below:
+                        <div className="mt-2 uppercase">
+                          ENGINE, SUSPENSION, SUB FRAME (because of possible structural damage), TRANSMISSION, FUEL SYSTEM, POLLUTION CONTROL SYSTEM, POWER-TRAIN, COMPUTER, ELECTRICAL SYSTEM, AIR CONDITIONING, WINDSHIELD NOT CRACKED, ABS, AIRBAGS, DASH INDICATOR LIGHTS
+                        </div>
+                      </div>
+
+                      <textarea
+                        className="mt-3 w-full h-24 border border-gray-200 rounded p-3 text-sm"
+                        value={t.disclosuresNotes || ''}
+                        onChange={(e) => {
+                          const val = e.target.value
+                          setSavedTrades((prev) => prev.map((it, i) => (i === idx ? { ...it, disclosuresNotes: val } : it)))
+                        }}
+                        placeholder="Add notes about items not working..."
+                      />
+
+                      <div className="mt-4 text-sm text-gray-700">
+                        <div className="font-semibold mb-2">Brand Type:</div>
+                        <div className="flex items-center gap-4">
+                          {([
+                            { k: 'na', l: 'N/A' },
+                            { k: 'none', l: 'None' },
+                            { k: 'rebuilt', l: 'Rebuilt' },
+                            { k: 'salvage', l: 'Salvage' },
+                            { k: 'irreparable', l: 'Irreparable' },
+                          ] as const).map((o) => (
+                            <label key={o.k} className="flex items-center gap-1.5 text-sm">
+                              <input
+                                type="radio"
+                                name={`saved-brand-type-${idx}`}
+                                checked={(t.brandType || 'na') === o.k}
+                                onChange={() => setSavedTrades((prev) => prev.map((it, i) => (i === idx ? { ...it, brandType: o.k } : it)))}
+                              />
+                              <span>{o.l}</span>
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="mt-4 grid grid-cols-12 gap-4">
+                        <div className="col-span-5">
+                          <div className="flex items-stretch border border-gray-200 rounded overflow-hidden">
+                            <div className="w-10 flex items-center justify-center bg-gray-100 text-gray-700 border-r border-gray-200">
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35" /><circle cx="10" cy="10" r="6" strokeWidth={2} /></svg>
+                            </div>
+                            <input
+                              value={t.disclosuresSearch || ''}
+                              onChange={(e) =>
+                                setSavedTrades((prev) => prev.map((it, i) => (i === idx ? { ...it, disclosuresSearch: e.target.value } : it)))
+                              }
+                              className="flex-1 h-10 px-3 text-sm outline-none"
+                              placeholder="Search"
+                            />
+                          </div>
+
+                          <div className="mt-3 h-[220px] overflow-y-auto border border-gray-200 rounded bg-white">
+                            <div className="p-3 text-xs text-gray-500">Templates preview (read-only)</div>
+                            <div className="px-3 pb-3 text-sm text-gray-600">The vehicle was previously from another Province</div>
+                            <div className="px-3 pb-3 text-sm text-gray-600">Customer Acknowledgment Clause</div>
+                          </div>
+                        </div>
+
+                        <div className="col-span-7">
+                          <div className="border border-gray-200 rounded overflow-hidden">
+                            <div className="h-10 border-b border-gray-200 flex items-center gap-1 px-2 bg-white">
+                              <button type="button" onClick={() => execInline('bold')} className="h-8 px-2 border border-gray-200 rounded text-xs">B</button>
+                              <button type="button" onClick={() => execInline('italic')} className="h-8 px-2 border border-gray-200 rounded text-xs italic">I</button>
+                              <button type="button" onClick={() => execInline('underline')} className="h-8 px-2 border border-gray-200 rounded text-xs underline">U</button>
+                              <button type="button" onClick={() => execInline('strikeThrough')} className="h-8 px-2 border border-gray-200 rounded text-xs line-through">S</button>
+                              <button type="button" onClick={() => execInline('insertUnorderedList')} className="h-8 px-2 border border-gray-200 rounded text-xs">•</button>
+                              <button type="button" onClick={() => execInline('insertOrderedList')} className="h-8 px-2 border border-gray-200 rounded text-xs">1.</button>
+                            </div>
+                            <div
+                              ref={inlineEditorRef}
+                              contentEditable
+                              suppressContentEditableWarning
+                              className="w-full h-[220px] p-3 text-sm bg-[#f7fbff] overflow-auto"
+                              onInput={(e) => {
+                                const html = (e.currentTarget as HTMLDivElement).innerHTML
+                                setSavedTrades((prev) => prev.map((it, i) => (i === idx ? { ...it, disclosuresEditor: html } : it)))
+                              }}
+                              dangerouslySetInnerHTML={{ __html: t.disclosuresEditor || '' }}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
-        <div className="mt-6 flex items-center justify-end">
+        <div className="mt-6 flex flex-col items-end gap-2">
+          {saveError ? (
+            <div className="px-4 py-2 bg-red-50 border border-red-200 rounded text-sm text-red-700 self-stretch text-right">{saveError}</div>
+          ) : null}
           <button
             type="button"
-            className="h-10 px-6 rounded bg-[#118df0] text-white text-sm font-semibold hover:bg-[#0d6ebd]"
+            onClick={handleSaveAllTrades}
+            disabled={savingTrades || savedTrades.length === 0}
+            className="h-10 px-6 rounded bg-[#118df0] text-white text-sm font-semibold hover:bg-[#0d6ebd] disabled:opacity-60 disabled:cursor-not-allowed"
           >
-            Save
+            {savingTrades ? 'Saving…' : 'Save'}
           </button>
         </div>
       </div>
@@ -777,10 +1291,16 @@ export default function VehiclesTab() {
                         onChange={(e) => setTradeForm((p) => ({ ...p, vin: e.target.value }))}
                         className="w-full h-9 border border-gray-200 rounded px-3 text-sm"
                       />
+                      {tradeDecodeError ? <div className="mt-1 text-xs text-red-600">{tradeDecodeError}</div> : null}
                     </div>
                     <div className="col-span-2 flex items-end">
-                      <button type="button" className="h-9 px-4 rounded bg-[#118df0] text-white text-sm font-semibold hover:bg-[#0d6ebd]">
-                        Decode
+                      <button 
+                        type="button" 
+                        onClick={handleTradeDecode}
+                        disabled={tradeDecodeLoading}
+                        className="h-9 px-4 rounded bg-[#118df0] text-white text-sm font-semibold hover:bg-[#0d6ebd] disabled:opacity-60 disabled:cursor-not-allowed"
+                      >
+                        {tradeDecodeLoading ? 'Decoding...' : 'Decode'}
                       </button>
                     </div>
 
@@ -836,14 +1356,11 @@ export default function VehiclesTab() {
 
                     <div className="col-span-4">
                       <div className="text-xs text-gray-700 mb-1">Trim</div>
-                      <select
+                      <input
                         value={tradeForm.trim}
                         onChange={(e) => setTradeForm((p) => ({ ...p, trim: e.target.value }))}
-                        className="w-full h-9 border border-gray-200 rounded px-3 text-sm bg-white"
-                      >
-                        <option value="" />
-                        <option value="Base">Base</option>
-                      </select>
+                        className="w-full h-9 border border-gray-200 rounded px-3 text-sm"
+                      />
                     </div>
 
                     <div className="col-span-4">
@@ -956,13 +1473,6 @@ export default function VehiclesTab() {
 
                   {tradeDisclosuresDetail ? (
                     <>
-                      <div className="mt-4 flex items-center justify-between">
-                        <div />
-                        <button type="button" className="h-9 px-4 rounded bg-[#118df0] text-white text-sm font-semibold hover:bg-[#0d6ebd]">
-                          Update Disclosures
-                        </button>
-                      </div>
-
                       <div className="mt-3 flex items-center gap-3 text-sm text-gray-700">
                         <div className="font-semibold">Brand Type:</div>
                         {(
@@ -1308,6 +1818,11 @@ export default function VehiclesTab() {
               {tradeStep === 4 ? (
                 <>
                   <div className="text-sm font-semibold text-gray-800">Step 4 - Trade Value</div>
+                  {tradeSubmitError ? (
+                    <div className="mt-3 px-4 py-3 bg-red-50 border border-red-200 rounded text-sm text-red-700">
+                      {tradeSubmitError}
+                    </div>
+                  ) : null}
                   <div className="mt-6 grid grid-cols-4 gap-6">
                     <div>
                       <div className="text-xs text-gray-700 mb-1 flex items-center gap-1">
@@ -1388,7 +1903,7 @@ export default function VehiclesTab() {
               <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={prevTradeStep}
+                  onClick={() => setTradeOpen(false)}
                   className="h-9 px-4 rounded bg-[#3b3b3b] text-white text-sm font-semibold hover:bg-black"
                 >
                   Back
@@ -1396,10 +1911,11 @@ export default function VehiclesTab() {
                 {tradeStep === 4 ? (
                   <button
                     type="button"
-                    onClick={() => setTradeOpen(false)}
-                    className="h-9 px-4 rounded bg-green-600 text-white text-sm font-semibold hover:bg-green-700"
+                    onClick={handleTradeSubmit}
+                    disabled={tradeSubmitting}
+                    className="h-9 px-4 rounded bg-green-600 text-white text-sm font-semibold hover:bg-green-700 disabled:opacity-60 disabled:cursor-not-allowed"
                   >
-                    Finish
+                    {tradeSubmitting ? 'Submitting...' : 'Finish'}
                   </button>
                 ) : (
                   <button
