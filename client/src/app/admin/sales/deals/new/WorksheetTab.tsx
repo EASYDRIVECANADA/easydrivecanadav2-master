@@ -8,20 +8,23 @@ export default function WorksheetTab({
   dealType = 'Cash',
   dealDate,
   onSaved,
+  initialData,
 }: {
   dealId?: string
   dealMode?: 'RTL' | 'WHL'
   dealType?: 'Cash' | 'Finance'
   dealDate?: string
   onSaved?: () => void
+  initialData?: any
 }): JSX.Element {
+  const d = initialData || {}
   const [worksheetSaving, setWorksheetSaving] = useState(false)
   const [worksheetSaveError, setWorksheetSaveError] = useState<string | null>(null)
   const [showSavedModal, setShowSavedModal] = useState(false)
-  const [purchasePrice, setPurchasePrice] = useState('0')
-  const [discount, setDiscount] = useState('0')
+  const [purchasePrice, setPurchasePrice] = useState(d.purchase_price ?? '0')
+  const [discount, setDiscount] = useState(d.discount ?? '0')
   type TaxCode = 'HST' | 'RST' | 'GST' | 'PST' | 'EXEMPT' | 'QST'
-  const [taxCode, setTaxCode] = useState<TaxCode>('HST')
+  const [taxCode, setTaxCode] = useState<TaxCode>((d.tax_code as TaxCode) || 'HST')
   const [taxMenuOpen, setTaxMenuOpen] = useState(false)
   const taxRate = useMemo(() => {
     switch (taxCode) {
@@ -40,25 +43,28 @@ export default function WorksheetTab({
         return 0
     }
   }, [taxCode])
-  const [taxOverride, setTaxOverride] = useState(false)
-  const [taxManual, setTaxManual] = useState('0')
-  const [licenseFee, setLicenseFee] = useState('')
-  const [tradeValue, setTradeValue] = useState('0')
-  const [actualCashValue, setActualCashValue] = useState('0')
-  const [lienPayout, setLienPayout] = useState('0')
-  const [newPlates, setNewPlates] = useState(false)
-  const [renewalOnly, setRenewalOnly] = useState(false)
-  const [financeOverride, setFinanceOverride] = useState(false)
-  const [financeRate, setFinanceRate] = useState('') // annual %
-  const [financeTermMonths, setFinanceTermMonths] = useState('')
-  const [paymentType, setPaymentType] = useState<'Weekly' | 'Bi-Weekly' | 'Semi-Monthly' | 'Monthly'>('Bi-Weekly')
-  const [firstPaymentDate, setFirstPaymentDate] = useState('')
-  const [lienHolder, setLienHolder] = useState('')
-  const [financeRateType, setFinanceRateType] = useState<'VAR' | 'FXD'>('VAR')
-  const [financeCommission, setFinanceCommission] = useState('')
+  const [taxOverride, setTaxOverride] = useState(d.tax_override === true || d.tax_override === 'true')
+  const [taxManual, setTaxManual] = useState(d.tax_manual ?? '0')
+  const [licenseFee, setLicenseFee] = useState(d.license_fee ?? '')
+  const [tradeValue, setTradeValue] = useState(d.trade_value ?? '0')
+  const [actualCashValue, setActualCashValue] = useState(d.actual_cash_value ?? '0')
+  const [lienPayout, setLienPayout] = useState(d.lien_payout ?? '0')
+  const [newPlates, setNewPlates] = useState(d.new_plates === true || d.new_plates === 'true')
+  const [renewalOnly, setRenewalOnly] = useState(d.renewal_only === true || d.renewal_only === 'true')
+  const [financeOverride, setFinanceOverride] = useState(d.finance_override === true || d.finance_override === 'true')
+  const [financeRate, setFinanceRate] = useState(d.finance_rate ?? '') // annual %
+  const [financeTermMonths, setFinanceTermMonths] = useState(d.finance_term_months ?? '')
+  const [paymentType, setPaymentType] = useState<'Weekly' | 'Bi-Weekly' | 'Semi-Monthly' | 'Monthly'>(d.payment_type || 'Bi-Weekly')
+  const [firstPaymentDate, setFirstPaymentDate] = useState(d.first_payment_date ?? '')
+  const [lienHolder, setLienHolder] = useState(d.lien_holder ?? '')
+  const [financeRateType, setFinanceRateType] = useState<'VAR' | 'FXD'>(d.finance_rate_type || 'VAR')
+  const [financeCommission, setFinanceCommission] = useState(d.finance_commission ?? '')
   const [commissionOpen, setCommissionOpen] = useState(false)
   const [feeSearch, setFeeSearch] = useState('')
-  const [fees, setFees] = useState<Array<{ id: string; name: string; desc?: string; amount: number }>>([])
+  const [fees, setFees] = useState<Array<{ id: string; name: string; desc?: string; amount: number }>>(() => {
+    if (Array.isArray(d.fees)) return d.fees.map((f: any) => ({ id: f.id || `fee_${Date.now()}`, name: f.name || '', desc: f.desc || '', amount: Number(f.amount) || 0 }))
+    return []
+  })
   const [feeDraft, setFeeDraft] = useState<{ name: string; desc: string; amount: string } | null>(null)
   const [editingFeeId, setEditingFeeId] = useState<string | null>(null)
   const [editingDraft, setEditingDraft] = useState<{ name: string; desc: string; amount: string } | null>(null)
@@ -80,12 +86,18 @@ export default function WorksheetTab({
     // exempt or default
     return 0
   }
-  const [payments, setPayments] = useState<Array<{ id: string; amount: number; type: string; desc?: string; category: string }>>([])
+  const [payments, setPayments] = useState<Array<{ id: string; amount: number; type: string; desc?: string; category: string }>>(() => {
+    if (Array.isArray(d.payments)) return d.payments.map((p: any) => ({ id: p.id || `pay_${Date.now()}`, amount: Number(p.amount) || 0, type: p.type || 'Cash', desc: p.desc || '', category: p.category || 'Deposit' }))
+    return []
+  })
   const [paymentDrafts, setPaymentDrafts] = useState<Array<{ id: string; amount: string; type: string; desc: string; category: string }>>([])
   const [editingPaymentId, setEditingPaymentId] = useState<string | null>(null)
   const [editingPaymentDraft, setEditingPaymentDraft] = useState<{ amount: string; type: string; desc: string } | null>(null)
   const [accessorySearch, setAccessorySearch] = useState('')
-  const [accessories, setAccessories] = useState<Array<{ id: string; name: string; desc?: string; price: number }>>([])
+  const [accessories, setAccessories] = useState<Array<{ id: string; name: string; desc?: string; price: number }>>(() => {
+    if (Array.isArray(d.accessories)) return d.accessories.map((a: any) => ({ id: a.id || `acc_${Date.now()}`, name: a.name || '', desc: a.desc || '', price: Number(a.price) || 0 }))
+    return []
+  })
   const [accessoryDraft, setAccessoryDraft] = useState<{ name: string; desc: string; price: string } | null>(null)
   const [editingAccessoryId, setEditingAccessoryId] = useState<string | null>(null)
   const [editingAccessoryDraft, setEditingAccessoryDraft] = useState<{ name: string; desc: string; price: string } | null>(null)
@@ -99,7 +111,10 @@ export default function WorksheetTab({
   const [accTaxValues, setAccTaxValues] = useState<Record<string, string>>({})
   const accDetailsItem = useMemo(() => accessories.find((x) => x.id === accDetailsForId) || null, [accessories, accDetailsForId])
   const [warrantySearch, setWarrantySearch] = useState('')
-  const [warranties, setWarranties] = useState<Array<{ id: string; name: string; desc?: string; amount: number }>>([])
+  const [warranties, setWarranties] = useState<Array<{ id: string; name: string; desc?: string; amount: number }>>(() => {
+    if (Array.isArray(d.warranties)) return d.warranties.map((w: any) => ({ id: w.id || `war_${Date.now()}`, name: w.name || '', desc: w.desc || '', amount: Number(w.amount) || 0 }))
+    return []
+  })
   const [warrantyDraft, setWarrantyDraft] = useState<{ name: string; desc: string; amount: string } | null>(null)
   const [editingWarrantyId, setEditingWarrantyId] = useState<string | null>(null)
   const [editingWarrantyDraft, setEditingWarrantyDraft] = useState<{ name: string; desc: string; amount: string } | null>(null)
@@ -115,7 +130,10 @@ export default function WorksheetTab({
   const [warTaxValues, setWarTaxValues] = useState<Record<string, string>>({})
   const warDetailsItem = useMemo(() => warranties.find((x) => x.id === warDetailsForId) || null, [warranties, warDetailsForId])
   const [insuranceSearch, setInsuranceSearch] = useState('')
-  const [insurances, setInsurances] = useState<Array<{ id: string; name: string; desc?: string; amount: number }>>([])
+  const [insurances, setInsurances] = useState<Array<{ id: string; name: string; desc?: string; amount: number }>>(() => {
+    if (Array.isArray(d.insurances)) return d.insurances.map((i: any) => ({ id: i.id || `ins_${Date.now()}`, name: i.name || '', desc: i.desc || '', amount: Number(i.amount) || 0 }))
+    return []
+  })
   const [insuranceDraft, setInsuranceDraft] = useState<{ name: string; desc: string; amount: string } | null>(null)
   const [editingInsuranceId, setEditingInsuranceId] = useState<string | null>(null)
   const [editingInsuranceDraft, setEditingInsuranceDraft] = useState<{ name: string; desc: string; amount: string } | null>(null)

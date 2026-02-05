@@ -22,7 +22,7 @@ type VehicleRow = {
   created_at?: string | null
 }
 
-export default function VehiclesTab({ dealId, onSaved }: { dealId?: string; onSaved?: () => void }) {
+export default function VehiclesTab({ dealId, onSaved, initialData }: { dealId?: string; onSaved?: () => void; initialData?: any }) {
   const [query, setQuery] = useState('')
   const [open, setOpen] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -74,7 +74,61 @@ export default function VehiclesTab({ dealId, onSaved }: { dealId?: string; onSa
   const [tradeDisclosuresEditor, setTradeDisclosuresEditor] = useState('')
 
   // Saved trades created from the modal; displayed on the page after webhook confirms 'Done'.
-  const [savedTrades, setSavedTrades] = useState<any[]>([])
+  const [savedTrades, setSavedTrades] = useState<any[]>(() => {
+    if (Array.isArray(initialData) && initialData.length > 0) {
+      return initialData.map((v: any) => ({
+        vin: v.vin || '',
+        year: v.year || '',
+        make: v.make || '',
+        model: v.model || '',
+        odometer: v.odometer || '',
+        odometerUnit: v.odometer_unit || 'kms',
+        trim: v.trim || '',
+        colour: v.colour || '',
+        disclosures: Array.isArray(v.disclosures) ? v.disclosures : Array.from({ length: 14 }, () => false),
+        disclosuresNotes: v.disclosures_notes || '',
+        disclosuresEditor: v.disclosures_editor || '',
+        disclosuresSearch: v.disclosures_search || '',
+        disclosuresDetailOpen: v.disclosures_detail_open || false,
+        brandType: v.brand_type || 'na',
+        isCompany: v.is_company || false,
+        ownerName: v.owner_name || '',
+        ownerCompany: v.owner_company || '',
+        ownerStreet: v.owner_street || '',
+        ownerSuite: v.owner_suite || '',
+        ownerCity: v.owner_city || '',
+        ownerProvince: v.owner_province || 'ON',
+        ownerPostal: v.owner_postal || '',
+        ownerCountry: v.owner_country || 'CA',
+        ownerPhone: v.owner_phone || '',
+        ownerMobile: v.owner_mobile || '',
+        ownerEmail: v.owner_email || '',
+        isRin: v.is_rin || false,
+        ownerDl: v.owner_dl || '',
+        ownerPlate: v.owner_plate || '',
+        tradeValue: v.trade_value ?? '0.00',
+        actualCashValue: v.actual_cash_value ?? '0.00',
+        lienAmount: v.lien_amount ?? '0.00',
+        tradeEquity: v.trade_equity ?? '0.00',
+        rin: v.rin || '',
+        selectedVehicle: v.selected_id ? {
+          id: v.selected_id,
+          year: v.selected_year,
+          make: v.selected_make,
+          model: v.selected_model,
+          trim: v.selected_trim,
+          vin: v.selected_vin,
+          exterior_color: v.selected_exterior_color,
+          interior_color: v.selected_interior_color,
+          odometer: v.selected_odometer,
+          odometer_unit: v.selected_odometer_unit,
+          status: v.selected_status,
+          stock_number: v.selected_stock_number,
+        } : null,
+      }))
+    }
+    return []
+  })
   const [openSavedDisclosureIdx, setOpenSavedDisclosureIdx] = useState<number | null>(null)
   const [showSavedModal, setShowSavedModal] = useState(false)
   const inlineEditorRef = useRef<HTMLDivElement | null>(null)

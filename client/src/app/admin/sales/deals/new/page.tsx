@@ -1,6 +1,7 @@
 'use client'
 
-import { useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
+import { useSearchParams } from 'next/navigation'
 
 import CustomersTabNew from './CustomersTabNew'
 import DeliveryTab from './DeliveryTab'
@@ -11,8 +12,13 @@ import WorksheetTab from './WorksheetTab'
 type DealTab = 'customers' | 'vehicles' | 'worksheet' | 'disclosures' | 'delivery'
 
 export default function SalesNewDealPage() {
+  const searchParams = useSearchParams()
+  const editDealId = searchParams.get('dealId') // present when editing an existing deal
+
   const [activeTab, setActiveTab] = useState<DealTab>('customers')
   const [dealId] = useState(() => {
+    // If editing, reuse the existing dealId from the URL
+    if (typeof window !== 'undefined' && editDealId) return editDealId
     try {
       const key = 'edc_deal_id_counter'
       const raw = typeof window !== 'undefined' ? window.localStorage.getItem(key) : null
@@ -26,6 +32,37 @@ export default function SalesNewDealPage() {
   const [isRetail, setIsRetail] = useState(true)
   const [dealDate, setDealDate] = useState('2026-02-03')
   const [dealType, setDealType] = useState<'Cash' | 'Finance'>('Cash')
+
+  // Prefill data fetched from the database when editing
+  const [prefill, setPrefill] = useState<any>(null)
+  const [prefillLoading, setPrefillLoading] = useState(false)
+
+  const fetchPrefill = useCallback(async () => {
+    if (!editDealId) return
+    try {
+      setPrefillLoading(true)
+      const res = await fetch(`/api/deals/${encodeURIComponent(editDealId)}`)
+      if (!res.ok) throw new Error(`Failed to fetch deal (${res.status})`)
+      const data = await res.json()
+      if (data.error) throw new Error(data.error)
+      setPrefill(data)
+      // Set top-level fields from customer data
+      const c = data.customer
+      if (c) {
+        if (c.dealdate) setDealDate(c.dealdate)
+        if (c.dealtype) setDealType(c.dealtype === 'Finance' ? 'Finance' : 'Cash')
+        if (c.dealmode) setIsRetail(c.dealmode === 'RTL')
+      }
+    } catch (e) {
+      console.error('[Prefill] Error:', e)
+    } finally {
+      setPrefillLoading(false)
+    }
+  }, [editDealId])
+
+  useEffect(() => {
+    fetchPrefill()
+  }, [fetchPrefill])
 
   return (
     <div className="w-full min-h-[calc(100vh-64px)] bg-gradient-to-b from-[#f6f7f9] to-[#e9eaee]">
@@ -110,28 +147,54 @@ export default function SalesNewDealPage() {
         </div>
 
         <div className="mt-4">
-          {activeTab === 'customers' && (
-            <CustomersTabNew
-              hideAddButton={!isRetail}
-              dealId={dealId}
-              dealDate={dealDate}
-              dealType={dealType}
-              dealMode={isRetail ? 'RTL' : 'WHL'}
-              onSaved={() => setActiveTab('vehicles')}
-            />
+          {prefillLoading ? (
+            <div className="bg-white rounded-xl shadow p-8 text-center text-gray-500 text-sm">Loading deal data...</div>
+          ) : (
+            <>
+              {activeTab === 'customers' && (
+                <CustomersTabNew
+                  hideAddButton={!isRetail}
+                  dealId={dealId}
+                  dealDate={dealDate}
+                  dealType={dealType}
+                  dealMode={isRetail ? 'RTL' : 'WHL'}
+                  onSaved={() => setActiveTab('vehicles')}
+                  initialData={prefill?.customer ?? null}
+                />
+              )}
+              {activeTab === 'vehicles' && (
+                <VehiclesTab
+                  dealId={dealId}
+                  onSaved={() => setActiveTab('worksheet')}
+                  initialData={prefill?.vehicles ?? null}
+                />
+              )}
+              {activeTab === 'worksheet' && (
+                <WorksheetTab
+                  dealId={dealId}
+                  dealMode={isRetail ? 'RTL' : 'WHL'}
+                  dealType={dealType}
+                  dealDate={dealDate}
+                  onSaved={() => setActiveTab('disclosures')}
+                  initialData={prefill?.worksheet ?? null}
+                />
+              )}
+              {activeTab === 'disclosures' && (
+                <DisclosuresTab
+                  dealId={dealId}
+                  onSaved={() => setActiveTab('delivery')}
+                  initialData={prefill?.disclosures ?? null}
+                />
+              )}
+              {activeTab === 'delivery' && (
+                <DeliveryTab
+                  dealId={dealId}
+                  dealMode={isRetail ? 'RTL' : 'WHL'}
+                  initialData={prefill?.delivery ?? null}
+                />
+              )}
+            </>
           )}
-          {activeTab === 'vehicles' && <VehiclesTab dealId={dealId} onSaved={() => setActiveTab('worksheet')} />}
-          {activeTab === 'worksheet' && (
-            <WorksheetTab
-              dealId={dealId}
-              dealMode={isRetail ? 'RTL' : 'WHL'}
-              dealType={dealType}
-              dealDate={dealDate}
-              onSaved={() => setActiveTab('disclosures')}
-            />
-          )}
-          {activeTab === 'disclosures' && <DisclosuresTab dealId={dealId} onSaved={() => setActiveTab('delivery')} />}
-          {activeTab === 'delivery' && <DeliveryTab dealId={dealId} dealMode={isRetail ? 'RTL' : 'WHL'} />}
         </div>
       </div>
     </div>

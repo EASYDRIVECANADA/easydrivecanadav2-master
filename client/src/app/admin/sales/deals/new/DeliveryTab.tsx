@@ -4,23 +4,27 @@ import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { useRouter } from 'next/navigation'
 
-export default function DeliveryTab({ dealMode = 'RTL', dealId }: { dealMode?: 'RTL' | 'WHL'; dealId?: string }) {
+export default function DeliveryTab({ dealMode = 'RTL', dealId, initialData }: { dealMode?: 'RTL' | 'WHL'; dealId?: string; initialData?: any }) {
+  const dd = initialData || {}
   const router = useRouter()
-  const [deliveryDate, setDeliveryDate] = useState('')
-  const [deliveryTime, setDeliveryTime] = useState('')
-  const [exportedOutsideOntario, setExportedOutsideOntario] = useState(false)
-  const [exportedPartyType, setExportedPartyType] = useState<'Dealer' | 'Non-Dealer'>('Non-Dealer')
-  const [deliveryDetails, setDeliveryDetails] = useState('')
-  const [otherNotes, setOtherNotes] = useState('')
+  const [deliveryDate, setDeliveryDate] = useState(dd.delivery_date ?? '')
+  const [deliveryTime, setDeliveryTime] = useState(dd.delivery_time ?? '')
+  const [exportedOutsideOntario, setExportedOutsideOntario] = useState(dd.export_outside_ontario === true)
+  const [exportedPartyType, setExportedPartyType] = useState<'Dealer' | 'Non-Dealer'>(dd.exported_party_type || 'Non-Dealer')
+  const [deliveryDetails, setDeliveryDetails] = useState(dd.delivery_details ?? '')
+  const [otherNotes, setOtherNotes] = useState(dd.other_notes ?? '')
 
   const [staffNames, setStaffNames] = useState<string[]>([])
-  const [approvedBy, setApprovedBy] = useState('')
-  const [salesperson, setSalesperson] = useState('')
+  const [approvedBy, setApprovedBy] = useState(dd.approved_by ?? '')
+  const [salesperson, setSalesperson] = useState(dd.salesperson ?? '')
 
   const [taskName, setTaskName] = useState('')
   const [taskDescription, setTaskDescription] = useState('')
   const [taskDueBy, setTaskDueBy] = useState('')
-  const [tasks, setTasks] = useState<Array<{ name: string | null; description: string | null; dueBy: string | null }>>([])
+  const [tasks, setTasks] = useState<Array<{ name: string | null; description: string | null; dueBy: string | null }>>(() => {
+    if (Array.isArray(dd.tasks)) return dd.tasks.map((t: any) => ({ name: t.name ?? null, description: t.description ?? null, dueBy: t.dueBy ?? t.due_by ?? null }))
+    return []
+  })
 
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
@@ -43,8 +47,8 @@ export default function DeliveryTab({ dealMode = 'RTL', dealId }: { dealMode?: '
 
         setStaffNames(names)
         if (names.length > 0) {
-          setApprovedBy((prev) => prev || names[0])
-          setSalesperson((prev) => prev || names[0])
+          setApprovedBy((prev: string) => prev || names[0])
+          setSalesperson((prev: string) => prev || names[0])
         }
       } catch (e) {
         console.error('Failed to load staff names:', e)

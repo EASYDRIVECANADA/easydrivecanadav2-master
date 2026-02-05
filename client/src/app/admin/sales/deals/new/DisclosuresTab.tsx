@@ -2,11 +2,11 @@
 
 import { useEffect, useRef, useState } from 'react'
 
-export default function DisclosuresTab({ dealId, onSaved }: { dealId?: string; onSaved?: () => void }): JSX.Element {
+export default function DisclosuresTab({ dealId, onSaved, initialData }: { dealId?: string; onSaved?: () => void; initialData?: any }): JSX.Element {
   const editorRef = useRef<HTMLDivElement | null>(null)
   const colorRef = useRef<HTMLInputElement | null>(null)
-  const [html, setHtml] = useState('')
-  const [conditions, setConditions] = useState('')
+  const [html, setHtml] = useState(initialData?.disclosures_html ?? '')
+  const [conditions, setConditions] = useState(initialData?.conditions ?? '')
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [showSavedModal, setShowSavedModal] = useState(false)
@@ -37,6 +37,12 @@ export default function DisclosuresTab({ dealId, onSaved }: { dealId?: string; o
       })
     } catch {}
   }
+
+  useEffect(() => {
+    if (initialData?.disclosures_html && editorRef.current) {
+      editorRef.current.innerHTML = initialData.disclosures_html
+    }
+  }, [initialData])
 
   useEffect(() => {
     const onSel = () => refreshToolbarState()

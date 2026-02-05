@@ -1,43 +1,107 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 
 type DealRow = {
-  id: string
+  dealId: string
   primaryCustomer: string
   vehicle: string
-  type: 'Cash' | 'Finance' | 'Lease'
-  state: 'Open' | 'Closed' | 'Pending'
+  type: string
+  state: string
   dealDate: string
   primarySalesperson: string
+  other: string
+  reference: string
+  // Full raw data from all tables for future prefill / edit
+  customer: any
+  vehicles: any[]
+  worksheet: any
+  disclosures: any
+  delivery: any
 }
 
 export default function DealsPage() {
   const router = useRouter()
   const [query, setQuery] = useState('')
-  const [state, setState] = useState<'ALL' | DealRow['state']>('ALL')
+  const [stateFilter, setStateFilter] = useState('ALL')
+  const [showClosed, setShowClosed] = useState(true)
+  const [pageSize, setPageSize] = useState(5)
+  const [page, setPage] = useState(1)
+  const [rows, setRows] = useState<DealRow[]>([])
+  const [loading, setLoading] = useState(true)
+  const [fetchError, setFetchError] = useState<string | null>(null)
 
-  const handleCreateNewDeal = () => {
-    router.push('/admin/sales/deals/new')
-  }
+  const fetchDeals = useCallback(async () => {
+    try {
+      setLoading(true)
+      setFetchError(null)
+      const res = await fetch('/api/deals')
+      if (!res.ok) throw new Error(`Failed to fetch deals (${res.status})`)
+      const json = await res.json()
+      if (json.error) throw new Error(json.error)
+      const deals: DealRow[] = (json.deals || []).map((d: any) => ({
+        dealId: d.dealId || '',
+        primaryCustomer: d.primaryCustomer || '',
+        vehicle: d.vehicle || '',
+        type: d.type || '',
+        state: d.state || '',
+        dealDate: d.dealDate || '',
+        primarySalesperson: d.primarySalesperson || '',
+        other: '',
+        reference: '',
+        customer: d.customer || null,
+        vehicles: d.vehicles || [],
+        worksheet: d.worksheet || null,
+        disclosures: d.disclosures || null,
+        delivery: d.delivery || null,
+      }))
+      setRows(deals)
+    } catch (e: any) {
+      setFetchError(e?.message || 'Failed to load deals')
+    } finally {
+      setLoading(false)
+    }
+  }, [])
 
-  const rows = useMemo<DealRow[]>(() => [], [])
+  useEffect(() => {
+    fetchDeals()
+  }, [fetchDeals])
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
     return rows.filter((r) => {
-      if (state !== 'ALL' && r.state !== state) return false
+      if (!showClosed && r.state.toLowerCase() === 'closed') return false
+      if (stateFilter !== 'ALL' && r.state !== stateFilter) return false
       if (!q) return true
       return (
-        r.id.toLowerCase().includes(q) ||
+        r.dealId.toLowerCase().includes(q) ||
         r.primaryCustomer.toLowerCase().includes(q) ||
         r.vehicle.toLowerCase().includes(q) ||
         r.type.toLowerCase().includes(q) ||
         r.primarySalesperson.toLowerCase().includes(q)
       )
     })
-  }, [query, rows, state])
+  }, [query, rows, stateFilter, showClosed])
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize))
+  const safePage = Math.min(page, totalPages)
+  const paged = filtered.slice((safePage - 1) * pageSize, safePage * pageSize)
+
+  const handleCreateNewDeal = () => {
+    router.push('/admin/sales/deals/new')
+  }
+
+  const formatDate = (d: string) => {
+    if (!d) return ''
+    try {
+      const dt = new Date(d)
+      if (isNaN(dt.getTime())) return d
+      return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+    } catch {
+      return d
+    }
+  }
 
   return (
     <div className="w-full">
@@ -69,14 +133,19 @@ export default function DealsPage() {
           <div className="flex flex-col lg:flex-row lg:items-center gap-3">
             <div className="flex items-center gap-2">
               <label className="text-sm text-gray-600">Show Closed</label>
-              <input type="checkbox" className="h-4 w-4" checked={state !== 'Closed'} readOnly />
+              <input
+                type="checkbox"
+                className="h-4 w-4"
+                checked={showClosed}
+                onChange={(e) => { setShowClosed(e.target.checked); setPage(1) }}
+              />
             </div>
 
             <div className="flex-1">
               <div className="relative">
                 <input
                   value={query}
-                  onChange={(e) => setQuery(e.target.value)}
+                  onChange={(e) => { setQuery(e.target.value); setPage(1) }}
                   placeholder="Search deals..."
                   className="w-full border border-gray-200 rounded-lg px-10 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
                 />
@@ -93,8 +162,8 @@ export default function DealsPage() {
 
             <div className="w-full lg:w-48">
               <select
-                value={state}
-                onChange={(e) => setState(e.target.value as any)}
+                value={stateFilter}
+                onChange={(e) => { setStateFilter(e.target.value); setPage(1) }}
                 className="w-full border border-gray-200 rounded-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
               >
                 <option value="ALL">All States</option>
@@ -105,7 +174,11 @@ export default function DealsPage() {
             </div>
 
             <div className="w-full lg:w-28">
-              <select className="w-full border border-gray-200 rounded-lg px-3 py-2" defaultValue="5">
+              <select
+                className="w-full border border-gray-200 rounded-lg px-3 py-2"
+                value={pageSize}
+                onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1) }}
+              >
                 <option value="5">5</option>
                 <option value="10">10</option>
                 <option value="25">25</option>
@@ -114,78 +187,106 @@ export default function DealsPage() {
           </div>
         </div>
 
+        {fetchError ? (
+          <div className="mt-4 rounded border border-red-200 bg-red-50 text-red-700 px-4 py-3 text-sm">{fetchError}</div>
+        ) : null}
+
         <div className="bg-white rounded-xl shadow mt-4 overflow-hidden">
           <div className="overflow-x-auto">
             <table className="min-w-full">
               <thead className="bg-gray-50">
                 <tr>
-                  <th className="px-3 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider w-12"></th>
-                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">ID</th>
-                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Primary Customer</th>
-                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Vehicle</th>
-                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Type</th>
-                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">State</th>
-                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Deal Date</th>
-                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Primary Salesperson</th>
+                  <th className="px-2 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider w-10"></th>
+                  <th className="px-2 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider w-10"></th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">ID</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Primary Customer</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Vehicle</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Type</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">State</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Deal Date</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Primary Salesperson</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Other</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Reference</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {filtered.map((r) => (
-                  <tr key={r.id} className="hover:bg-gray-50">
-                    <td className="px-3 py-3">
-                      <button
-                        type="button"
-                        onClick={() => router.push('/admin/sales/deals/new')}
-                        className="w-9 h-9 rounded-lg bg-gray-100 hover:bg-gray-200 flex items-center justify-center transition-colors"
-                        title="Edit deal"
-                        aria-label="Edit deal"
-                      >
-                        <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="M11 5h2m-1 0v14m8-7H4"
-                          />
-                        </svg>
-                      </button>
-                    </td>
-                    <td className="px-6 py-3 text-sm font-medium text-gray-900 whitespace-nowrap">{r.id}</td>
-                    <td className="px-6 py-3 text-sm text-gray-700 whitespace-nowrap">{r.primaryCustomer}</td>
-                    <td className="px-6 py-3 text-sm text-[#118df0] min-w-[420px]">{r.vehicle}</td>
-                    <td className="px-6 py-3 text-sm text-gray-700 whitespace-nowrap">{r.type}</td>
-                    <td className="px-6 py-3 text-sm whitespace-nowrap">
-                      <span
-                        className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold ${
-                          r.state === 'Open'
-                            ? 'bg-blue-100 text-blue-700'
-                            : r.state === 'Pending'
-                              ? 'bg-amber-100 text-amber-700'
-                              : 'bg-slate-200 text-slate-700'
-                        }`}
-                      >
-                        {r.state}
-                      </span>
-                    </td>
-                    <td className="px-6 py-3 text-sm text-gray-700 whitespace-nowrap">{r.dealDate}</td>
-                    <td className="px-6 py-3 text-sm text-gray-700 whitespace-nowrap">{r.primarySalesperson}</td>
-                  </tr>
-                ))}
-
-                {filtered.length === 0 ? (
+                {loading ? (
                   <tr>
-                    <td className="px-6 py-10 text-center text-sm text-gray-500" colSpan={8}>
+                    <td className="px-6 py-10 text-center text-sm text-gray-500" colSpan={11}>
+                      Loading deals...
+                    </td>
+                  </tr>
+                ) : paged.length === 0 ? (
+                  <tr>
+                    <td className="px-6 py-10 text-center text-sm text-gray-500" colSpan={11}>
                       No results.
                     </td>
                   </tr>
-                ) : null}
+                ) : (
+                  paged.map((r, idx) => (
+                    <tr key={r.dealId || idx} className="hover:bg-gray-50">
+                      <td className="px-2 py-3">
+                        <button
+                          type="button"
+                          onClick={() => router.push(`/admin/sales/deals/new?dealId=${encodeURIComponent(r.dealId)}`)}
+                          className="w-8 h-8 rounded bg-gray-100 hover:bg-gray-200 flex items-center justify-center transition-colors"
+                          title="Edit deal"
+                          aria-label="Edit deal"
+                        >
+                          <svg className="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536M9 13l6.586-6.586a2 2 0 112.828 2.828L11.828 15.828a2 2 0 01-1.414.586H8v-2.414a2 2 0 01.586-1.414z" />
+                          </svg>
+                        </button>
+                      </td>
+                      <td className="px-2 py-3">
+                        <input type="checkbox" className="h-4 w-4" />
+                      </td>
+                      <td className="px-4 py-3 text-sm font-medium text-gray-900 whitespace-nowrap">{r.dealId}</td>
+                      <td className="px-4 py-3 text-sm text-gray-700 whitespace-nowrap">{r.primaryCustomer}</td>
+                      <td className="px-4 py-3 text-sm text-gray-700 min-w-[360px]">{r.vehicle}</td>
+                      <td className="px-4 py-3 text-sm text-gray-700 whitespace-nowrap">{r.type}</td>
+                      <td className="px-4 py-3 text-sm whitespace-nowrap">{r.state}</td>
+                      <td className="px-4 py-3 text-sm text-gray-700 whitespace-nowrap">{formatDate(r.dealDate)}</td>
+                      <td className="px-4 py-3 text-sm text-gray-700 whitespace-nowrap">{r.primarySalesperson}</td>
+                      <td className="px-4 py-3 text-sm text-gray-700 whitespace-nowrap">{r.other}</td>
+                      <td className="px-4 py-3 text-sm text-gray-700 whitespace-nowrap">{r.reference}</td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
 
           <div className="flex items-center justify-between px-6 py-4 border-t border-gray-100">
-            <div className="text-sm text-gray-500">Previous 1 Next</div>
-            <div className="text-sm text-gray-500">Page 1</div>
+            <div className="flex items-center gap-2 text-sm text-gray-600">
+              <button
+                type="button"
+                disabled={safePage <= 1}
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                className="px-2 py-1 rounded hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                Previous
+              </button>
+              {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
+                <button
+                  key={p}
+                  type="button"
+                  onClick={() => setPage(p)}
+                  className={`w-8 h-8 rounded text-sm font-semibold ${p === safePage ? 'bg-[#118df0] text-white' : 'hover:bg-gray-100 text-gray-700'}`}
+                >
+                  {p}
+                </button>
+              ))}
+              <button
+                type="button"
+                disabled={safePage >= totalPages}
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                className="px-2 py-1 rounded hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                Next
+              </button>
+            </div>
+            <div className="text-sm text-gray-500">Page {safePage}</div>
           </div>
         </div>
 

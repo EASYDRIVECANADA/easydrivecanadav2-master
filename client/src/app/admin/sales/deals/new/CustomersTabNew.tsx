@@ -178,6 +178,7 @@ export default function CustomersTabNew({
   dealType,
   dealMode,
   onSaved,
+  initialData,
 }: {
   hideAddButton?: boolean
   dealId?: string
@@ -185,6 +186,7 @@ export default function CustomersTabNew({
   dealType?: string
   dealMode?: 'RTL' | 'WHL'
   onSaved?: () => void
+  initialData?: any
 }) {
   const getCustomerTabLabel = (f: DealCustomerForm) => {
     const name = [f.firstName, f.lastName].filter(Boolean).join(' ').trim()
@@ -193,7 +195,45 @@ export default function CustomersTabNew({
 
   const [saving, setSaving] = useState(false)
   const [showSavedModal, setShowSavedModal] = useState(false)
-  const [forms, setForms] = useState<DealCustomerForm[]>([getDefaultForm()])
+  const [forms, setForms] = useState<DealCustomerForm[]>(() => {
+    if (initialData) {
+      const c = initialData
+      return [{
+        ...getDefaultForm(),
+        visibility: c.visibility || 'Private',
+        firstName: c.firstname || '',
+        middleName: c.middlename || '',
+        lastName: c.lastname || '',
+        legalName: c.legalname || '',
+        displayName: c.displayname || '',
+        taxNumber: c.taxnumber || '',
+        yearEnd: c.yearend || '',
+        rin: c.rin || '',
+        contactFirstName: c.contactfirstname || '',
+        contactLastName: c.contactlastname || '',
+        driversLicense: c.driverslicense || '',
+        expDate: c.expdate || '',
+        dateOfBirth: c.dateofbirth || '',
+        streetAddress: c.streetaddress || '',
+        suiteApt: c.suiteapt || '',
+        city: c.city || '',
+        province: c.province || 'ON',
+        postalCode: c.postalcode || '',
+        country: c.country || 'CA',
+        phone: c.phone || '',
+        fax: c.fax || '',
+        mobile: c.mobile || '',
+        email: c.email || '',
+        insuranceCompany: c.insurancecompany || '',
+        insuranceAgent: c.insuranceagent || '',
+        insurancePhone: c.insurancephone || '',
+        policyNumber: c.policynumber || '',
+        policyExpiry: c.policyexpiry || '',
+        notes: c.notes || '',
+      }]
+    }
+    return [getDefaultForm()]
+  })
   const [activeCustomer, setActiveCustomer] = useState(0)
   const form = forms[activeCustomer] ?? getDefaultForm()
   const setForm = (
