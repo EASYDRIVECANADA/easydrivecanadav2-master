@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 
 type ProspectRow = {
@@ -173,14 +173,18 @@ function IconSelect({
 
 export default function CustomersTabNew({
   hideAddButton = false,
+  dealId,
   dealDate,
   dealType,
   dealMode,
+  onSaved,
 }: {
   hideAddButton?: boolean
+  dealId?: string
   dealDate?: string
   dealType?: string
   dealMode?: 'RTL' | 'WHL'
+  onSaved?: () => void
 }) {
   const getCustomerTabLabel = (f: DealCustomerForm) => {
     const name = [f.firstName, f.lastName].filter(Boolean).join(' ').trim()
@@ -188,6 +192,7 @@ export default function CustomersTabNew({
   }
 
   const [saving, setSaving] = useState(false)
+  const [showSavedModal, setShowSavedModal] = useState(false)
   const [forms, setForms] = useState<DealCustomerForm[]>([getDefaultForm()])
   const [activeCustomer, setActiveCustomer] = useState(0)
   const form = forms[activeCustomer] ?? getDefaultForm()
@@ -454,6 +459,7 @@ export default function CustomersTabNew({
 
       const merged: Record<string, unknown> = {
         ...normalizedCustomer,
+        dealId: dealId ?? '',
         dealDate: dealDate ?? '',
         dealType: dealType ?? '',
         dealMode: dealMode ?? '',
@@ -470,7 +476,11 @@ export default function CustomersTabNew({
       if (!res.ok) {
         throw new Error(text || `Webhook error (${res.status})`)
       }
-      alert(text || 'Saved')
+      setShowSavedModal(true)
+      window.setTimeout(() => {
+        setShowSavedModal(false)
+        onSaved?.()
+      }, 900)
     } finally {
       setSaving(false)
     }
@@ -478,6 +488,26 @@ export default function CustomersTabNew({
 
   return (
     <div className="w-full">
+      {showSavedModal ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="w-[92vw] max-w-md rounded-lg bg-white shadow-xl border border-gray-100 p-5">
+            <div className="text-base font-semibold text-gray-900">Customer saved</div>
+            <div className="mt-1 text-sm text-gray-600">Customer information has been saved successfully.</div>
+            <div className="mt-4 flex justify-end">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowSavedModal(false)
+                  onSaved?.()
+                }}
+                className="h-9 px-4 rounded bg-[#118df0] text-white text-sm font-semibold hover:bg-[#0d6ebd]"
+              >
+                Continue
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
       <div className="flex items-center flex-wrap gap-10">
         {forms.map((_, idx) => (
           <button

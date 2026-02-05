@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { useRouter } from 'next/navigation'
 
-export default function DeliveryTab({ dealMode = 'RTL' }: { dealMode?: 'RTL' | 'WHL' }) {
+export default function DeliveryTab({ dealMode = 'RTL', dealId }: { dealMode?: 'RTL' | 'WHL'; dealId?: string }) {
   const router = useRouter()
   const [deliveryDate, setDeliveryDate] = useState('')
   const [deliveryTime, setDeliveryTime] = useState('')
@@ -102,6 +102,7 @@ export default function DeliveryTab({ dealMode = 'RTL' }: { dealMode?: 'RTL' | '
       setSaving(true)
 
       const payload = {
+        dealId: toNull(dealId),
         dealMode: toNull(dealMode),
         deliveryDate: toNull(deliveryDate),
         deliveryTime: toNull(deliveryTime),

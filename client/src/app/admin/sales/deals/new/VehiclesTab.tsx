@@ -22,7 +22,7 @@ type VehicleRow = {
   created_at?: string | null
 }
 
-export default function VehiclesTab() {
+export default function VehiclesTab({ dealId, onSaved }: { dealId?: string; onSaved?: () => void }) {
   const [query, setQuery] = useState('')
   const [open, setOpen] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -76,6 +76,7 @@ export default function VehiclesTab() {
   // Saved trades created from the modal; displayed on the page after webhook confirms 'Done'.
   const [savedTrades, setSavedTrades] = useState<any[]>([])
   const [openSavedDisclosureIdx, setOpenSavedDisclosureIdx] = useState<number | null>(null)
+  const [showSavedModal, setShowSavedModal] = useState(false)
   const inlineEditorRef = useRef<HTMLDivElement | null>(null)
   const execInline = (cmd: string, value?: string) => {
     const el = inlineEditorRef.current
@@ -117,6 +118,7 @@ export default function VehiclesTab() {
 
       const vin = (addForm.vin || '').trim()
       const payload = {
+        dealId: dealId || null,
         inStockDate: addForm.inStockDate || null,
         stockNumber: addForm.stockNumber || null,
         vin: vin ? vin.toUpperCase() : null,
@@ -465,6 +467,7 @@ export default function VehiclesTab() {
       setTradeSubmitting(true)
 
       const payload = {
+        dealId: dealId || null,
         vin: tradeForm.vin,
         year: tradeForm.year,
         make: tradeForm.make,
@@ -556,12 +559,14 @@ export default function VehiclesTab() {
   }
 
   const handleSaveAllTrades = async () => {
+    if (savingTrades) return
     try {
       setSaveError(null)
       setSavingTrades(true)
       // Send every saved trade to webhook sequentially so we can stop at first error
       for (const t of savedTrades) {
         const body = {
+          dealId: dealId || null,
           ...t,
           selectedVehicle: t.selectedVehicle ?? makeSelectedVehicleSnapshot() ?? null,
         }
@@ -587,6 +592,11 @@ export default function VehiclesTab() {
         if (!ok) throw new Error('Webhook did not confirm save. Expected "Done"')
       }
       console.log('[Save Trades] All trades saved: Done')
+      setShowSavedModal(true)
+      window.setTimeout(() => {
+        setShowSavedModal(false)
+        onSaved?.()
+      }, 900)
       // Reset UI after successful save of all trades
       setSavedTrades([])
       setOpenSavedDisclosureIdx(null)
@@ -731,6 +741,26 @@ export default function VehiclesTab() {
 
   return (
     <div className="w-full">
+      {showSavedModal ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="w-[92vw] max-w-md rounded-lg bg-white shadow-xl border border-gray-100 p-5">
+            <div className="text-base font-semibold text-gray-900">Vehicle saved</div>
+            <div className="mt-1 text-sm text-gray-600">Vehicle information has been saved successfully.</div>
+            <div className="mt-4 flex justify-end">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowSavedModal(false)
+                  onSaved?.()
+                }}
+                className="h-9 px-4 rounded bg-[#118df0] text-white text-sm font-semibold hover:bg-[#0d6ebd]"
+              >
+                Continue
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
       <div className="w-full">
         <div className="relative">
           <input
@@ -1183,7 +1213,7 @@ export default function VehiclesTab() {
           <button
             type="button"
             onClick={handleSaveAllTrades}
-            disabled={savingTrades || savedTrades.length === 0}
+            disabled={savingTrades}
             className="h-10 px-6 rounded bg-[#118df0] text-white text-sm font-semibold hover:bg-[#0d6ebd] disabled:opacity-60 disabled:cursor-not-allowed"
           >
             {savingTrades ? 'Saving…' : 'Save'}

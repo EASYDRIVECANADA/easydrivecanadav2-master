@@ -22,38 +22,7 @@ export default function DealsPage() {
     router.push('/admin/sales/deals/new')
   }
 
-  const rows = useMemo<DealRow[]>(
-    () => [
-      {
-        id: '402476',
-        primaryCustomer: 'Ben Lefebvre',
-        vehicle: 'Stock#1008 - 2017 Volkswagen Jetta 1.4 TSI Wolfsburg Edition - Manual',
-        type: 'Cash',
-        state: 'Open',
-        dealDate: 'Jan 14, 2026',
-        primarySalesperson: 'Syed Islam',
-      },
-      {
-        id: '401691',
-        primaryCustomer: 'Esmeil Ali Ahmed',
-        vehicle: 'Stock#1003 - 2017 Kia Sorento LX FWD',
-        type: 'Cash',
-        state: 'Pending',
-        dealDate: 'Jan 10, 2026',
-        primarySalesperson: 'Syed Islam',
-      },
-      {
-        id: '401233',
-        primaryCustomer: 'Sarif Bhuiyan',
-        vehicle: 'Stock#1011 - 2010 Subaru Forester 2.5X Limited',
-        type: 'Finance',
-        state: 'Closed',
-        dealDate: 'Jan 6, 2026',
-        primarySalesperson: 'Syed Islam',
-      },
-    ],
-    []
-  )
+  const rows = useMemo<DealRow[]>(() => [], [])
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -76,7 +45,6 @@ export default function DealsPage() {
         <div className="w-full px-4 sm:px-6 lg:px-8 py-4 flex items-start justify-between gap-4">
           <div>
             <h1 className="text-2xl font-bold text-gray-900">Deals</h1>
-            <p className="text-sm text-gray-500">Mock data only (UI design)</p>
           </div>
           <div className="flex items-center gap-3">
             <button

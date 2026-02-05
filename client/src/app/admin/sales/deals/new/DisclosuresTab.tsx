@@ -2,13 +2,14 @@
 
 import { useEffect, useRef, useState } from 'react'
 
-export default function DisclosuresTab() {
+export default function DisclosuresTab({ dealId, onSaved }: { dealId?: string; onSaved?: () => void }): JSX.Element {
   const editorRef = useRef<HTMLDivElement | null>(null)
   const colorRef = useRef<HTMLInputElement | null>(null)
   const [html, setHtml] = useState('')
   const [conditions, setConditions] = useState('')
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
+  const [showSavedModal, setShowSavedModal] = useState(false)
   const [toolbarState, setToolbarState] = useState({
     bold: false,
     italic: false,
@@ -74,6 +75,7 @@ export default function DisclosuresTab() {
       setSaving(true)
 
       const payload = {
+        dealId: dealId || null,
         disclosuresHtml: html || null,
         conditions: conditions || null,
       }
@@ -97,6 +99,12 @@ export default function DisclosuresTab() {
       setHtml('')
       setConditions('')
       if (editorRef.current) editorRef.current.innerHTML = ''
+
+      setShowSavedModal(true)
+      window.setTimeout(() => {
+        setShowSavedModal(false)
+        onSaved?.()
+      }, 900)
     } catch (e: any) {
       setSaveError(e?.message || 'Failed to save disclosures')
     } finally {
@@ -106,6 +114,26 @@ export default function DisclosuresTab() {
 
   return (
     <div className="w-full">
+      {showSavedModal ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="w-[92vw] max-w-md rounded-lg bg-white shadow-xl border border-gray-100 p-5">
+            <div className="text-base font-semibold text-gray-900">Disclosures saved</div>
+            <div className="mt-1 text-sm text-gray-600">Disclosures information has been saved successfully.</div>
+            <div className="mt-4 flex justify-end">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowSavedModal(false)
+                  onSaved?.()
+                }}
+                className="h-9 px-4 rounded bg-[#118df0] text-white text-sm font-semibold hover:bg-[#0d6ebd]"
+              >
+                Continue
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
       <div className="text-xs text-gray-700 mb-2">Disclosures</div>
 
       <div className="border border-gray-200 bg-white shadow-sm">

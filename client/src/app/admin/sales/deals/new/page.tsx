@@ -12,6 +12,17 @@ type DealTab = 'customers' | 'vehicles' | 'worksheet' | 'disclosures' | 'deliver
 
 export default function SalesNewDealPage() {
   const [activeTab, setActiveTab] = useState<DealTab>('customers')
+  const [dealId] = useState(() => {
+    try {
+      const key = 'edc_deal_id_counter'
+      const raw = typeof window !== 'undefined' ? window.localStorage.getItem(key) : null
+      const next = (raw ? parseInt(raw, 10) : 0) + 1
+      if (typeof window !== 'undefined') window.localStorage.setItem(key, String(next))
+      return String(next)
+    } catch {
+      return String(Date.now())
+    }
+  })
   const [isRetail, setIsRetail] = useState(true)
   const [dealDate, setDealDate] = useState('2026-02-03')
   const [dealType, setDealType] = useState<'Cash' | 'Finance'>('Cash')
@@ -102,15 +113,25 @@ export default function SalesNewDealPage() {
           {activeTab === 'customers' && (
             <CustomersTabNew
               hideAddButton={!isRetail}
+              dealId={dealId}
               dealDate={dealDate}
               dealType={dealType}
               dealMode={isRetail ? 'RTL' : 'WHL'}
+              onSaved={() => setActiveTab('vehicles')}
             />
           )}
-          {activeTab === 'vehicles' && <VehiclesTab />}
-          {activeTab === 'worksheet' && <WorksheetTab dealMode={isRetail ? 'RTL' : 'WHL'} dealType={dealType} dealDate={dealDate} />}
-          {activeTab === 'disclosures' && <DisclosuresTab />}
-          {activeTab === 'delivery' && <DeliveryTab dealMode={isRetail ? 'RTL' : 'WHL'} />}
+          {activeTab === 'vehicles' && <VehiclesTab dealId={dealId} onSaved={() => setActiveTab('worksheet')} />}
+          {activeTab === 'worksheet' && (
+            <WorksheetTab
+              dealId={dealId}
+              dealMode={isRetail ? 'RTL' : 'WHL'}
+              dealType={dealType}
+              dealDate={dealDate}
+              onSaved={() => setActiveTab('disclosures')}
+            />
+          )}
+          {activeTab === 'disclosures' && <DisclosuresTab dealId={dealId} onSaved={() => setActiveTab('delivery')} />}
+          {activeTab === 'delivery' && <DeliveryTab dealId={dealId} dealMode={isRetail ? 'RTL' : 'WHL'} />}
         </div>
       </div>
     </div>

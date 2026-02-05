@@ -3,16 +3,21 @@
 import { useEffect, useMemo, useState } from 'react'
 
 export default function WorksheetTab({
+  dealId,
   dealMode = 'RTL',
   dealType = 'Cash',
   dealDate,
+  onSaved,
 }: {
+  dealId?: string
   dealMode?: 'RTL' | 'WHL'
   dealType?: 'Cash' | 'Finance'
   dealDate?: string
-}) {
+  onSaved?: () => void
+}): JSX.Element {
   const [worksheetSaving, setWorksheetSaving] = useState(false)
   const [worksheetSaveError, setWorksheetSaveError] = useState<string | null>(null)
+  const [showSavedModal, setShowSavedModal] = useState(false)
   const [purchasePrice, setPurchasePrice] = useState('0')
   const [discount, setDiscount] = useState('0')
   type TaxCode = 'HST' | 'RST' | 'GST' | 'PST' | 'EXEMPT' | 'QST'
@@ -402,6 +407,7 @@ export default function WorksheetTab({
     }
 
     const payload = {
+      dealId: norm(dealId),
       dealMode: norm(dealMode),
       dealType: norm(dealType),
       dealDate: norm(dealDate),
@@ -592,6 +598,11 @@ export default function WorksheetTab({
       }
 
       resetWorksheet()
+      setShowSavedModal(true)
+      window.setTimeout(() => {
+        setShowSavedModal(false)
+        onSaved?.()
+      }, 900)
     } catch (err) {
       const msg = (err as any)?.message || 'Failed to submit worksheet'
       setWorksheetSaveError(msg)
@@ -1186,14 +1197,31 @@ export default function WorksheetTab({
 
   return (
     <div className="w-full">
+      {showSavedModal ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="w-[92vw] max-w-md rounded-lg bg-white shadow-xl border border-gray-100 p-5">
+            <div className="text-base font-semibold text-gray-900">Worksheet saved</div>
+            <div className="mt-1 text-sm text-gray-600">Worksheet information has been saved successfully.</div>
+            <div className="mt-4 flex justify-end">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowSavedModal(false)
+                  onSaved?.()
+                }}
+                className="h-9 px-4 rounded bg-[#118df0] text-white text-sm font-semibold hover:bg-[#0d6ebd]"
+              >
+                Continue
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="border border-gray-200 bg-white">
           <div className="h-10 px-3 border-b border-gray-200 flex items-center justify-between">
-            <div className="text-sm font-semibold text-gray-700 flex items-center gap-2">
-              <svg className="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-2.21 0-4 1.343-4 3s1.79 3 4 3 4 1.343 4 3-1.79 3-4 3m0-12V4"/></svg>
-              Deal Breakdown
-            </div>
-            <button type="button" className="text-gray-400 hover:text-gray-600" aria-label="Info">
+            <div className="text-sm font-semibold text-gray-700">Deal Breakdown</div>
+            <button type="button" className="text-xs text-gray-500" onClick={resetWorksheet}>
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <circle cx="12" cy="12" r="9" strokeWidth={2} />
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 11v5" />
