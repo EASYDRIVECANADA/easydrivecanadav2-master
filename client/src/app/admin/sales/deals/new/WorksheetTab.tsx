@@ -116,6 +116,20 @@ export default function WorksheetTab({ dealMode = 'RTL', dealType = 'Cash' }: { 
   const [insTaxValues, setInsTaxValues] = useState<Record<string, string>>({})
   const insDetailsItem = useMemo(() => insurances.find((x) => x.id === insDetailsForId) || null, [insurances, insDetailsForId])
 
+  type WorksheetCardKey = 'fees' | 'accessories' | 'warranties' | 'insurances' | 'payments'
+  const [cardsOrder, setCardsOrder] = useState<WorksheetCardKey[]>(['fees', 'accessories', 'warranties', 'insurances', 'payments'])
+  const [draggingCard, setDraggingCard] = useState<WorksheetCardKey | null>(null)
+  const reorderCards = (from: WorksheetCardKey, to: WorksheetCardKey) => {
+    if (from === to) return
+    setCardsOrder((prev) => {
+      const next = prev.filter((k) => k !== from)
+      const idx = next.indexOf(to)
+      if (idx < 0) return prev
+      next.splice(idx, 0, from)
+      return next
+    })
+  }
+
   const parseMoney = (v: string) => {
     if (!v) return 0
     const n = parseFloat(String(v).replace(/,/g, ''))
@@ -409,6 +423,510 @@ export default function WorksheetTab({ dealMode = 'RTL', dealType = 'Cash' }: { 
   useEffect(() => {
     if (!taxOverride) setTaxManual(fmtMoney(computedTax))
   }, [computedTax, taxOverride])
+
+  const feesCard = (
+    <div className="border border-gray-200 bg-white">
+      <div className="h-10 px-3 border-b border-gray-200 flex items-center justify-between cursor-move">
+        <div className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+          <svg className="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-2.21 0-4 1.343-4 3s1.79 3 4 3 4 1.343 4 3-1.79 3-4 3m0-12V4"/></svg>
+          Fees
+        </div>
+        <div className="h-6 px-2 rounded bg-green-600 text-white text-xs font-semibold flex items-center">Total: ${fmtMoney(feesTotal)}</div>
+      </div>
+      <div className="p-3">
+        <div className="relative flex items-center">
+          <input
+            placeholder="search fees"
+            className="flex-1 h-10 border border-gray-200 rounded bg-white pl-10 pr-3 text-sm shadow-sm"
+            value={feeSearch}
+            onChange={(e) => setFeeSearch(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault()
+                addFeeFromSearch()
+              }
+            }}
+          />
+          <svg
+            className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M21 21l-4.35-4.35m1.35-5.65a7 7 0 11-14 0 7 7 0 0114 0z"
+            />
+          </svg>
+          <button
+            type="button"
+            onClick={addFeeFromSearch}
+            className="ml-2 h-10 px-3 rounded bg-[#118df0] text-white text-xs font-semibold hover:bg-[#0d6ebd]"
+            title="Add Fee"
+          >
+            +
+          </button>
+        </div>
+
+        <div className="mt-3 border border-gray-200">
+          <div className="grid grid-cols-[40px_1fr_1fr_140px_80px] text-[10px] font-semibold text-gray-600 bg-gray-50 border-b border-gray-200">
+            <div className="p-2" />
+            <div className="p-2">FEE NAME</div>
+            <div className="p-2">FEE DESC.</div>
+            <div className="p-2">FEE AMOUNT</div>
+            <div className="p-2 text-center">MORE</div>
+          </div>
+          {feeDraft ? (
+            <div className="grid grid-cols-[40px_1fr_1fr_140px_80px] text-xs">
+              <div className="p-2" />
+              <div className="p-2">
+                <input
+                  className="w-full h-8 px-2 border border-gray-200 rounded text-sm"
+                  value={feeDraft.name}
+                  onChange={(e) => setFeeDraft({ ...feeDraft, name: e.target.value })}
+                />
+              </div>
+              <div className="p-2">
+                <textarea
+                  className="w-full h-8 px-2 border border-gray-200 rounded text-sm"
+                  value={feeDraft.desc}
+                  onChange={(e) => setFeeDraft({ ...feeDraft, desc: e.target.value })}
+                />
+              </div>
+              <div className="p-2">
+                <input
+                  className="w-full h-8 px-2 border border-gray-200 rounded text-sm"
+                  value={feeDraft.amount}
+                  onChange={(e) => setFeeDraft({ ...feeDraft, amount: e.target.value.replace(/[^0-9.]/g, '') })}
+                />
+              </div>
+              <div className="p-2 flex items-center justify-center">
+                <button
+                  type="button"
+                  className="h-8 w-8 rounded bg-[#118df0] text-white text-xs font-semibold hover:bg-[#0d6ebd]"
+                  title="Save"
+                  onClick={commitFeeDraft}
+                >
+                  ✓
+                </button>
+              </div>
+            </div>
+          ) : null}
+          {!feeDraft && filteredFees.length === 0 ? (
+            <div className="h-12 flex items-center justify-center text-xs text-gray-500">No Fees</div>
+          ) : null}
+          {filteredFees.map((f) => (
+            editingFeeId === f.id && editingDraft ? (
+              <div key={f.id} className="grid grid-cols-[40px_1fr_1fr_140px_80px] text-xs">
+                <div className="p-2" />
+                <div className="p-2">
+                  <input
+                    className="w-full h-8 px-2 border border-gray-200 rounded text-sm"
+                    value={editingDraft.name}
+                    onChange={(e) => setEditingDraft({ ...editingDraft, name: e.target.value })}
+                  />
+                </div>
+                <div className="p-2">
+                  <textarea
+                    className="w-full h-8 px-2 border border-gray-200 rounded text-sm"
+                    value={editingDraft.desc}
+                    onChange={(e) => setEditingDraft({ ...editingDraft, desc: e.target.value })}
+                  />
+                </div>
+                <div className="p-2">
+                  <input
+                    className="w-full h-8 px-2 border border-gray-200 rounded text-sm"
+                    value={editingDraft.amount}
+                    onChange={(e) => setEditingDraft({ ...editingDraft, amount: e.target.value.replace(/[^0-9.]/g, '') })}
+                  />
+                </div>
+                <div className="p-2 flex items-center justify-center">
+                  <button
+                    type="button"
+                    className="h-8 w-8 rounded bg-[#118df0] text-white text-xs font-semibold hover:bg-[#0d6ebd]"
+                    title="Save"
+                    onClick={commitEditFee}
+                  >
+                    ✓
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div key={f.id} className="grid grid-cols-[40px_1fr_1fr_140px_80px] text-xs">
+                <div className="p-2 flex items-center gap-3">
+                  <button type="button" className="text-gray-600 hover:text-gray-800 text-lg" title="Edit" onClick={() => startEditFee(f)}>✎</button>
+                  <button
+                    type="button"
+                    className="text-red-600 hover:text-red-700 text-lg"
+                    title="Delete"
+                    onClick={() => setFees((prev) => prev.filter((x) => x.id !== f.id))}
+                  >
+                    🗑
+                  </button>
+                </div>
+                <div className="p-2 flex items-center">{f.name}</div>
+                <div className="p-2">{f.desc}</div>
+                <div className="p-2">${fmtMoney(Number(f.amount || 0))}</div>
+                <div className="p-2 text-center">
+                  <button
+                    type="button"
+                    className="px-2 text-gray-600 hover:text-gray-800"
+                    onClick={() => { setFeeDetailsForId(f.id); setFeeDetailsOpen(true) }}
+                    title="More"
+                  >
+                    ...
+                  </button>
+                </div>
+              </div>
+            )
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+
+  const paymentsCard = (
+    <div className="border border-gray-200 bg-white">
+      <div className="h-10 px-3 border-b border-gray-200 flex items-center justify-between cursor-move">
+        <div className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+          <svg className="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-2.21 0-4 1.343-4 3s1.79 3 4 3 4 1.343 4 3-1.79 3-4 3m0-12V4"/></svg>
+          Payments
+        </div>
+        <div className="h-6 px-2 rounded bg-green-600 text-white text-xs font-semibold flex items-center">Total: ${fmtMoney(paymentsTotal)}</div>
+      </div>
+
+      <div className="p-3">
+        <div className="flex items-center gap-2">
+          <button type="button" onClick={() => addPaymentDraft('Deposit')} className="h-7 px-3 rounded bg-[#118df0] text-white text-xs font-semibold hover:bg-[#0d6ebd]">
+            + Deposit
+          </button>
+          <button type="button" onClick={() => addPaymentDraft('Down Payment')} className="h-7 px-3 rounded bg-[#118df0] text-white text-xs font-semibold hover:bg-[#0d6ebd]">
+            + Down Payment
+          </button>
+          <button type="button" onClick={() => addPaymentDraft('Security Deposit')} className="h-7 px-3 rounded bg-[#118df0] text-white text-xs font-semibold hover:bg-[#0d6ebd]">
+            + Security Deposit
+          </button>
+        </div>
+
+        <div className="mt-3 border border-gray-200">
+          <div className="grid grid-cols-[40px_140px_140px_1fr_140px_50px] text-[10px] font-semibold text-gray-600 bg-gray-50 border-b border-gray-200">
+            <div className="p-2" />
+            <div className="p-2">AMOUNT</div>
+            <div className="p-2">TYPE</div>
+            <div className="p-2">DESCRIPTION</div>
+            <div className="p-2">CATEGORY</div>
+            <div className="p-2" />
+          </div>
+
+          {paymentDrafts.map((d) => (
+            <div key={d.id} className="grid grid-cols-[40px_140px_140px_1fr_140px_50px] text-xs">
+              <div className="p-2" />
+              <div className="p-2">
+                <input className="w-full h-8 px-2 border border-gray-200 rounded text-sm" value={d.amount} onChange={(e) => updatePaymentDraft(d.id, 'amount', e.target.value)} />
+              </div>
+              <div className="p-2">
+                <select className="w-full h-8 px-2 border border-gray-200 rounded text-sm" value={d.type} onChange={(e) => updatePaymentDraft(d.id, 'type', e.target.value)}>
+                  <option value="Cash">Cash</option>
+                  <option value="Credit Card">Credit Card</option>
+                  <option value="Debit">Debit</option>
+                  <option value="Bank Transfer">Bank Transfer</option>
+                  <option value="Cheque">Cheque</option>
+                </select>
+              </div>
+              <div className="p-2">
+                <textarea className="w-full h-8 px-2 border border-gray-200 rounded text-sm" value={d.desc} onChange={(e) => updatePaymentDraft(d.id, 'desc', e.target.value)} />
+              </div>
+              <div className="p-2 flex items-center">
+                <span className="inline-block px-2 h-6 leading-6 rounded bg-blue-100 text-blue-700 text-[11px] font-semibold">{d.category}</span>
+              </div>
+              <div className="p-2 flex items-center justify-center">
+                <button type="button" className="h-8 w-8 rounded bg-[#118df0] text-white text-xs font-semibold hover:bg-[#0d6ebd]" title="Save" onClick={() => commitPaymentDraft(d.id)}>✓</button>
+              </div>
+            </div>
+          ))}
+
+          {paymentDrafts.length === 0 && payments.length === 0 ? (
+            <div className="h-12 flex items-center justify-center text-xs text-gray-500">No Payments</div>
+          ) : null}
+
+          {payments.map((p) => (
+            editingPaymentId === p.id && editingPaymentDraft ? (
+              <div key={p.id} className="grid grid-cols-[40px_140px_140px_1fr_140px_50px] text-xs">
+                <div className="p-2" />
+                <div className="p-2"><input className="w-full h-8 px-2 border border-gray-200 rounded text-sm" value={editingPaymentDraft.amount} onChange={(e) => setEditingPaymentDraft({ ...editingPaymentDraft, amount: e.target.value.replace(/[^0-9.]/g, '') })} /></div>
+                <div className="p-2"><select className="w-full h-8 px-2 border border-gray-200 rounded text-sm" value={editingPaymentDraft.type} onChange={(e) => setEditingPaymentDraft({ ...editingPaymentDraft, type: e.target.value })}>
+                  <option value="Cash">Cash</option>
+                  <option value="Credit Card">Credit Card</option>
+                  <option value="Debit">Debit</option>
+                  <option value="Bank Transfer">Bank Transfer</option>
+                  <option value="Cheque">Cheque</option>
+                </select></div>
+                <div className="p-2"><textarea className="w-full h-8 px-2 border border-gray-200 rounded text-sm" value={editingPaymentDraft.desc} onChange={(e) => setEditingPaymentDraft({ ...editingPaymentDraft, desc: e.target.value })} /></div>
+                <div className="p-2 flex items-center"><span className="inline-block px-2 h-6 leading-6 rounded bg-blue-100 text-blue-700 text-[11px] font-semibold">{p.category}</span></div>
+                <div className="p-2 flex items-center justify-center"><button type="button" className="h-8 w-8 rounded bg-[#118df0] text-white text-xs font-semibold hover:bg-[#0d6ebd]" onClick={commitEditPayment}>✓</button></div>
+              </div>
+            ) : (
+              <div key={p.id} className="grid grid-cols-[40px_140px_140px_1fr_140px_50px] text-xs">
+                <div className="p-2 flex items-center justify-center gap-3">
+                  <button type="button" className="text-gray-600 hover:text-gray-800 text-lg" title="Edit" onClick={() => startEditPayment(p)}>✎</button>
+                  <button type="button" className="text-red-600 hover:text-red-700 text-lg" title="Delete" onClick={() => setPayments((prev) => prev.filter((x) => x.id !== p.id))}>🗑</button>
+                </div>
+                <div className="p-2">${fmtMoney(p.amount)}</div>
+                <div className="p-2">{p.type}</div>
+                <div className="p-2">{p.desc}</div>
+                <div className="p-2 flex items-center"><span className="inline-block px-2 h-6 leading-6 rounded bg-blue-100 text-blue-700 text-[11px] font-semibold">{p.category}</span></div>
+                <div />
+              </div>
+            )
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+
+  const accessoriesCard = dealMode === 'WHL' ? null : (
+    <div className="border border-gray-200 bg-white">
+      <div className="h-10 px-3 border-b border-gray-200 flex items-center justify-between cursor-move">
+        <div className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+          <svg className="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 7h6M9 12h6m-7 5h8"/></svg>
+          Accessories
+        </div>
+        <div className="h-6 px-2 rounded bg-green-600 text-white text-xs font-semibold flex items-center">Total: ${fmtMoney(accessoriesTotal)}</div>
+      </div>
+      <div className="p-3">
+        <div className="relative flex items-center">
+          <input
+            placeholder="search accessories"
+            className="flex-1 h-10 border border-gray-200 rounded bg-white pl-10 pr-3 text-sm shadow-sm"
+            value={accessorySearch}
+            onChange={(e) => setAccessorySearch(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault()
+                addAccessoryFromSearch()
+              }
+            }}
+          />
+          <svg className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35m1.35-5.65a7 7 0 11-14 0 7 7 0 0114 0z" />
+          </svg>
+          <button type="button" onClick={addAccessoryFromSearch} className="ml-2 h-10 px-3 rounded bg-[#118df0] text-white text-xs font-semibold hover:bg-[#0d6ebd]">+</button>
+        </div>
+
+        <div className="mt-3 border border-gray-200">
+          <div className="grid grid-cols-[40px_1fr_1fr_140px_80px] text-[10px] font-semibold text-gray-600 bg-gray-50 border-b border-gray-200">
+            <div className="p-2" />
+            <div className="p-2">ACCESSORY NAME</div>
+            <div className="p-2">ACCESSORY DESC.</div>
+            <div className="p-2">ACCESSORY PRICE</div>
+            <div className="p-2 text-center">MORE</div>
+          </div>
+          {accessoryDraft ? (
+            <div className="grid grid-cols-[40px_1fr_1fr_140px_80px] text-xs">
+              <div className="p-2" />
+              <div className="p-2"><input className="w-full h-8 px-2 border border-gray-200 rounded text-sm" value={accessoryDraft.name} onChange={(e) => setAccessoryDraft({ ...accessoryDraft, name: e.target.value })} /></div>
+              <div className="p-2"><textarea className="w-full h-8 px-2 border border-gray-200 rounded text-sm" value={accessoryDraft.desc} onChange={(e) => setAccessoryDraft({ ...accessoryDraft, desc: e.target.value })} /></div>
+              <div className="p-2"><input className="w-full h-8 px-2 border border-gray-200 rounded text-sm" value={accessoryDraft.price} onChange={(e) => setAccessoryDraft({ ...accessoryDraft, price: e.target.value.replace(/[^0-9.]/g, '') })} /></div>
+              <div className="p-2 flex items-center justify-center"><button type="button" className="h-8 w-8 rounded bg-[#118df0] text-white text-xs font-semibold hover:bg-[#0d6ebd]" onClick={commitAccessoryDraft}>✓</button></div>
+            </div>
+          ) : null}
+          {!accessoryDraft && filteredAccessories.length === 0 ? (
+            <div className="h-12 flex items-center justify-center text-xs text-gray-500">No Accessories</div>
+          ) : null}
+          {filteredAccessories.map((a) => (
+            editingAccessoryId === a.id && editingAccessoryDraft ? (
+              <div key={a.id} className="grid grid-cols-[40px_1fr_1fr_140px_80px] text-xs">
+                <div className="p-2" />
+                <div className="p-2"><input className="w-full h-8 px-2 border border-gray-200 rounded text-sm" value={editingAccessoryDraft.name} onChange={(e) => setEditingAccessoryDraft({ ...editingAccessoryDraft, name: e.target.value })} /></div>
+                <div className="p-2"><textarea className="w-full h-8 px-2 border border-gray-200 rounded text-sm" value={editingAccessoryDraft.desc} onChange={(e) => setEditingAccessoryDraft({ ...editingAccessoryDraft, desc: e.target.value })} /></div>
+                <div className="p-2"><input className="w-full h-8 px-2 border border-gray-200 rounded text-sm" value={editingAccessoryDraft.price} onChange={(e) => setEditingAccessoryDraft({ ...editingAccessoryDraft, price: e.target.value.replace(/[^0-9.]/g, '') })} /></div>
+                <div className="p-2 flex items-center justify-center"><button type="button" className="h-8 w-8 rounded bg-[#118df0] text-white text-xs font-semibold hover:bg-[#0d6ebd]" onClick={commitEditAccessory}>✓</button></div>
+              </div>
+            ) : (
+              <div key={a.id} className="grid grid-cols-[40px_1fr_1fr_140px_80px] text-xs">
+                <div className="p-2 flex items-center justify-center gap-3">
+                  <button type="button" className="text-gray-600 hover:text-gray-800 text-lg" title="Edit" onClick={() => startEditAccessory(a)}>✎</button>
+                  <button type="button" className="text-red-600 hover:text-red-700 text-lg" title="Delete" onClick={() => setAccessories((prev) => prev.filter((x) => x.id !== a.id))}>🗑</button>
+                </div>
+                <div className="p-2 flex items-center">{a.name}</div>
+                <div className="p-2">{a.desc}</div>
+                <div className="p-2">${fmtMoney(Number(a.price || 0))}</div>
+                <div className="p-2 text-center">
+                  <button type="button" className="px-2 text-gray-600 hover:text-gray-800" onClick={() => { setAccDetailsForId(a.id); setAccDetailsOpen(true) }} title="More">...</button>
+                </div>
+              </div>
+            )
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+
+  const warrantiesCard = dealMode === 'WHL' ? null : (
+    <div className="border border-gray-200 bg-white">
+      <div className="h-10 px-3 border-b border-gray-200 flex items-center justify-between cursor-move">
+        <div className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+          <svg className="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4l8 4v6a8 8 0 11-16 0V8l8-4z"/></svg>
+          Warranties
+        </div>
+        <div className="h-6 px-2 rounded bg-green-600 text-white text-xs font-semibold flex items-center">Total: ${fmtMoney(warrantiesTotal)}</div>
+      </div>
+      <div className="p-3">
+        <div className="relative flex items-center">
+          <input
+            placeholder="search warranties"
+            className="flex-1 h-10 border border-gray-200 rounded bg-white pl-10 pr-3 text-sm shadow-sm"
+            value={warrantySearch}
+            onChange={(e) => setWarrantySearch(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault()
+                addWarrantyFromSearch()
+              }
+            }}
+          />
+          <svg className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35m1.35-5.65a7 7 0 11-14 0 7 7 0 0114 0z" />
+          </svg>
+          <button type="button" onClick={addWarrantyFromSearch} className="ml-2 h-10 px-3 rounded bg-[#118df0] text-white text-xs font-semibold hover:bg-[#0d6ebd]">+</button>
+        </div>
+
+        <div className="mt-3 border border-gray-200">
+          <div className="grid grid-cols-[40px_1fr_1fr_140px_80px] text-[10px] font-semibold text-gray-600 bg-gray-50 border-b border-gray-200">
+            <div className="p-2" />
+            <div className="p-2">WARRANTY NAME</div>
+            <div className="p-2">WARRANTY DESC.</div>
+            <div className="p-2">WARRANTY AMOUNT</div>
+            <div className="p-2 text-center">MORE</div>
+          </div>
+          {warrantyDraft ? (
+            <div className="grid grid-cols-[40px_1fr_1fr_140px_80px] text-xs">
+              <div className="p-2" />
+              <div className="p-2"><input className="w-full h-8 px-2 border border-gray-200 rounded text-sm" value={warrantyDraft.name} onChange={(e) => setWarrantyDraft({ ...warrantyDraft, name: e.target.value })} /></div>
+              <div className="p-2"><textarea className="w-full h-8 px-2 border border-gray-200 rounded text-sm" value={warrantyDraft.desc} onChange={(e) => setWarrantyDraft({ ...warrantyDraft, desc: e.target.value })} /></div>
+              <div className="p-2"><input className="w-full h-8 px-2 border border-gray-200 rounded text-sm" value={warrantyDraft.amount} onChange={(e) => setWarrantyDraft({ ...warrantyDraft, amount: e.target.value.replace(/[^0-9.]/g, '') })} /></div>
+              <div className="p-2 flex items-center justify-center"><button type="button" className="h-8 w-8 rounded bg-[#118df0] text-white text-xs font-semibold hover:bg-[#0d6ebd]" onClick={commitWarrantyDraft}>✓</button></div>
+            </div>
+          ) : null}
+          {!warrantyDraft && filteredWarranties.length === 0 ? (
+            <div className="h-12 flex items-center justify-center text-xs text-gray-500">No Warranties</div>
+          ) : null}
+          {filteredWarranties.map((w) => (
+            editingWarrantyId === w.id && editingWarrantyDraft ? (
+              <div key={w.id} className="grid grid-cols-[40px_1fr_1fr_140px_80px] text-xs">
+                <div className="p-2" />
+                <div className="p-2"><input className="w-full h-8 px-2 border border-gray-200 rounded text-sm" value={editingWarrantyDraft.name} onChange={(e) => setEditingWarrantyDraft({ ...editingWarrantyDraft, name: e.target.value })} /></div>
+                <div className="p-2"><textarea className="w-full h-8 px-2 border border-gray-200 rounded text-sm" value={editingWarrantyDraft.desc} onChange={(e) => setEditingWarrantyDraft({ ...editingWarrantyDraft, desc: e.target.value })} /></div>
+                <div className="p-2"><input className="w-full h-8 px-2 border border-gray-200 rounded text-sm" value={editingWarrantyDraft.amount} onChange={(e) => setEditingWarrantyDraft({ ...editingWarrantyDraft, amount: e.target.value.replace(/[^0-9.]/g, '') })} /></div>
+                <div className="p-2 flex items-center justify-center"><button type="button" className="h-8 w-8 rounded bg-[#118df0] text-white text-xs font-semibold hover:bg-[#0d6ebd]" onClick={commitEditWarranty}>✓</button></div>
+              </div>
+            ) : (
+              <div key={w.id} className="grid grid-cols-[40px_1fr_1fr_140px_80px] text-xs">
+                <div className="p-2 flex items-center justify-center gap-3">
+                  <button type="button" className="text-gray-600 hover:text-gray-800 text-lg" title="Edit" onClick={() => startEditWarranty(w)}>✎</button>
+                  <button type="button" className="text-red-600 hover:text-red-700 text-lg" title="Delete" onClick={() => setWarranties((prev) => prev.filter((x) => x.id !== w.id))}>🗑</button>
+                </div>
+                <div className="p-2 flex items-center">{w.name}</div>
+                <div className="p-2">{w.desc}</div>
+                <div className="p-2">${fmtMoney(Number(w.amount || 0))}</div>
+                <div className="p-2 text-center">
+                  <button type="button" className="px-2 text-gray-600 hover:text-gray-800" onClick={() => { setWarDetailsForId(w.id); setWarDetailsOpen(true) }} title="More">...</button>
+                </div>
+              </div>
+            )
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+
+  const insurancesCard = dealMode === 'WHL' ? null : (
+    <div className="border border-gray-200 bg-white">
+      <div className="h-10 px-3 border-b border-gray-200 flex items-center justify-between cursor-move">
+        <div className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+          <svg className="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.121 17.804A13.937 13.937 0 0112 15c2.5 0 4.847.655 6.879 1.804M15 10a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+          Insurances
+        </div>
+        <div className="h-6 px-2 rounded bg-green-600 text-white text-xs font-semibold flex items-center">Total: ${fmtMoney(insurancesTotal)}</div>
+      </div>
+      <div className="p-3">
+        <div className="relative flex items-center">
+          <input
+            placeholder="search insurances"
+            className="flex-1 h-10 border border-gray-200 rounded bg-white pl-10 pr-3 text-sm shadow-sm"
+            value={insuranceSearch}
+            onChange={(e) => setInsuranceSearch(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault()
+                addInsuranceFromSearch()
+              }
+            }}
+          />
+          <svg className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35m1.35-5.65a7 7 0 11-14 0 7 7 0 0114 0z" />
+          </svg>
+          <button type="button" onClick={addInsuranceFromSearch} className="ml-2 h-10 px-3 rounded bg-[#118df0] text-white text-xs font-semibold hover:bg-[#0d6ebd]">+</button>
+        </div>
+
+        <div className="mt-3 border border-gray-200">
+          <div className="grid grid-cols-[40px_1fr_1fr_140px_80px] text-[10px] font-semibold text-gray-600 bg-gray-50 border-b border-gray-200">
+            <div className="p-2" />
+            <div className="p-2">INSURANCE NAME</div>
+            <div className="p-2">INSURANCE DESC.</div>
+            <div className="p-2">INSURANCE AMOUNT</div>
+            <div className="p-2 text-center">MORE</div>
+          </div>
+          {insuranceDraft ? (
+            <div className="grid grid-cols-[40px_1fr_1fr_140px_80px] text-xs">
+              <div className="p-2" />
+              <div className="p-2"><input className="w-full h-8 px-2 border border-gray-200 rounded text-sm" value={insuranceDraft.name} onChange={(e) => setInsuranceDraft({ ...insuranceDraft, name: e.target.value })} /></div>
+              <div className="p-2"><textarea className="w-full h-8 px-2 border border-gray-200 rounded text-sm" value={insuranceDraft.desc} onChange={(e) => setInsuranceDraft({ ...insuranceDraft, desc: e.target.value })} /></div>
+              <div className="p-2"><input className="w-full h-8 px-2 border border-gray-200 rounded text-sm" value={insuranceDraft.amount} onChange={(e) => setInsuranceDraft({ ...insuranceDraft, amount: e.target.value.replace(/[^0-9.]/g, '') })} /></div>
+              <div className="p-2 flex items-center justify-center"><button type="button" className="h-8 w-8 rounded bg-[#118df0] text-white text-xs font-semibold hover:bg-[#0d6ebd]" onClick={commitInsuranceDraft}>✓</button></div>
+            </div>
+          ) : null}
+          {!insuranceDraft && filteredInsurances.length === 0 ? (
+            <div className="h-12 flex items-center justify-center text-xs text-gray-500">No Insurances</div>
+          ) : null}
+          {filteredInsurances.map((i) => (
+            editingInsuranceId === i.id && editingInsuranceDraft ? (
+              <div key={i.id} className="grid grid-cols-[40px_1fr_1fr_140px_80px] text-xs">
+                <div className="p-2" />
+                <div className="p-2"><input className="w-full h-8 px-2 border border-gray-200 rounded text-sm" value={editingInsuranceDraft.name} onChange={(e) => setEditingInsuranceDraft({ ...editingInsuranceDraft, name: e.target.value })} /></div>
+                <div className="p-2"><textarea className="w-full h-8 px-2 border border-gray-200 rounded text-sm" value={editingInsuranceDraft.desc} onChange={(e) => setEditingInsuranceDraft({ ...editingInsuranceDraft, desc: e.target.value })} /></div>
+                <div className="p-2"><input className="w-full h-8 px-2 border border-gray-200 rounded text-sm" value={editingInsuranceDraft.amount} onChange={(e) => setEditingInsuranceDraft({ ...editingInsuranceDraft, amount: e.target.value.replace(/[^0-9.]/g, '') })} /></div>
+                <div className="p-2 flex items-center justify-center"><button type="button" className="h-8 w-8 rounded bg-[#118df0] text-white text-xs font-semibold hover:bg-[#0d6ebd]" onClick={commitEditInsurance}>✓</button></div>
+              </div>
+            ) : (
+              <div key={i.id} className="grid grid-cols-[40px_1fr_1fr_140px_80px] text-xs">
+                <div className="p-2 flex items-center justify-center gap-3">
+                  <button type="button" className="text-gray-600 hover:text-gray-800 text-lg" title="Edit" onClick={() => startEditInsurance(i)}>✎</button>
+                  <button type="button" className="text-red-600 hover:text-red-700 text-lg" title="Delete" onClick={() => setInsurances((prev) => prev.filter((x) => x.id !== i.id))}>🗑</button>
+                </div>
+                <div className="p-2 flex items-center">{i.name}</div>
+                <div className="p-2">{i.desc}</div>
+                <div className="p-2">${fmtMoney(Number(i.amount || 0))}</div>
+                <div className="p-2 text-center">
+                  <button type="button" className="px-2 text-gray-600 hover:text-gray-800" onClick={() => { setInsDetailsForId(i.id); setInsDetailsOpen(true) }} title="More">...</button>
+                </div>
+              </div>
+            )
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+
+  const cardContent: Record<WorksheetCardKey, JSX.Element | null> = {
+    fees: feesCard,
+    accessories: accessoriesCard,
+    warranties: warrantiesCard,
+    insurances: insurancesCard,
+    payments: paymentsCard,
+  }
 
   return (
     <div className="w-full">
@@ -718,514 +1236,27 @@ export default function WorksheetTab({ dealMode = 'RTL', dealType = 'Cash' }: { 
         </div>
 
         <div className="space-y-6">
-          <div className="border border-gray-200 bg-white">
-            <div className="h-10 px-3 border-b border-gray-200 flex items-center justify-between">
-              <div className="text-sm font-semibold text-gray-700 flex items-center gap-2">
-                <svg className="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-2.21 0-4 1.343-4 3s1.79 3 4 3 4 1.343 4 3-1.79 3-4 3m0-12V4"/></svg>
-                Fees
+          {cardsOrder.map((key) => {
+            const content = cardContent[key]
+            if (!content) return null
+            return (
+              <div
+                key={key}
+                draggable
+                onDragStart={() => setDraggingCard(key)}
+                onDragEnd={() => setDraggingCard(null)}
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={() => {
+                  if (!draggingCard) return
+                  reorderCards(draggingCard, key)
+                  setDraggingCard(null)
+                }}
+                className={draggingCard === key ? 'opacity-80' : ''}
+              >
+                {content}
               </div>
-              <div className="h-6 px-2 rounded bg-green-600 text-white text-xs font-semibold flex items-center">Total: ${fmtMoney(feesTotal)}</div>
-            </div>
-            <div className="p-3">
-              <div className="relative flex items-center">
-                <input
-                  placeholder="search fees"
-                  className="flex-1 h-10 border border-gray-200 rounded bg-white pl-10 pr-3 text-sm shadow-sm"
-                  value={feeSearch}
-                  onChange={(e) => setFeeSearch(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      e.preventDefault()
-                      addFeeFromSearch()
-                    }
-                  }}
-                />
-                <svg
-                  className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M21 21l-4.35-4.35m1.35-5.65a7 7 0 11-14 0 7 7 0 0114 0z"
-                  />
-                </svg>
-                <button
-                  type="button"
-                  onClick={addFeeFromSearch}
-                  className="ml-2 h-10 px-3 rounded bg-[#118df0] text-white text-xs font-semibold hover:bg-[#0d6ebd]"
-                  title="Add Fee"
-                >
-                  +
-                </button>
-              </div>
-
-              <div className="mt-3 border border-gray-200">
-                <div className="grid grid-cols-[40px_1fr_1fr_140px_80px] text-[10px] font-semibold text-gray-600 bg-gray-50 border-b border-gray-200">
-                  <div className="p-2" />
-                  <div className="p-2">FEE NAME</div>
-                  <div className="p-2">FEE DESC.</div>
-                  <div className="p-2">FEE AMOUNT</div>
-                  <div className="p-2 text-center">MORE</div>
-                </div>
-                {feeDraft ? (
-                  <div className="grid grid-cols-[40px_1fr_1fr_140px_80px] text-xs">
-                    <div className="p-2" />
-                    <div className="p-2">
-                      <input
-                        className="w-full h-8 px-2 border border-gray-200 rounded text-sm"
-                        value={feeDraft.name}
-                        onChange={(e) => setFeeDraft({ ...feeDraft, name: e.target.value })}
-                      />
-                    </div>
-                    <div className="p-2">
-                      <textarea
-                        className="w-full h-8 px-2 border border-gray-200 rounded text-sm"
-                        value={feeDraft.desc}
-                        onChange={(e) => setFeeDraft({ ...feeDraft, desc: e.target.value })}
-                      />
-                    </div>
-                    <div className="p-2">
-                      <input
-                        className="w-full h-8 px-2 border border-gray-200 rounded text-sm"
-                        value={feeDraft.amount}
-                        onChange={(e) => setFeeDraft({ ...feeDraft, amount: e.target.value.replace(/[^0-9.]/g, '') })}
-                      />
-                    </div>
-                    <div className="p-2 flex items-center justify-center">
-                      <button
-                        type="button"
-                        className="h-8 w-8 rounded bg-[#118df0] text-white text-xs font-semibold hover:bg-[#0d6ebd]"
-                        title="Save"
-                        onClick={commitFeeDraft}
-                      >
-                        ✓
-                      </button>
-                    </div>
-                  </div>
-                ) : null}
-                {!feeDraft && filteredFees.length === 0 ? (
-                  <div className="h-12 flex items-center justify-center text-xs text-gray-500">No Fees</div>
-                ) : null}
-                {filteredFees.map((f) => (
-                  editingFeeId === f.id && editingDraft ? (
-                    <div key={f.id} className="grid grid-cols-[40px_1fr_1fr_140px_80px] text-xs">
-                      <div className="p-2" />
-                      <div className="p-2">
-                        <input
-                          className="w-full h-8 px-2 border border-gray-200 rounded text-sm"
-                          value={editingDraft.name}
-                          onChange={(e) => setEditingDraft({ ...editingDraft, name: e.target.value })}
-                        />
-                      </div>
-                      <div className="p-2">
-                        <textarea
-                          className="w-full h-8 px-2 border border-gray-200 rounded text-sm"
-                          value={editingDraft.desc}
-                          onChange={(e) => setEditingDraft({ ...editingDraft, desc: e.target.value })}
-                        />
-                      </div>
-                      <div className="p-2">
-                        <input
-                          className="w-full h-8 px-2 border border-gray-200 rounded text-sm"
-                          value={editingDraft.amount}
-                          onChange={(e) => setEditingDraft({ ...editingDraft, amount: e.target.value.replace(/[^0-9.]/g, '') })}
-                        />
-                      </div>
-                      <div className="p-2 flex items-center justify-center">
-                        <button
-                          type="button"
-                          className="h-8 w-8 rounded bg-[#118df0] text-white text-xs font-semibold hover:bg-[#0d6ebd]"
-                          title="Save"
-                          onClick={commitEditFee}
-                        >
-                          ✓
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    <div key={f.id} className="grid grid-cols-[40px_1fr_1fr_140px_80px] text-xs">
-                      <div className="p-2 flex items-center gap-3">
-                        <button type="button" className="text-gray-600 hover:text-gray-800 text-lg" title="Edit" onClick={() => startEditFee(f)}>✎</button>
-                        <button
-                          type="button"
-                          className="text-red-600 hover:text-red-700 text-lg"
-                          title="Delete"
-                          onClick={() => setFees((prev) => prev.filter((x) => x.id !== f.id))}
-                        >
-                          🗑
-                        </button>
-                      </div>
-                      <div className="p-2 flex items-center">{f.name}</div>
-                      <div className="p-2">{f.desc}</div>
-                      <div className="p-2">${fmtMoney(Number(f.amount || 0))}</div>
-                      <div className="p-2 text-center">
-                        <button
-                          type="button"
-                          className="px-2 text-gray-600 hover:text-gray-800"
-                          onClick={() => { setFeeDetailsForId(f.id); setFeeDetailsOpen(true) }}
-                          title="More"
-                        >
-                          ...
-                        </button>
-                      </div>
-                    </div>
-                  )
-                ))}
-              </div>
-            </div>
-          </div>
-
-          {dealMode !== 'WHL' && (
-          <>
-          {/* Accessories */}
-          <div className="border border-gray-200 bg-white">
-            <div className="h-10 px-3 border-b border-gray-200 flex items-center justify-between">
-              <div className="text-sm font-semibold text-gray-700 flex items-center gap-2">
-                <svg className="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 7h6M9 12h6m-7 5h8"/></svg>
-                Accessories
-              </div>
-              <div className="h-6 px-2 rounded bg-green-600 text-white text-xs font-semibold flex items-center">Total: ${fmtMoney(accessoriesTotal)}</div>
-            </div>
-            <div className="p-3">
-              <div className="relative flex items-center">
-                <input
-                  placeholder="search accessories"
-                  className="flex-1 h-10 border border-gray-200 rounded bg-white pl-10 pr-3 text-sm shadow-sm"
-                  value={accessorySearch}
-                  onChange={(e) => setAccessorySearch(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      e.preventDefault()
-                      addAccessoryFromSearch()
-                    }
-                  }}
-                />
-                <svg className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35m1.35-5.65a7 7 0 11-14 0 7 7 0 0114 0z" />
-                </svg>
-                <button type="button" onClick={addAccessoryFromSearch} className="ml-2 h-10 px-3 rounded bg-[#118df0] text-white text-xs font-semibold hover:bg-[#0d6ebd]">+</button>
-              </div>
-
-              <div className="mt-3 border border-gray-200">
-                <div className="grid grid-cols-[40px_1fr_1fr_140px_80px] text-[10px] font-semibold text-gray-600 bg-gray-50 border-b border-gray-200">
-                  <div className="p-2" />
-                  <div className="p-2">ACCESSORY NAME</div>
-                  <div className="p-2">ACCESSORY DESC.</div>
-                  <div className="p-2">ACCESSORY PRICE</div>
-                  <div className="p-2 text-center">MORE</div>
-                </div>
-                {accessoryDraft ? (
-                  <div className="grid grid-cols-[40px_1fr_1fr_140px_80px] text-xs">
-                    <div className="p-2" />
-                    <div className="p-2">
-                      <input className="w-full h-8 px-2 border border-gray-200 rounded text-sm" value={accessoryDraft.name} onChange={(e) => setAccessoryDraft({ ...accessoryDraft, name: e.target.value })} />
-                    </div>
-                    <div className="p-2">
-                      <textarea className="w-full h-8 px-2 border border-gray-200 rounded text-sm" value={accessoryDraft.desc} onChange={(e) => setAccessoryDraft({ ...accessoryDraft, desc: e.target.value })} />
-                    </div>
-                    <div className="p-2">
-                      <input className="w-full h-8 px-2 border border-gray-200 rounded text-sm" value={accessoryDraft.price} onChange={(e) => setAccessoryDraft({ ...accessoryDraft, price: e.target.value.replace(/[^0-9.]/g, '') })} />
-                    </div>
-                    <div className="p-2 flex items-center justify-center">
-                      <button type="button" className="h-8 w-8 rounded bg-[#118df0] text-white text-xs font-semibold hover:bg-[#0d6ebd]" onClick={commitAccessoryDraft}>✓</button>
-                    </div>
-                  </div>
-                ) : null}
-                {!accessoryDraft && filteredAccessories.length === 0 ? (
-                  <div className="h-12 flex items-center justify-center text-xs text-gray-500">No Accessories</div>
-                ) : null}
-                {filteredAccessories.map((a) => (
-                  editingAccessoryId === a.id && editingAccessoryDraft ? (
-                    <div key={a.id} className="grid grid-cols-[40px_1fr_1fr_140px_80px] text-xs">
-                      <div className="p-2" />
-                      <div className="p-2"><input className="w-full h-8 px-2 border border-gray-200 rounded text-sm" value={editingAccessoryDraft.name} onChange={(e) => setEditingAccessoryDraft({ ...editingAccessoryDraft, name: e.target.value })} /></div>
-                      <div className="p-2"><textarea className="w-full h-8 px-2 border border-gray-200 rounded text-sm" value={editingAccessoryDraft.desc} onChange={(e) => setEditingAccessoryDraft({ ...editingAccessoryDraft, desc: e.target.value })} /></div>
-                      <div className="p-2"><input className="w-full h-8 px-2 border border-gray-200 rounded text-sm" value={editingAccessoryDraft.price} onChange={(e) => setEditingAccessoryDraft({ ...editingAccessoryDraft, price: e.target.value.replace(/[^0-9.]/g, '') })} /></div>
-                      <div className="p-2 flex items-center justify-center"><button type="button" className="h-8 w-8 rounded bg-[#118df0] text-white text-xs font-semibold hover:bg-[#0d6ebd]" onClick={commitEditAccessory}>✓</button></div>
-                    </div>
-                  ) : (
-                    <div key={a.id} className="grid grid-cols-[40px_1fr_1fr_140px_80px] text-xs">
-                      <div className="p-2 flex items-center justify-center gap-3">
-                        <button type="button" className="text-gray-600 hover:text-gray-800 text-lg" title="Edit" onClick={() => startEditAccessory(a)}>✎</button>
-                        <button type="button" className="text-red-600 hover:text-red-700 text-lg" title="Delete" onClick={() => setAccessories((prev) => prev.filter((x) => x.id !== a.id))}>🗑</button>
-                      </div>
-                      <div className="p-2 flex items-center">{a.name}</div>
-                      <div className="p-2">{a.desc}</div>
-                      <div className="p-2">${fmtMoney(Number(a.price || 0))}</div>
-                      <div className="p-2 text-center">
-                        <button
-                          type="button"
-                          className="px-2 text-gray-600 hover:text-gray-800"
-                          onClick={() => { setAccDetailsForId(a.id); setAccDetailsOpen(true) }}
-                          title="More"
-                        >
-                          ...
-                        </button>
-                      </div>
-                    </div>
-                  )
-                ))}
-              </div>
-            </div>
-          </div>
-
-          {/* Warranties */}
-          <div className="border border-gray-200 bg-white">
-            <div className="h-10 px-3 border-b border-gray-200 flex items-center justify-between">
-              <div className="text-sm font-semibold text-gray-700 flex items-center gap-2">
-                <svg className="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4l8 4v6a8 8 0 11-16 0V8l8-4z"/></svg>
-                Warranties
-              </div>
-              <div className="h-6 px-2 rounded bg-green-600 text-white text-xs font-semibold flex items-center">Total: ${fmtMoney(warrantiesTotal)}</div>
-            </div>
-            <div className="p-3">
-              <div className="relative flex items-center">
-                <input
-                  placeholder="search warranties"
-                  className="flex-1 h-10 border border-gray-200 rounded bg-white pl-10 pr-3 text-sm shadow-sm"
-                  value={warrantySearch}
-                  onChange={(e) => setWarrantySearch(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      e.preventDefault()
-                      addWarrantyFromSearch()
-                    }
-                  }}
-                />
-                <svg className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35m1.35-5.65a7 7 0 11-14 0 7 7 0 0114 0z" />
-                </svg>
-                <button type="button" onClick={addWarrantyFromSearch} className="ml-2 h-10 px-3 rounded bg-[#118df0] text-white text-xs font-semibold hover:bg-[#0d6ebd]">+</button>
-              </div>
-
-              <div className="mt-3 border border-gray-200">
-                <div className="grid grid-cols-[40px_1fr_1fr_140px_80px] text-[10px] font-semibold text-gray-600 bg-gray-50 border-b border-gray-200">
-                  <div className="p-2" />
-                  <div className="p-2">WARRANTY NAME</div>
-                  <div className="p-2">WARRANTY DESC.</div>
-                  <div className="p-2">WARRANTY AMOUNT</div>
-                  <div className="p-2 text-center">MORE</div>
-                </div>
-                {warrantyDraft ? (
-                  <div className="grid grid-cols-[40px_1fr_1fr_140px_80px] text-xs">
-                    <div className="p-2" />
-                    <div className="p-2"><input className="w-full h-8 px-2 border border-gray-200 rounded text-sm" value={warrantyDraft.name} onChange={(e) => setWarrantyDraft({ ...warrantyDraft, name: e.target.value })} /></div>
-                    <div className="p-2"><textarea className="w-full h-8 px-2 border border-gray-200 rounded text-sm" value={warrantyDraft.desc} onChange={(e) => setWarrantyDraft({ ...warrantyDraft, desc: e.target.value })} /></div>
-                    <div className="p-2"><input className="w-full h-8 px-2 border border-gray-200 rounded text-sm" value={warrantyDraft.amount} onChange={(e) => setWarrantyDraft({ ...warrantyDraft, amount: e.target.value.replace(/[^0-9.]/g, '') })} /></div>
-                    <div className="p-2 flex items-center justify-center"><button type="button" className="h-8 w-8 rounded bg-[#118df0] text-white text-xs font-semibold hover:bg-[#0d6ebd]" onClick={commitWarrantyDraft}>✓</button></div>
-                  </div>
-                ) : null}
-                {!warrantyDraft && filteredWarranties.length === 0 ? (
-                  <div className="h-12 flex items-center justify-center text-xs text-gray-500">No Warranties</div>
-                ) : null}
-                {filteredWarranties.map((w) => (
-                  editingWarrantyId === w.id && editingWarrantyDraft ? (
-                    <div key={w.id} className="grid grid-cols-[40px_1fr_1fr_140px_80px] text-xs">
-                      <div className="p-2" />
-                      <div className="p-2"><input className="w-full h-8 px-2 border border-gray-200 rounded text-sm" value={editingWarrantyDraft.name} onChange={(e) => setEditingWarrantyDraft({ ...editingWarrantyDraft, name: e.target.value })} /></div>
-                      <div className="p-2"><textarea className="w-full h-8 px-2 border border-gray-200 rounded text-sm" value={editingWarrantyDraft.desc} onChange={(e) => setEditingWarrantyDraft({ ...editingWarrantyDraft, desc: e.target.value })} /></div>
-                      <div className="p-2"><input className="w-full h-8 px-2 border border-gray-200 rounded text-sm" value={editingWarrantyDraft.amount} onChange={(e) => setEditingWarrantyDraft({ ...editingWarrantyDraft, amount: e.target.value.replace(/[^0-9.]/g, '') })} /></div>
-                      <div className="p-2 flex items-center justify-center"><button type="button" className="h-8 w-8 rounded bg-[#118df0] text-white text-xs font-semibold hover:bg-[#0d6ebd]" onClick={commitEditWarranty}>✓</button></div>
-                    </div>
-                  ) : (
-                    <div key={w.id} className="grid grid-cols-[40px_1fr_1fr_140px_80px] text-xs">
-                      <div className="p-2 flex items-center justify-center gap-3">
-                        <button type="button" className="text-gray-600 hover:text-gray-800 text-lg" title="Edit" onClick={() => startEditWarranty(w)}>✎</button>
-                        <button type="button" className="text-red-600 hover:text-red-700 text-lg" title="Delete" onClick={() => setWarranties((prev) => prev.filter((x) => x.id !== w.id))}>🗑</button>
-                      </div>
-                      <div className="p-2 flex items-center">{w.name}</div>
-                      <div className="p-2">{w.desc}</div>
-                      <div className="p-2">${fmtMoney(Number(w.amount || 0))}</div>
-                      <div className="p-2 text-center">
-                        <button type="button" className="px-2 text-gray-600 hover:text-gray-800" title="More" onClick={() => { setWarDetailsForId(w.id); setWarDetailsOpen(true) }}>...</button>
-                      </div>
-                    </div>
-                  )
-                ))}
-              </div>
-            </div>
-          </div>
-
-          {/* Insurances */}
-          <div className="border border-gray-200 bg-white">
-            <div className="h-10 px-3 border-b border-gray-200 flex items-center justify-between">
-              <div className="text-sm font-semibold text-gray-700 flex items-center gap-2">
-                <svg className="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.121 17.804A13.937 13.937 0 0112 15c2.5 0 4.847.655 6.879 1.804M15 10a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
-                Insurances
-              </div>
-              <div className="h-6 px-2 rounded bg-green-600 text-white text-xs font-semibold flex items-center">Total: ${fmtMoney(insurancesTotal)}</div>
-            </div>
-            <div className="p-3">
-              <div className="relative flex items-center">
-                <input
-                  placeholder="search insurances"
-                  className="flex-1 h-10 border border-gray-200 rounded bg-white pl-10 pr-3 text-sm shadow-sm"
-                  value={insuranceSearch}
-                  onChange={(e) => setInsuranceSearch(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      e.preventDefault()
-                      addInsuranceFromSearch()
-                    }
-                  }}
-                />
-                <svg className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35m1.35-5.65a7 7 0 11-14 0 7 7 0 0114 0z" />
-                </svg>
-                <button type="button" onClick={addInsuranceFromSearch} className="ml-2 h-10 px-3 rounded bg-[#118df0] text-white text-xs font-semibold hover:bg-[#0d6ebd]">+</button>
-              </div>
-
-              <div className="mt-3 border border-gray-200">
-                <div className="grid grid-cols-[40px_1fr_1fr_140px_80px] text-[10px] font-semibold text-gray-600 bg-gray-50 border-b border-gray-200">
-                  <div className="p-2" />
-                  <div className="p-2">INSURANCE NAME</div>
-                  <div className="p-2">INSURANCE DESC.</div>
-                  <div className="p-2">INSURANCE AMOUNT</div>
-                  <div className="p-2 text-center">MORE</div>
-                </div>
-                {insuranceDraft ? (
-                  <div className="grid grid-cols-[40px_1fr_1fr_140px_80px] text-xs">
-                    <div className="p-2" />
-                    <div className="p-2"><input className="w-full h-8 px-2 border border-gray-200 rounded text-sm" value={insuranceDraft.name} onChange={(e) => setInsuranceDraft({ ...insuranceDraft, name: e.target.value })} /></div>
-                    <div className="p-2"><textarea className="w-full h-8 px-2 border border-gray-200 rounded text-sm" value={insuranceDraft.desc} onChange={(e) => setInsuranceDraft({ ...insuranceDraft, desc: e.target.value })} /></div>
-                    <div className="p-2"><input className="w-full h-8 px-2 border border-gray-200 rounded text-sm" value={insuranceDraft.amount} onChange={(e) => setInsuranceDraft({ ...insuranceDraft, amount: e.target.value.replace(/[^0-9.]/g, '') })} /></div>
-                    <div className="p-2 flex items-center justify-center"><button type="button" className="h-8 w-8 rounded bg-[#118df0] text-white text-xs font-semibold hover:bg-[#0d6ebd]" onClick={commitInsuranceDraft}>✓</button></div>
-                  </div>
-                ) : null}
-                {!insuranceDraft && filteredInsurances.length === 0 ? (
-                  <div className="h-12 flex items-center justify-center text-xs text-gray-500">No Insurances</div>
-                ) : null}
-                {filteredInsurances.map((i) => (
-                  editingInsuranceId === i.id && editingInsuranceDraft ? (
-                    <div key={i.id} className="grid grid-cols-[40px_1fr_1fr_140px_80px] text-xs">
-                      <div className="p-2" />
-                      <div className="p-2"><input className="w-full h-8 px-2 border border-gray-200 rounded text-sm" value={editingInsuranceDraft.name} onChange={(e) => setEditingInsuranceDraft({ ...editingInsuranceDraft, name: e.target.value })} /></div>
-                      <div className="p-2"><textarea className="w-full h-8 px-2 border border-gray-200 rounded text-sm" value={editingInsuranceDraft.desc} onChange={(e) => setEditingInsuranceDraft({ ...editingInsuranceDraft, desc: e.target.value })} /></div>
-                      <div className="p-2"><input className="w-full h-8 px-2 border border-gray-200 rounded text-sm" value={editingInsuranceDraft.amount} onChange={(e) => setEditingInsuranceDraft({ ...editingInsuranceDraft, amount: e.target.value.replace(/[^0-9.]/g, '') })} /></div>
-                      <div className="p-2 flex items-center justify-center"><button type="button" className="h-8 w-8 rounded bg-[#118df0] text-white text-xs font-semibold hover:bg-[#0d6ebd]" onClick={commitEditInsurance}>✓</button></div>
-                    </div>
-                  ) : (
-                    <div key={i.id} className="grid grid-cols-[40px_1fr_1fr_140px_80px] text-xs">
-                      <div className="p-2 flex items-center justify-center gap-3">
-                        <button type="button" className="text-gray-600 hover:text-gray-800 text-lg" title="Edit" onClick={() => startEditInsurance(i)}>✎</button>
-                        <button type="button" className="text-red-600 hover:text-red-700 text-lg" title="Delete" onClick={() => setInsurances((prev) => prev.filter((x) => x.id !== i.id))}>🗑</button>
-                      </div>
-                      <div className="p-2 flex items-center">{i.name}</div>
-                      <div className="p-2">{i.desc}</div>
-                      <div className="p-2">${fmtMoney(Number(i.amount || 0))}</div>
-                      <div className="p-2 text-center">
-                        <button type="button" className="px-2 text-gray-600 hover:text-gray-800" title="More" onClick={() => { setInsDetailsForId(i.id); setInsDetailsOpen(true) }}>...</button>
-                      </div>
-                    </div>
-                  )
-                ))}
-              </div>
-            </div>
-          </div>
-
-          </>
-          )}
-
-          <div className="border border-gray-200 bg-white">
-            <div className="h-10 px-3 border-b border-gray-200 flex items-center justify-between">
-              <div className="text-sm font-semibold text-gray-700 flex items-center gap-2">
-                <svg className="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-2.21 0-4 1.343-4 3s1.79 3 4 3 4 1.343 4 3-1.79 3-4 3m0-12V4"/></svg>
-                Payments
-              </div>
-              <div className="h-6 px-2 rounded bg-green-600 text-white text-xs font-semibold flex items-center">Total: ${fmtMoney(paymentsTotal)}</div>
-            </div>
-
-            <div className="p-3">
-              <div className="flex items-center gap-2">
-                <button type="button" onClick={() => addPaymentDraft('Deposit')} className="h-7 px-3 rounded bg-[#118df0] text-white text-xs font-semibold hover:bg-[#0d6ebd]">
-                  + Deposit
-                </button>
-                <button type="button" onClick={() => addPaymentDraft('Down Payment')} className="h-7 px-3 rounded bg-[#118df0] text-white text-xs font-semibold hover:bg-[#0d6ebd]">
-                  + Down Payment
-                </button>
-                <button type="button" onClick={() => addPaymentDraft('Security Deposit')} className="h-7 px-3 rounded bg-[#118df0] text-white text-xs font-semibold hover:bg-[#0d6ebd]">
-                  + Security Deposit
-                </button>
-              </div>
-
-              <div className="mt-3 border border-gray-200">
-                <div className="grid grid-cols-[40px_140px_140px_1fr_140px_50px] text-[10px] font-semibold text-gray-600 bg-gray-50 border-b border-gray-200">
-                  <div className="p-2" />
-                  <div className="p-2">AMOUNT</div>
-                  <div className="p-2">TYPE</div>
-                  <div className="p-2">DESCRIPTION</div>
-                  <div className="p-2">CATEGORY</div>
-                  <div className="p-2" />
-                </div>
-
-                {paymentDrafts.map((d) => (
-                  <div key={d.id} className="grid grid-cols-[40px_140px_140px_1fr_140px_50px] text-xs">
-                    <div className="p-2" />
-                    <div className="p-2">
-                      <input className="w-full h-8 px-2 border border-gray-200 rounded text-sm" value={d.amount} onChange={(e) => updatePaymentDraft(d.id, 'amount', e.target.value)} />
-                    </div>
-                    <div className="p-2">
-                      <select className="w-full h-8 px-2 border border-gray-200 rounded text-sm" value={d.type} onChange={(e) => updatePaymentDraft(d.id, 'type', e.target.value)}>
-                        <option value="Cash">Cash</option>
-                        <option value="Credit Card">Credit Card</option>
-                        <option value="Debit">Debit</option>
-                        <option value="Bank Transfer">Bank Transfer</option>
-                        <option value="Cheque">Cheque</option>
-                      </select>
-                    </div>
-                    <div className="p-2">
-                      <textarea className="w-full h-8 px-2 border border-gray-200 rounded text-sm" value={d.desc} onChange={(e) => updatePaymentDraft(d.id, 'desc', e.target.value)} />
-                    </div>
-                    <div className="p-2 flex items-center">
-                      <span className="inline-block px-2 h-6 leading-6 rounded bg-blue-100 text-blue-700 text-[11px] font-semibold">{d.category}</span>
-                    </div>
-                    <div className="p-2 flex items-center justify-center">
-                      <button type="button" className="h-8 w-8 rounded bg-[#118df0] text-white text-xs font-semibold hover:bg-[#0d6ebd]" title="Save" onClick={() => commitPaymentDraft(d.id)}>✓</button>
-                    </div>
-                  </div>
-                ))}
-
-                {paymentDrafts.length === 0 && payments.length === 0 ? (
-                  <div className="h-12 flex items-center justify-center text-xs text-gray-500">No Payments</div>
-                ) : null}
-
-                {payments.map((p) => (
-                  editingPaymentId === p.id && editingPaymentDraft ? (
-                    <div key={p.id} className="grid grid-cols-[40px_140px_140px_1fr_140px_50px] text-xs">
-                      <div className="p-2" />
-                      <div className="p-2"><input className="w-full h-8 px-2 border border-gray-200 rounded text-sm" value={editingPaymentDraft.amount} onChange={(e) => setEditingPaymentDraft({ ...editingPaymentDraft, amount: e.target.value.replace(/[^0-9.]/g, '') })} /></div>
-                      <div className="p-2"><select className="w-full h-8 px-2 border border-gray-200 rounded text-sm" value={editingPaymentDraft.type} onChange={(e) => setEditingPaymentDraft({ ...editingPaymentDraft, type: e.target.value })}>
-                        <option value="Cash">Cash</option>
-                        <option value="Credit Card">Credit Card</option>
-                        <option value="Debit">Debit</option>
-                        <option value="Bank Transfer">Bank Transfer</option>
-                        <option value="Cheque">Cheque</option>
-                      </select></div>
-                      <div className="p-2"><textarea className="w-full h-8 px-2 border border-gray-200 rounded text-sm" value={editingPaymentDraft.desc} onChange={(e) => setEditingPaymentDraft({ ...editingPaymentDraft, desc: e.target.value })} /></div>
-                      <div className="p-2 flex items-center"><span className="inline-block px-2 h-6 leading-6 rounded bg-blue-100 text-blue-700 text-[11px] font-semibold">{p.category}</span></div>
-                      <div className="p-2 flex items-center justify-center"><button type="button" className="h-8 w-8 rounded bg-[#118df0] text-white text-xs font-semibold hover:bg-[#0d6ebd]" onClick={commitEditPayment}>✓</button></div>
-                    </div>
-                  ) : (
-                    <div key={p.id} className="grid grid-cols-[40px_140px_140px_1fr_140px_50px] text-xs">
-                      <div className="p-2 flex items-center justify-center gap-3">
-                        <button type="button" className="text-gray-600 hover:text-gray-800 text-lg" title="Edit" onClick={() => startEditPayment(p)}>✎</button>
-                        <button type="button" className="text-red-600 hover:text-red-700 text-lg" title="Delete" onClick={() => setPayments((prev) => prev.filter((x) => x.id !== p.id))}>🗑</button>
-                      </div>
-                      <div className="p-2">${fmtMoney(p.amount)}</div>
-                      <div className="p-2">{p.type}</div>
-                      <div className="p-2">{p.desc}</div>
-                      <div className="p-2 flex items-center"><span className="inline-block px-2 h-6 leading-6 rounded bg-blue-100 text-blue-700 text-[11px] font-semibold">{p.category}</span></div>
-                      <div />
-                    </div>
-                  )
-                ))}
-              </div>
-            </div>
-          </div>
+            )
+          })}
         </div>
       </div>
 
