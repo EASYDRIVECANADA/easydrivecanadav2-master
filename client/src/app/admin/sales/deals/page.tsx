@@ -31,6 +31,9 @@ export default function DealsPage() {
   const [rows, setRows] = useState<DealRow[]>([])
   const [loading, setLoading] = useState(true)
   const [fetchError, setFetchError] = useState<string | null>(null)
+  const [selectedDeal, setSelectedDeal] = useState<DealRow | null>(null)
+  const [customersOpen, setCustomersOpen] = useState(true)
+  const [profitOpen, setProfitOpen] = useState(false)
 
   const fetchDeals = useCallback(async () => {
     try {
@@ -224,11 +227,15 @@ export default function DealsPage() {
                   </tr>
                 ) : (
                   paged.map((r, idx) => (
-                    <tr key={r.dealId || idx} className="hover:bg-gray-50">
+                    <tr
+                      key={r.dealId || idx}
+                      className={`hover:bg-gray-50 cursor-pointer ${selectedDeal?.dealId === r.dealId ? 'bg-blue-50' : ''}`}
+                      onClick={() => setSelectedDeal(selectedDeal?.dealId === r.dealId ? null : r)}
+                    >
                       <td className="px-2 py-3">
                         <button
                           type="button"
-                          onClick={() => router.push(`/admin/sales/deals/new?dealId=${encodeURIComponent(r.dealId)}`)}
+                          onClick={(e) => { e.stopPropagation(); router.push(`/admin/sales/deals/new?dealId=${encodeURIComponent(r.dealId)}`) }}
                           className="w-8 h-8 rounded bg-gray-100 hover:bg-gray-200 flex items-center justify-center transition-colors"
                           title="Edit deal"
                           aria-label="Edit deal"
@@ -291,6 +298,139 @@ export default function DealsPage() {
         </div>
 
       </div>
+
+      {/* Right-side detail panel */}
+      {selectedDeal && (
+        <div className="fixed top-0 right-0 h-full w-[340px] bg-white shadow-2xl border-l border-gray-200 z-50 overflow-y-auto">
+          {/* Close button */}
+          <div className="px-3 pt-3">
+            <button
+              type="button"
+              onClick={() => setSelectedDeal(null)}
+              className="text-gray-400 hover:text-gray-600"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+            </button>
+          </div>
+
+          {/* Vehicle Section */}
+          <div className="px-6 pt-2 pb-5 flex flex-col items-center text-center border-b border-gray-200">
+            <div className="w-14 h-14 rounded-full bg-gray-100 flex items-center justify-center mb-3">
+              <svg className="w-7 h-7 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 17a2 2 0 11-4 0 2 2 0 014 0zm10 0a2 2 0 11-4 0 2 2 0 014 0zM3 11l1.5-4.5A2 2 0 016.4 5h11.2a2 2 0 011.9 1.5L21 11M3 11h18M3 11v5a1 1 0 001 1h1m14 0h1a1 1 0 001-1v-5" /></svg>
+            </div>
+            {(() => {
+              const v = selectedDeal.vehicles?.[0]
+              const sv = v || {}
+              const yr = sv.selected_year || sv.year || ''
+              const mk = sv.selected_make || sv.make || ''
+              const md = sv.selected_model || sv.model || ''
+              const tr = sv.selected_trim || sv.trim || ''
+              const title = [yr, mk, md, tr].filter(Boolean).join(' ')
+              const vin = sv.selected_vin || sv.vin || ''
+              const stock = sv.selected_stock_number || ''
+              const status = sv.selected_status || ''
+              const ws = selectedDeal.worksheet
+              const price = ws?.purchase_price || ws?.total_balance_due || ''
+              return (
+                <>
+                  <div className="text-base font-bold text-red-600 uppercase leading-tight">{title || 'No Vehicle'}</div>
+                  {vin && <div className="text-xs text-gray-500 mt-1">{vin}</div>}
+                  {stock && <div className="text-xs text-gray-500">{stock}</div>}
+                  {status && <div className="text-xs text-gray-500">{status}</div>}
+                  {price && <div className="text-sm font-semibold text-gray-900 mt-1">${Number(price).toLocaleString('en-US', { minimumFractionDigits: 2 })}</div>}
+                </>
+              )
+            })()}
+          </div>
+
+          {/* Customers Section */}
+          <div className="px-6 py-4 border-b border-gray-200">
+            <button type="button" onClick={() => setCustomersOpen(!customersOpen)} className="flex items-center gap-2 w-full text-left mb-3">
+              <svg className={`w-4 h-4 text-blue-500 transition-transform ${customersOpen ? 'rotate-0' : '-rotate-90'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+              <span className="text-base font-bold text-gray-900">Customers</span>
+            </button>
+            {customersOpen && (() => {
+              const c = selectedDeal.customer
+              if (!c) return <div className="text-xs text-gray-400">No customer data</div>
+              const name = [c.firstname, c.lastname].filter(Boolean).join(' ')
+              const initials = [(c.firstname || '')[0], (c.lastname || '')[0]].filter(Boolean).join('').toUpperCase()
+              return (
+                <div className="flex items-start gap-3">
+                  <div className="w-10 h-10 rounded bg-green-600 text-white flex items-center justify-center text-sm font-bold flex-shrink-0">
+                    {initials || '?'}
+                  </div>
+                  <div className="text-sm space-y-0.5">
+                    <div className="font-semibold text-gray-900">{name || 'Unknown'}</div>
+                    {c.email && <div className="text-gray-500 flex items-center gap-1.5 text-xs"><span className="mr-0.5">&#9993;</span>{c.email}</div>}
+                    {c.phone && <div className="text-gray-500 flex items-center gap-1.5 text-xs"><span className="mr-0.5">&#9742;</span>{c.phone}</div>}
+                    {(c.city || c.province) && <div className="text-gray-500 text-xs">{[c.city, c.province].filter(Boolean).join(', ')}</div>}
+                  </div>
+                </div>
+              )
+            })()}
+          </div>
+
+          {/* Profit Analysis Section */}
+          <div className="px-6 py-4">
+            <button type="button" onClick={() => setProfitOpen(!profitOpen)} className="flex items-center gap-2 w-full text-left mb-4">
+              <svg className={`w-4 h-4 text-blue-500 transition-transform ${profitOpen ? 'rotate-0' : '-rotate-90'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+              <span className="text-base font-bold text-gray-900">Profit Analysis</span>
+            </button>
+            {profitOpen && (() => {
+              const ws = selectedDeal.worksheet
+              const fmt = (n: number) => '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+              const purchasePrice = Number(ws?.purchase_price) || 0
+              const discount = Number(ws?.discount) || 0
+              const sellingPrice = purchasePrice - discount
+              const feesTotal = (Array.isArray(ws?.fees) ? ws.fees : []).reduce((s: number, f: any) => s + (Number(f.amount) || 0), 0)
+              const accTotal = (Array.isArray(ws?.accessories) ? ws.accessories : []).reduce((s: number, a: any) => s + (Number(a.price) || 0), 0)
+              const warTotal = (Array.isArray(ws?.warranties) ? ws.warranties : []).reduce((s: number, w: any) => s + (Number(w.amount) || 0), 0)
+              const insTotal = (Array.isArray(ws?.insurances) ? ws.insurances : []).reduce((s: number, i: any) => s + (Number(i.amount) || 0), 0)
+              const additionalExpenses = feesTotal + accTotal + warTotal + insTotal
+              const vehicleProfit = sellingPrice - purchasePrice + additionalExpenses
+              const totalProfit = vehicleProfit + feesTotal + accTotal + warTotal + insTotal
+
+              // Donut chart
+              const total = sellingPrice || 1
+              const profitPct = Math.min(100, Math.max(5, ((totalProfit / total) * 100)))
+              const rd = 50
+              const circ = 2 * Math.PI * rd
+              const offset = circ - (profitPct / 100) * circ
+
+              return (
+                <div>
+                  <div className="flex justify-center mb-5">
+                    <svg width="140" height="140" viewBox="0 0 120 120">
+                      <circle cx="60" cy="60" r="56" fill="#16a34a" />
+                      <line x1="60" y1="6" x2="60" y2="60" stroke="#ffffff" strokeWidth="4" strokeLinecap="round" />
+                    </svg>
+                  </div>
+                  <div className="space-y-2 text-sm">
+                    <div className="flex justify-between"><span className="text-gray-700 font-semibold">Vehicle Purchase Price:</span><span>{fmt(purchasePrice)}</span></div>
+                    <div className="flex justify-between"><span className="text-gray-700 font-semibold">Additional Expenses:</span><span>{fmt(additionalExpenses)}</span></div>
+                    <div className="flex justify-between"><span className="text-gray-700 font-semibold">Vehicle Selling Price:</span><span>{fmt(sellingPrice)}</span></div>
+                    <div className="flex justify-between"><span className="text-gray-700 font-semibold">Vehicle Profit:</span><span>{fmt(vehicleProfit)}</span></div>
+                    <div className="flex justify-between"><span className="text-gray-700 font-semibold">Fees Profit:</span><span>{fmt(feesTotal)}</span></div>
+                    <div className="flex justify-between"><span className="text-gray-700 font-semibold">Accessories Profit:</span><span>{fmt(accTotal)}</span></div>
+                    <div className="flex justify-between"><span className="text-gray-700 font-semibold">Warranties Profit:</span><span>{fmt(warTotal)}</span></div>
+                    <div className="flex justify-between"><span className="text-gray-700 font-semibold">Insurance Profit:</span><span>{fmt(insTotal)}</span></div>
+                    <div className="flex justify-between"><span className="text-gray-700 font-semibold">Bank Commission:</span><span>{fmt(0)}</span></div>
+                    <div className="flex justify-between"><span className="text-gray-700 font-bold">Total Profit:</span><span className="font-bold">{fmt(totalProfit)}</span></div>
+                  </div>
+                </div>
+              )
+            })()}
+          </div>
+        </div>
+      )}
+
+      {/* Overlay backdrop */}
+      {selectedDeal && (
+        <div
+          className="fixed inset-0 bg-black/20 z-40"
+          onClick={() => setSelectedDeal(null)}
+        />
+      )}
     </div>
   )
 }
