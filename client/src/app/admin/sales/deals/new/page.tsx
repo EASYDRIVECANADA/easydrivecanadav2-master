@@ -110,7 +110,7 @@ export default function SalesNewDealPage() {
           {activeTab === 'vehicles' && <VehiclesTab />}
           {activeTab === 'worksheet' && <WorksheetTab dealMode={isRetail ? 'RTL' : 'WHL'} dealType={dealType} dealDate={dealDate} />}
           {activeTab === 'disclosures' && <DisclosuresTab />}
-          {activeTab === 'delivery' && <DeliveryTab />}
+          {activeTab === 'delivery' && <DeliveryTab dealMode={isRetail ? 'RTL' : 'WHL'} />}
         </div>
       </div>
     </div>

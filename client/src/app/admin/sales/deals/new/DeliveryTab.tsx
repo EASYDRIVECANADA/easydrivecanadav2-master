@@ -1,6 +1,148 @@
 'use client'
 
-export default function DeliveryTab() {
+import { useEffect, useState } from 'react'
+import { supabase } from '@/lib/supabaseClient'
+import { useRouter } from 'next/navigation'
+
+export default function DeliveryTab({ dealMode = 'RTL' }: { dealMode?: 'RTL' | 'WHL' }) {
+  const router = useRouter()
+  const [deliveryDate, setDeliveryDate] = useState('')
+  const [deliveryTime, setDeliveryTime] = useState('')
+  const [exportedOutsideOntario, setExportedOutsideOntario] = useState(false)
+  const [exportedPartyType, setExportedPartyType] = useState<'Dealer' | 'Non-Dealer'>('Non-Dealer')
+  const [deliveryDetails, setDeliveryDetails] = useState('')
+  const [otherNotes, setOtherNotes] = useState('')
+
+  const [staffNames, setStaffNames] = useState<string[]>([])
+  const [approvedBy, setApprovedBy] = useState('')
+  const [salesperson, setSalesperson] = useState('')
+
+  const [taskName, setTaskName] = useState('')
+  const [taskDescription, setTaskDescription] = useState('')
+  const [taskDueBy, setTaskDueBy] = useState('')
+  const [tasks, setTasks] = useState<Array<{ name: string | null; description: string | null; dueBy: string | null }>>([])
+
+  const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
+  const [showSuccessModal, setShowSuccessModal] = useState(false)
+
+  useEffect(() => {
+    const loadNames = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('edc_account_verifications')
+          .select('full_name')
+          .not('full_name', 'is', null)
+          .order('full_name', { ascending: true })
+
+        if (error) throw error
+
+        const names = (data || [])
+          .map((r: any) => (typeof r?.full_name === 'string' ? r.full_name.trim() : ''))
+          .filter((n: string) => !!n)
+
+        setStaffNames(names)
+        if (names.length > 0) {
+          setApprovedBy((prev) => prev || names[0])
+          setSalesperson((prev) => prev || names[0])
+        }
+      } catch (e) {
+        console.error('Failed to load staff names:', e)
+        setStaffNames([])
+      }
+    }
+
+    void loadNames()
+  }, [])
+
+  const toNull = (v: any) => {
+    if (v === undefined || v === null) return null
+    if (typeof v === 'string') {
+      const s = v.trim()
+      return s.length ? s : null
+    }
+    return v
+  }
+
+  const handleClearTask = () => {
+    setTaskName('')
+    setTaskDescription('')
+    setTaskDueBy('')
+  }
+
+  const handleAddTask = () => {
+    setTasks((prev) => [
+      ...prev,
+      {
+        name: toNull(taskName),
+        description: toNull(taskDescription),
+        dueBy: toNull(taskDueBy),
+      },
+    ])
+    handleClearTask()
+  }
+
+  const resetDelivery = () => {
+    setDeliveryDate('')
+    setDeliveryTime('')
+    setExportedOutsideOntario(false)
+    setExportedPartyType('Non-Dealer')
+    setDeliveryDetails('')
+    setOtherNotes('')
+    setApprovedBy(staffNames[0] || '')
+    setSalesperson(staffNames[0] || '')
+    handleClearTask()
+    setTasks([])
+    setSaveError(null)
+  }
+
+  const handleSave = async () => {
+    try {
+      setSaveError(null)
+      setSaving(true)
+
+      const payload = {
+        dealMode: toNull(dealMode),
+        deliveryDate: toNull(deliveryDate),
+        deliveryTime: toNull(deliveryTime),
+        exportedOutsideOntario,
+        exportedPartyType: exportedOutsideOntario ? toNull(exportedPartyType) : null,
+        deliveryDetails: toNull(deliveryDetails),
+        otherNotes: toNull(otherNotes),
+        approvedBy: toNull(approvedBy),
+        salesperson: toNull(salesperson),
+        newTaskDraft: {
+          name: toNull(taskName),
+          description: toNull(taskDescription),
+          dueBy: toNull(taskDueBy),
+        },
+        tasks: Array.isArray(tasks) ? tasks : [],
+      }
+
+      const res = await fetch('/api/delivery', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+
+      const raw = await res.text().catch(() => '')
+      if (!res.ok) {
+        throw new Error(raw || `Save failed (${res.status})`)
+      }
+      const ok = raw.trim().toLowerCase() === 'done'
+      if (!ok) {
+        throw new Error(raw || 'Webhook did not confirm save. Expected "Done"')
+      }
+
+      resetDelivery()
+      setShowSuccessModal(true)
+    } catch (e: any) {
+      setSaveError(e?.message || 'Failed to save delivery')
+    } finally {
+      setSaving(false)
+    }
+  }
+
   return (
     <div className="w-full">
       <div className="w-full space-y-6">
@@ -13,7 +155,12 @@ export default function DeliveryTab() {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3M5 11h14M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                   </svg>
                 </div>
-                <input type="date" className="flex-1 h-10 px-3 text-sm bg-white outline-none" />
+                <input
+                  type="date"
+                  className="flex-1 h-10 px-3 text-sm bg-white outline-none"
+                  value={deliveryDate}
+                  onChange={(e) => setDeliveryDate(e.target.value)}
+                />
               </div>
             </div>
 
@@ -26,7 +173,12 @@ export default function DeliveryTab() {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 7v5l3 2" />
                   </svg>
                 </div>
-                <input type="time" className="flex-1 h-10 px-3 text-sm bg-white outline-none" />
+                <input
+                  type="time"
+                  className="flex-1 h-10 px-3 text-sm bg-white outline-none"
+                  value={deliveryTime}
+                  onChange={(e) => setDeliveryTime(e.target.value)}
+                />
                 <div className="w-10 flex items-center justify-center bg-gray-100 text-gray-600 border-l border-gray-200">
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <circle cx="12" cy="12" r="9" strokeWidth={2} />
@@ -38,16 +190,50 @@ export default function DeliveryTab() {
             </div>
           </div>
 
-          <label className="flex items-center gap-2 text-xs text-gray-700">
-            Was the deal exported outside of Ontario?
-            <input type="checkbox" className="h-4 w-4" />
-          </label>
+          <div>
+            <label className="flex items-center gap-2 text-xs text-gray-700">
+              Was the deal exported outside of Ontario?
+              <input
+                type="checkbox"
+                className="h-4 w-4"
+                checked={exportedOutsideOntario}
+                onChange={(e) => setExportedOutsideOntario(e.target.checked)}
+              />
+            </label>
+
+            {exportedOutsideOntario ? (
+              <div className="mt-2 ml-1 space-y-1">
+                <label className="flex items-center gap-2 text-xs text-gray-700">
+                  <input
+                    type="radio"
+                    name="exportedPartyType"
+                    className="h-3.5 w-3.5"
+                    checked={exportedPartyType === 'Dealer'}
+                    onChange={() => setExportedPartyType('Dealer')}
+                  />
+                  Dealer
+                </label>
+                <label className="flex items-center gap-2 text-xs text-gray-700">
+                  <input
+                    type="radio"
+                    name="exportedPartyType"
+                    className="h-3.5 w-3.5"
+                    checked={exportedPartyType === 'Non-Dealer'}
+                    onChange={() => setExportedPartyType('Non-Dealer')}
+                  />
+                  Non-Dealer
+                </label>
+              </div>
+            ) : null}
+          </div>
 
           <div>
             <div className="text-xs text-gray-700 mb-2">Delivery Details</div>
             <textarea
               placeholder="Enter delivery details (if any)"
               className="w-full min-h-[110px] border border-gray-200 bg-white shadow-sm rounded px-3 py-2 text-sm"
+              value={deliveryDetails}
+              onChange={(e) => setDeliveryDetails(e.target.value)}
             />
           </div>
 
@@ -56,22 +242,46 @@ export default function DeliveryTab() {
             <textarea
               placeholder="ex: paid in full"
               className="w-full min-h-[110px] border border-gray-200 bg-white shadow-sm rounded px-3 py-2 text-sm"
+              value={otherNotes}
+              onChange={(e) => setOtherNotes(e.target.value)}
             />
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
               <div className="text-xs text-gray-700 mb-2">Approved By</div>
-              <select className="w-full h-10 border border-gray-200 rounded bg-white shadow-sm px-3 text-sm" defaultValue="Syed Islam">
-                <option value="Syed Islam">Syed Islam</option>
-                <option value="Nawshad Syed">Nawshad Syed</option>
+              <select
+                className="w-full h-10 border border-gray-200 rounded bg-white shadow-sm px-3 text-sm"
+                value={approvedBy}
+                onChange={(e) => setApprovedBy(e.target.value)}
+              >
+                {staffNames.length > 0 ? (
+                  staffNames.map((name) => (
+                    <option key={name} value={name}>
+                      {name}
+                    </option>
+                  ))
+                ) : (
+                  <option value="">No names found</option>
+                )}
               </select>
             </div>
             <div>
               <div className="text-xs text-gray-700 mb-2">Salesperson</div>
-              <select className="w-full h-10 border border-gray-200 rounded bg-white shadow-sm px-3 text-sm" defaultValue="Syed Islam">
-                <option value="Syed Islam">Syed Islam</option>
-                <option value="Nawshad Syed">Nawshad Syed</option>
+              <select
+                className="w-full h-10 border border-gray-200 rounded bg-white shadow-sm px-3 text-sm"
+                value={salesperson}
+                onChange={(e) => setSalesperson(e.target.value)}
+              >
+                {staffNames.length > 0 ? (
+                  staffNames.map((name) => (
+                    <option key={name} value={name}>
+                      {name}
+                    </option>
+                  ))
+                ) : (
+                  <option value="">No names found</option>
+                )}
               </select>
             </div>
           </div>
@@ -88,21 +298,44 @@ export default function DeliveryTab() {
               <div className="p-3 space-y-3">
                 <div>
                   <div className="text-xs text-gray-700 mb-1">Name:</div>
-                  <input className="w-full h-9 border border-gray-200 rounded bg-white px-3 text-sm" placeholder="title" />
+                  <input
+                    className="w-full h-9 border border-gray-200 rounded bg-white px-3 text-sm"
+                    placeholder="title"
+                    value={taskName}
+                    onChange={(e) => setTaskName(e.target.value)}
+                  />
                 </div>
                 <div>
                   <div className="text-xs text-gray-700 mb-1">Description:</div>
-                  <textarea className="w-full min-h-[80px] border border-gray-200 rounded bg-white px-3 py-2 text-sm" />
+                  <textarea
+                    className="w-full min-h-[80px] border border-gray-200 rounded bg-white px-3 py-2 text-sm"
+                    value={taskDescription}
+                    onChange={(e) => setTaskDescription(e.target.value)}
+                  />
                 </div>
                 <div>
                   <div className="text-xs text-gray-700 mb-1">Due By:</div>
-                  <input type="date" className="w-full h-9 border border-gray-200 rounded bg-white px-3 text-sm" placeholder="mm/dd/yyyy" />
+                  <input
+                    type="date"
+                    className="w-full h-9 border border-gray-200 rounded bg-white px-3 text-sm"
+                    placeholder="mm/dd/yyyy"
+                    value={taskDueBy}
+                    onChange={(e) => setTaskDueBy(e.target.value)}
+                  />
                 </div>
                 <div className="flex items-center justify-between">
-                  <button type="button" className="h-8 px-4 rounded bg-red-600 text-white text-xs font-semibold hover:bg-red-700">
+                  <button
+                    type="button"
+                    onClick={handleClearTask}
+                    className="h-8 px-4 rounded bg-red-600 text-white text-xs font-semibold hover:bg-red-700"
+                  >
                     Clear
                   </button>
-                  <button type="button" className="h-8 px-4 rounded bg-[#118df0] text-white text-xs font-semibold hover:bg-[#0d6ebd]">
+                  <button
+                    type="button"
+                    onClick={handleAddTask}
+                    className="h-8 px-4 rounded bg-[#118df0] text-white text-xs font-semibold hover:bg-[#0d6ebd]"
+                  >
                     Add
                   </button>
                 </div>
@@ -125,15 +358,77 @@ export default function DeliveryTab() {
                 </button>
               </div>
               <div className="p-4">
-                <div className="h-16 border border-gray-200 flex items-center justify-center text-gray-500">Nothing Todo!</div>
+                {tasks.length === 0 ? (
+                  <div className="h-16 border border-gray-200 flex items-center justify-center text-gray-500">Nothing Todo!</div>
+                ) : (
+                  <div className="space-y-2">
+                    {tasks.map((t, idx) => (
+                      <div key={idx} className="border border-gray-200 rounded px-3 py-2 text-sm text-gray-700">
+                        <div className="font-medium">{t.name || 'Untitled'}</div>
+                        {t.description ? <div className="text-xs text-gray-500 mt-1">{t.description}</div> : null}
+                        {t.dueBy ? <div className="text-xs text-gray-500 mt-1">Due: {t.dueBy}</div> : null}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
           </div>
       </div>
 
+      {saveError ? <div className="mt-4 text-sm text-red-600">{saveError}</div> : null}
+
+      {showSuccessModal ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div
+            className="absolute inset-0 bg-black/40"
+            onClick={() => {
+              setShowSuccessModal(false)
+              router.push('/admin/sales/deals')
+            }}
+          />
+          <div className="relative w-full max-w-md rounded-xl bg-white shadow-xl border border-gray-200">
+            <div className="px-5 py-4 border-b border-gray-200 flex items-center justify-between">
+              <div className="text-sm font-semibold text-gray-900">Success</div>
+              <button
+                type="button"
+                className="text-gray-500 hover:text-gray-700"
+                onClick={() => {
+                  setShowSuccessModal(false)
+                  router.push('/admin/sales/deals')
+                }}
+                aria-label="Close"
+              >
+                ×
+              </button>
+            </div>
+            <div className="px-5 py-5">
+              <div className="text-sm text-gray-700">Deal created successfully.</div>
+              <div className="mt-5 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  className="h-9 px-4 rounded bg-[#118df0] text-white text-sm font-semibold hover:bg-[#0d6ebd]"
+                  onClick={() => {
+                    setShowSuccessModal(false)
+                    router.push('/admin/sales/deals')
+                  }}
+                >
+                  OK
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       <div className="mt-6 flex items-center justify-end">
-        <button type="button" className="h-10 px-6 rounded bg-[#118df0] text-white text-sm font-semibold hover:bg-[#0d6ebd]">
-          Save
+        <button
+          type="button"
+          disabled={saving}
+          onClick={handleSave}
+          className="h-10 px-6 rounded bg-[#118df0] text-white text-sm font-semibold hover:bg-[#0d6ebd] disabled:opacity-50"
+        >
+          {saving ? 'Saving...' : 'Save'}
         </button>
       </div>
     </div>
