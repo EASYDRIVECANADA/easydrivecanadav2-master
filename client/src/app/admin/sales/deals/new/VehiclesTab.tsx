@@ -66,6 +66,9 @@ export default function VehiclesTab() {
     lienAmount: '0.00',
     tradeEquity: '0.00',
   })
+
+  const [addCertAsIs, setAddCertAsIs] = useState(false)
+  const [addBrandType, setAddBrandType] = useState<'na' | 'none' | 'rebuilt' | 'salvage' | 'irreparable'>('na')
   const [tradeDisclosuresBrandType, setTradeDisclosuresBrandType] = useState<'na' | 'none' | 'rebuilt' | 'salvage' | 'irreparable'>('na')
   const [tradeDisclosuresSearch, setTradeDisclosuresSearch] = useState('')
   const [tradeDisclosuresEditor, setTradeDisclosuresEditor] = useState('')
@@ -106,6 +109,85 @@ export default function VehiclesTab() {
       createdAt: v.created_at ?? null,
     }
   }
+
+  const handleAddSave = async () => {
+    try {
+      setAddSaveError(null)
+      setAddSaving(true)
+
+      const vin = (addForm.vin || '').trim()
+      const payload = {
+        inStockDate: addForm.inStockDate || null,
+        stockNumber: addForm.stockNumber || null,
+        vin: vin ? vin.toUpperCase() : null,
+        odometer: addForm.odometer || null,
+        odometerUnit: addForm.odometerUnit || null,
+        certAsIs: addCertAsIs ? 'AS-IS' : 'CERT',
+        year: addForm.year || null,
+        make: addForm.make || null,
+        model: addForm.model || null,
+        trim: addForm.trim || null,
+        exteriorColour: addForm.exteriorColour || null,
+        fuelType: addForm.fuelType || null,
+        brandType: addBrandType || null,
+        disclosuresEditor: addEditorHtml || null,
+        notes: addForm.notes || null,
+      }
+
+      const res = await fetch('https://primary-production-6722.up.railway.app/webhook/Add', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+
+      const raw = await res.text().catch(() => '')
+      if (!res.ok) {
+        throw new Error(raw || `Save failed (${res.status})`)
+      }
+
+      const ok = raw.trim().toLowerCase() === 'done'
+      if (!ok) {
+        throw new Error(raw || 'Webhook did not confirm save. Expected "Done"')
+      }
+
+      const yearNum = addForm.year ? Number(addForm.year) : null
+      const odoNum = addForm.odometer ? Number(String(addForm.odometer).replace(/,/g, '')) : null
+      const vehicleForPage: VehicleRow = {
+        id: `add-${Date.now()}`,
+        year: yearNum && !Number.isNaN(yearNum) ? yearNum : null,
+        make: addForm.make || null,
+        model: addForm.model || null,
+        trim: addForm.trim || null,
+        stock_number: addForm.stockNumber || null,
+        vin: vin ? vin.toUpperCase() : null,
+        status: 'In Stock',
+        exterior_color: addForm.exteriorColour || null,
+        odometer: odoNum && !Number.isNaN(odoNum) ? odoNum : null,
+        odometer_unit: addForm.odometerUnit || null,
+        created_at: new Date().toISOString(),
+      }
+
+      setSelected(vehicleForPage)
+      const label = [vehicleForPage.year ? String(vehicleForPage.year) : '', vehicleForPage.make ?? '', vehicleForPage.model ?? '', vehicleForPage.trim ?? '']
+        .filter(Boolean)
+        .join(' ')
+        .trim()
+      setQuery(label)
+      setOpen(false)
+      setResults([])
+      setError(null)
+
+      const mv = vehicleForPage.odometer ?? null
+      setOdoDraft(mv !== null && mv !== undefined ? String(mv) : '')
+      setOdoEditing(false)
+
+      setAddOpen(false)
+    } catch (e: any) {
+      setAddSaveError(e?.message || 'Failed to save vehicle')
+    } finally {
+      setAddSaving(false)
+    }
+  }
   const disclosureQuestions: string[] = [
     'Has the trade-in previously been used as a daily rental, police, taxi, limo, or emergency vehicle?',
     'Does the trade-in have a lien registered against it?',
@@ -140,6 +222,104 @@ export default function VehiclesTab() {
 
   const [addDecodeLoading, setAddDecodeLoading] = useState(false)
   const [addDecodeError, setAddDecodeError] = useState<string | null>(null)
+  const [addSaving, setAddSaving] = useState(false)
+  const [addSaveError, setAddSaveError] = useState<string | null>(null)
+
+  // Add Vehicle modal disclosures editor state
+  const addInlineEditorRef = useRef<HTMLDivElement | null>(null)
+  const [addEditorHtml, setAddEditorHtml] = useState('')
+  const [addToolbarState, setAddToolbarState] = useState({
+    bold: false,
+    italic: false,
+    underline: false,
+    strike: false,
+    ul: false,
+    ol: false,
+    alignLeft: true,
+    alignCenter: false,
+    alignRight: false,
+    alignJustify: false,
+  })
+
+  const refreshAddToolbarState = () => {
+    try {
+      const inEditor = (() => {
+        const sel = document.getSelection()
+        if (!sel || sel.rangeCount === 0) return false
+        const anchor = sel.anchorNode as Node | null
+        const editor = addInlineEditorRef.current
+        return !!editor && !!anchor && editor.contains(anchor)
+      })()
+      if (!inEditor) return
+      setAddToolbarState({
+        bold: document.queryCommandState('bold'),
+        italic: document.queryCommandState('italic'),
+        underline: document.queryCommandState('underline'),
+        strike: document.queryCommandState('strikeThrough'),
+        ul: document.queryCommandState('insertUnorderedList'),
+        ol: document.queryCommandState('insertOrderedList'),
+        alignLeft: document.queryCommandState('justifyLeft'),
+        alignCenter: document.queryCommandState('justifyCenter'),
+        alignRight: document.queryCommandState('justifyRight'),
+        alignJustify: document.queryCommandState('justifyFull'),
+      })
+    } catch {}
+  }
+
+  const execAddInline = (cmd: string, value?: string) => {
+    const el = addInlineEditorRef.current
+    if (!el) return
+    el.focus()
+    try {
+      document.execCommand(cmd, false, value)
+      setAddEditorHtml(el.innerHTML)
+      // Enforce strict LTR after any edit
+      try {
+        el.setAttribute('dir', 'ltr')
+        el.style.direction = 'ltr'
+        const blocks = el.querySelectorAll('p, div, li, ul, ol')
+        blocks.forEach((node) => {
+          ;(node as HTMLElement).setAttribute('dir', 'ltr')
+          ;(node as HTMLElement).style.direction = 'ltr'
+          ;(node as HTMLElement).style.textAlign = (node as HTMLElement).style.textAlign || 'left'
+        })
+      } catch {}
+      refreshAddToolbarState()
+    } catch {}
+  }
+
+  const insertTemplateIntoAddEditor = (text: string) => {
+    const el = addInlineEditorRef.current
+    if (!el) return
+    el.focus()
+    try {
+      // Insert as a paragraph line
+      document.execCommand('insertHTML', false, `<p dir="ltr" style="direction:ltr;text-align:left">${text}</p>`)
+      setAddEditorHtml(el.innerHTML)
+      refreshAddToolbarState()
+    } catch {}
+  }
+
+  useEffect(() => {
+    if (!addOpen) return
+    const handler = () => refreshAddToolbarState()
+    document.addEventListener('selectionchange', handler)
+    // Ensure default direction and alignment are normal (LTR, left-aligned)
+    try {
+      const el = addInlineEditorRef.current
+      if (el) {
+        el.setAttribute('dir', 'ltr')
+        document.execCommand('justifyLeft', false)
+        if (!el.innerHTML || el.innerHTML === '<br>' || el.innerHTML === '<div><br></div>') {
+          el.innerHTML = '<p dir="ltr" style="direction:ltr;text-align:left"><br></p>'
+          setAddEditorHtml(el.innerHTML)
+        }
+        setAddToolbarState((s) => ({ ...s, alignLeft: true, alignCenter: false, alignRight: false, alignJustify: false }))
+      }
+    } catch {}
+    return () => document.removeEventListener('selectionchange', handler)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [addOpen])
 
   const [tradeDecodeLoading, setTradeDecodeLoading] = useState(false)
   const [tradeDecodeError, setTradeDecodeError] = useState<string | null>(null)
@@ -162,7 +342,7 @@ export default function VehiclesTab() {
       const res = await fetch('/api/vincode', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ vin }),
+        body: JSON.stringify({ vin: vin.toUpperCase() }),
       })
       if (!res.ok) {
         const errorText = await res.text().catch(() => '')
@@ -226,7 +406,7 @@ export default function VehiclesTab() {
       const res = await fetch('/api/vincode', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ vin }),
+        body: JSON.stringify({ vin: vin.toUpperCase() }),
       })
       if (!res.ok) {
         const errorText = await res.text().catch(() => '')
@@ -588,224 +768,6 @@ export default function VehiclesTab() {
                 <div className="px-3 py-2 text-xs text-gray-500">No vehicles found</div>
               ) : null}
 
-      {addOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <div className="w-[980px] max-w-[calc(100vw-48px)] max-h-[90vh] bg-white rounded shadow-xl flex flex-col">
-            <div className="relative border-b border-gray-200 px-6 py-4 flex items-center gap-3">
-              <svg className="w-5 h-5 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7h18M5 7v10a2 2 0 002 2h10a2 2 0 002-2V7" />
-              </svg>
-              <div className="font-semibold text-gray-800">Add Vehicle</div>
-              <button
-                type="button"
-                aria-label="Close"
-                onClick={() => setAddOpen(false)}
-                className="absolute right-4 top-4 text-gray-500 hover:text-gray-700"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-
-            <div className="px-6 py-5 flex-1 overflow-y-auto">
-              <div className="grid grid-cols-12 gap-4">
-                <div className="col-span-4">
-                  <div className="text-xs text-gray-700 mb-1">In Stock Date</div>
-                  <input
-                    type="date"
-                    value={addForm.inStockDate}
-                    onChange={(e) => setAddForm((p) => ({ ...p, inStockDate: e.target.value }))}
-                    className="w-full h-9 border border-gray-200 rounded px-3 text-sm"
-                  />
-                </div>
-                <div className="col-span-4">
-                  <div className="text-xs text-gray-700 mb-1">Stock #</div>
-                  <input
-                    value={addForm.stockNumber}
-                    onChange={(e) => setAddForm((p) => ({ ...p, stockNumber: e.target.value }))}
-                    className="w-full h-9 border border-gray-200 rounded px-3 text-sm"
-                  />
-                </div>
-              </div>
-
-              <div className="mt-3 grid grid-cols-12 gap-4">
-                <div className="col-span-4">
-                  <div className="text-xs text-gray-700 mb-1">VIN</div>
-                  <div className="flex gap-2">
-                    <input
-                      value={addForm.vin}
-                      onChange={(e) => setAddForm((p) => ({ ...p, vin: e.target.value }))}
-                      className="flex-1 h-9 border border-gray-200 rounded px-3 text-sm"
-                    />
-                    <button
-                      type="button"
-                      onClick={handleAddDecode}
-                      disabled={addDecodeLoading}
-                      className="h-9 px-4 rounded bg-[#118df0] text-white text-sm font-semibold hover:bg-[#0d6ebd] disabled:opacity-60 disabled:cursor-not-allowed"
-                    >
-                      {addDecodeLoading ? 'Decoding...' : 'Decode'}
-                    </button>
-                  </div>
-                  {addDecodeError ? <div className="mt-1 text-xs text-red-600">{addDecodeError}</div> : null}
-                </div>
-                <div className="col-span-4">
-                  <div className="text-xs text-gray-700 mb-1">Odometer</div>
-                  <div className="flex items-stretch border border-gray-200 rounded overflow-hidden">
-                    <input
-                      value={addForm.odometer}
-                      onChange={(e) => setAddForm((p) => ({ ...p, odometer: e.target.value }))}
-                      className="flex-1 h-9 px-3 text-sm outline-none"
-                    />
-                    <select
-                      value={addForm.odometerUnit}
-                      onChange={(e) => setAddForm((p) => ({ ...p, odometerUnit: e.target.value }))}
-                      className="h-9 px-2 text-sm bg-white border-l border-gray-200"
-                    >
-                      <option value="kms">kms</option>
-                      <option value="miles">miles</option>
-                    </select>
-                  </div>
-                </div>
-              </div>
-
-              <div className="mt-3 grid grid-cols-12 gap-4">
-                <div className="col-span-3">
-                  <div className="text-xs text-gray-700 mb-1">Year</div>
-                  <input
-                    value={addForm.year}
-                    onChange={(e) => setAddForm((p) => ({ ...p, year: e.target.value }))}
-                    className="w-full h-9 border border-gray-200 rounded px-3 text-sm"
-                  />
-                </div>
-                <div className="col-span-3">
-                  <div className="text-xs text-gray-700 mb-1">Make</div>
-                  <input
-                    value={addForm.make}
-                    onChange={(e) => setAddForm((p) => ({ ...p, make: e.target.value }))}
-                    className="w-full h-9 border border-gray-200 rounded px-3 text-sm"
-                  />
-                </div>
-                <div className="col-span-3">
-                  <div className="text-xs text-gray-700 mb-1">Model</div>
-                  <input
-                    value={addForm.model}
-                    onChange={(e) => setAddForm((p) => ({ ...p, model: e.target.value }))}
-                    className="w-full h-9 border border-gray-200 rounded px-3 text-sm"
-                  />
-                </div>
-                <div className="col-span-3">
-                  <div className="text-xs text-gray-700 mb-1">Trim</div>
-                  <input
-                    value={addForm.trim}
-                    onChange={(e) => setAddForm((p) => ({ ...p, trim: e.target.value }))}
-                    className="w-full h-9 border border-gray-200 rounded px-3 text-sm"
-                  />
-                </div>
-              </div>
-
-              <div className="mt-3 grid grid-cols-12 gap-4">
-                <div className="col-span-6">
-                  <div className="text-xs text-gray-700 mb-1">Exterior Colour</div>
-                  <input
-                    value={addForm.exteriorColour}
-                    onChange={(e) => setAddForm((p) => ({ ...p, exteriorColour: e.target.value }))}
-                    className="w-full h-9 border border-gray-200 rounded px-3 text-sm"
-                  />
-                </div>
-                <div className="col-span-6">
-                  <div className="text-xs text-gray-700 mb-1">Fuel Type</div>
-                  <select
-                    value={addForm.fuelType}
-                    onChange={(e) => setAddForm((p) => ({ ...p, fuelType: e.target.value }))}
-                    className="w-full h-9 border border-gray-200 rounded px-3 text-sm bg-white"
-                  >
-                    <option value="" />
-                    <option value="Gasoline">Gasoline</option>
-                    <option value="Diesel">Diesel</option>
-                    <option value="Hybrid">Hybrid</option>
-                    <option value="Electric">Electric</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="mt-6">
-                <div className="text-sm font-semibold text-gray-800">Disclosures</div>
-                <div className="mt-3 grid grid-cols-12 gap-4">
-                  <div className="col-span-5">
-                    <div className="flex items-stretch border border-gray-200 rounded overflow-hidden">
-                      <div className="w-10 flex items-center justify-center bg-gray-100 text-gray-700 border-r border-gray-200">
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35" />
-                          <circle cx="10" cy="10" r="6" strokeWidth={2} />
-                        </svg>
-                      </div>
-                      <input className="flex-1 h-10 px-3 text-sm outline-none" placeholder="Search" />
-                    </div>
-
-                    <div className="mt-3 h-[260px] overflow-y-auto border border-gray-200 rounded">
-                      <div className="p-3">
-                        <div className="border border-gray-200 rounded p-3">
-                          <div className="text-sm italic text-gray-700">The vehicle was previously from another Province</div>
-                          <div className="mt-3">
-                            <button type="button" className="w-full h-10 rounded bg-[#118df0] text-white text-sm font-semibold hover:bg-[#0d6ebd]">
-                              Add
-                            </button>
-                          </div>
-                        </div>
-
-                        <div className="mt-4 border border-gray-200 rounded p-3">
-                          <div className="text-sm font-semibold text-gray-800">Customer Acknowledgment Clause</div>
-                          <div className="mt-2 text-sm text-gray-700 leading-5">
-                            The Buyer confirms that they have inspected the vehicle, provided the car fax report, reviewed the Bill of Sale,
-                            test-driven the vehicle with a salesperson, explained all questions, and had all questions answered.
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="col-span-7">
-                    <div className="border border-gray-200 rounded overflow-hidden">
-                      <div className="h-10 border-b border-gray-200 flex items-center gap-1 px-2 bg-white">
-                        {['B', 'I', 'U', 'S', 'X', '17', 'A', '≡', 'T', '</>'].map((t) => (
-                          <button key={t} type="button" className="h-8 px-2 border border-gray-200 rounded text-xs text-gray-700 hover:bg-gray-50">
-                            {t}
-                          </button>
-                        ))}
-                      </div>
-                      <textarea className="w-full h-[290px] p-3 text-sm outline-none bg-[#f7fbff]" />
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="mt-4">
-                <div className="text-xs text-gray-700 mb-1">Notes</div>
-                <textarea
-                  value={addForm.notes}
-                  onChange={(e) => setAddForm((p) => ({ ...p, notes: e.target.value }))}
-                  className="w-full h-24 border border-gray-200 rounded p-3 text-sm"
-                  placeholder="Ex. Has funny smell."
-                />
-              </div>
-            </div>
-
-            <div className="px-6 py-4 flex justify-end gap-2 border-t border-gray-100">
-              <button
-                type="button"
-                onClick={() => setAddOpen(false)}
-                className="h-9 px-4 rounded bg-[#e74c3c] text-white text-sm font-semibold hover:bg-[#cf3e2e]"
-              >
-                Cancel
-              </button>
-              <button type="button" className="h-9 px-4 rounded bg-[#118df0] text-white text-sm font-semibold hover:bg-[#0d6ebd]">
-                Save
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
               {!loading && !error
                 ? results.map((r) => {
                     const title = [r.year ? String(r.year) : '', r.make ?? '', r.model ?? '', r.trim ?? '']
@@ -1228,6 +1190,386 @@ export default function VehiclesTab() {
           </button>
         </div>
       </div>
+
+      {addOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="w-[980px] max-w-[calc(100vw-48px)] max-h-[90vh] bg-white rounded shadow-xl flex flex-col">
+            <div className="relative border-b border-gray-200 px-6 py-4 flex items-center gap-3">
+              <svg className="w-5 h-5 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7h18M5 7v10a2 2 0 002 2h10a2 2 0 002-2V7" />
+              </svg>
+              <div className="font-semibold text-gray-800">Add Vehicle</div>
+              <button
+                type="button"
+                aria-label="Close"
+                onClick={() => setAddOpen(false)}
+                className="absolute right-4 top-4 text-gray-500 hover:text-gray-700"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="px-6 py-5 flex-1 overflow-y-auto">
+              {addSaveError ? (
+                <div className="mb-3 rounded border border-red-200 bg-red-50 text-red-700 px-3 py-2 text-sm">
+                  {addSaveError}
+                </div>
+              ) : null}
+              <div className="mb-4 rounded border border-[#cce5ff] bg-[#e9f3ff] text-[#0c5460] p-3 text-sm">
+                <div className="font-semibold mb-1">Stock this vehicle into inventory \"on-the-fly\"</div>
+                <div>With this feature, enter (limited) vehicle details, so you can quickly print this deal! If you need to add further information - please do so by clicking on the vehicle from inventory!</div>
+              </div>
+              <div className="grid grid-cols-12 gap-4">
+                <div className="col-span-4">
+                  <div className="text-xs text-gray-700 mb-1">In Stock Date</div>
+                  <input
+                    type="date"
+                    value={addForm.inStockDate}
+                    onChange={(e) => setAddForm((p) => ({ ...p, inStockDate: e.target.value }))}
+                    className="w-full h-9 border border-gray-200 rounded px-3 text-sm"
+                  />
+                </div>
+                <div className="col-span-4">
+                  <div className="text-xs text-gray-700 mb-1">Stock #</div>
+                  <input
+                    value={addForm.stockNumber}
+                    onChange={(e) => setAddForm((p) => ({ ...p, stockNumber: e.target.value }))}
+                    className="w-full h-9 border border-gray-200 rounded px-3 text-sm"
+                  />
+                </div>
+              </div>
+
+              <div className="mt-3 grid grid-cols-12 gap-4 items-end">
+                <div className="col-span-4">
+                  <div className="text-xs text-gray-700 mb-1">VIN</div>
+                  <div className="flex gap-2">
+                    <input
+                      value={addForm.vin}
+                      onChange={(e) => setAddForm((p) => ({ ...p, vin: e.target.value }))}
+                      className="flex-1 h-9 border border-gray-200 rounded px-3 text-sm"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleAddDecode}
+                      disabled={addDecodeLoading}
+                      className="h-9 px-4 rounded bg-[#118df0] text-white text-sm font-semibold hover:bg-[#0d6ebd] disabled:opacity-60 disabled:cursor-not-allowed"
+                    >
+                      {addDecodeLoading ? 'Decoding...' : 'Decode'}
+                    </button>
+                  </div>
+                  {addDecodeError ? <div className="mt-1 text-xs text-red-600">{addDecodeError}</div> : null}
+                </div>
+                <div className="col-span-4">
+                  <div className="text-xs text-gray-700 mb-1">Odometer</div>
+                  <div className="flex items-center gap-2">
+                    <div className="flex items-stretch border border-gray-200 rounded overflow-hidden flex-1">
+                      <input
+                        value={addForm.odometer}
+                        onChange={(e) => setAddForm((p) => ({ ...p, odometer: e.target.value }))}
+                        className="flex-1 h-9 px-3 text-sm outline-none"
+                      />
+                      <select
+                        value={addForm.odometerUnit}
+                        onChange={(e) => setAddForm((p) => ({ ...p, odometerUnit: e.target.value }))}
+                        className="h-9 px-2 text-sm bg-white border-l border-gray-200"
+                      >
+                        <option value="kms">kms</option>
+                        <option value="miles">miles</option>
+                      </select>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[11px] text-gray-700">CERT/AS-IS</span>
+                      <button
+                        type="button"
+                        onClick={() => setAddCertAsIs(v => !v)}
+                        className="h-6 w-[58px] px-2 rounded-full border relative border-[#118df0] text-[#118df0]"
+                        title="Toggle CERT/AS-IS"
+                      >
+                        <span className="text-[10px] font-semibold leading-6 select-none">{addCertAsIs ? 'AS-IS' : 'CERT'}</span>
+                        <span className={`absolute top-0.5 ${addCertAsIs ? 'right-0.5' : 'left-0.5'} h-5 w-5 rounded-full bg-[#118df0]`} />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-3 grid grid-cols-12 gap-4">
+                <div className="col-span-3">
+                  <div className="text-xs text-gray-700 mb-1">Year</div>
+                  <input
+                    value={addForm.year}
+                    onChange={(e) => setAddForm((p) => ({ ...p, year: e.target.value }))}
+                    className="w-full h-9 border border-gray-200 rounded px-3 text-sm"
+                  />
+                </div>
+                <div className="col-span-3">
+                  <div className="text-xs text-gray-700 mb-1">Make</div>
+                  <input
+                    value={addForm.make}
+                    onChange={(e) => setAddForm((p) => ({ ...p, make: e.target.value }))}
+                    className="w-full h-9 border border-gray-200 rounded px-3 text-sm"
+                  />
+                </div>
+                <div className="col-span-3">
+                  <div className="text-xs text-gray-700 mb-1">Model</div>
+                  <input
+                    value={addForm.model}
+                    onChange={(e) => setAddForm((p) => ({ ...p, model: e.target.value }))}
+                    className="w-full h-9 border border-gray-200 rounded px-3 text-sm"
+                  />
+                </div>
+                <div className="col-span-3">
+                  <div className="text-xs text-gray-700 mb-1">Trim</div>
+                  <input
+                    value={addForm.trim}
+                    onChange={(e) => setAddForm((p) => ({ ...p, trim: e.target.value }))}
+                    className="w-full h-9 border border-gray-200 rounded px-3 text-sm"
+                  />
+                </div>
+              </div>
+
+              <div className="mt-3 grid grid-cols-12 gap-4">
+                <div className="col-span-6">
+                  <div className="text-xs text-gray-700 mb-1">Exterior Colour</div>
+                  <input
+                    value={addForm.exteriorColour}
+                    onChange={(e) => setAddForm((p) => ({ ...p, exteriorColour: e.target.value }))}
+                    className="w-full h-9 border border-gray-200 rounded px-3 text-sm"
+                  />
+                </div>
+                <div className="col-span-6">
+                  <div className="text-xs text-gray-700 mb-1">Fuel Type</div>
+                  <select
+                    value={addForm.fuelType}
+                    onChange={(e) => setAddForm((p) => ({ ...p, fuelType: e.target.value }))}
+                    className="w-full h-9 border border-gray-200 rounded px-3 text-sm bg-white"
+                  >
+                    <option value="" />
+                    <option value="Gasoline">Gasoline</option>
+                    <option value="Diesel">Diesel</option>
+                    <option value="Hybrid">Hybrid</option>
+                    <option value="Electric">Electric</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="mt-6">
+                <div className="text-sm font-semibold text-gray-800">Disclosures</div>
+                <div className="mt-2 flex items-center gap-6 text-sm text-gray-700">
+                  {[
+                    { key: 'na', label: 'N/A' },
+                    { key: 'none', label: 'None' },
+                    { key: 'rebuilt', label: 'Rebuilt' },
+                    { key: 'salvage', label: 'Salvage' },
+                    { key: 'irreparable', label: 'Irreparable' },
+                  ].map((opt) => (
+                    <label key={opt.key} className="inline-flex items-center gap-2">
+                      <input
+                        type="radio"
+                        name="addBrandType"
+                        checked={addBrandType === (opt.key as any)}
+                        onChange={() => setAddBrandType(opt.key as any)}
+                      />
+                      <span>{opt.label}</span>
+                    </label>
+                  ))}
+                </div>
+                <div className="mt-3 grid grid-cols-12 gap-4">
+                  <div className="col-span-5">
+                    <div className="flex items-stretch border border-gray-200 rounded overflow-hidden">
+                      <div className="w-10 flex items-center justify-center bg-gray-100 text-gray-700 border-r border-gray-200">
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35" />
+                          <circle cx="10" cy="10" r="6" strokeWidth={2} />
+                        </svg>
+                      </div>
+                      <input className="flex-1 h-10 px-3 text-sm outline-none" placeholder="Search" />
+                    </div>
+
+                    <div className="mt-3 h-[260px] overflow-y-auto border border-gray-200 rounded">
+                      <div className="p-3">
+                        <div className="border border-gray-200 rounded p-3">
+                          <div className="text-sm italic text-gray-700">The vehicle was previously from another Province</div>
+                          <div className="mt-3">
+                            <button
+                              type="button"
+                              className="w-full h-10 rounded bg-[#118df0] text-white text-sm font-semibold hover:bg-[#0d6ebd]"
+                              onClick={() => insertTemplateIntoAddEditor('The vehicle was previously from another Province')}
+                            >
+                              Add
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="mt-4 border border-gray-200 rounded p-3">
+                          <div className="text-sm font-semibold text-gray-800">Customer Acknowledgment Clause</div>
+                          <div className="mt-2 text-sm text-gray-700 leading-5">
+                            The Buyer confirms that they have inspected the vehicle, provided the car fax report, reviewed the Bill of Sale,
+                            test-driven the vehicle with a salesperson, explained all questions, and had all questions answered.
+                          </div>
+                          <div className="mt-3">
+                            <button
+                              type="button"
+                              className="w-full h-10 rounded bg-[#118df0] text-white text-sm font-semibold hover:bg-[#0d6ebd]"
+                              onClick={() => insertTemplateIntoAddEditor('Customer Acknowledgment Clause: The Buyer confirms that they have inspected the vehicle, provided the car fax report, reviewed the Bill of Sale, test-driven the vehicle with a salesperson, explained all questions, and had all questions answered.')}
+                            >
+                              Add
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="col-span-7">
+                    <div className="border border-gray-200 rounded overflow-hidden">
+                      <div className="h-10 border-b border-gray-200 flex items-center gap-1 px-2 bg-white">
+                        <button
+                          type="button"
+                          onClick={() => execAddInline('bold')}
+                          className={addToolbarState.bold ? 'h-8 px-2 border rounded text-xs bg-[#118df0] text-white border-[#118df0]' : 'h-8 px-2 border border-gray-200 rounded text-xs text-gray-700 hover:bg-gray-50'}
+                        >
+                          B
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => execAddInline('italic')}
+                          className={addToolbarState.italic ? 'h-8 px-2 border rounded text-xs bg-[#118df0] text-white border-[#118df0] italic' : 'h-8 px-2 border border-gray-200 rounded text-xs text-gray-700 hover:bg-gray-50 italic'}
+                        >
+                          I
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => execAddInline('underline')}
+                          className={addToolbarState.underline ? 'h-8 px-2 border rounded text-xs bg-[#118df0] text-white border-[#118df0] underline' : 'h-8 px-2 border border-gray-200 rounded text-xs text-gray-700 hover:bg-gray-50 underline'}
+                        >
+                          U
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => execAddInline('strikeThrough')}
+                          className={addToolbarState.strike ? 'h-8 px-2 border rounded text-xs bg-[#118df0] text-white border-[#118df0] line-through' : 'h-8 px-2 border border-gray-200 rounded text-xs text-gray-700 hover:bg-gray-50 line-through'}
+                        >
+                          S
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => execAddInline('insertUnorderedList')}
+                          className={addToolbarState.ul ? 'h-8 px-2 border rounded text-xs bg-[#118df0] text-white border-[#118df0]' : 'h-8 px-2 border border-gray-200 rounded text-xs text-gray-700 hover:bg-gray-50'}
+                        >
+                          •
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => execAddInline('insertOrderedList')}
+                          className={addToolbarState.ol ? 'h-8 px-2 border rounded text-xs bg-[#118df0] text-white border-[#118df0]' : 'h-8 px-2 border border-gray-200 rounded text-xs text-gray-700 hover:bg-gray-50'}
+                        >
+                          1.
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => execAddInline('removeFormat')}
+                          className="h-8 px-2 border border-gray-200 rounded text-xs text-gray-700 hover:bg-gray-50"
+                          title="Clear formatting"
+                        >
+                          X
+                        </button>
+                        <div className="mx-1 h-6 w-px bg-gray-200" />
+                        <button
+                          type="button"
+                          onClick={() => execAddInline('justifyLeft')}
+                          className={addToolbarState.alignLeft ? 'h-8 px-2 border rounded text-xs bg-[#118df0] text-white border-[#118df0]' : 'h-8 px-2 border border-gray-200 rounded text-xs text-gray-700 hover:bg-gray-50'}
+                          title="Align left"
+                        >
+                          L
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => execAddInline('justifyCenter')}
+                          className={addToolbarState.alignCenter ? 'h-8 px-2 border rounded text-xs bg-[#118df0] text-white border-[#118df0]' : 'h-8 px-2 border border-gray-200 rounded text-xs text-gray-700 hover:bg-gray-50'}
+                          title="Align center"
+                        >
+                          C
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => execAddInline('justifyRight')}
+                          className={addToolbarState.alignRight ? 'h-8 px-2 border rounded text-xs bg-[#118df0] text-white border-[#118df0]' : 'h-8 px-2 border border-gray-200 rounded text-xs text-gray-700 hover:bg-gray-50'}
+                          title="Align right"
+                        >
+                          R
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => execAddInline('justifyFull')}
+                          className={addToolbarState.alignJustify ? 'h-8 px-2 border rounded text-xs bg-[#118df0] text-white border-[#118df0]' : 'h-8 px-2 border border-gray-200 rounded text-xs text-gray-700 hover:bg-gray-50'}
+                          title="Justify"
+                        >
+                          J
+                        </button>
+                      </div>
+                      <div
+                        ref={addInlineEditorRef}
+                        contentEditable
+                        suppressContentEditableWarning
+                        className="w-full h-[290px] p-3 text-sm outline-none bg-[#f7fbff] overflow-auto text-left"
+                        dir="ltr"
+                        style={{ direction: 'ltr', unicodeBidi: 'bidi-override', textAlign: 'left' as const }}
+                        onInput={(e) => setAddEditorHtml((e.currentTarget as HTMLDivElement).innerHTML)}
+                        onKeyUp={() => {
+                          const el = addInlineEditorRef.current
+                          if (!el) return
+                          try {
+                            el.setAttribute('dir', 'ltr')
+                            el.style.direction = 'ltr'
+                            const blocks = el.querySelectorAll('p, div, li, ul, ol')
+                            blocks.forEach((node) => {
+                              ;(node as HTMLElement).setAttribute('dir', 'ltr')
+                              ;(node as HTMLElement).style.direction = 'ltr'
+                              ;(node as HTMLElement).style.textAlign = (node as HTMLElement).style.textAlign || 'left'
+                            })
+                          } catch {}
+                        }}
+                        dangerouslySetInnerHTML={{ __html: addEditorHtml }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-4">
+                <div className="text-xs text-gray-700 mb-1">Notes</div>
+                <textarea
+                  value={addForm.notes}
+                  onChange={(e) => setAddForm((p) => ({ ...p, notes: e.target.value }))}
+                  className="w-full h-24 border border-gray-200 rounded p-3 text-sm"
+                  placeholder="Ex. Has funny smell."
+                />
+              </div>
+            </div>
+
+            <div className="px-6 py-4 flex justify-end gap-2 border-t border-gray-100">
+              <button
+                type="button"
+                onClick={() => setAddOpen(false)}
+                className="h-9 px-4 rounded bg-[#e74c3c] text-white text-sm font-semibold hover:bg-[#cf3e2e]"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleAddSave}
+                disabled={addSaving}
+                className="h-9 px-4 rounded bg-[#118df0] text-white text-sm font-semibold hover:bg-[#0d6ebd] disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                {addSaving ? 'Saving…' : 'Save'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {tradeOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
