@@ -2,7 +2,17 @@
 
 import { useEffect, useMemo, useState } from 'react'
 
-export default function WorksheetTab({ dealMode = 'RTL', dealType = 'Cash' }: { dealMode?: 'RTL' | 'WHL'; dealType?: 'Cash' | 'Finance' }) {
+export default function WorksheetTab({
+  dealMode = 'RTL',
+  dealType = 'Cash',
+  dealDate,
+}: {
+  dealMode?: 'RTL' | 'WHL'
+  dealType?: 'Cash' | 'Finance'
+  dealDate?: string
+}) {
+  const [worksheetSaving, setWorksheetSaving] = useState(false)
+  const [worksheetSaveError, setWorksheetSaveError] = useState<string | null>(null)
   const [purchasePrice, setPurchasePrice] = useState('0')
   const [discount, setDiscount] = useState('0')
   type TaxCode = 'HST' | 'RST' | 'GST' | 'PST' | 'EXEMPT' | 'QST'
@@ -128,6 +138,100 @@ export default function WorksheetTab({ dealMode = 'RTL', dealType = 'Cash' }: { 
       next.splice(idx, 0, from)
       return next
     })
+  }
+
+  const resetWorksheet = () => {
+    setWorksheetSaveError(null)
+
+    setPurchasePrice('0')
+    setDiscount('0')
+    setTaxCode('HST')
+    setTaxMenuOpen(false)
+    setTaxOverride(false)
+    setTaxManual('0')
+    setLicenseFee('')
+    setTradeValue('0')
+    setActualCashValue('0')
+    setLienPayout('0')
+    setNewPlates(false)
+    setRenewalOnly(false)
+
+    setFinanceOverride(false)
+    setFinanceRate('')
+    setFinanceTermMonths('')
+    setPaymentType('Bi-Weekly')
+    setFirstPaymentDate('')
+    setLienHolder('')
+    setFinanceRateType('VAR')
+    setFinanceCommission('')
+    setCommissionOpen(false)
+
+    setFeeSearch('')
+    setFees([])
+    setFeeDraft(null)
+    setEditingFeeId(null)
+    setEditingDraft(null)
+    setFeeDetailsOpen(false)
+    setFeeDetailsForId(null)
+    setFeeTaxMenuOpen(false)
+    setFeeTaxSelected({ 'Default Tax 0 %': true })
+    setFeeTaxOverride(false)
+    setFeeShowTaxDetails(false)
+    setFeeTaxValues({})
+
+    setPayments([])
+    setPaymentDrafts([])
+    setEditingPaymentId(null)
+    setEditingPaymentDraft(null)
+
+    setAccessorySearch('')
+    setAccessories([])
+    setAccessoryDraft(null)
+    setEditingAccessoryId(null)
+    setEditingAccessoryDraft(null)
+    setAccDetailsOpen(false)
+    setAccDetailsForId(null)
+    setAccVehicleType('')
+    setAccTaxMenuOpen(false)
+    setAccTaxSelected({ 'HST 13 %': true })
+    setAccTaxOverride(false)
+    setAccShowTaxDetails(false)
+    setAccTaxValues({})
+
+    setWarrantySearch('')
+    setWarranties([])
+    setWarrantyDraft(null)
+    setEditingWarrantyId(null)
+    setEditingWarrantyDraft(null)
+    setWarDetailsOpen(false)
+    setWarDetailsForId(null)
+    setWarDuration('')
+    setWarDistance('')
+    setWarDealerGuaranty(false)
+    setWarTaxMenuOpen(false)
+    setWarTaxSelected({ 'HST 13 %': true })
+    setWarTaxOverride(false)
+    setWarShowTaxDetails(false)
+    setWarTaxValues({})
+
+    setInsuranceSearch('')
+    setInsurances([])
+    setInsuranceDraft(null)
+    setEditingInsuranceId(null)
+    setEditingInsuranceDraft(null)
+    setInsDetailsOpen(false)
+    setInsDetailsForId(null)
+    setInsDeductible('0')
+    setInsDuration('')
+    setInsType('')
+    setInsTaxMenuOpen(false)
+    setInsTaxSelected({ 'HST 13 %': true })
+    setInsTaxOverride(false)
+    setInsShowTaxDetails(false)
+    setInsTaxValues({})
+
+    setCardsOrder(['fees', 'accessories', 'warranties', 'insurances', 'payments'])
+    setDraggingCard(null)
   }
 
   const parseMoney = (v: string) => {
@@ -288,60 +392,212 @@ export default function WorksheetTab({ dealMode = 'RTL', dealType = 'Cash' }: { 
   )
 
   const submitWorksheet = async () => {
+    const norm = (v: any) => {
+      if (v === undefined || v === null) return null
+      if (typeof v === 'string') {
+        const t = v.trim()
+        return t === '' ? null : t
+      }
+      return v
+    }
+
     const payload = {
-      dealMode,
-      dealType,
+      dealMode: norm(dealMode),
+      dealType: norm(dealType),
+      dealDate: norm(dealDate),
       // Deal Breakdown fields (stringified numbers to keep consistency)
-      purchasePrice,
-      discount,
-      subtotal: String(subtotal ?? 0),
-      tradeValue,
-      actualCashValue,
-      netDifference: String(netDifference ?? 0),
-      taxCode,
-      taxRate: String(taxRate ?? 0),
-      taxOverride,
-      taxManual,
-      totalTax: String(totalTax ?? 0),
-      lienPayout,
-      tradeEquity: String(tradeEquity ?? 0),
-      licenseFee,
-      newPlates,
-      renewalOnly,
-      totalBalanceDue: String(totalBalanceDue ?? 0),
+      purchasePrice: norm(purchasePrice),
+      discount: norm(discount),
+      subtotal: norm(String(subtotal ?? 0)),
+      tradeValue: norm(tradeValue),
+      actualCashValue: norm(actualCashValue),
+      netDifference: norm(String(netDifference ?? 0)),
+      taxCode: norm(taxCode),
+      taxRate: norm(String(taxRate ?? 0)),
+      taxOverride: norm(taxOverride),
+      taxManual: norm(taxManual),
+      totalTax: norm(String(totalTax ?? 0)),
+      lienPayout: norm(lienPayout),
+      tradeEquity: norm(String(tradeEquity ?? 0)),
+      licenseFee: norm(licenseFee),
+      newPlates: norm(newPlates),
+      renewalOnly: norm(renewalOnly),
+      totalBalanceDue: norm(String(totalBalanceDue ?? 0)),
 
       // Financing
       financing: {
-        financedAmount: String(financedAmount ?? 0),
-        financeOverride,
-        financeRate,
-        financeTermMonths,
-        paymentType,
-        financeInterest: String(financeCalc.interest ?? 0),
-        payment: String(financeCalc.payment ?? 0),
-        firstPaymentDate,
-        lienHolder,
-        financeRateType,
-        financeCommission,
+        financedAmount: norm(String(financedAmount ?? 0)),
+        financeOverride: norm(financeOverride),
+        financeRate: norm(financeRate),
+        financeTermMonths: norm(financeTermMonths),
+        paymentType: norm(paymentType),
+        financeInterest: norm(String(financeCalc.interest ?? 0)),
+        payment: norm(String(financeCalc.payment ?? 0)),
+        firstPaymentDate: norm(firstPaymentDate),
+        lienHolder: norm(lienHolder),
+        financeRateType: norm(financeRateType),
+        financeCommission: norm(financeCommission),
       },
 
       // Arrays for all line items (empty arrays if none)
-      fees: (fees || []).map((f) => ({ id: f.id ?? '', name: f.name ?? '', desc: f.desc ?? '', amount: String(f.amount ?? 0) })),
-      accessories: (accessories || []).map((a) => ({ id: a.id ?? '', name: a.name ?? '', desc: a.desc ?? '', price: String(a.price ?? 0) })),
-      warranties: (warranties || []).map((w) => ({ id: w.id ?? '', name: w.name ?? '', desc: w.desc ?? '', amount: String(w.amount ?? 0) })),
-      insurances: (insurances || []).map((i) => ({ id: i.id ?? '', name: i.name ?? '', desc: i.desc ?? '', amount: String(i.amount ?? 0) })),
-      payments: (payments || []).map((p) => ({ id: p.id ?? '', amount: String(p.amount ?? 0), type: p.type ?? '', desc: p.desc ?? '', category: p.category ?? '' })),
+      fees: (fees || []).map((f) => ({ id: norm(f.id), name: norm(f.name), desc: norm(f.desc), amount: norm(String(f.amount ?? 0)) })),
+      accessories: (accessories || []).map((a) => ({ id: norm(a.id), name: norm(a.name), desc: norm(a.desc), price: norm(String(a.price ?? 0)) })),
+      warranties: (warranties || []).map((w) => ({ id: norm(w.id), name: norm(w.name), desc: norm(w.desc), amount: norm(String(w.amount ?? 0)) })),
+      insurances: (insurances || []).map((i) => ({ id: norm(i.id), name: norm(i.name), desc: norm(i.desc), amount: norm(String(i.amount ?? 0)) })),
+      payments: (payments || []).map((p) => ({ id: norm(p.id), amount: norm(String(p.amount ?? 0)), type: norm(p.type), desc: norm(p.desc), category: norm(p.category) })),
+
+      sections: (cardsOrder || []).map((k) => {
+        if (k === 'fees') {
+          return {
+            key: 'fees',
+            label: 'Fees',
+            total: norm(String(feesTotal ?? 0)),
+            rows: (fees || []).map((f) => ({ id: norm(f.id), name: norm(f.name), desc: norm(f.desc), amount: norm(String(f.amount ?? 0)) })),
+          }
+        }
+        if (k === 'accessories') {
+          return {
+            key: 'accessories',
+            label: 'Accessories',
+            total: norm(String(accessoriesTotal ?? 0)),
+            rows: (accessories || []).map((a) => ({ id: norm(a.id), name: norm(a.name), desc: norm(a.desc), price: norm(String(a.price ?? 0)) })),
+          }
+        }
+        if (k === 'warranties') {
+          return {
+            key: 'warranties',
+            label: 'Warranties',
+            total: norm(String(warrantiesTotal ?? 0)),
+            rows: (warranties || []).map((w) => ({ id: norm(w.id), name: norm(w.name), desc: norm(w.desc), amount: norm(String(w.amount ?? 0)) })),
+          }
+        }
+        if (k === 'insurances') {
+          return {
+            key: 'insurances',
+            label: 'Insurances',
+            total: norm(String(insurancesTotal ?? 0)),
+            rows: (insurances || []).map((i) => ({ id: norm(i.id), name: norm(i.name), desc: norm(i.desc), amount: norm(String(i.amount ?? 0)) })),
+          }
+        }
+        return {
+          key: 'payments',
+          label: 'Payments',
+          total: norm(String(paymentsTotal ?? 0)),
+          rows: (payments || []).map((p) => ({ id: norm(p.id), amount: norm(String(p.amount ?? 0)), type: norm(p.type), desc: norm(p.desc), category: norm(p.category) })),
+        }
+      }),
+
+      uiState: {
+        cardsOrder: cardsOrder,
+
+        feeDraft: feeDraft
+          ? { name: norm(feeDraft.name), desc: norm(feeDraft.desc), amount: norm(feeDraft.amount) }
+          : null,
+        editingFeeId: norm(editingFeeId),
+        editingFeeDraft: editingDraft
+          ? { name: norm(editingDraft.name), desc: norm(editingDraft.desc), amount: norm(editingDraft.amount) }
+          : null,
+        feeDetailsOpen: norm(feeDetailsOpen),
+        feeDetailsForId: norm(feeDetailsForId),
+        feeTaxMenuOpen: norm(feeTaxMenuOpen),
+        feeTaxSelected: feeTaxSelected,
+        feeTaxOverride: norm(feeTaxOverride),
+        feeShowTaxDetails: norm(feeShowTaxDetails),
+        feeTaxValues: feeTaxValues,
+
+        accessoryDraft: accessoryDraft
+          ? { name: norm(accessoryDraft.name), desc: norm(accessoryDraft.desc), price: norm(accessoryDraft.price) }
+          : null,
+        editingAccessoryId: norm(editingAccessoryId),
+        editingAccessoryDraft: editingAccessoryDraft
+          ? { name: norm(editingAccessoryDraft.name), desc: norm(editingAccessoryDraft.desc), price: norm(editingAccessoryDraft.price) }
+          : null,
+        accDetailsOpen: norm(accDetailsOpen),
+        accDetailsForId: norm(accDetailsForId),
+        accVehicleType: norm(accVehicleType),
+        accTaxMenuOpen: norm(accTaxMenuOpen),
+        accTaxSelected: accTaxSelected,
+        accTaxOverride: norm(accTaxOverride),
+        accShowTaxDetails: norm(accShowTaxDetails),
+        accTaxValues: accTaxValues,
+
+        warrantyDraft: warrantyDraft
+          ? { name: norm(warrantyDraft.name), desc: norm(warrantyDraft.desc), amount: norm(warrantyDraft.amount) }
+          : null,
+        editingWarrantyId: norm(editingWarrantyId),
+        editingWarrantyDraft: editingWarrantyDraft
+          ? { name: norm(editingWarrantyDraft.name), desc: norm(editingWarrantyDraft.desc), amount: norm(editingWarrantyDraft.amount) }
+          : null,
+        warDetailsOpen: norm(warDetailsOpen),
+        warDetailsForId: norm(warDetailsForId),
+        warDuration: norm(warDuration),
+        warDistance: norm(warDistance),
+        warDealerGuaranty: norm(warDealerGuaranty),
+        warTaxMenuOpen: norm(warTaxMenuOpen),
+        warTaxSelected: warTaxSelected,
+        warTaxOverride: norm(warTaxOverride),
+        warShowTaxDetails: norm(warShowTaxDetails),
+        warTaxValues: warTaxValues,
+
+        insuranceDraft: insuranceDraft
+          ? { name: norm(insuranceDraft.name), desc: norm(insuranceDraft.desc), amount: norm(insuranceDraft.amount) }
+          : null,
+        editingInsuranceId: norm(editingInsuranceId),
+        editingInsuranceDraft: editingInsuranceDraft
+          ? { name: norm(editingInsuranceDraft.name), desc: norm(editingInsuranceDraft.desc), amount: norm(editingInsuranceDraft.amount) }
+          : null,
+        insDetailsOpen: norm(insDetailsOpen),
+        insDetailsForId: norm(insDetailsForId),
+        insDeductible: norm(insDeductible),
+        insDuration: norm(insDuration),
+        insType: norm(insType),
+        insTaxMenuOpen: norm(insTaxMenuOpen),
+        insTaxSelected: insTaxSelected,
+        insTaxOverride: norm(insTaxOverride),
+        insShowTaxDetails: norm(insShowTaxDetails),
+        insTaxValues: insTaxValues,
+
+        editingPaymentId: norm(editingPaymentId),
+        editingPaymentDraft: editingPaymentDraft
+          ? { amount: norm(editingPaymentDraft.amount), type: norm(editingPaymentDraft.type), desc: norm(editingPaymentDraft.desc) }
+          : null,
+        paymentDrafts: (paymentDrafts || []).map((d) => ({
+          id: norm(d.id),
+          amount: norm(d.amount),
+          type: norm(d.type),
+          desc: norm(d.desc),
+          category: norm(d.category),
+        })),
+      },
     }
 
     try {
-      await fetch('https://primary-production-6722.up.railway.app/webhook/worksheet', {
+      setWorksheetSaveError(null)
+      setWorksheetSaving(true)
+
+      const res = await fetch('https://primary-production-6722.up.railway.app/webhook/worksheet', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
         keepalive: true,
       })
+
+      const raw = await res.text().catch(() => '')
+      if (!res.ok) {
+        throw new Error(raw || `Save failed (${res.status})`)
+      }
+      const ok = raw.trim().toLowerCase() === 'done'
+      if (!ok) {
+        throw new Error(raw || 'Webhook did not confirm save. Expected "Done"')
+      }
+
+      resetWorksheet()
     } catch (err) {
+      const msg = (err as any)?.message || 'Failed to submit worksheet'
+      setWorksheetSaveError(msg)
       console.error('Failed to submit worksheet', err)
+    } finally {
+      setWorksheetSaving(false)
     }
   }
 
@@ -1260,9 +1516,20 @@ export default function WorksheetTab({ dealMode = 'RTL', dealType = 'Cash' }: { 
         </div>
       </div>
 
+      {worksheetSaveError ? (
+        <div className="mt-6 rounded border border-red-200 bg-red-50 text-red-700 px-3 py-2 text-sm">
+          {worksheetSaveError}
+        </div>
+      ) : null}
+
       <div className="mt-6 flex items-center justify-end">
-        <button type="button" onClick={submitWorksheet} className="h-10 px-6 rounded bg-[#118df0] text-white text-sm font-semibold hover:bg-[#0d6ebd]">
-          Save
+        <button
+          type="button"
+          onClick={submitWorksheet}
+          disabled={worksheetSaving}
+          className="h-10 px-6 rounded bg-[#118df0] text-white text-sm font-semibold hover:bg-[#0d6ebd] disabled:opacity-60 disabled:cursor-not-allowed"
+        >
+          {worksheetSaving ? 'Saving…' : 'Save'}
         </button>
       </div>
 
