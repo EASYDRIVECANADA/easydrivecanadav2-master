@@ -1,8 +1,21 @@
-import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
+export const fetchCache = 'force-no-store'
+
+const baseUrl = (process.env.NEXT_PUBLIC_SUPABASE_URL || '').replace(/\/+$/, '')
+const apiKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+
+async function queryAll(table: string) {
+  const res = await fetch(`${baseUrl}/rest/v1/${table}?order=created_at.desc`, {
+    method: 'GET',
+    headers: { 'apikey': apiKey, 'Authorization': `Bearer ${apiKey}` },
+    cache: 'no-store',
+  })
+  if (!res.ok) throw new Error(`Failed to fetch ${table}: ${res.status}`)
+  return res.json()
+}
 
 /** Try multiple possible column names for the shared deal identifier */
 function getDealId(row: any): string {
@@ -11,28 +24,14 @@ function getDealId(row: any): string {
 
 export async function GET() {
   try {
-    const supabase = createClient(supabaseUrl, supabaseKey)
-
     // Fetch all columns from all 5 tables in parallel
-    const [customersRes, vehiclesRes, worksheetRes, disclosuresRes, deliveryRes] = await Promise.all([
-      supabase.from('edc_deals_customers').select('*').order('created_at', { ascending: false }),
-      supabase.from('edc_deals_vehicles').select('*').order('created_at', { ascending: false }),
-      supabase.from('edc_deals_worksheet').select('*').order('created_at', { ascending: false }),
-      supabase.from('edc_deals_disclosures').select('*').order('created_at', { ascending: false }),
-      supabase.from('edc_deals_delivery').select('*').order('created_at', { ascending: false }),
+    const [customers, vehicles, worksheets, disclosures, deliveries] = await Promise.all([
+      queryAll('edc_deals_customers'),
+      queryAll('edc_deals_vehicles'),
+      queryAll('edc_deals_worksheet'),
+      queryAll('edc_deals_disclosures'),
+      queryAll('edc_deals_delivery'),
     ])
-
-    if (customersRes.error) throw customersRes.error
-    if (vehiclesRes.error) throw vehiclesRes.error
-    if (worksheetRes.error) throw worksheetRes.error
-    if (disclosuresRes.error) throw disclosuresRes.error
-    if (deliveryRes.error) throw deliveryRes.error
-
-    const customers = customersRes.data || []
-    const vehicles = vehiclesRes.data || []
-    const worksheets = worksheetRes.data || []
-    const disclosures = disclosuresRes.data || []
-    const deliveries = deliveryRes.data || []
 
     // Index secondary tables by dealid for fast lookup
     const vehiclesByDeal: Record<string, any[]> = {}
@@ -99,7 +98,9 @@ export async function GET() {
       }
     })
 
-    return NextResponse.json({ deals })
+    return NextResponse.json({ deals }, {
+      headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0' },
+    })
   } catch (err: any) {
     console.error('[API /deals] Error:', err)
     return NextResponse.json({ error: err?.message || 'Failed to fetch deals' }, { status: 500 })

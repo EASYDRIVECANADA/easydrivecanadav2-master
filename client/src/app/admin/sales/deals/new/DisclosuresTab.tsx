@@ -80,31 +80,40 @@ export default function DisclosuresTab({ dealId, onSaved, initialData }: { dealI
       setSaveError(null)
       setSaving(true)
 
-      const payload = {
-        dealId: dealId || null,
-        disclosuresHtml: html || null,
-        conditions: conditions || null,
+      if (initialData?.id) {
+        // Editing mode — update existing disclosures row in Supabase
+        const updateData: Record<string, any> = {
+          disclosures_html: html || null,
+          conditions: conditions || null,
+        }
+        const res = await fetch('/api/deals/update', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ table: 'edc_deals_disclosures', id: initialData.id, data: updateData }),
+        })
+        const json = await res.json()
+        if (!res.ok || json.error) throw new Error(json.error || `Update failed (${res.status})`)
+      } else {
+        // New deal — create via webhook
+        const payload = {
+          dealId: dealId || null,
+          disclosuresHtml: html || null,
+          conditions: conditions || null,
+        }
+        const res = await fetch('/api/deals_disclosures', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        })
+        const raw = await res.text().catch(() => '')
+        if (!res.ok) throw new Error(raw || `Save failed (${res.status})`)
+        const ok = raw.trim().toLowerCase() === 'done'
+        if (!ok) throw new Error(raw || 'Webhook did not confirm save. Expected "Done"')
+
+        setHtml('')
+        setConditions('')
+        if (editorRef.current) editorRef.current.innerHTML = ''
       }
-
-      const res = await fetch('/api/deals_disclosures', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      })
-
-      const raw = await res.text().catch(() => '')
-      if (!res.ok) {
-        throw new Error(raw || `Save failed (${res.status})`)
-      }
-
-      const ok = raw.trim().toLowerCase() === 'done'
-      if (!ok) {
-        throw new Error(raw || 'Webhook did not confirm save. Expected "Done"')
-      }
-
-      setHtml('')
-      setConditions('')
-      if (editorRef.current) editorRef.current.innerHTML = ''
 
       setShowSavedModal(true)
       window.setTimeout(() => {

@@ -105,38 +105,56 @@ export default function DeliveryTab({ dealMode = 'RTL', dealId, initialData }: {
       setSaveError(null)
       setSaving(true)
 
-      const payload = {
-        dealId: toNull(dealId),
-        dealMode: toNull(dealMode),
-        deliveryDate: toNull(deliveryDate),
-        deliveryTime: toNull(deliveryTime),
-        exportedOutsideOntario,
-        exportedPartyType: exportedOutsideOntario ? toNull(exportedPartyType) : null,
-        deliveryDetails: toNull(deliveryDetails),
-        otherNotes: toNull(otherNotes),
-        approvedBy: toNull(approvedBy),
-        salesperson: toNull(salesperson),
-        newTaskDraft: {
-          name: toNull(taskName),
-          description: toNull(taskDescription),
-          dueBy: toNull(taskDueBy),
-        },
-        tasks: Array.isArray(tasks) ? tasks : [],
-      }
-
-      const res = await fetch('/api/delivery', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      })
-
-      const raw = await res.text().catch(() => '')
-      if (!res.ok) {
-        throw new Error(raw || `Save failed (${res.status})`)
-      }
-      const ok = raw.trim().toLowerCase() === 'done'
-      if (!ok) {
-        throw new Error(raw || 'Webhook did not confirm save. Expected "Done"')
+      if (initialData?.id) {
+        // Editing mode — update existing delivery row in Supabase
+        const updateData: Record<string, any> = {
+          deal_mode: toNull(dealMode),
+          delivery_date: toNull(deliveryDate),
+          delivery_time: toNull(deliveryTime),
+          export_outside_ontario: exportedOutsideOntario,
+          exported_party_type: exportedOutsideOntario ? toNull(exportedPartyType) : null,
+          delivery_details: toNull(deliveryDetails),
+          other_notes: toNull(otherNotes),
+          approved_by: toNull(approvedBy),
+          salesperson: toNull(salesperson),
+          tasks: Array.isArray(tasks) ? tasks : [],
+        }
+        const res = await fetch('/api/deals/update', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ table: 'edc_deals_delivery', id: initialData.id, data: updateData }),
+        })
+        const json = await res.json()
+        if (!res.ok || json.error) throw new Error(json.error || `Update failed (${res.status})`)
+      } else {
+        // New deal — create via webhook
+        const payload = {
+          dealId: toNull(dealId),
+          dealMode: toNull(dealMode),
+          deliveryDate: toNull(deliveryDate),
+          deliveryTime: toNull(deliveryTime),
+          exportedOutsideOntario,
+          exportedPartyType: exportedOutsideOntario ? toNull(exportedPartyType) : null,
+          deliveryDetails: toNull(deliveryDetails),
+          otherNotes: toNull(otherNotes),
+          approvedBy: toNull(approvedBy),
+          salesperson: toNull(salesperson),
+          newTaskDraft: {
+            name: toNull(taskName),
+            description: toNull(taskDescription),
+            dueBy: toNull(taskDueBy),
+          },
+          tasks: Array.isArray(tasks) ? tasks : [],
+        }
+        const res = await fetch('/api/delivery', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        })
+        const raw = await res.text().catch(() => '')
+        if (!res.ok) throw new Error(raw || `Save failed (${res.status})`)
+        const ok = raw.trim().toLowerCase() === 'done'
+        if (!ok) throw new Error(raw || 'Webhook did not confirm save. Expected "Done"')
       }
 
       resetDelivery()

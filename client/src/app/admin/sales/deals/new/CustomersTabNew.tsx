@@ -506,16 +506,63 @@ export default function CustomersTabNew({
         customerMode: ind ? 'IND' : 'CMP',
       }
       const payload = toNulls(merged)
-      const res = await fetch('/api/proxy/customers', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      })
 
-      const text = await res.text()
-      if (!res.ok) {
-        throw new Error(text || `Webhook error (${res.status})`)
+      if (initialData?.id) {
+        // Editing mode — update existing row in Supabase
+        const updateData: Record<string, unknown> = {
+          visibility: payload.visibility ?? null,
+          firstname: payload.firstName ?? null,
+          middlename: payload.middleName ?? null,
+          lastname: payload.lastName ?? null,
+          legalname: payload.legalName ?? null,
+          displayname: payload.displayName ?? null,
+          taxnumber: payload.taxNumber ?? null,
+          yearend: payload.yearEnd ?? null,
+          rin: payload.rin ?? null,
+          contactfirstname: payload.contactFirstName ?? null,
+          contactlastname: payload.contactLastName ?? null,
+          driverslicense: payload.driversLicense ?? null,
+          expdate: payload.expDate ?? null,
+          dateofbirth: payload.dateOfBirth ?? null,
+          streetaddress: payload.streetAddress ?? null,
+          suiteapt: payload.suiteApt ?? null,
+          city: payload.city ?? null,
+          province: payload.province ?? null,
+          postalcode: payload.postalCode ?? null,
+          country: payload.country ?? null,
+          phone: payload.phone ?? null,
+          fax: payload.fax ?? null,
+          mobile: payload.mobile ?? null,
+          email: payload.email ?? null,
+          insurancecompany: payload.insuranceCompany ?? null,
+          insuranceagent: payload.insuranceAgent ?? null,
+          insurancephone: payload.insurancePhone ?? null,
+          policynumber: payload.policyNumber ?? null,
+          policyexpiry: payload.policyExpiry ?? null,
+          notes: payload.notes ?? null,
+          dealdate: payload.dealDate ?? null,
+          dealtype: payload.dealType ?? null,
+          dealmode: payload.dealMode ?? null,
+          customertype: payload.customerMode ?? null,
+        }
+        const res = await fetch('/api/deals/update', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ table: 'edc_deals_customers', id: initialData.id, data: updateData }),
+        })
+        const json = await res.json()
+        if (!res.ok || json.error) throw new Error(json.error || `Update failed (${res.status})`)
+      } else {
+        // New deal — create via webhook
+        const res = await fetch('/api/proxy/customers', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        })
+        const text = await res.text()
+        if (!res.ok) throw new Error(text || `Webhook error (${res.status})`)
       }
+
       setShowSavedModal(true)
       window.setTimeout(() => {
         setShowSavedModal(false)

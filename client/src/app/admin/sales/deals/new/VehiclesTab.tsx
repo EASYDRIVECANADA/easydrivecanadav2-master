@@ -617,33 +617,99 @@ export default function VehiclesTab({ dealId, onSaved, initialData }: { dealId?:
     try {
       setSaveError(null)
       setSavingTrades(true)
-      // Send every saved trade to webhook sequentially so we can stop at first error
-      for (const t of savedTrades) {
-        const body = {
-          dealId: dealId || null,
-          ...t,
-          selectedVehicle: t.selectedVehicle ?? makeSelectedVehicleSnapshot() ?? null,
+
+      if (Array.isArray(initialData) && initialData.length > 0) {
+        // Editing mode — update existing vehicle rows in Supabase
+        for (const t of savedTrades) {
+          const sv = t.selectedVehicle ?? makeSelectedVehicleSnapshot() ?? null
+          const updateData: Record<string, any> = {
+            vin: t.vin || null,
+            year: t.year || null,
+            make: t.make || null,
+            model: t.model || null,
+            trim: t.trim || null,
+            colour: t.colour || null,
+            odometer: t.odometer || null,
+            odometer_unit: t.odometerUnit || 'kms',
+            disclosures: Array.isArray(t.disclosures) ? t.disclosures : null,
+            disclosures_notes: t.disclosuresNotes || null,
+            disclosures_editor: t.disclosuresEditor || null,
+            disclosures_search: t.disclosuresSearch || null,
+            disclosures_detail_open: t.disclosuresDetailOpen || false,
+            brand_type: t.brandType || null,
+            is_company: t.isCompany || false,
+            owner_name: t.ownerName || null,
+            owner_company: t.ownerCompany || null,
+            owner_street: t.ownerStreet || null,
+            owner_suite: t.ownerSuite || null,
+            owner_city: t.ownerCity || null,
+            owner_province: t.ownerProvince || null,
+            owner_postal: t.ownerPostal || null,
+            owner_country: t.ownerCountry || null,
+            owner_phone: t.ownerPhone || null,
+            owner_mobile: t.ownerMobile || null,
+            owner_email: t.ownerEmail || null,
+            is_rin: t.isRin || null,
+            owner_dl: t.ownerDl || null,
+            owner_plate: t.ownerPlate || null,
+            trade_value: t.tradeValue ?? 0,
+            actual_cash_value: t.actualCashValue ?? 0,
+            lien_amount: t.lienAmount ?? 0,
+            trade_equity: t.tradeEquity ?? 0,
+            rin: t.rin || null,
+            selected_id: sv?.id ?? null,
+            selected_year: sv?.year ?? null,
+            selected_make: sv?.make ?? null,
+            selected_model: sv?.model ?? null,
+            selected_trim: sv?.trim ?? null,
+            selected_vin: sv?.vin ?? null,
+            selected_exterior_color: sv?.exterior_color ?? null,
+            selected_interior_color: sv?.interior_color ?? null,
+            selected_odometer: sv?.odometer ?? null,
+            selected_odometer_unit: sv?.odometer_unit ?? null,
+            selected_status: sv?.status ?? null,
+            selected_stock_number: sv?.stock_number ?? null,
+          }
+          // Use the first initialData row's id for the update
+          const vehicleId = initialData[0]?.id
+          if (!vehicleId) throw new Error('No vehicle id found for update')
+          const res = await fetch('/api/deals/update', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ table: 'edc_deals_vehicles', id: vehicleId, data: updateData }),
+          })
+          const json = await res.json()
+          if (!res.ok || json.error) throw new Error(json.error || `Update failed (${res.status})`)
         }
-        const res = await fetch('https://primary-production-6722.up.railway.app/webhook/vehicles-deals', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body),
-        })
-        if (!res.ok) {
-          const errText = await res.text().catch(() => '')
-          throw new Error(errText || `Save failed (${res.status})`)
+      } else {
+        // New deal — send every saved trade to webhook sequentially
+        for (const t of savedTrades) {
+          const body = {
+            dealId: dealId || null,
+            ...t,
+            selectedVehicle: t.selectedVehicle ?? makeSelectedVehicleSnapshot() ?? null,
+          }
+          const res = await fetch('https://primary-production-6722.up.railway.app/webhook/vehicles-deals', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+          })
+          if (!res.ok) {
+            const errText = await res.text().catch(() => '')
+            throw new Error(errText || `Save failed (${res.status})`)
+          }
+          const raw = await res.text().catch(() => '')
+          let ok = false
+          if (raw.trim().toLowerCase() === 'done') ok = true
+          else {
+            try {
+              const parsed = JSON.parse(raw)
+              const statusStr = String(parsed?.status || parsed?.message || '').toLowerCase()
+              if (statusStr.includes('done')) ok = true
+            } catch {}
+          }
+          if (!ok) throw new Error('Webhook did not confirm save. Expected "Done"')
         }
-        const raw = await res.text().catch(() => '')
-        let ok = false
-        if (raw.trim().toLowerCase() === 'done') ok = true
-        else {
-          try {
-            const parsed = JSON.parse(raw)
-            const statusStr = String(parsed?.status || parsed?.message || '').toLowerCase()
-            if (statusStr.includes('done')) ok = true
-          } catch {}
-        }
-        if (!ok) throw new Error('Webhook did not confirm save. Expected "Done"')
       }
       console.log('[Save Trades] All trades saved: Done')
       setShowSavedModal(true)
