@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 
-export default function DisclosuresTab({ dealId, onSaved, initialData }: { dealId?: string; onSaved?: () => void; initialData?: any }): JSX.Element {
+export default function DisclosuresTab({ dealId, onSaved, initialData, autoSaved }: { dealId?: string; onSaved?: () => void; initialData?: any; autoSaved?: boolean }): JSX.Element {
   const editorRef = useRef<HTMLDivElement | null>(null)
   const colorRef = useRef<HTMLInputElement | null>(null)
   const [html, setHtml] = useState(initialData?.disclosures_html ?? '')
@@ -110,9 +110,11 @@ export default function DisclosuresTab({ dealId, onSaved, initialData }: { dealI
         const ok = raw.trim().toLowerCase() === 'done'
         if (!ok) throw new Error(raw || 'Webhook did not confirm save. Expected "Done"')
 
-        setHtml('')
-        setConditions('')
-        if (editorRef.current) editorRef.current.innerHTML = ''
+        if (!autoSaved) {
+          setHtml('')
+          setConditions('')
+          if (editorRef.current) editorRef.current.innerHTML = ''
+        }
       }
 
       setShowSavedModal(true)

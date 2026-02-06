@@ -9,6 +9,7 @@ export default function WorksheetTab({
   dealDate,
   onSaved,
   initialData,
+  autoSaved,
 }: {
   dealId?: string
   dealMode?: 'RTL' | 'WHL'
@@ -16,6 +17,7 @@ export default function WorksheetTab({
   dealDate?: string
   onSaved?: () => void
   initialData?: any
+  autoSaved?: boolean
 }): JSX.Element {
   const d = initialData || {}
   const [worksheetSaving, setWorksheetSaving] = useState(false)

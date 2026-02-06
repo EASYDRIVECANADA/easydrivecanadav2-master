@@ -473,7 +473,7 @@ export default function CustomerShowroomPage() {
                       </button>
                       <button
                         type="button"
-                        onClick={() => router.push('/admin/sales/deals/new')}
+                        onClick={() => router.push(`/admin/sales/deals/new?vehicleId=${encodeURIComponent(r.id)}`)}
                         className="h-8 px-3 rounded bg-green-600 hover:bg-green-700 text-white text-xs font-semibold"
                       >
                         BUY NOW
@@ -746,7 +746,7 @@ export default function CustomerShowroomPage() {
                   <div className="mt-4 flex items-center justify-end gap-2">
                     <button
                       type="button"
-                      onClick={() => router.push('/admin/sales/deals/new')}
+                      onClick={() => router.push(`/admin/sales/deals/new?vehicleId=${encodeURIComponent(selected.id)}`)}
                       className="h-10 px-4 rounded-lg bg-green-600 text-white text-sm font-semibold hover:bg-green-700"
                     >
                       BUY NOW

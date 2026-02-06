@@ -22,7 +22,7 @@ type VehicleRow = {
   created_at?: string | null
 }
 
-export default function VehiclesTab({ dealId, onSaved, initialData }: { dealId?: string; onSaved?: () => void; initialData?: any }) {
+export default function VehiclesTab({ dealId, onSaved, initialData, prefillSelected, autoSaved }: { dealId?: string; onSaved?: () => void; initialData?: any; prefillSelected?: any; autoSaved?: boolean }) {
   const [query, setQuery] = useState('')
   const [open, setOpen] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -31,6 +31,35 @@ export default function VehiclesTab({ dealId, onSaved, initialData }: { dealId?:
   const [selected, setSelected] = useState<VehicleRow | null>(null)
   const [odoEditing, setOdoEditing] = useState(false)
   const [odoDraft, setOdoDraft] = useState('')
+
+  // Prefill selection from showroom (vehicleId in URL -> prefillSelected)
+  useEffect(() => {
+    if (!prefillSelected || selected) return
+    const v = prefillSelected
+    const row: VehicleRow = {
+      id: String(v.id || ''),
+      year: v.year ?? null,
+      make: v.make ?? null,
+      model: v.model ?? null,
+      trim: v.trim ?? null,
+      stock_number: v.stock_number ?? null,
+      key_number: v.key_number ?? null,
+      vin: v.vin ?? null,
+      status: v.status ?? null,
+      exterior_color: v.exterior_color ?? null,
+      interior_color: v.interior_color ?? null,
+      mileage: v.mileage ?? null,
+      odometer: v.odometer ?? null,
+      odometer_unit: v.odometer_unit ?? null,
+      created_at: v.created_at ?? null,
+    }
+    setSelected(row)
+    const label = [row.year ? String(row.year) : '', row.make ?? '', row.model ?? '', row.trim ?? '']
+      .filter(Boolean)
+      .join(' ')
+    setQuery(label)
+    setOdoDraft(row.odometer !== null && row.odometer !== undefined ? String(row.odometer) : '')
+  }, [prefillSelected, selected])
   const [tradeOpen, setTradeOpen] = useState(false)
   const [tradeStep, setTradeStep] = useState<1 | 2 | 3 | 4>(1)
   const [tradeDisclosuresDetail, setTradeDisclosuresDetail] = useState(false)
@@ -618,7 +647,7 @@ export default function VehiclesTab({ dealId, onSaved, initialData }: { dealId?:
       setSaveError(null)
       setSavingTrades(true)
 
-      if (Array.isArray(initialData) && initialData.length > 0) {
+      if (Array.isArray(initialData) && initialData.length > 0 && !autoSaved) {
         // Editing mode — update existing vehicle rows in Supabase
         for (const t of savedTrades) {
           const sv = t.selectedVehicle ?? makeSelectedVehicleSnapshot() ?? null

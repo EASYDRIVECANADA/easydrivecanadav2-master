@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 
 import CustomersTabNew from './CustomersTabNew'
@@ -14,8 +14,9 @@ type DealTab = 'customers' | 'vehicles' | 'worksheet' | 'disclosures' | 'deliver
 export default function SalesNewDealPage() {
   const searchParams = useSearchParams()
   const editDealId = searchParams.get('dealId') // present when editing an existing deal
+  const vehicleId = searchParams.get('vehicleId') // present when coming from showroom
 
-  const [activeTab, setActiveTab] = useState<DealTab>('customers')
+  const [activeTab, setActiveTab] = useState<DealTab>(vehicleId ? 'vehicles' : 'customers')
   const [dealId] = useState(() => {
     // If editing, reuse the existing dealId from the URL
     if (typeof window !== 'undefined' && editDealId) return editDealId
@@ -35,7 +36,15 @@ export default function SalesNewDealPage() {
 
   // Prefill data fetched from the database when editing
   const [prefill, setPrefill] = useState<any>(null)
+  const [vehiclePrefill, setVehiclePrefill] = useState<any>(null)
+  const [vehiclePrefillLoading, setVehiclePrefillLoading] = useState(false)
   const [prefillLoading, setPrefillLoading] = useState(false)
+
+  // Track whether auto-save has fired for showroom prefill
+  const autoSaveRan = useRef(false)
+  const [autoSavedVehicles, setAutoSavedVehicles] = useState(false)
+  const [autoSavedWorksheet, setAutoSavedWorksheet] = useState(false)
+  const [autoSavedDisclosures, setAutoSavedDisclosures] = useState(false)
 
   const fetchPrefill = useCallback(async () => {
     if (!editDealId) return
@@ -60,9 +69,131 @@ export default function SalesNewDealPage() {
     }
   }, [editDealId])
 
+  const fetchVehiclePrefill = useCallback(async () => {
+    if (!vehicleId) return
+    try {
+      setVehiclePrefillLoading(true)
+      const res = await fetch(`/api/vehicles/${encodeURIComponent(vehicleId)}`, { cache: 'no-store' })
+      if (!res.ok) throw new Error(`Failed to fetch vehicle (${res.status})`)
+      const data = await res.json()
+      if (data.error) throw new Error(data.error)
+      setVehiclePrefill(data)
+    } catch (e) {
+      console.error('[Vehicle Prefill] Error:', e)
+    } finally {
+      setVehiclePrefillLoading(false)
+    }
+  }, [vehicleId])
+
   useEffect(() => {
     fetchPrefill()
   }, [fetchPrefill])
+
+  useEffect(() => {
+    fetchVehiclePrefill()
+  }, [fetchVehiclePrefill])
+
+  // Auto-save prefilled data to Supabase on first load when coming from showroom
+  useEffect(() => {
+    if (!vehiclePrefill?.vehicle || autoSaveRan.current) return
+    autoSaveRan.current = true
+    const v = vehiclePrefill.vehicle
+    const currentDealId = dealId
+
+    // 1) Auto-save Vehicles via webhook
+    const vehiclePayload = {
+      dealId: currentDealId,
+      selectedVehicle: {
+        id: v.id ?? null,
+        year: v.year ?? null,
+        make: v.make ?? null,
+        model: v.model ?? null,
+        trim: v.trim ?? null,
+        vin: v.vin ?? null,
+        exteriorColor: v.exterior_color ?? null,
+        interiorColor: v.interior_color ?? null,
+        odometer: v.odometer ?? v.mileage ?? null,
+        odometerUnit: v.odometer_unit ?? null,
+        status: v.status ?? null,
+        stockNumber: v.stock_number ?? null,
+      },
+    }
+    fetch('https://primary-production-6722.up.railway.app/webhook/vehicles-deals', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(vehiclePayload),
+    })
+      .then((r) => r.text())
+      .then((t) => {
+        console.log('[Auto-save Vehicles] Response:', t)
+        setAutoSavedVehicles(true)
+      })
+      .catch((e) => console.error('[Auto-save Vehicles] Error:', e))
+
+    // 2) Auto-save Worksheet via webhook
+    const purchase = vehiclePrefill.purchase
+    const worksheetPayload = {
+      dealId: currentDealId,
+      dealType: 'Cash',
+      dealDate: dealDate,
+      dealMode: 'RTL',
+      purchasePrice: String(v.price ?? '0'),
+      discount: '0',
+      subtotal: String(v.price ?? '0'),
+      tradeValue: '0',
+      actualCashValue: '0',
+      netDifference: '0',
+      taxCode: 'HST',
+      taxRate: '0.13',
+      taxOverride: false,
+      taxManual: '0',
+      totalTax: String(Number(v.price ?? 0) * 0.13),
+      lienPayout: '0',
+      tradeEquity: '0',
+      licenseFee: purchase?.license_fee ?? '',
+      newPlates: false,
+      renewalOnly: false,
+      totalBalanceDue: String(Number(v.price ?? 0) * 1.13),
+      fees: [],
+      accessories: [],
+      warranties: [],
+      insurances: [],
+      payments: [],
+    }
+    fetch('https://primary-production-6722.up.railway.app/webhook/worksheet', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(worksheetPayload),
+    })
+      .then((r) => r.text())
+      .then((t) => {
+        console.log('[Auto-save Worksheet] Response:', t)
+        setAutoSavedWorksheet(true)
+      })
+      .catch((e) => console.error('[Auto-save Worksheet] Error:', e))
+
+    // 3) Auto-save Disclosures via webhook (if disclosures data exists)
+    const disc = vehiclePrefill.disclosures
+    const discHtml = Array.isArray(disc) && disc.length > 0
+      ? disc.map((d: any) => `<p><strong>${d.disclosures_tittle || ''}</strong></p><p>${d.disclosures_body || ''}</p>`).join('')
+      : ''
+    const discPayload = {
+      dealId: currentDealId,
+      disclosuresHtml: discHtml || null,
+      conditions: null,
+    }
+    fetch('/api/deals_disclosures', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(discPayload),
+    })
+      .then((r) => r.text())
+      .then((t) => {
+        console.log('[Auto-save Disclosures] Response:', t)
+        setAutoSavedDisclosures(true)
+      })
+      .catch((e) => console.error('[Auto-save Disclosures] Error:', e))
+  }, [vehiclePrefill, dealId, dealDate])
 
   return (
     <div className="w-full min-h-[calc(100vh-64px)] bg-gradient-to-b from-[#f6f7f9] to-[#e9eaee]">
@@ -167,6 +298,21 @@ export default function SalesNewDealPage() {
                   dealId={dealId}
                   onSaved={() => setActiveTab('worksheet')}
                   initialData={prefill?.vehicles ?? null}
+                  autoSaved={autoSavedVehicles}
+                  prefillSelected={vehiclePrefill?.vehicle ? {
+                    id: vehiclePrefill.vehicle.id,
+                    year: vehiclePrefill.vehicle.year,
+                    make: vehiclePrefill.vehicle.make,
+                    model: vehiclePrefill.vehicle.model,
+                    trim: vehiclePrefill.vehicle.trim,
+                    vin: vehiclePrefill.vehicle.vin,
+                    exterior_color: vehiclePrefill.vehicle.exterior_color,
+                    interior_color: vehiclePrefill.vehicle.interior_color,
+                    odometer: vehiclePrefill.vehicle.odometer ?? vehiclePrefill.vehicle.mileage,
+                    odometer_unit: vehiclePrefill.vehicle.odometer_unit,
+                    status: vehiclePrefill.vehicle.status,
+                    stock_number: vehiclePrefill.vehicle.stock_number,
+                  } : null}
                 />
               )}
               {activeTab === 'worksheet' && (
@@ -176,14 +322,33 @@ export default function SalesNewDealPage() {
                   dealType={dealType}
                   dealDate={dealDate}
                   onSaved={() => setActiveTab('disclosures')}
-                  initialData={prefill?.worksheet ?? null}
+                  autoSaved={autoSavedWorksheet}
+                  initialData={prefill?.worksheet ?? (
+                    vehiclePrefill?.vehicle ? {
+                      purchase_price: String(vehiclePrefill.vehicle.price ?? '0'),
+                      discount: '0',
+                      tax_code: 'HST',
+                      license_fee: vehiclePrefill?.purchase?.license_fee ?? '',
+                      trade_value: '0',
+                      actual_cash_value: '0',
+                      lien_payout: '0',
+                    } : null
+                  )}
                 />
               )}
               {activeTab === 'disclosures' && (
                 <DisclosuresTab
                   dealId={dealId}
                   onSaved={() => setActiveTab('delivery')}
-                  initialData={prefill?.disclosures ?? null}
+                  autoSaved={autoSavedDisclosures}
+                  initialData={prefill?.disclosures ?? (
+                    vehiclePrefill?.disclosures && vehiclePrefill.disclosures.length > 0
+                      ? {
+                          disclosures_html: vehiclePrefill.disclosures.map((d: any) => `<p><strong>${d.disclosures_tittle || ''}</strong></p><p>${d.disclosures_body || ''}</p>`).join(''),
+                          conditions: '',
+                        }
+                      : null
+                  )}
                 />
               )}
               {activeTab === 'delivery' && (
