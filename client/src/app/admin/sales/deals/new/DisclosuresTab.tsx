@@ -94,21 +94,19 @@ export default function DisclosuresTab({ dealId, onSaved, initialData, autoSaved
         const json = await res.json()
         if (!res.ok || json.error) throw new Error(json.error || `Update failed (${res.status})`)
       } else {
-        // New deal — create via webhook
-        const payload = {
-          dealId: dealId || null,
-          disclosuresHtml: html || null,
+        // New deal — insert directly into Supabase
+        const insertData: Record<string, any> = {
+          id: dealId || null,
+          disclosures_html: html || null,
           conditions: conditions || null,
         }
-        const res = await fetch('/api/deals_disclosures', {
+        const res = await fetch('/api/deals/insert', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
+          body: JSON.stringify({ table: 'edc_deals_disclosures', data: insertData }),
         })
-        const raw = await res.text().catch(() => '')
-        if (!res.ok) throw new Error(raw || `Save failed (${res.status})`)
-        const ok = raw.trim().toLowerCase() === 'done'
-        if (!ok) throw new Error(raw || 'Webhook did not confirm save. Expected "Done"')
+        const json = await res.json()
+        if (!res.ok || json.error) throw new Error(json.error || `Save failed (${res.status})`)
 
         if (!autoSaved) {
           setHtml('')

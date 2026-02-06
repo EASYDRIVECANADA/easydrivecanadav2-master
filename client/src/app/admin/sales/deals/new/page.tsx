@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import jsPDF from 'jspdf'
 import { useSearchParams } from 'next/navigation'
 
 import CustomersTabNew from './CustomersTabNew'
@@ -8,7 +9,8 @@ import DeliveryTab from './DeliveryTab'
 import DisclosuresTab from './DisclosuresTab'
 import VehiclesTab from './VehiclesTab'
 import WorksheetTab from './WorksheetTab'
-import { generateBillOfSalePdf, type BillOfSaleData } from './billOfSalePdf'
+import { renderBillOfSalePdf, type BillOfSaleData } from './billOfSalePdf'
+import { renderDisclosureFormPdf } from './disclosureFormPdf'
 
 type DealTab = 'customers' | 'vehicles' | 'worksheet' | 'disclosures' | 'delivery'
 
@@ -166,96 +168,99 @@ export default function SalesNewDealPage() {
     const sellPrice = getVehicleSellPrice(v)
     const currentDealId = dealId
 
-    // 1) Auto-save Vehicles via webhook
-    const vehiclePayload = {
-      dealId: currentDealId,
-      selectedVehicle: {
-        id: v.id ?? null,
-        year: v.year ?? null,
-        make: v.make ?? null,
-        model: v.model ?? null,
-        trim: v.trim ?? null,
-        vin: v.vin ?? null,
-        exteriorColor: v.exterior_color ?? null,
-        interiorColor: v.interior_color ?? null,
-        odometer: v.odometer ?? v.mileage ?? null,
-        odometerUnit: v.odometer_unit ?? null,
-        status: v.status ?? null,
-        stockNumber: v.stock_number ?? null,
-      },
-    }
-    fetch('https://primary-production-6722.up.railway.app/webhook/vehicles-deals', {
+    // 1) Auto-save Vehicles directly to Supabase
+    fetch('/api/deals/insert', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(vehiclePayload),
+      body: JSON.stringify({
+        table: 'edc_deals_vehicles',
+        data: {
+          id: currentDealId,
+          selected_stock_number: v.stock_number ?? null,
+          selected_year: v.year ?? null,
+          selected_make: v.make ?? null,
+          selected_model: v.model ?? null,
+          selected_trim: v.trim ?? null,
+          selected_vin: v.vin ?? null,
+          selected_exterior_color: v.exterior_color ?? null,
+          selected_interior_color: v.interior_color ?? null,
+          selected_odometer: v.odometer ?? v.mileage ?? null,
+          selected_odometer_unit: v.odometer_unit ?? null,
+          selected_status: v.status ?? null,
+        },
+      }),
     })
-      .then((r) => r.text())
-      .then((t) => {
-        console.log('[Auto-save Vehicles] Response:', t)
+      .then((r) => r.json())
+      .then((j) => {
+        console.log('[Auto-save Vehicles] Response:', j)
         setAutoSavedVehicles(true)
       })
       .catch((e) => console.error('[Auto-save Vehicles] Error:', e))
 
-    // 2) Auto-save Worksheet via webhook
+    // 2) Auto-save Worksheet directly to Supabase
     const purchase = vehiclePrefill.purchase
-    const worksheetPayload = {
-      dealId: currentDealId,
-      dealType: 'Cash',
-      dealDate: dealDate,
-      dealMode: 'RTL',
-      purchasePrice: String(sellPrice || 0),
-      discount: '0',
-      subtotal: String(sellPrice || 0),
-      tradeValue: '0',
-      actualCashValue: '0',
-      netDifference: '0',
-      taxCode: 'HST',
-      taxRate: '0.13',
-      taxOverride: false,
-      taxManual: '0',
-      totalTax: String(Number(sellPrice || 0) * 0.13),
-      lienPayout: '0',
-      tradeEquity: '0',
-      licenseFee: purchase?.license_fee ?? '',
-      newPlates: false,
-      renewalOnly: false,
-      totalBalanceDue: String(Number(sellPrice || 0) * 1.13),
-      fees: [],
-      accessories: [],
-      warranties: [],
-      insurances: [],
-      payments: [],
-    }
-    fetch('https://primary-production-6722.up.railway.app/webhook/worksheet', {
+    fetch('/api/deals/insert', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(worksheetPayload),
+      body: JSON.stringify({
+        table: 'edc_deals_worksheet',
+        data: {
+          id: currentDealId,
+          deal_type: 'Cash',
+          deal_date: dealDate,
+          deal_mode: 'RTL',
+          purchase_price: String(sellPrice || 0),
+          discount: '0',
+          subtotal: String(sellPrice || 0),
+          trade_value: '0',
+          actual_cash_value: '0',
+          net_difference: '0',
+          tax_code: 'HST',
+          tax_rate: '0.13',
+          tax_override: false,
+          tax_manual: '0',
+          total_tax: String(Number(sellPrice || 0) * 0.13),
+          lien_payout: '0',
+          trade_equity: '0',
+          license_fee: purchase?.license_fee ?? null,
+          new_plates: false,
+          renewal_only: false,
+          total_balance_due: String(Number(sellPrice || 0) * 1.13),
+          fees: [],
+          accessories: [],
+          warranties: [],
+          insurances: [],
+          payments: [],
+        },
+      }),
     })
-      .then((r) => r.text())
-      .then((t) => {
-        console.log('[Auto-save Worksheet] Response:', t)
+      .then((r) => r.json())
+      .then((j) => {
+        console.log('[Auto-save Worksheet] Response:', j)
         setAutoSavedWorksheet(true)
       })
       .catch((e) => console.error('[Auto-save Worksheet] Error:', e))
 
-    // 3) Auto-save Disclosures via webhook (if disclosures data exists)
+    // 3) Auto-save Disclosures directly to Supabase
     const disc = vehiclePrefill.disclosures
     const discHtml = Array.isArray(disc) && disc.length > 0
       ? disc.map((d: any) => `<p><strong>${d.disclosures_tittle || ''}</strong></p><p>${d.disclosures_body || ''}</p>`).join('')
       : ''
-    const discPayload = {
-      dealId: currentDealId,
-      disclosuresHtml: discHtml || null,
-      conditions: null,
-    }
-    fetch('/api/deals_disclosures', {
+    fetch('/api/deals/insert', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(discPayload),
+      body: JSON.stringify({
+        table: 'edc_deals_disclosures',
+        data: {
+          id: currentDealId,
+          disclosures_html: discHtml || null,
+          conditions: null,
+        },
+      }),
     })
-      .then((r) => r.text())
-      .then((t) => {
-        console.log('[Auto-save Disclosures] Response:', t)
+      .then((r) => r.json())
+      .then((j) => {
+        console.log('[Auto-save Disclosures] Response:', j)
         setAutoSavedDisclosures(true)
       })
       .catch((e) => console.error('[Auto-save Disclosures] Error:', e))
@@ -273,7 +278,7 @@ export default function SalesNewDealPage() {
   }, [showPrintMenu])
 
   const handlePrint = async () => {
-    if (!printBillOfSale) return
+    if (!printBillOfSale && !printDisclosure) return
     setShowPrintMenu(false)
     setPdfLoading(true)
     try {
@@ -303,8 +308,35 @@ export default function SalesNewDealPage() {
       const d = deal?.delivery || {}
       const disc = deal?.disclosures || {}
 
+      const parseFeeItems = (raw: any): any[] => {
+        if (!raw) return []
+        if (Array.isArray(raw)) return raw
+        if (typeof raw === 'string') {
+          try {
+            const parsed = JSON.parse(raw)
+            return Array.isArray(parsed) ? parsed : []
+          } catch {
+            return []
+          }
+        }
+        return []
+      }
+
+      const getOmvicFromFees = (rawFees: any): number => {
+        const fees = parseFeeItems(rawFees)
+        for (const f of fees) {
+          const name = String(f?.fee_name ?? f?.name ?? f?.label ?? '').toLowerCase()
+          if (!name) continue
+          if (name.includes('omvic')) {
+            const amt = Number(f?.fee_amount ?? f?.amount ?? f?.value ?? 0)
+            return Number.isFinite(amt) ? amt : 0
+          }
+        }
+        return 0
+      }
+
       const price = Number(w.purchase_price ?? v.price ?? 0)
-      const omvic = Number(w.omvic_fee ?? 22)
+      const omvic = Number(w.omvic_fee ?? getOmvicFromFees(w.fees) ?? 0)
       const discount = Number(w.discount ?? 0)
       const subtotal1 = price + omvic
       const tradeValue = Number(w.trade_value ?? 0)
@@ -314,7 +346,18 @@ export default function SalesNewDealPage() {
       const hst = netDiff * taxRate
       const totalTax = hst
       const licenseFee = Number(w.license_fee ?? 91)
-      const subtotal2 = netDiff + totalTax + licenseFee
+
+      const sumItems = (raw: any, amtKey: string) => {
+        const items = parseFeeItems(raw)
+        return items.reduce((s: number, i: any) => s + (Number(i?.[amtKey] ?? 0) || 0), 0)
+      }
+      const feesTotal = sumItems(w.fees, 'amount')
+      const accessoriesTotal = sumItems(w.accessories, 'price')
+      const warrantiesTotal = sumItems(w.warranties, 'amount')
+      const insurancesTotal = sumItems(w.insurances, 'amount')
+      const paymentsTotal = sumItems(w.payments, 'amount')
+
+      const subtotal2 = netDiff + totalTax + licenseFee + feesTotal + accessoriesTotal + warrantiesTotal + insurancesTotal + paymentsTotal
       const deposit = Number(w.deposit ?? 0)
       const downPayment = Number(w.down_payment ?? 0)
       const taxInsurance = Number(w.tax_on_insurance ?? 0)
@@ -356,6 +399,11 @@ export default function SalesNewDealPage() {
         hstOnNetDifference: String(hst),
         totalTax: String(totalTax),
         licenseFee: String(licenseFee),
+        feesTotal: String(feesTotal),
+        accessoriesTotal: String(accessoriesTotal),
+        warrantiesTotal: String(warrantiesTotal),
+        insurancesTotal: String(insurancesTotal),
+        paymentsTotal: String(paymentsTotal),
         subtotal2: String(subtotal2),
         deposit: String(deposit),
         downPayment: String(downPayment),
@@ -370,7 +418,33 @@ export default function SalesNewDealPage() {
         acceptorRegNo: '4782496',
       }
 
-      const dataUri = generateBillOfSalePdf(billData)
+      const totalPages = (printDisclosure ? 1 : 0) + (printBillOfSale ? 3 : 0)
+      const doc = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'letter' })
+
+      let currentPage = 1
+
+      if (printDisclosure) {
+        renderDisclosureFormPdf(doc, {
+          dealDate: billData.dealDate,
+          stockNumber: billData.stockNumber,
+          year: billData.year,
+          make: billData.make,
+          model: billData.model,
+          trim: billData.trim,
+          colour: billData.colour,
+          vin: billData.vin,
+          odometer: billData.odometer,
+          disclosuresText: billData.commentsHtml,
+        }, { pageNumber: currentPage, totalPages })
+        currentPage += 1
+      }
+
+      if (printBillOfSale) {
+        if (printDisclosure) doc.addPage()
+        renderBillOfSalePdf(doc, billData, { pageStart: currentPage, totalPages })
+      }
+
+      const dataUri = doc.output('datauristring')
       setPdfDataUri(dataUri)
       setShowDocPreview(true)
     } catch (e) {
@@ -535,7 +609,7 @@ export default function SalesNewDealPage() {
                 <VehiclesTab
                   dealId={dealId}
                   onSaved={() => setActiveTab('worksheet')}
-                  initialData={prefill?.vehicles ?? null}
+                  initialData={prefill?.vehicles ?? (autoSavedVehicles ? [{ id: dealId }] : null)}
                   autoSaved={autoSavedVehicles}
                   prefillSelected={vehiclePrefill?.vehicle ? {
                     id: vehiclePrefill.vehicle.id,
@@ -563,6 +637,7 @@ export default function SalesNewDealPage() {
                   autoSaved={autoSavedWorksheet}
                   initialData={prefill?.worksheet ?? (
                     vehiclePrefill?.vehicle ? {
+                      ...(autoSavedWorksheet ? { id: dealId } : {}),
                       purchase_price: String(getVehicleSellPrice(vehiclePrefill.vehicle)),
                       discount: '0',
                       tax_code: 'HST',
@@ -582,6 +657,7 @@ export default function SalesNewDealPage() {
                   initialData={prefill?.disclosures ?? (
                     vehiclePrefill?.disclosures && vehiclePrefill.disclosures.length > 0
                       ? {
+                          ...(autoSavedDisclosures ? { id: dealId } : {}),
                           disclosures_html: vehiclePrefill.disclosures.map((d: any) => `<p><strong>${d.disclosures_tittle || ''}</strong></p><p>${d.disclosures_body || ''}</p>`).join(''),
                           conditions: '',
                         }

@@ -41,6 +41,11 @@ export interface BillOfSaleData {
   hstOnNetDifference: string
   totalTax: string
   licenseFee: string
+  feesTotal: string
+  accessoriesTotal: string
+  warrantiesTotal: string
+  insurancesTotal: string
+  paymentsTotal: string
   subtotal2: string
   deposit: string
   downPayment: string
@@ -78,13 +83,19 @@ function fmtMoneyNoSign(v: string | number | null | undefined): string {
   return n.toLocaleString('en-CA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
-export function generateBillOfSalePdf(data: BillOfSaleData): string {
-  const doc = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'letter' })
+export function renderBillOfSalePdf(
+  doc: jsPDF,
+  data: BillOfSaleData,
+  opts?: { pageStart?: number; totalPages?: number }
+): void {
   const W = doc.internal.pageSize.getWidth()   // 612
   const H = doc.internal.pageSize.getHeight()  // 792
   const ML = 36  // margin left
   const MR = 36  // margin right
   const CW = W - ML - MR  // content width
+
+  const pageStart = opts?.pageStart ?? 1
+  const totalPages = opts?.totalPages ?? 3
 
   const BLUE = '#1a6fb5'
   const DARK = '#1a1a1a'
@@ -355,14 +366,27 @@ export function generateBillOfSalePdf(data: BillOfSaleData): string {
   const stValueEnd = stX + rightColW - 6       // values right-align here
   let stY = y + 4
 
+  const omvicNumeric = Number(data.omvicFee)
+  const includeOmvic = Number.isFinite(omvicNumeric) && Math.abs(omvicNumeric) > 0.0001
+
+  const hasVal = (v: string | number | null | undefined) => {
+    const n = Number(v)
+    return Number.isFinite(n) && Math.abs(n) > 0.0001
+  }
+
   const settlementRows: [string, string][] = [
     ['Vehicle Price', fmtMoneyNoSign(data.vehiclePrice)],
-    ['OMVIC FEE', fmtMoneyNoSign(data.omvicFee)],
+    ...(includeOmvic ? [['OMVIC FEE', fmtMoneyNoSign(data.omvicFee)] as [string, string]] : []),
     ['Subtotal', fmtMoneyNoSign(data.subtotal1)],
     ['Net Difference', fmtMoneyNoSign(data.netDifference)],
     ['HST on Net Difference', fmtMoneyNoSign(data.hstOnNetDifference)],
     ['Total Tax', fmtMoneyNoSign(data.totalTax)],
     ['License Fee', fmtMoneyNoSign(data.licenseFee)],
+    ...(hasVal(data.feesTotal) ? [['Fees', fmtMoneyNoSign(data.feesTotal)] as [string, string]] : []),
+    ...(hasVal(data.accessoriesTotal) ? [['Accessories', fmtMoneyNoSign(data.accessoriesTotal)] as [string, string]] : []),
+    ...(hasVal(data.warrantiesTotal) ? [['Warranties', fmtMoneyNoSign(data.warrantiesTotal)] as [string, string]] : []),
+    ...(hasVal(data.insurancesTotal) ? [['Insurances', fmtMoneyNoSign(data.insurancesTotal)] as [string, string]] : []),
+    ...(hasVal(data.paymentsTotal) ? [['Payments', fmtMoneyNoSign(data.paymentsTotal)] as [string, string]] : []),
     ['Subtotal', fmtMoneyNoSign(data.subtotal2)],
     ['Deposit(s)', fmtMoneyNoSign(data.deposit)],
     ['Down Payment (Payable on Delivery)', fmtMoneyNoSign(data.downPayment)],
@@ -477,7 +501,7 @@ export function generateBillOfSalePdf(data: BillOfSaleData): string {
   doc.setFontSize(7)
   doc.setFont('helvetica', 'normal')
   doc.setTextColor(GRAY_LINE)
-  doc.text('1/3', W - MR, H - 20, { align: 'right' })
+  doc.text(`${pageStart}/${totalPages}`, W - MR, H - 20, { align: 'right' })
 
   // ─── PAGE 2 ───────────────────────────────────────────────────────
   doc.addPage()
@@ -573,7 +597,7 @@ export function generateBillOfSalePdf(data: BillOfSaleData): string {
   // Page number
   doc.setFontSize(7)
   doc.setTextColor(GRAY_LINE)
-  doc.text('2/3', W - MR, H - 20, { align: 'right' })
+  doc.text(`${pageStart + 1}/${totalPages}`, W - MR, H - 20, { align: 'right' })
 
   // ─── PAGE 3 ───────────────────────────────────────────────────────
   doc.addPage()
@@ -671,8 +695,13 @@ export function generateBillOfSalePdf(data: BillOfSaleData): string {
   // Page number
   doc.setFontSize(7)
   doc.setTextColor(GRAY_LINE)
-  doc.text('3/3', W - MR, H - 20, { align: 'right' })
+  doc.text(`${pageStart + 2}/${totalPages}`, W - MR, H - 20, { align: 'right' })
 
+}
+
+export function generateBillOfSalePdf(data: BillOfSaleData): string {
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'letter' })
+  renderBillOfSalePdf(doc, data, { pageStart: 1, totalPages: 3 })
   // Return as data URL for preview
   return doc.output('datauristring')
 }

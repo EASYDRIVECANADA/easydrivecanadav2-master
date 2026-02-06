@@ -727,20 +727,55 @@ export default function WorksheetTab({
         const json = await res.json()
         if (!res.ok || json.error) throw new Error(json.error || `Update failed (${res.status})`)
       } else {
-        // New deal — create via webhook
-        const res = await fetch('https://primary-production-6722.up.railway.app/webhook/worksheet', {
+        // New deal — insert directly into Supabase
+        const insertData: Record<string, any> = {
+          id: dealId || null,
+          deal_type: payload.dealType ?? null,
+          deal_date: payload.dealDate ?? null,
+          deal_mode: payload.dealMode ?? null,
+          purchase_price: payload.purchasePrice ?? null,
+          discount: payload.discount ?? null,
+          subtotal: payload.subtotal ?? null,
+          trade_value: payload.tradeValue ?? null,
+          actual_cash_value: payload.actualCashValue ?? null,
+          net_difference: payload.netDifference ?? null,
+          tax_code: payload.taxCode ?? null,
+          tax_rate: payload.taxRate ?? null,
+          tax_override: payload.taxOverride ?? false,
+          tax_manual: payload.taxManual ?? null,
+          total_tax: payload.totalTax ?? null,
+          lien_payout: payload.lienPayout ?? null,
+          trade_equity: payload.tradeEquity ?? null,
+          license_fee: payload.licenseFee ?? null,
+          new_plates: payload.newPlates ?? null,
+          renewal_only: payload.renewalOnly ?? false,
+          total_balance_due: payload.totalBalanceDue ?? null,
+          financed_amount: payload.financing?.financedAmount ?? null,
+          finance_override: payload.financing?.financeOverride ?? false,
+          finance_rate: payload.financing?.financeRate ?? null,
+          finance_term_months: payload.financing?.financeTermMonths ?? null,
+          payment_type: payload.financing?.paymentType ?? null,
+          finance_interest: payload.financing?.financeInterest ?? null,
+          payment: payload.financing?.payment ?? null,
+          first_payment_date: payload.financing?.firstPaymentDate ?? null,
+          lien_holder: payload.financing?.lienHolder ?? null,
+          finance_rate_type: payload.financing?.financeRateType ?? null,
+          finance_commission: payload.financing?.financeCommission ?? null,
+          fees: payload.fees ?? [],
+          accessories: payload.accessories ?? [],
+          warranties: payload.warranties ?? [],
+          insurances: payload.insurances ?? [],
+          payments: payload.payments ?? [],
+        }
+        const res = await fetch('/api/deals/insert', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-          keepalive: true,
+          body: JSON.stringify({ table: 'edc_deals_worksheet', data: insertData }),
         })
-        const raw = await res.text().catch(() => '')
-        if (!res.ok) throw new Error(raw || `Save failed (${res.status})`)
-        const ok = raw.trim().toLowerCase() === 'done'
-        if (!ok) throw new Error(raw || 'Webhook did not confirm save. Expected "Done"')
+        const json = await res.json()
+        if (!res.ok || json.error) throw new Error(json.error || `Save failed (${res.status})`)
       }
 
-      resetWorksheet()
       setShowSavedModal(true)
       window.setTimeout(() => {
         setShowSavedModal(false)
