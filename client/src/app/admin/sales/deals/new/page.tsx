@@ -8,6 +8,7 @@ import DeliveryTab from './DeliveryTab'
 import DisclosuresTab from './DisclosuresTab'
 import VehiclesTab from './VehiclesTab'
 import WorksheetTab from './WorksheetTab'
+import { generateBillOfSalePdf, type BillOfSaleData } from './billOfSalePdf'
 
 type DealTab = 'customers' | 'vehicles' | 'worksheet' | 'disclosures' | 'delivery'
 
@@ -40,11 +41,75 @@ export default function SalesNewDealPage() {
   const [vehiclePrefillLoading, setVehiclePrefillLoading] = useState(false)
   const [prefillLoading, setPrefillLoading] = useState(false)
 
+  // Print dropdown & Documents Preview modal
+  const [showPrintMenu, setShowPrintMenu] = useState(false)
+  const [printBillOfSale, setPrintBillOfSale] = useState(true)
+  const [printDisclosure, setPrintDisclosure] = useState(false)
+  const [showDocPreview, setShowDocPreview] = useState(false)
+  const [pdfDataUri, setPdfDataUri] = useState<string | null>(null)
+  const [pdfLoading, setPdfLoading] = useState(false)
+  const printMenuRef = useRef<HTMLDivElement>(null)
+
   // Track whether auto-save has fired for showroom prefill
   const autoSaveRan = useRef(false)
   const [autoSavedVehicles, setAutoSavedVehicles] = useState(false)
   const [autoSavedWorksheet, setAutoSavedWorksheet] = useState(false)
   const [autoSavedDisclosures, setAutoSavedDisclosures] = useState(false)
+
+  const parseJsonLoose = (v: any) => {
+    if (!v) return null
+    if (typeof v === 'object') return v
+    if (typeof v !== 'string') return null
+    const s = v.trim()
+    if (!s) return null
+    try { return JSON.parse(s) } catch { return null }
+  }
+
+  const toMoneyNumber = (v: any) => {
+    if (v === null || v === undefined) return 0
+    if (typeof v === 'number') return Number.isFinite(v) ? v : 0
+    const s = String(v).trim()
+    if (!s) return 0
+    const cleaned = s.replace(/[^0-9.-]/g, '')
+    const n = parseFloat(cleaned)
+    return Number.isNaN(n) ? 0 : n
+  }
+
+  const getVehicleSellPrice = (veh: any) => {
+    const costs1 = parseJsonLoose(veh?.costsData) || parseJsonLoose(veh?.costs_data) || parseJsonLoose(veh?.costs_data_json)
+    const costs2 = parseJsonLoose(veh?.costs_data)
+    const purchaseData = parseJsonLoose(veh?.purchaseData) || parseJsonLoose(veh?.purchase_data)
+
+    const candidates = [
+      veh?.saleprice,
+      veh?.sale_price,
+      veh?.salePrice,
+      veh?.listPrice,
+      veh?.listprice,
+      veh?.list_price,
+      costs1?.salePrice,
+      costs1?.saleprice,
+      costs1?.sale_price,
+      costs1?.listPrice,
+      costs1?.listprice,
+      costs1?.list_price,
+      costs2?.salePrice,
+      costs2?.saleprice,
+      costs2?.sale_price,
+      costs2?.listPrice,
+      costs2?.listprice,
+      costs2?.list_price,
+      purchaseData?.vehiclePrice,
+      purchaseData?.vehicle_price,
+      veh?.price,
+    ]
+
+    for (const c of candidates) {
+      const n = toMoneyNumber(c)
+      if (n > 0) return n
+    }
+    return 0
+  }
 
   const fetchPrefill = useCallback(async () => {
     if (!editDealId) return
@@ -98,6 +163,7 @@ export default function SalesNewDealPage() {
     if (!vehiclePrefill?.vehicle || autoSaveRan.current) return
     autoSaveRan.current = true
     const v = vehiclePrefill.vehicle
+    const sellPrice = getVehicleSellPrice(v)
     const currentDealId = dealId
 
     // 1) Auto-save Vehicles via webhook
@@ -137,9 +203,9 @@ export default function SalesNewDealPage() {
       dealType: 'Cash',
       dealDate: dealDate,
       dealMode: 'RTL',
-      purchasePrice: String(v.price ?? '0'),
+      purchasePrice: String(sellPrice || 0),
       discount: '0',
-      subtotal: String(v.price ?? '0'),
+      subtotal: String(sellPrice || 0),
       tradeValue: '0',
       actualCashValue: '0',
       netDifference: '0',
@@ -147,13 +213,13 @@ export default function SalesNewDealPage() {
       taxRate: '0.13',
       taxOverride: false,
       taxManual: '0',
-      totalTax: String(Number(v.price ?? 0) * 0.13),
+      totalTax: String(Number(sellPrice || 0) * 0.13),
       lienPayout: '0',
       tradeEquity: '0',
       licenseFee: purchase?.license_fee ?? '',
       newPlates: false,
       renewalOnly: false,
-      totalBalanceDue: String(Number(v.price ?? 0) * 1.13),
+      totalBalanceDue: String(Number(sellPrice || 0) * 1.13),
       fees: [],
       accessories: [],
       warranties: [],
@@ -194,6 +260,143 @@ export default function SalesNewDealPage() {
       })
       .catch((e) => console.error('[Auto-save Disclosures] Error:', e))
   }, [vehiclePrefill, dealId, dealDate])
+
+  // Close print menu on outside click
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (printMenuRef.current && !printMenuRef.current.contains(e.target as Node)) {
+        setShowPrintMenu(false)
+      }
+    }
+    if (showPrintMenu) document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [showPrintMenu])
+
+  const handlePrint = async () => {
+    if (!printBillOfSale) return
+    setShowPrintMenu(false)
+    setPdfLoading(true)
+    try {
+      // Fetch all deal data from Supabase
+      const res = await fetch(`/api/deals/${encodeURIComponent(dealId)}`)
+      const deal = res.ok ? await res.json() : null
+      const c = deal?.customer || {}
+      const vRaw = deal?.vehicles?.[0] || {}
+      const vp = vehiclePrefill?.vehicle || {}
+      // edc_deals_vehicles stores vehicle info in selected_* columns (or camelCase variants)
+      const sv = vRaw.selectedVehicle || vRaw  // webhook may nest under selectedVehicle
+      const v = {
+        stock_number: sv.selected_stock_number ?? sv.stockNumber ?? sv.stock_number ?? vp.stock_number ?? '',
+        year: sv.selected_year ?? sv.year ?? vp.year ?? '',
+        make: sv.selected_make ?? sv.make ?? vp.make ?? '',
+        model: sv.selected_model ?? sv.model ?? vp.model ?? '',
+        trim: sv.selected_trim ?? sv.trim ?? vp.trim ?? '',
+        vin: sv.selected_vin ?? sv.vin ?? vp.vin ?? '',
+        exterior_color: sv.selected_exterior_color ?? sv.exteriorColor ?? sv.exterior_color ?? vp.exterior_color ?? '',
+        interior_color: sv.selected_interior_color ?? sv.interiorColor ?? sv.interior_color ?? vp.interior_color ?? '',
+        odometer: sv.selected_odometer ?? sv.odometer ?? vp.odometer ?? vp.mileage ?? '',
+        odometer_unit: sv.selected_odometer_unit ?? sv.odometerUnit ?? sv.odometer_unit ?? vp.odometer_unit ?? 'kms',
+        status: sv.selected_status ?? sv.status ?? vp.status ?? 'Used',
+        price: vp.price ?? 0,
+      }
+      const w = deal?.worksheet || {}
+      const d = deal?.delivery || {}
+      const disc = deal?.disclosures || {}
+
+      const price = Number(w.purchase_price ?? v.price ?? 0)
+      const omvic = Number(w.omvic_fee ?? 22)
+      const discount = Number(w.discount ?? 0)
+      const subtotal1 = price + omvic
+      const tradeValue = Number(w.trade_value ?? 0)
+      const lienPayout = Number(w.lien_payout ?? 0)
+      const netDiff = subtotal1 - discount - tradeValue + lienPayout
+      const taxRate = Number(w.tax_rate ?? 0.13)
+      const hst = netDiff * taxRate
+      const totalTax = hst
+      const licenseFee = Number(w.license_fee ?? 91)
+      const subtotal2 = netDiff + totalTax + licenseFee
+      const deposit = Number(w.deposit ?? 0)
+      const downPayment = Number(w.down_payment ?? 0)
+      const taxInsurance = Number(w.tax_on_insurance ?? 0)
+      const totalDue = subtotal2 - deposit - downPayment + taxInsurance
+
+      const fullName = [c.firstname, c.lastname].filter(Boolean).join(' ') || [c.first_name, c.last_name].filter(Boolean).join(' ') || ''
+
+      const billData: BillOfSaleData = {
+        dealDate: dealDate ? new Date(dealDate + 'T00:00:00').toLocaleDateString('en-CA', { year: 'numeric', month: 'short', day: 'numeric' }) : '',
+        invoiceNumber: String(dealId || ''),
+        fullName,
+        phone: c.phone ?? '',
+        mobile: c.mobile ?? '',
+        email: c.email ?? '',
+        address: c.street_address ?? c.streetaddress ?? '',
+        city: c.city ?? '',
+        province: c.province ?? 'ON',
+        postalCode: c.postal_code ?? c.postalcode ?? '',
+        driversLicense: c.drivers_license ?? c.driverslicense ?? '',
+        insuranceCompany: c.insurance_company ?? c.insurancecompany ?? '',
+        policyNumber: c.policy_number ?? c.policynumber ?? '',
+        policyExpiry: c.policy_expiry ?? c.policyexpiry ?? '',
+        stockNumber: v.stock_number,
+        year: String(v.year),
+        make: v.make,
+        model: v.model,
+        trim: v.trim,
+        colour: v.exterior_color,
+        keyNumber: '',
+        vin: v.vin,
+        odometerStatus: v.status,
+        odometer: v.odometer ? `${Number(v.odometer).toLocaleString()} ${v.odometer_unit || 'kms'}` : '',
+        serviceDate: '',
+        deliveryDate: d.delivery_date ?? '',
+        vehiclePrice: String(price),
+        omvicFee: String(omvic),
+        subtotal1: String(subtotal1),
+        netDifference: String(netDiff),
+        hstOnNetDifference: String(hst),
+        totalTax: String(totalTax),
+        licenseFee: String(licenseFee),
+        subtotal2: String(subtotal2),
+        deposit: String(deposit),
+        downPayment: String(downPayment),
+        taxOnInsurance: String(taxInsurance),
+        totalBalanceDue: String(totalDue),
+        extendedWarranty: 'DECLINED',
+        commentsHtml: disc.disclosures_html ?? '',
+        purchaserName: fullName,
+        salesperson: d.salesperson ?? '',
+        salespersonRegNo: '4782496',
+        acceptorName: d.approved_by ?? 'Syed Islam',
+        acceptorRegNo: '4782496',
+      }
+
+      const dataUri = generateBillOfSalePdf(billData)
+      setPdfDataUri(dataUri)
+      setShowDocPreview(true)
+    } catch (e) {
+      console.error('[Print] Error generating PDF:', e)
+    } finally {
+      setPdfLoading(false)
+    }
+  }
+
+  const handleDownloadPdf = () => {
+    if (!pdfDataUri) return
+    const byteString = atob(pdfDataUri.split(',')[1])
+    const mimeString = pdfDataUri.split(',')[0].split(':')[1].split(';')[0]
+    const ab = new ArrayBuffer(byteString.length)
+    const ia = new Uint8Array(ab)
+    for (let i = 0; i < byteString.length; i++) ia[i] = byteString.charCodeAt(i)
+    const blob = new Blob([ab], { type: mimeString })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `Bill_of_Sale_${dealId}.pdf`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  }
 
   return (
     <div className="w-full min-h-[calc(100vh-64px)] bg-gradient-to-b from-[#f6f7f9] to-[#e9eaee]">
@@ -246,8 +449,43 @@ export default function SalesNewDealPage() {
             </div>
             <div className="flex items-end justify-end gap-2">
               <div className="text-xs font-semibold text-gray-600 mr-2">Reports</div>
-              <button type="button" className="h-9 px-3 rounded bg-[#118df0] text-white text-sm font-semibold hover:bg-[#0d6ebd]">Email</button>
-              <button type="button" className="h-9 px-3 rounded bg-[#118df0] text-white text-sm font-semibold hover:bg-[#0d6ebd]">Print</button>
+              <button type="button" className="h-9 px-3 rounded bg-[#118df0] text-white text-sm font-semibold hover:bg-[#0d6ebd] flex items-center gap-1">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>
+                Email
+              </button>
+              <div className="relative" ref={printMenuRef}>
+                <div className="flex">
+                  <button
+                    type="button"
+                    onClick={handlePrint}
+                    disabled={pdfLoading}
+                    className="h-9 px-3 rounded-l bg-[#118df0] text-white text-sm font-semibold hover:bg-[#0d6ebd] flex items-center gap-1 disabled:opacity-50"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" /></svg>
+                    {pdfLoading ? 'Loading...' : 'Print'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowPrintMenu((v) => !v)}
+                    className="h-9 px-1.5 rounded-r bg-[#118df0] text-white text-sm font-semibold hover:bg-[#0d6ebd] border-l border-white/30"
+                  >
+                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+                  </button>
+                </div>
+                {showPrintMenu && (
+                  <div className="absolute right-0 top-full mt-1 w-48 bg-white border border-gray-200 rounded shadow-lg z-50">
+                    <div className="px-3 py-2 border-b border-gray-100 text-xs font-semibold text-gray-600">Reports</div>
+                    <label className="flex items-center gap-2 px-3 py-2 hover:bg-gray-50 cursor-pointer">
+                      <input type="checkbox" className="h-4 w-4 accent-[#118df0]" checked={printBillOfSale} onChange={(e) => setPrintBillOfSale(e.target.checked)} />
+                      <span className="text-sm text-gray-800 font-medium">Bill of Sale</span>
+                    </label>
+                    <label className="flex items-center gap-2 px-3 py-2 hover:bg-gray-50 cursor-pointer">
+                      <input type="checkbox" className="h-4 w-4 accent-[#118df0]" checked={printDisclosure} onChange={(e) => setPrintDisclosure(e.target.checked)} />
+                      <span className="text-sm text-gray-800">Disclosure Form</span>
+                    </label>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>
@@ -282,7 +520,7 @@ export default function SalesNewDealPage() {
             <div className="bg-white rounded-xl shadow p-8 text-center text-gray-500 text-sm">Loading deal data...</div>
           ) : (
             <>
-              {activeTab === 'customers' && (
+              <div style={{ display: activeTab === 'customers' ? 'block' : 'none' }}>
                 <CustomersTabNew
                   hideAddButton={!isRetail}
                   dealId={dealId}
@@ -292,8 +530,8 @@ export default function SalesNewDealPage() {
                   onSaved={() => setActiveTab('vehicles')}
                   initialData={prefill?.customer ?? null}
                 />
-              )}
-              {activeTab === 'vehicles' && (
+              </div>
+              <div style={{ display: activeTab === 'vehicles' ? 'block' : 'none' }}>
                 <VehiclesTab
                   dealId={dealId}
                   onSaved={() => setActiveTab('worksheet')}
@@ -314,8 +552,8 @@ export default function SalesNewDealPage() {
                     stock_number: vehiclePrefill.vehicle.stock_number,
                   } : null}
                 />
-              )}
-              {activeTab === 'worksheet' && (
+              </div>
+              <div style={{ display: activeTab === 'worksheet' ? 'block' : 'none' }}>
                 <WorksheetTab
                   dealId={dealId}
                   dealMode={isRetail ? 'RTL' : 'WHL'}
@@ -325,7 +563,7 @@ export default function SalesNewDealPage() {
                   autoSaved={autoSavedWorksheet}
                   initialData={prefill?.worksheet ?? (
                     vehiclePrefill?.vehicle ? {
-                      purchase_price: String(vehiclePrefill.vehicle.price ?? '0'),
+                      purchase_price: String(getVehicleSellPrice(vehiclePrefill.vehicle)),
                       discount: '0',
                       tax_code: 'HST',
                       license_fee: vehiclePrefill?.purchase?.license_fee ?? '',
@@ -335,8 +573,8 @@ export default function SalesNewDealPage() {
                     } : null
                   )}
                 />
-              )}
-              {activeTab === 'disclosures' && (
+              </div>
+              <div style={{ display: activeTab === 'disclosures' ? 'block' : 'none' }}>
                 <DisclosuresTab
                   dealId={dealId}
                   onSaved={() => setActiveTab('delivery')}
@@ -350,18 +588,54 @@ export default function SalesNewDealPage() {
                       : null
                   )}
                 />
-              )}
-              {activeTab === 'delivery' && (
+              </div>
+              <div style={{ display: activeTab === 'delivery' ? 'block' : 'none' }}>
                 <DeliveryTab
                   dealId={dealId}
                   dealMode={isRetail ? 'RTL' : 'WHL'}
                   initialData={prefill?.delivery ?? null}
                 />
-              )}
+              </div>
             </>
           )}
         </div>
       </div>
+
+      {/* Documents Preview Modal */}
+      {showDocPreview && pdfDataUri && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setShowDocPreview(false)} />
+          <div className="relative w-full max-w-3xl h-[90vh] rounded-xl bg-white shadow-xl border border-gray-200 flex flex-col">
+            <div className="px-5 py-3 border-b border-gray-200 flex items-center justify-between">
+              <div className="text-sm font-semibold text-gray-900">Documents Preview</div>
+              <button
+                type="button"
+                className="text-gray-500 hover:text-gray-700 text-lg"
+                onClick={() => setShowDocPreview(false)}
+                aria-label="Close"
+              >
+                &times;
+              </button>
+            </div>
+            <div className="px-5 py-2 border-b border-gray-100 flex items-center gap-3">
+              <button
+                type="button"
+                onClick={handleDownloadPdf}
+                className="text-gray-600 hover:text-[#118df0]" title="Download PDF"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" /></svg>
+              </button>
+            </div>
+            <div className="flex-1 overflow-auto bg-gray-100 p-4">
+              <iframe
+                src={pdfDataUri}
+                className="w-full h-full rounded border border-gray-200 bg-white"
+                title="Bill of Sale Preview"
+              />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

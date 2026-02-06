@@ -75,7 +75,14 @@ export default function CustomerShowroomPage() {
           const colour = (v.exterior_color || v.colour || '').toString().trim()
           const odo = Number(v.odometer ?? v.mileage ?? 0) || 0
           const odoUnit = (v.odometer_unit || 'km').toString().trim()
-          const price = Number(v.price ?? 0) || 0
+          const price = Number(
+            v.saleprice ??
+            v.sale_price ??
+            v.list_price ??
+            v.listprice ??
+            v.price ??
+            0
+          ) || 0
           const rawStatus = (v.status || '').toString().toLowerCase()
           const normalizedStatus: ShowroomVehicle['status'] = rawStatus.includes('pending')
             ? 'Deal Pending'

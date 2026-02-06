@@ -35,6 +35,10 @@ export default function DealsPage() {
   const [customersOpen, setCustomersOpen] = useState(true)
   const [profitOpen, setProfitOpen] = useState(false)
 
+  // Delete state
+  const [deleteTarget, setDeleteTarget] = useState<DealRow | null>(null)
+  const [deleting, setDeleting] = useState(false)
+
   const fetchDeals = useCallback(async () => {
     try {
       setLoading(true)
@@ -93,6 +97,29 @@ export default function DealsPage() {
 
   const handleCreateNewDeal = () => {
     router.push('/admin/sales/deals/new')
+  }
+
+  const handleDelete = async () => {
+    if (!deleteTarget) return
+    try {
+      setDeleting(true)
+      const res = await fetch('/api/deals/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dealId: deleteTarget.dealId }),
+      })
+      const json = await res.json()
+      if (!res.ok || json.error) throw new Error(json.error || 'Delete failed')
+      // Remove from local state and close modal
+      setRows((prev) => prev.filter((r) => r.dealId !== deleteTarget.dealId))
+      if (selectedDeal?.dealId === deleteTarget.dealId) setSelectedDeal(null)
+      setDeleteTarget(null)
+    } catch (e: any) {
+      console.error('[Delete] Error:', e)
+      alert(e?.message || 'Failed to delete deal')
+    } finally {
+      setDeleting(false)
+    }
   }
 
   const formatDate = (d: string) => {
@@ -210,18 +237,19 @@ export default function DealsPage() {
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Primary Salesperson</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Other</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Reference</th>
+                  <th className="px-2 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider w-10"></th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {loading ? (
                   <tr>
-                    <td className="px-6 py-10 text-center text-sm text-gray-500" colSpan={11}>
+                    <td className="px-6 py-10 text-center text-sm text-gray-500" colSpan={12}>
                       Loading deals...
                     </td>
                   </tr>
                 ) : paged.length === 0 ? (
                   <tr>
-                    <td className="px-6 py-10 text-center text-sm text-gray-500" colSpan={11}>
+                    <td className="px-6 py-10 text-center text-sm text-gray-500" colSpan={12}>
                       No results.
                     </td>
                   </tr>
@@ -257,6 +285,19 @@ export default function DealsPage() {
                       <td className="px-4 py-3 text-sm text-gray-700 whitespace-nowrap">{r.primarySalesperson}</td>
                       <td className="px-4 py-3 text-sm text-gray-700 whitespace-nowrap">{r.other}</td>
                       <td className="px-4 py-3 text-sm text-gray-700 whitespace-nowrap">{r.reference}</td>
+                      <td className="px-2 py-3 text-center">
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); setDeleteTarget(r) }}
+                          className="w-8 h-8 rounded bg-red-50 hover:bg-red-100 flex items-center justify-center transition-colors"
+                          title="Delete deal"
+                          aria-label="Delete deal"
+                        >
+                          <svg className="w-4 h-4 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                          </svg>
+                        </button>
+                      </td>
                     </tr>
                   ))
                 )}
@@ -420,6 +461,51 @@ export default function DealsPage() {
                 </div>
               )
             })()}
+          </div>
+        </div>
+      )}
+
+      {/* Delete confirmation modal */}
+      {deleteTarget && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/40" onClick={() => !deleting && setDeleteTarget(null)} />
+          <div className="relative w-full max-w-md rounded-xl bg-white shadow-xl border border-gray-200">
+            <div className="px-5 py-4 border-b border-gray-200 flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0">
+                <svg className="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
+              <div>
+                <div className="text-sm font-semibold text-gray-900">Delete Deal</div>
+                <div className="text-xs text-gray-500">This action cannot be undone</div>
+              </div>
+            </div>
+            <div className="px-5 py-5">
+              <div className="text-sm text-gray-700">
+                Are you sure you want to delete deal <span className="font-bold">#{deleteTarget.dealId}</span>
+                {deleteTarget.primaryCustomer ? <> for <span className="font-bold">{deleteTarget.primaryCustomer}</span></> : null}?
+                This will permanently remove all data (Customers, Vehicles, Worksheet, Disclosures, and Delivery) associated with this deal.
+              </div>
+              <div className="mt-5 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  disabled={deleting}
+                  onClick={() => setDeleteTarget(null)}
+                  className="h-9 px-4 rounded bg-gray-100 text-gray-700 text-sm font-semibold hover:bg-gray-200 disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={deleting}
+                  onClick={handleDelete}
+                  className="h-9 px-4 rounded bg-red-600 text-white text-sm font-semibold hover:bg-red-700 disabled:opacity-50"
+                >
+                  {deleting ? 'Deleting...' : 'Delete'}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

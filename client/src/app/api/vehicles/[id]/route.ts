@@ -13,12 +13,7 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
     if (!id) return NextResponse.json({ error: 'Missing id' }, { status: 400 })
 
     // Vehicle by id
-    const vehSelect = [
-      'id','make','model','year','trim','vin','stock_number','drivetrain','transmission','cylinders',
-      'exterior_color','interior_color','odometer','odometer_unit','mileage','price','status','images','features','created_at'
-    ].join(',')
-
-    const vehRes = await fetch(`${baseUrl}/rest/v1/edc_vehicles?id=eq.${encodeURIComponent(id)}&select=${encodeURIComponent(vehSelect)}`, {
+    const vehRes = await fetch(`${baseUrl}/rest/v1/edc_vehicles?id=eq.${encodeURIComponent(id)}&select=*`, {
       method: 'GET',
       headers: { apikey: apiKey, Authorization: `Bearer ${apiKey}` },
       cache: 'no-store',

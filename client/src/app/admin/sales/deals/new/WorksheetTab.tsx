@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 export default function WorksheetTab({
   dealId,
@@ -20,6 +20,7 @@ export default function WorksheetTab({
   autoSaved?: boolean
 }): JSX.Element {
   const d = initialData || {}
+  const appliedInitialKeyRef = useRef<string>('')
   const [worksheetSaving, setWorksheetSaving] = useState(false)
   const [worksheetSaveError, setWorksheetSaveError] = useState<string | null>(null)
   const [showSavedModal, setShowSavedModal] = useState(false)
@@ -150,6 +151,83 @@ export default function WorksheetTab({
   const [insShowTaxDetails, setInsShowTaxDetails] = useState(false)
   const [insTaxValues, setInsTaxValues] = useState<Record<string, string>>({})
   const insDetailsItem = useMemo(() => insurances.find((x) => x.id === insDetailsForId) || null, [insurances, insDetailsForId])
+
+  useEffect(() => {
+    if (!initialData) return
+
+    const key = initialData?.id ? `id:${String(initialData.id)}` : `prefill:${String(dealId || '')}`
+    if (appliedInitialKeyRef.current === key) return
+
+    const toNumLoose = (v: any) => {
+      if (v === null || v === undefined) return 0
+      const s = String(v).trim()
+      if (!s) return 0
+      const cleaned = s.replace(/[^0-9.-]/g, '')
+      const n = parseFloat(cleaned)
+      return Number.isNaN(n) ? 0 : n
+    }
+    const isZero = (v: any) => toNumLoose(v) === 0
+
+    const pristine =
+      isZero(purchasePrice) &&
+      isZero(discount) &&
+      isZero(tradeValue) &&
+      isZero(actualCashValue) &&
+      isZero(lienPayout) &&
+      isZero(taxManual) &&
+      !taxOverride &&
+      fees.length === 0 &&
+      accessories.length === 0 &&
+      warranties.length === 0 &&
+      insurances.length === 0 &&
+      payments.length === 0
+
+    if (!pristine) return
+
+    const nd = initialData || {}
+    setPurchasePrice(nd.purchase_price ?? '0')
+    setDiscount(nd.discount ?? '0')
+    setTaxCode((nd.tax_code as any) || 'HST')
+    setTaxOverride(nd.tax_override === true || nd.tax_override === 'true')
+    setTaxManual(nd.tax_manual ?? '0')
+    setLicenseFee(nd.license_fee ?? '')
+    setTradeValue(nd.trade_value ?? '0')
+    setActualCashValue(nd.actual_cash_value ?? '0')
+    setLienPayout(nd.lien_payout ?? '0')
+    setNewPlates(nd.new_plates === true || nd.new_plates === 'true')
+    setRenewalOnly(nd.renewal_only === true || nd.renewal_only === 'true')
+    setFinanceOverride(nd.finance_override === true || nd.finance_override === 'true')
+    setFinanceRate(nd.finance_rate ?? '')
+    setFinanceTermMonths(nd.finance_term_months ?? '')
+    setPaymentType(nd.payment_type || 'Bi-Weekly')
+    setFirstPaymentDate(nd.first_payment_date ?? '')
+    setLienHolder(nd.lien_holder ?? '')
+    setFinanceRateType(nd.finance_rate_type || 'VAR')
+    setFinanceCommission(nd.finance_commission ?? '')
+
+    setFees(Array.isArray(nd.fees) ? nd.fees.map((f: any) => ({ id: f.id || `fee_${Date.now()}`, name: f.name || '', desc: f.desc || '', amount: Number(f.amount) || 0 })) : [])
+    setPayments(Array.isArray(nd.payments) ? nd.payments.map((p: any) => ({ id: p.id || `pay_${Date.now()}`, amount: Number(p.amount) || 0, type: p.type || 'Cash', desc: p.desc || '', category: p.category || 'Deposit' })) : [])
+    setAccessories(Array.isArray(nd.accessories) ? nd.accessories.map((a: any) => ({ id: a.id || `acc_${Date.now()}`, name: a.name || '', desc: a.desc || '', price: Number(a.price) || 0 })) : [])
+    setWarranties(Array.isArray(nd.warranties) ? nd.warranties.map((w: any) => ({ id: w.id || `war_${Date.now()}`, name: w.name || '', desc: w.desc || '', amount: Number(w.amount) || 0 })) : [])
+    setInsurances(Array.isArray(nd.insurances) ? nd.insurances.map((i: any) => ({ id: i.id || `ins_${Date.now()}`, name: i.name || '', desc: i.desc || '', amount: Number(i.amount) || 0 })) : [])
+
+    appliedInitialKeyRef.current = key
+  }, [
+    initialData,
+    dealId,
+    purchasePrice,
+    discount,
+    tradeValue,
+    actualCashValue,
+    lienPayout,
+    taxManual,
+    taxOverride,
+    fees.length,
+    accessories.length,
+    warranties.length,
+    insurances.length,
+    payments.length,
+  ])
 
   type WorksheetCardKey = 'fees' | 'accessories' | 'warranties' | 'insurances' | 'payments'
   const [cardsOrder, setCardsOrder] = useState<WorksheetCardKey[]>(['fees', 'accessories', 'warranties', 'insurances', 'payments'])

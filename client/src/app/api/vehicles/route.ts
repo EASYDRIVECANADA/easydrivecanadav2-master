@@ -9,28 +9,7 @@ const apiKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 
 export async function GET() {
   try {
-    const select = [
-      'id',
-      'make',
-      'model',
-      'year',
-      'trim',
-      'vin',
-      'stock_number',
-      'drivetrain',
-      'transmission',
-      'cylinders',
-      'exterior_color',
-      'odometer',
-      'mileage',
-      'odometer_unit',
-      'price',
-      'status',
-      'images',
-      'features',
-      'created_at',
-    ].join(',')
-    const res = await fetch(`${baseUrl}/rest/v1/edc_vehicles?select=${encodeURIComponent(select)}&order=created_at.desc`, {
+    const res = await fetch(`${baseUrl}/rest/v1/edc_vehicles?select=*&order=created_at.desc`, {
       method: 'GET',
       headers: {
         'apikey': apiKey,
