@@ -507,95 +507,102 @@ export function renderBillOfSalePdf(
   doc.addPage()
   y = 40
 
-  // IMPORTANT INFORMATION header
-  doc.setFontSize(11)
-  doc.setFont('helvetica', 'bold')
-  doc.setTextColor(BLUE)
-  doc.text('IMPORTANT INFORMATION RESPECTING MOTOR VEHICLE SALES MOTOR VEHICLE INSPECTION', ML + CW / 2, y, { align: 'center', maxWidth: CW })
-  y += 22
+  const p2Indent = ML + 16
+  const p2W = CW - 32
+  const p2CenterW = CW * 0.92
 
+  // Main heading — bold black, left-aligned
+  doc.setFontSize(9)
+  doc.setFont('helvetica', 'bold')
+  doc.setTextColor(DARK)
+  doc.text('IMPORTANT INFORMATION RESPECTING MOTOR VEHICLE SALES MOTOR VEHICLE INSPECTION', p2Indent, y, { maxWidth: p2W })
+  y += 20
+
+  // MVI paragraph — centered
   doc.setFontSize(7)
   doc.setFont('helvetica', 'normal')
   doc.setTextColor(DARK)
-  const inspectionText = 'In case of any concerns with this sale, you should first contact your motor vehicle dealer. If concerns persist, you may contact the Ontario Motor Vehicle Industry Council as the administrative authority designated for administering the Motor Vehicle Dealers Act, 2002. You may be eligible for the compensation from the Motor Vehicle Dealers Compensation Fund, if you suffer a financial loss from this trade and if your dealer is unable or unwilling to make good on the loss. You may have additional rights at law, 65 Overlea Boulevard, Suite 300, Toronto ON M4H 1P1. Contact (Ontario Motor Vehicle Industry Council) Call: 1-416-226-4500 or 1-800-943-6002 or go to www.omvic.on.ca'
-  y = writePara(inspectionText, paraX, y, 7, 9, 'center') + 12
+  const mviText = 'A Motor Vehicle Inspection or MVI (described as "safety standards certificate" above or on page 1) is only an indication that the motor vehicle met certain basic standards of vehicle safety inspection on the date of inspection.'
+  const mviLines = doc.splitTextToSize(mviText, p2CenterW)
+  doc.text(mviLines, ML + CW / 2, y, { align: 'center', maxWidth: p2CenterW })
+  y += mviLines.length * 9 + 14
 
-  // Safety Standards Certificate
-  doc.setFontSize(11)
+  // TERMS AND CONDITIONS heading — bold black
+  doc.setFontSize(9)
   doc.setFont('helvetica', 'bold')
-  doc.setTextColor(BLUE)
-  doc.text('SAFETY STANDARDS CERTIFICATE', ML + CW / 2, y, { align: 'center' })
-  y += 14
+  doc.setTextColor(DARK)
+  doc.text('TERMS AND CONDITIONS', p2Indent, y)
+  y += 16
 
+  // Terms 1-4
   doc.setFontSize(7)
   doc.setFont('helvetica', 'normal')
   doc.setTextColor(DARK)
-  y = writePara('A Safety Standards Certificate is only an indication that the motor vehicle met certain basic standards of vehicle safety on the date of inspection.', paraX, y, 7, 9, 'center') + 14
 
-  // Terms and Conditions
-  doc.setFontSize(13)
-  doc.setFont('helvetica', 'normal')
-  doc.setTextColor(BLUE)
-  doc.text('Terms and Conditions', ML + CW / 2, y, { align: 'center' })
-  y += 18
-
-  doc.setFontSize(6.5)
-  doc.setFont('helvetica', 'normal')
-  doc.setTextColor(DARK)
-
-  const terms = [
+  const p2Terms = [
     '1. Trade-in Vehicle: Any vehicle you trade-in shall be equipped and in the same condition, other than reasonable wear and tear at the time of delivery to the dealer, as it was at the date of this agreement. You agree to be responsible for any repairs or maintenance needed to maintain this condition until the delivery date. If the trade-in vehicle has been damaged between the date of this agreement and the delivery date, or is in need of repair, the dealer may cancel this agreement and deduct any damages from the deposit or, if you agree, may reduce the amount of the trade-in allowance to compensate for the repairs needed. You also agree that you will be liable to compensate the dealer for any loss suffered because of any misrepresentation about the declared distance travelled, the declared prior use, or the condition of the vehicle traded-in.',
     '2. Taxes and Financing: You agree to pay the dealer an amount equal to any increase in taxes payable relating to the purchase of the vehicle, between the date of this agreement and delivery of the vehicle to you. Should the amount of tax payable reduced, the dealer agrees to deduct this amount from the total amount owed by you. You agree that you will be responsible for any damages suffered by the dealer if a financing contract cannot be arranged because of any default or misrepresentation by you.',
     '3. Legal Ownership and Purchaser\'s Obligations: Legal ownership of the vehicle shall not pass to you until the entire purchase price has been paid in full. You agree that until that time, you shall: (a) Maintain insurance on the vehicle with the dealer as the named beneficiary in the event of a loss; (b) Not sell or transfer the vehicle to anyone else; (c) Not allow any lien or other interest to be taken in or against the vehicle; (d) Not allow the vehicle to be used in the commission of any illegal act; and (e) Reimburse the dealer for any costs the dealer may incur due to your failure to comply with any of (a), (b), (c) or (d) above.',
-    '4. Acceptance by Purchaser: If you refuse to take delivery of the vehicle when it is made available to you, or on the delivery date specified in this agreement, the dealer shall notify you, by registered mail, sent to your last address known to the dealer, that the vehicle is available for delivery. If you fail to take delivery of the vehicle within seven (7) days of signed receipt of this notice, or if the notice is returned to the dealer unclaimed, the dealer may resell the vehicle with no further notice to you. When the dealer resells the vehicle, you agree to pay the dealer for all losses the dealer incurs. Any deposit or vehicle trade-in may be kept by the dealer to apply against any loss suffered by the dealer. If the loss is greater than the total of the amount paid as a deposit and the value of the trade-in, you agree to pay the difference to the dealer. The dealer agrees to provide you with a detailed accounting of the resale and a list of expenses incurred. The dealer shall maintain the right to use the legal means available to collect any sum owing by you under this agreement.',
+    '4. Acceptance by Purchaser: If you refuse to take delivery of the vehicle when it is made available to you, or on the delivery date specified in this agreement, the dealer shall notify you, by registered mail, sent to your last address known to the dealer, that the vehicle is available for delivery. If you fail to take delivery of the vehicle within seven (7) days of signed receipt of this notice, or if the notice is returned to the dealer unclaimed, the dealer may resell the vehicle with no further notice to you. When the dealer resells the vehicle, you agree to pay the dealer for all losses the dealer incurs. Any deposit or vehicle trade-in may be kept by the dealer to apply against any loss suffered by the dealer. If the loss is greater than the total of the amount paid as a deposit and the value of the trade-in, you agree to pay the difference to the dealer. The dealer agrees to provide you with a detailed accounting of the resale and a list of expenses incurred. The dealer shall maintain the right to use any legal means available to collect any sum owing by you under this agreement.',
   ]
 
-  for (const term of terms) {
-    const lines = doc.splitTextToSize(term, paraBlockW)
+  for (const term of p2Terms) {
+    const lines = doc.splitTextToSize(term, p2W)
     const blockH = lines.length * 9
     if (y + blockH > H - 60) {
       doc.addPage()
       y = 40
     }
-    doc.setFontSize(6.5)
+    doc.setFontSize(7)
     doc.setFont('helvetica', 'normal')
     doc.setTextColor(DARK)
-    doc.text(lines, paraX, y, { maxWidth: paraBlockW })
-    y += blockH + 8
+    doc.text(lines, p2Indent, y, { maxWidth: p2W })
+    y += blockH + 6
   }
 
-  // CANADIAN MOTOR VEHICLE ARBITRATION PLAN
-  y += 6
-  doc.setFontSize(9)
+  // CANADIAN MOTOR VEHICLE ARBITRATION PLAN — bold black
+  y += 4
+  doc.setFontSize(8)
   doc.setFont('helvetica', 'bold')
   doc.setTextColor(DARK)
-  doc.text('CANADIAN MOTOR VEHICLE ARBITRATION PLAN', ML + CW / 2, y, { align: 'center' })
+  doc.text('CANADIAN MOTOR VEHICLE ARBITRATION PLAN', p2Indent, y)
   y += 14
 
-  doc.setFontSize(6.5)
+  doc.setFontSize(7)
   doc.setFont('helvetica', 'normal')
   doc.setTextColor(DARK)
   const camvapPlan = 'The Canadian Motor Vehicle Arbitration Plan may be available to resolve disputes concerning alleged manufacturer\'s defects or implementation of the manufacturer\'s new motor vehicle warranty. Only vehicles less than 5 years old that have been driven less than 160,000 KM qualify.'
-  y = writePara(camvapPlan, paraX, y, 6.5, 9, 'center') + 12
+  const camvapLines = doc.splitTextToSize(camvapPlan, p2CenterW)
+  doc.text(camvapLines, ML + CW / 2, y, { align: 'center', maxWidth: p2CenterW })
+  y += camvapLines.length * 9 + 10
 
-  // OR
-  doc.setFontSize(9)
+  // OR CANADIAN MOTOR VEHICLE ARBITRATION PLAN NOT AVAILABLE — bold black
+  doc.setFontSize(8)
   doc.setFont('helvetica', 'bold')
-  doc.text('OR CANADIAN MOTOR VEHICLE ARBITRATION PLAN NOT AVAILABLE', ML + CW / 2, y, { align: 'center', maxWidth: CW })
-  y += 16
+  doc.setTextColor(DARK)
+  doc.text('OR CANADIAN MOTOR VEHICLE ARBITRATION PLAN NOT AVAILABLE', p2Indent, y)
+  y += 14
 
-  doc.setFontSize(6.5)
-  doc.setFont('helvetica', 'normal')
-  const notAvailText = 'The manufacturer of this vehicle is not a participant in the Canadian Motor Vehicle Arbitration Plan. Therefore, the program under that plan is not available to resolve disputes concerning alleged manufacturer\'s defects or implementation of the manufacturer\'s new motor vehicle warranty. Currently, BMW, Mitsubishi, Suzuki and most exotic foreign sports car manufacturers, do not participate in CAMVAP. Further information can be found at www.camvap.ca.'
-  y = writePara(notAvailText, paraX, y, 6.5, 9, 'center') + 16
-
-  // Customer Initials
   doc.setFontSize(7)
   doc.setFont('helvetica', 'normal')
-  doc.text('Customer Initials: ______________', ML, y)
+  doc.setTextColor(DARK)
+  const notAvailText = 'The manufacturer of this vehicle is not a participant in the Canadian Motor Vehicle Arbitration Plan. Therefore, the program under that plan is not available to resolve disputes concerning alleged manufacturer\'s defects or implementation of the manufacturer\'s new motor vehicle warranty. Currently, BMW, Mitsubishi, Suzuki and most exotic foreign sports car manufacturers, do not participate in CAMVAP. Further information can be found at www.camvap.ca.'
+  const notAvailLines = doc.splitTextToSize(notAvailText, p2CenterW)
+  doc.text(notAvailLines, ML + CW / 2, y, { align: 'center', maxWidth: p2CenterW })
+  y += notAvailLines.length * 9 + 20
+
+  // Customer Initials line
+  doc.setFontSize(8)
+  doc.setFont('helvetica', 'normal')
+  doc.setTextColor(DARK)
+  doc.text('Customer Initials:', p2Indent, y)
+  doc.setDrawColor(DARK)
+  doc.setLineWidth(0.5)
+  doc.line(p2Indent + 74, y + 1, p2Indent + 150, y + 1)
 
   // Page number
   doc.setFontSize(7)
+  doc.setFont('helvetica', 'normal')
   doc.setTextColor(GRAY_LINE)
   doc.text(`${pageStart + 1}/${totalPages}`, W - MR, H - 20, { align: 'right' })
 
@@ -603,38 +610,55 @@ export function renderBillOfSalePdf(
   doc.addPage()
   y = 40
 
+  const p3Indent = ML + 16
+  const p3W = CW - 32
+
+  // Heading — centered, black, underlined
   doc.setFontSize(11)
   doc.setFont('helvetica', 'bold')
-  doc.setTextColor(BLUE)
-  doc.text('IMPORTANT INFORMATION RESPECTING MOTOR VEHICLE SALES', ML + CW / 2, y, { align: 'center', maxWidth: CW })
-  y += 20
+  doc.setTextColor(DARK)
+  const p3Title = 'IMPORTANT INFORMATION RESPECTING MOTOR VEHICLE SALES'
+  doc.text(p3Title, ML + CW / 2, y, { align: 'center' })
+  const p3TitleW = doc.getTextWidth(p3Title)
+  doc.setDrawColor(DARK)
+  doc.setLineWidth(0.6)
+  doc.line(ML + (CW - p3TitleW) / 2, y + 3, ML + (CW + p3TitleW) / 2, y + 3)
+  y += 18
 
+  // OMVIC contact paragraph — left-aligned
   doc.setFontSize(6.5)
   doc.setFont('helvetica', 'normal')
   doc.setTextColor(DARK)
   const importantInfo = 'In case of any concerns with this sale, you should first contact your motor vehicle dealer. If concerns persist, you may contact the Ontario Motor Vehicle Industry Council as the administrative authority designated for administering the Motor Vehicle Dealers Act, 2002. You may be eligible for the compensation from the Motor Vehicle Dealers Compensation Fund, if you suffer a financial loss from this trade and if your dealer is unable or unwilling to make good on the loss. You may have additional rights at law, 65 Overlea Boulevard, Suite 300, Toronto ON M4H 1P1. Contact (Ontario Motor Vehicle Industry Council) Call: 1-416-226-4500 or 1-800-943-6002 or go to www.omvic.on.ca'
-  y = writePara(importantInfo, paraX, y, 6.5, 9, 'center') + 16
+  const importLines = doc.splitTextToSize(importantInfo, p3W)
+  doc.text(importLines, p3Indent, y, { maxWidth: p3W })
+  y += importLines.length * 8.5 + 16
 
-  // Safety Standards Certificate (again on page 3)
-  doc.setFontSize(11)
+  // SAFETY STANDARDS CERTIFICATE — centered, black, bold, large
+  doc.setFontSize(14)
   doc.setFont('helvetica', 'bold')
-  doc.setTextColor(BLUE)
+  doc.setTextColor(DARK)
   doc.text('SAFETY STANDARDS CERTIFICATE', ML + CW / 2, y, { align: 'center' })
-  y += 14
+  y += 16
 
+  // SSC description — left-aligned
   doc.setFontSize(6.5)
   doc.setFont('helvetica', 'normal')
   doc.setTextColor(DARK)
-  y = writePara('A Safety Standards Certificate is only an indication that the motor vehicle met certain basic standards of vehicle safety on the date of inspection.', paraX, y, 6.5, 9, 'center') + 14
+  const sscText = 'A Safety Standards Certificate is only an indication that the motor vehicle met certain basic standards of vehicle safety on the date of inspection.'
+  const sscLines3 = doc.splitTextToSize(sscText, p3W)
+  doc.text(sscLines3, p3Indent, y, { maxWidth: p3W })
+  y += sscLines3.length * 8.5 + 14
 
-  // Terms and Conditions (repeat)
-  doc.setFontSize(13)
-  doc.setFont('helvetica', 'normal')
-  doc.setTextColor(BLUE)
+  // Terms and Conditions — centered, black, bold
+  doc.setFontSize(15)
+  doc.setFont('helvetica', 'bold')
+  doc.setTextColor(DARK)
   doc.text('Terms and Conditions', ML + CW / 2, y, { align: 'center' })
-  y += 16
+  y += 18
 
-  doc.setFontSize(6)
+  // Terms 1-4 — left-aligned, compact
+  doc.setFontSize(6.5)
   doc.setFont('helvetica', 'normal')
   doc.setTextColor(DARK)
 
@@ -642,55 +666,61 @@ export function renderBillOfSalePdf(
     '1. Trade-in Vehicle: Any vehicle you trade-in shall be equipped and in the same condition, other than reasonable wear and tear at the time of delivery to the dealer, as it was at the date of this agreement. You agree to be responsible for any repairs or maintenance needed to maintain this condition until the delivery date. If the trade-in vehicle has been damaged between the date of this agreement and the delivery date, or is in need of repair, the dealer may cancel this agreement and deduct any damages from the deposit or, if you agree, may reduce the amount of the trade-in allowance to compensate for the repairs needed. You also agree that you will be liable to compensate the dealer for any loss suffered because of any misrepresentation about the declared distance travelled, the declared prior use, or the condition of the vehicle traded-in.',
     '2. Taxes and Financing: You agree to pay the dealer an amount equal to any increase in taxes payable relating to the purchase of the vehicle, between the date of this agreement and delivery of the vehicle to you. Should the amount of tax payable reduced, the dealer agrees to deduct this amount from the total amount owed by you. You agree that you will be responsible for any damages suffered by the dealer if a financing contract cannot be arranged because of any default or misrepresentation by you.',
     '3. Legal Ownership and Purchaser\'s Obligations: Legal ownership of the vehicle shall not pass to you until the entire purchase price has been paid in full. You agree that until that time, you shall: (a) Maintain insurance on the vehicle with the dealer as the named beneficiary in the event of a loss; (b) Not sell or transfer the vehicle to anyone else; (c) Not allow any lien or other interest to be taken in or against the vehicle; (d) Not allow the vehicle to be used in the commission of any illegal act; and (e) Reimburse the dealer for any costs the dealer may incur due to your failure to comply with any of (a), (b), (c) or (d) above.',
-    '4. Acceptance by Purchaser: If you refuse to take delivery of the vehicle when it is made available to you, or on the delivery date specified in this agreement, the dealer shall notify you, by registered mail, sent to your last address known to the dealer, that the vehicle is available for delivery. If you fail to take delivery of the vehicle within seven (7) days of signed receipt of this notice, or if the notice is returned to the dealer unclaimed, the dealer may resell the vehicle with no further notice to you. When the dealer resells the vehicle, you agree to pay the dealer for all losses the dealer incurs. Any deposit or vehicle tradein may be kept by the dealer to apply against any loss suffered by the dealer. If the loss is greater than the total of the amount paid as a deposit and the value of the trade-in, you agree to pay the difference to the dealer. The dealer agrees to provide you with a detailed accounting of the resale and a list of expenses incurred. The dealer shall maintain the right to use the legal means available to collect any sum owing by you under this agreement.',
+    '4. Acceptance by Purchaser: If you refuse to take delivery of the vehicle when it is made available to you, or on the delivery date specified in this agreement, the dealer shall notify you, by registered mail, sent to your last address known to the dealer, that the vehicle is available for delivery. If you fail to take delivery of the vehicle within seven (7) days of signed receipt of this notice, or if the notice is returned to the dealer unclaimed, the dealer may resell the vehicle with no further notice to you. When the dealer resells the vehicle, you agree to pay the dealer for all losses the dealer incurs. Any deposit or vehicle tradein may be kept by the dealer to apply against any loss suffered by the dealer. If the loss is greater than the total of the amount paid as a deposit and the value of the trade-in, you agree to pay the difference to the dealer. The dealer agrees to provide you with a detailed accounting of the resale and a list of expenses incurred. The dealer shall maintain the right to use any legal means available to collect any sum owing by you under this agreement.',
   ]
 
   for (const term of termsCompact) {
-    const lines = doc.splitTextToSize(term, paraBlockW)
+    const lines = doc.splitTextToSize(term, p3W)
     const blockH = lines.length * 8.5
     if (y + blockH > H - 120) {
       doc.addPage()
       y = 40
     }
-    doc.setFontSize(6)
+    doc.setFontSize(6.5)
     doc.setFont('helvetica', 'normal')
     doc.setTextColor(DARK)
-    doc.text(lines, paraX, y, { maxWidth: paraBlockW })
-    y += blockH + 8
+    doc.text(lines, p3Indent, y, { maxWidth: p3W })
+    y += blockH + 4
   }
 
-  // CANADIAN MOTOR VEHICLE ARBITRATION PLAN
-  y += 8
+  // CANADIAN MOTOR VEHICLE ARBITRATION PLAN — centered, black, bold
+  y += 10
   doc.setFontSize(11)
   doc.setFont('helvetica', 'bold')
-  doc.setTextColor(BLUE)
+  doc.setTextColor(DARK)
   doc.text('CANADIAN MOTOR VEHICLE ARBITRATION PLAN', ML + CW / 2, y, { align: 'center' })
   y += 16
 
+  // CAMVAP description — left-aligned
   doc.setFontSize(6.5)
   doc.setFont('helvetica', 'normal')
   doc.setTextColor(DARK)
   const camvapPlan2 = 'The Canadian Motor Vehicle Arbitration Plan may be available to resolve disputes concerning alleged manufacturer\'s defects or implementation of the manufacturer\'s new motor vehicle warranty. Only vehicles less than 5 years old that have been driven less than 160,000 KM qualify.'
-  y = writePara(camvapPlan2, paraX, y, 6.5, 9, 'center') + 16
+  const camvap2Lines = doc.splitTextToSize(camvapPlan2, p3W)
+  doc.text(camvap2Lines, p3Indent, y, { maxWidth: p3W })
+  y += camvap2Lines.length * 8.5 + 14
 
-  // OR
+  // OR — left-aligned, black
   doc.setFontSize(8)
   doc.setFont('helvetica', 'normal')
   doc.setTextColor(DARK)
   doc.text('OR', ML, y)
   y += 16
 
+  // CANADIAN MOTOR VEHICLE ARBITRATION PLAN NOT AVAILABLE — centered, black, bold
   doc.setFontSize(11)
   doc.setFont('helvetica', 'bold')
-  doc.setTextColor(BLUE)
+  doc.setTextColor(DARK)
   doc.text('CANADIAN MOTOR VEHICLE ARBITRATION PLAN NOT AVAILABLE', ML + CW / 2, y, { align: 'center', maxWidth: CW })
-  y += 18
+  y += 16
 
+  // Not available text — left-aligned
   doc.setFontSize(6.5)
   doc.setFont('helvetica', 'normal')
   doc.setTextColor(DARK)
   const notAvailText2 = 'The manufacturer of this vehicle is not a participant in the Canadian Motor Vehicle Arbitration Plan. Therefore, the program under that plan is not available to resolve disputes concerning alleged manufacturer\'s defects or implementation of the manufacturer\'s new motor vehicle warranty. Currently, BMW, Mitsubishi, Suzuki and most exotic foreign sports car manufacturers, do not participate in CAMVAP. Further information can be found at www.camvap.ca.'
-  writePara(notAvailText2, paraX, y, 6.5, 9, 'center')
+  const notAvail2Lines = doc.splitTextToSize(notAvailText2, p3W)
+  doc.text(notAvail2Lines, p3Indent, y, { maxWidth: p3W })
 
   // Page number
   doc.setFontSize(7)
