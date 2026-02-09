@@ -32,9 +32,14 @@ export default function VehiclesTab({ dealId, onSaved, initialData, prefillSelec
   const [odoEditing, setOdoEditing] = useState(false)
   const [odoDraft, setOdoDraft] = useState('')
 
+  // Track if prefill has been applied to prevent re-applying
+  const prefillApplied = useRef(false)
+  
   // Prefill selection from showroom (vehicleId in URL -> prefillSelected)
   useEffect(() => {
-    if (!prefillSelected || selected) return
+    if (!prefillSelected || prefillApplied.current) return
+    prefillApplied.current = true
+    
     const v = prefillSelected
     const row: VehicleRow = {
       id: String(v.id || ''),
@@ -59,7 +64,7 @@ export default function VehiclesTab({ dealId, onSaved, initialData, prefillSelec
       .join(' ')
     setQuery(label)
     setOdoDraft(row.odometer !== null && row.odometer !== undefined ? String(row.odometer) : '')
-  }, [prefillSelected, selected])
+  }, [prefillSelected])
   const [tradeOpen, setTradeOpen] = useState(false)
   const [tradeStep, setTradeStep] = useState<1 | 2 | 3 | 4>(1)
   const [tradeDisclosuresDetail, setTradeDisclosuresDetail] = useState(false)
@@ -197,9 +202,20 @@ export default function VehiclesTab({ dealId, onSaved, initialData, prefillSelec
   const handleAddSave = async () => {
     try {
       setAddSaveError(null)
+      
+      // Validation
+      const vin = (addForm.vin || '').trim()
+      if (!vin) {
+        setAddSaveError('VIN is required')
+        return
+      }
+      if (!addForm.year || !addForm.make || !addForm.model) {
+        setAddSaveError('Year, Make, and Model are required')
+        return
+      }
+      
       setAddSaving(true)
 
-      const vin = (addForm.vin || '').trim()
       const payload = {
         dealId: dealId || null,
         inStockDate: addForm.inStockDate || null,
@@ -227,12 +243,13 @@ export default function VehiclesTab({ dealId, onSaved, initialData, prefillSelec
 
       const raw = await res.text().catch(() => '')
       if (!res.ok) {
-        throw new Error(raw || `Save failed (${res.status})`)
+        const errorMsg = raw || `Server error (${res.status})`
+        throw new Error(`Failed to save vehicle: ${errorMsg}`)
       }
 
       const ok = raw.trim().toLowerCase() === 'done'
       if (!ok) {
-        throw new Error(raw || 'Webhook did not confirm save. Expected "Done"')
+        throw new Error(`Webhook error: ${raw || 'Expected "Done" response but got something else'}`)
       }
 
       const yearNum = addForm.year ? Number(addForm.year) : null
@@ -266,6 +283,7 @@ export default function VehiclesTab({ dealId, onSaved, initialData, prefillSelec
       setOdoDraft(mv !== null && mv !== undefined ? String(mv) : '')
       setOdoEditing(false)
 
+      resetAddModal()
       setAddOpen(false)
     } catch (e: any) {
       setAddSaveError(e?.message || 'Failed to save vehicle')
@@ -311,6 +329,16 @@ export default function VehiclesTab({ dealId, onSaved, initialData, prefillSelec
   const [addDecodeError, setAddDecodeError] = useState<string | null>(null)
   const [addSaving, setAddSaving] = useState(false)
   const [addSaveError, setAddSaveError] = useState<string | null>(null)
+
+  // Helper function to reset Add Vehicle modal state
+  const resetAddModal = () => {
+    setAddForm(initialAddFormState)
+    setAddEditorHtml('')
+    setAddCertAsIs(false)
+    setAddBrandType('na')
+    setAddDecodeError(null)
+    setAddSaveError(null)
+  }
 
   // Add Vehicle modal disclosures editor state
   const addInlineEditorRef = useRef<HTMLDivElement | null>(null)
@@ -994,12 +1022,7 @@ export default function VehiclesTab({ dealId, onSaved, initialData, prefillSelec
             type="button"
             className="ml-1 text-[#118df0] hover:underline"
             onClick={() => {
-              setAddForm(initialAddFormState)
-              setAddEditorHtml('')
-              setAddCertAsIs(false)
-              setAddBrandType('na')
-              setAddDecodeError(null)
-              setAddSaveError(null)
+              resetAddModal()
               setAddOpen(true)
             }}
           >
@@ -1408,7 +1431,10 @@ export default function VehiclesTab({ dealId, onSaved, initialData, prefillSelec
               <button
                 type="button"
                 aria-label="Close"
-                onClick={() => setAddOpen(false)}
+                onClick={() => {
+                  resetAddModal()
+                  setAddOpen(false)
+                }}
                 className="absolute right-4 top-4 text-gray-500 hover:text-gray-700"
               >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1759,7 +1785,10 @@ export default function VehiclesTab({ dealId, onSaved, initialData, prefillSelec
             <div className="px-6 py-4 flex justify-end gap-2 border-t border-gray-100">
               <button
                 type="button"
-                onClick={() => setAddOpen(false)}
+                onClick={() => {
+                  resetAddModal()
+                  setAddOpen(false)
+                }}
                 className="h-9 px-4 rounded bg-[#e74c3c] text-white text-sm font-semibold hover:bg-[#cf3e2e]"
               >
                 Cancel

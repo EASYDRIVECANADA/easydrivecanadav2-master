@@ -163,14 +163,14 @@ function SalesNewDealPageContent() {
     fetchVehiclePrefill()
   }, [fetchVehiclePrefill])
 
-  // Clear URL params after initial load to prevent navigation issues
+  // Clear URL params immediately to prevent navigation issues
   useEffect(() => {
     if (initialVehicleId && typeof window !== 'undefined') {
-      // Clear the vehicleId param from URL after component mounts
+      // Clear the vehicleId param from URL immediately
       const newUrl = window.location.pathname + (editDealId ? `?dealId=${editDealId}` : '')
-      router.replace(newUrl, { scroll: false })
+      window.history.replaceState({}, '', newUrl)
     }
-  }, [initialVehicleId, editDealId, router])
+  }, [])
 
   // Auto-save prefilled data to Supabase on first load when coming from showroom
   useEffect(() => {
