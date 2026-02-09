@@ -290,7 +290,7 @@ export default function VehiclesTab({ dealId, onSaved, initialData, prefillSelec
     'Has the vehicle had any body panel painted and or replaced?',
   ]
 
-  const [addForm, setAddForm] = useState({
+  const initialAddFormState = {
     inStockDate: '',
     stockNumber: '',
     vin: '',
@@ -303,7 +303,9 @@ export default function VehiclesTab({ dealId, onSaved, initialData, prefillSelec
     exteriorColour: '',
     fuelType: '',
     notes: '',
-  })
+  }
+  
+  const [addForm, setAddForm] = useState(initialAddFormState)
 
   const [addDecodeLoading, setAddDecodeLoading] = useState(false)
   const [addDecodeError, setAddDecodeError] = useState<string | null>(null)
@@ -991,7 +993,15 @@ export default function VehiclesTab({ dealId, onSaved, initialData, prefillSelec
           <button
             type="button"
             className="ml-1 text-[#118df0] hover:underline"
-            onClick={() => setAddOpen(true)}
+            onClick={() => {
+              setAddForm(initialAddFormState)
+              setAddEditorHtml('')
+              setAddCertAsIs(false)
+              setAddBrandType('na')
+              setAddDecodeError(null)
+              setAddSaveError(null)
+              setAddOpen(true)
+            }}
           >
             Add new
           </button>

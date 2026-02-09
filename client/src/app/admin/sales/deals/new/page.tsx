@@ -2,7 +2,7 @@
 
 import { Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import jsPDF from 'jspdf'
-import { useSearchParams } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 
 import CustomersTabNew from './CustomersTabNew'
 import DeliveryTab from './DeliveryTab'
@@ -15,11 +15,14 @@ import { renderDisclosureFormPdf } from './disclosureFormPdf'
 type DealTab = 'customers' | 'vehicles' | 'worksheet' | 'disclosures' | 'delivery'
 
 function SalesNewDealPageContent() {
+  const router = useRouter()
   const searchParams = useSearchParams()
   const editDealId = searchParams.get('dealId') // present when editing an existing deal
   const vehicleId = searchParams.get('vehicleId') // present when coming from showroom
 
-  const [activeTab, setActiveTab] = useState<DealTab>(vehicleId ? 'vehicles' : 'customers')
+  // Store initial vehicleId to only affect first load
+  const [initialVehicleId] = useState(vehicleId)
+  const [activeTab, setActiveTab] = useState<DealTab>(initialVehicleId ? 'vehicles' : 'customers')
   const [dealId] = useState(() => {
     // If editing, reuse the existing dealId from the URL
     if (typeof window !== 'undefined' && editDealId) return editDealId
@@ -159,6 +162,15 @@ function SalesNewDealPageContent() {
   useEffect(() => {
     fetchVehiclePrefill()
   }, [fetchVehiclePrefill])
+
+  // Clear URL params after initial load to prevent navigation issues
+  useEffect(() => {
+    if (initialVehicleId && typeof window !== 'undefined') {
+      // Clear the vehicleId param from URL after component mounts
+      const newUrl = window.location.pathname + (editDealId ? `?dealId=${editDealId}` : '')
+      router.replace(newUrl, { scroll: false })
+    }
+  }, [initialVehicleId, editDealId, router])
 
   // Auto-save prefilled data to Supabase on first load when coming from showroom
   useEffect(() => {
@@ -611,7 +623,7 @@ function SalesNewDealPageContent() {
                   onSaved={() => setActiveTab('worksheet')}
                   initialData={prefill?.vehicles ?? (autoSavedVehicles ? [{ id: dealId }] : null)}
                   autoSaved={autoSavedVehicles}
-                  prefillSelected={vehiclePrefill?.vehicle ? {
+                  prefillSelected={initialVehicleId && vehiclePrefill?.vehicle ? {
                     id: vehiclePrefill.vehicle.id,
                     year: vehiclePrefill.vehicle.year,
                     make: vehiclePrefill.vehicle.make,
@@ -636,7 +648,7 @@ function SalesNewDealPageContent() {
                   onSaved={() => setActiveTab('disclosures')}
                   autoSaved={autoSavedWorksheet}
                   initialData={prefill?.worksheet ?? (
-                    vehiclePrefill?.vehicle ? {
+                    initialVehicleId && vehiclePrefill?.vehicle ? {
                       ...(autoSavedWorksheet ? { id: dealId } : {}),
                       purchase_price: String(getVehicleSellPrice(vehiclePrefill.vehicle)),
                       discount: '0',
@@ -655,7 +667,7 @@ function SalesNewDealPageContent() {
                   onSaved={() => setActiveTab('delivery')}
                   autoSaved={autoSavedDisclosures}
                   initialData={prefill?.disclosures ?? (
-                    vehiclePrefill?.disclosures && vehiclePrefill.disclosures.length > 0
+                    initialVehicleId && vehiclePrefill?.disclosures && vehiclePrefill.disclosures.length > 0
                       ? {
                           ...(autoSavedDisclosures ? { id: dealId } : {}),
                           disclosures_html: vehiclePrefill.disclosures.map((d: any) => `<p><strong>${d.disclosures_tittle || ''}</strong></p><p>${d.disclosures_body || ''}</p>`).join(''),
