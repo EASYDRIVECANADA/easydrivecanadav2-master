@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import jsPDF from 'jspdf'
 import { useSearchParams } from 'next/navigation'
 
@@ -14,7 +14,7 @@ import { renderDisclosureFormPdf } from './disclosureFormPdf'
 
 type DealTab = 'customers' | 'vehicles' | 'worksheet' | 'disclosures' | 'delivery'
 
-export default function SalesNewDealPage() {
+function SalesNewDealPageContent() {
   const searchParams = useSearchParams()
   const editDealId = searchParams.get('dealId') // present when editing an existing deal
   const vehicleId = searchParams.get('vehicleId') // present when coming from showroom
@@ -713,5 +713,17 @@ export default function SalesNewDealPage() {
         </div>
       )}
     </div>
+  )
+}
+
+export default function SalesNewDealPage() {
+  return (
+    <Suspense fallback={
+      <div className="w-full min-h-[calc(100vh-64px)] bg-gradient-to-b from-[#f6f7f9] to-[#e9eaee] flex items-center justify-center">
+        <div className="text-gray-500 text-sm">Loading...</div>
+      </div>
+    }>
+      <SalesNewDealPageContent />
+    </Suspense>
   )
 }
