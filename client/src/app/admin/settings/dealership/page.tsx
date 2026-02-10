@@ -13,6 +13,15 @@ export default function DealershipDetailsSettingsPage() {
   const [actionMode, setActionMode] = useState<'save' | 'update'>('save')
   const [dealershipId, setDealershipId] = useState<string | null>(null)
 
+  const persistDealershipId = (id: string | null) => {
+    try {
+      if (id) localStorage.setItem('edc_dealership_id', id)
+      else localStorage.removeItem('edc_dealership_id')
+    } catch {
+      // ignore
+    }
+  }
+
   const [logoDataUrl, setLogoDataUrl] = useState<string | null>(null)
   const [logoFileName, setLogoFileName] = useState<string | null>(null)
   const [logoMimeType, setLogoMimeType] = useState<string | null>(null)
@@ -143,7 +152,9 @@ export default function DealershipDetailsSettingsPage() {
         if (error) return
         if (!data) return
 
-        setDealershipId((data as any).id ?? null)
+        const id = (data as any).id ?? null
+        setDealershipId(id)
+        persistDealershipId(id)
         setLogoDataUrl((data as any).company_logo ?? null)
         setCompanyName((data as any).company_name ?? '')
         setMvda((data as any).mvda_number ?? '')
@@ -297,7 +308,9 @@ export default function DealershipDetailsSettingsPage() {
       } else {
         const { data, error } = await supabase.from('dealership').insert(row).select('id').single()
         if (error) throw error
-        setDealershipId((data as any)?.id ?? null)
+        const id = (data as any)?.id ?? null
+        setDealershipId(id)
+        persistDealershipId(id)
       }
 
       setUpdateModalOpen(true)
