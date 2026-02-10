@@ -57,8 +57,8 @@ export default function ContactPage() {
               </svg>
               We&apos;re Here to Help
             </span>
-            <h1 className="text-3xl md:text-4xl lg:text-5xl font-bold text-white mb-4">
-              Get in <span className="gradient-text">Touch</span>
+            <h1 className="text-3xl md:text-4xl lg:text-5xl font-extrabold text-white mb-4 tracking-tight">
+              Get in <span className="bg-gradient-to-r from-[#38bdf8] to-[#0ea5e9] bg-clip-text text-transparent">Touch</span>
             </h1>
             <p className="text-slate-300 text-lg max-w-2xl mx-auto">
               Have questions? We&apos;d love to hear from you. Send us a message and we&apos;ll respond as soon as possible.
@@ -188,18 +188,19 @@ export default function ContactPage() {
           {/* Contact Form */}
           <div className="lg:col-span-2">
             {submitted ? (
-              <div className="glass-card rounded-2xl p-12 text-center">
-                <div className="w-20 h-20 bg-gradient-to-br from-green-400 to-green-500 rounded-full flex items-center justify-center mx-auto mb-6 shadow-lg shadow-green-500/25">
+              <div className="glass-card rounded-3xl p-12 text-center">
+                <div className="w-20 h-20 bg-gradient-to-br from-green-400 to-green-500 rounded-full flex items-center justify-center mx-auto mb-6 shadow-lg shadow-green-500/25 animate-success-check">
                   <svg className="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
                   </svg>
                 </div>
-                <h2 className="text-3xl font-bold text-gray-900 mb-4">Message Sent!</h2>
+                <h2 className="text-3xl font-extrabold text-gray-900 mb-4 tracking-tight">Message Sent!</h2>
                 <p className="text-gray-600 mb-8 max-w-md mx-auto">
                   Thank you for reaching out. We&apos;ll get back to you as soon as possible, typically within <span className="font-semibold text-[#118df0]">24 hours</span>.
                 </p>
                 <div className="flex flex-col sm:flex-row gap-4 justify-center">
-                  <Link href="/inventory" className="btn-primary">
+                  <Link href="/inventory" className="inline-flex items-center justify-center gap-2 bg-[#118df0] text-white px-7 py-3.5 rounded-full font-semibold hover:bg-[#0a7dd4] transition-all shadow-lg shadow-[#118df0]/20 hover:shadow-xl hover:-translate-y-0.5">
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
                     Browse Vehicles
                   </Link>
                   <button 
@@ -207,7 +208,7 @@ export default function ContactPage() {
                       setSubmitted(false)
                       setFormData({ name: '', email: '', phone: '', subject: '', message: '' })
                     }}
-                    className="btn-outline"
+                    className="inline-flex items-center justify-center gap-2 bg-transparent text-[#118df0] px-7 py-3.5 rounded-full font-semibold border-2 border-[#118df0] hover:bg-[#118df0] hover:text-white transition-all"
                   >
                     Send Another Message
                   </button>
@@ -284,7 +285,7 @@ export default function ContactPage() {
 
                   <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-4 border-t border-gray-200/60">
                     <p className="text-sm text-gray-500 flex items-center gap-2">
-                      <svg className="w-5 h-5 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <svg className="w-5 h-5 text-green-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
                       </svg>
                     Your information is secure and won&apos;t be shared
@@ -292,22 +293,19 @@ export default function ContactPage() {
                     <button
                       type="submit"
                       disabled={submitting}
-                      className="btn-primary flex items-center gap-2 disabled:opacity-50 w-full sm:w-auto"
+                      className="inline-flex items-center justify-center gap-2.5 bg-[#118df0] text-white px-7 py-3.5 rounded-full font-semibold shadow-lg shadow-[#118df0]/25 transition-all duration-300 hover:bg-[#0a7dd4] hover:shadow-xl hover:-translate-y-0.5 disabled:opacity-50 disabled:hover:translate-y-0 w-full sm:w-auto"
                     >
                       {submitting ? (
                         <>
-                          <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                          </svg>
-                          Sending...
+                          <div className="loading-ring" style={{width: '20px', height: '20px', borderWidth: '2px'}} />
+                          Sending…
                         </>
                       ) : (
                         <>
-                          Send Message
                           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
                           </svg>
+                          Send Message
                         </>
                       )}
                     </button>

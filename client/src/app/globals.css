@@ -189,6 +189,110 @@ body {
   }
 }
 
+/* ==========================================
+   FUTURISTIC LOADING OVERLAY
+   ========================================== */
+.loading-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%);
+  animation: overlayFadeIn 0.3s ease-out;
+}
+
+.loading-overlay.fade-out {
+  animation: overlayFadeOut 0.4s ease-in forwards;
+}
+
+@keyframes overlayFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes overlayFadeOut {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+/* Pulse ring loader */
+.loading-ring {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  border: 3px solid transparent;
+  border-top-color: #0ea5e9;
+  border-right-color: #0284c7;
+  animation: loadingRingSpin 1s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  position: relative;
+}
+
+.loading-ring::after {
+  content: '';
+  position: absolute;
+  inset: 4px;
+  border-radius: 50%;
+  border: 3px solid transparent;
+  border-bottom-color: #38bdf8;
+  border-left-color: #7dd3fc;
+  animation: loadingRingSpin 1.5s cubic-bezier(0.4, 0, 0.2, 1) infinite reverse;
+}
+
+@keyframes loadingRingSpin {
+  to { transform: rotate(360deg); }
+}
+
+.loading-text {
+  margin-top: 1.5rem;
+  color: #94a3b8;
+  font-size: 0.875rem;
+  font-weight: 500;
+  letter-spacing: 0.05em;
+  animation: loadingTextPulse 2s ease-in-out infinite;
+}
+
+@keyframes loadingTextPulse {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 1; }
+}
+
+/* Shimmer loading effect for skeletons */
+.shimmer {
+  background: linear-gradient(90deg, #e2e8f0 25%, #f1f5f9 50%, #e2e8f0 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+}
+
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* Form step transition */
+.step-transition-enter {
+  opacity: 0;
+  transform: translateX(16px);
+}
+.step-transition-enter-active {
+  opacity: 1;
+  transform: translateX(0);
+  transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+/* Success check animation */
+@keyframes successCheck {
+  0% { transform: scale(0); opacity: 0; }
+  50% { transform: scale(1.2); }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+.animate-success-check {
+  animation: successCheck 0.5s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
 /* Custom Scrollbar - Premium Style */
 ::-webkit-scrollbar {
   width: 10px;

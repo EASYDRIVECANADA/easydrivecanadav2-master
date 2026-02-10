@@ -5,7 +5,7 @@ export default function CTA() {
     <section className="py-20 lg:py-24 bg-secondary-900" aria-label="Call to action">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="bg-gradient-to-br from-primary-600 to-primary-700 rounded-3xl p-10 md:p-16 text-center relative overflow-hidden">
-          {/* a Background Pattern */}
+          {/* Background Pattern */}
           <div className="absolute inset-0 opacity-10" aria-hidden="true">
             <div className="absolute top-0 right-0 w-80 h-80 bg-white rounded-full blur-3xl translate-x-1/3 -translate-y-1/3" />
             <div className="absolute bottom-0 left-0 w-96 h-96 bg-white rounded-full blur-3xl -translate-x-1/3 translate-y-1/3" />

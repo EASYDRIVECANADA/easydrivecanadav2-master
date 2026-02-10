@@ -396,8 +396,8 @@ function AccountPageInner() {
             </span>
             {userEmail ? (
               <>
-                <h1 className="text-3xl md:text-4xl lg:text-5xl font-bold text-white mb-4">
-                  Your <span className="gradient-text">EDC Account</span>
+                <h1 className="text-3xl md:text-4xl lg:text-5xl font-extrabold text-white mb-4 tracking-tight">
+                  Your <span className="bg-gradient-to-r from-[#38bdf8] to-[#0ea5e9] bg-clip-text text-transparent">EDC Account</span>
                 </h1>
                 <p className="text-slate-300 text-lg max-w-2xl mx-auto">
                   Manage your verification status and continue shopping.
@@ -405,8 +405,8 @@ function AccountPageInner() {
               </>
             ) : (
               <>
-                <h1 className="text-3xl md:text-4xl lg:text-5xl font-bold text-white mb-4">
-                  Create Your <span className="gradient-text">EDC Account</span>
+                <h1 className="text-3xl md:text-4xl lg:text-5xl font-extrabold text-white mb-4 tracking-tight">
+                  Create Your <span className="bg-gradient-to-r from-[#38bdf8] to-[#0ea5e9] bg-clip-text text-transparent">EDC Account</span>
                 </h1>
                 <p className="text-slate-300 text-lg max-w-2xl mx-auto">
                   Sign in with Google to continue your purchase. You'll then upload your driver's license for verification.
@@ -645,15 +645,30 @@ function AccountPageInner() {
                 <button
                   type="submit"
                   disabled={loading}
-                  className="w-full bg-[#118df0] text-white px-6 py-4 rounded-full font-semibold shadow-md shadow-black/5 transition-all duration-300 hover:bg-[#0a6bc4] disabled:opacity-50"
+                  className="w-full inline-flex items-center justify-center gap-2.5 bg-[#118df0] text-white px-6 py-4 rounded-full font-semibold text-lg shadow-lg shadow-[#118df0]/25 transition-all duration-300 hover:bg-[#0a6bc4] hover:shadow-xl hover:-translate-y-0.5 disabled:opacity-50 disabled:hover:translate-y-0"
                 >
-                  {loading ? 'Please wait…' : customerCreateMode ? 'Create Account' : 'Sign In'}
+                  {loading ? (
+                    <>
+                      <div className="loading-ring" style={{width: '20px', height: '20px', borderWidth: '2px'}} />
+                      Please wait\u2026
+                    </>
+                  ) : customerCreateMode ? (
+                    <>
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
+                      Create Account
+                    </>
+                  ) : (
+                    <>
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
+                      Sign In
+                    </>
+                  )}
                 </button>
 
                 <button
                   type="button"
                   onClick={() => setCustomerCreateMode((v) => !v)}
-                  className="w-full bg-white/80 text-gray-900 px-6 py-3 rounded-full font-semibold border border-gray-200/60 shadow-sm shadow-black/5 transition-all duration-300 hover:bg-white"
+                  className="w-full bg-white/80 text-gray-900 px-6 py-3.5 rounded-full font-semibold border border-gray-200/60 shadow-sm shadow-black/5 transition-all duration-300 hover:bg-white hover:shadow-md hover:-translate-y-0.5"
                 >
                   {customerCreateMode ? 'I already have an account' : 'Create new account instead'}
                 </button>
@@ -669,7 +684,7 @@ function AccountPageInner() {
                 type="button"
                 onClick={handleGoogleAuth}
                 disabled={loading}
-                className="w-full bg-white/80 backdrop-blur-sm text-gray-900 px-6 py-4 rounded-full font-semibold border border-gray-200/60 shadow-md shadow-black/5 transition-all duration-300 hover:bg-white hover:shadow-lg disabled:opacity-50"
+                className="w-full bg-white/80 backdrop-blur-sm text-gray-900 px-6 py-4 rounded-full font-semibold border border-gray-200/60 shadow-lg shadow-black/5 transition-all duration-300 hover:bg-white hover:shadow-xl hover:-translate-y-0.5 disabled:opacity-50"
               >
                 <span className="flex items-center justify-center gap-3">
                   <span className="inline-flex h-6 w-6 items-center justify-center" aria-hidden="true">

@@ -337,7 +337,10 @@ export default function InventoryPage() {
   const FilterSidebar = ({ mobile = false }: { mobile?: boolean }) => (
     <div className={mobile ? '' : 'glass-card rounded-2xl p-6 sticky top-24'}>
       <div className="flex items-center justify-between mb-6">
-        <h2 className="text-lg font-semibold text-gray-900">Filters</h2>
+        <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+          <svg className="w-5 h-5 text-[#118df0]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" /></svg>
+          Filters
+        </h2>
         {activeFilterCount > 0 && (
           <button
             onClick={clearFilters}
@@ -509,18 +512,23 @@ export default function InventoryPage() {
   return (
     <div className="min-h-screen">
       {/* Hero Header */}
-      <section className="relative overflow-hidden py-16 lg:py-20">
-        <div className="absolute inset-0 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900"></div>
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-[#118df0]/20 via-transparent to-transparent"></div>
-        <div className="absolute top-10 right-10 w-72 h-72 bg-[#118df0]/10 rounded-full blur-3xl"></div>
+      <section className="relative overflow-hidden py-14 lg:py-18">
+        <div className="absolute inset-0 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900" />
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-[#118df0]/20 via-transparent to-transparent" />
+        <div className="absolute top-10 right-10 w-72 h-72 bg-[#118df0]/10 rounded-full blur-3xl" />
+        <div className="absolute bottom-0 left-0 w-96 h-48 bg-[#118df0]/5 rounded-full blur-3xl" />
         
         <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center">
-            <span className="badge mb-4 bg-white/10 border-white/20 text-white/90">
+            <span className="inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium bg-white/10 backdrop-blur-sm border border-white/20 text-white/90 mb-5">
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#38bdf8] opacity-75" />
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-[#38bdf8]" />
+              </span>
               {vehicles.length} Vehicles Available
             </span>
-            <h1 className="text-3xl md:text-4xl lg:text-5xl font-bold text-white mb-4">
-              Find Your Perfect <span className="gradient-text">Vehicle</span>
+            <h1 className="text-3xl md:text-4xl lg:text-5xl font-extrabold text-white mb-4 tracking-tight">
+              Find Your Perfect <span className="bg-gradient-to-r from-[#38bdf8] to-[#0ea5e9] bg-clip-text text-transparent">Vehicle</span>
             </h1>
             <p className="text-slate-300 text-lg max-w-2xl mx-auto mb-8">
               Browse our selection of quality pre-owned vehicles
@@ -528,9 +536,9 @@ export default function InventoryPage() {
 
             {/* Search Bar */}
             <div className="max-w-2xl mx-auto">
-              <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                  <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <div className="relative group">
+                <div className="absolute inset-y-0 left-0 pl-5 flex items-center pointer-events-none">
+                  <svg className="w-5 h-5 text-white/40 group-focus-within:text-[#38bdf8] transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                   </svg>
                 </div>
@@ -539,12 +547,12 @@ export default function InventoryPage() {
                   placeholder="Search by make, model, or year..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full pl-12 pr-4 py-4 bg-white/10 backdrop-blur-xl border border-white/20 rounded-2xl text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-[#118df0]/50 focus:border-transparent transition-all"
+                  className="w-full pl-13 pr-12 py-4 bg-white/10 backdrop-blur-xl border border-white/20 rounded-full text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-[#0ea5e9]/50 focus:border-[#0ea5e9]/30 focus:bg-white/15 transition-all shadow-lg shadow-black/10"
                 />
                 {searchQuery && (
                   <button
                     onClick={() => setSearchQuery('')}
-                    className="absolute inset-y-0 right-0 pr-4 flex items-center text-white/50 hover:text-white"
+                    className="absolute inset-y-0 right-0 pr-5 flex items-center text-white/40 hover:text-white transition-colors"
                   >
                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -674,14 +682,15 @@ export default function InventoryPage() {
             {loading ? (
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
                 {[1, 2, 3, 4, 5, 6].map((i) => (
-                  <div key={i} className="glass-card rounded-2xl overflow-hidden animate-pulse">
-                    <div className="h-52 bg-gray-200"></div>
+                  <div key={i} className="glass-card rounded-2xl overflow-hidden">
+                    <div className="h-52 shimmer" />
                     <div className="p-5 space-y-3">
-                      <div className="h-5 bg-gray-200 rounded w-3/4"></div>
-                      <div className="h-4 bg-gray-200 rounded w-1/2"></div>
-                      <div className="flex gap-2">
-                        <div className="h-8 bg-gray-200 rounded w-20"></div>
-                        <div className="h-8 bg-gray-200 rounded w-20"></div>
+                      <div className="h-5 shimmer rounded-lg w-3/4" />
+                      <div className="h-4 shimmer rounded-lg w-1/2" />
+                      <div className="flex gap-2 pt-2">
+                        <div className="h-8 shimmer rounded-full w-20" />
+                        <div className="h-8 shimmer rounded-full w-20" />
+                        <div className="h-8 shimmer rounded-full w-16" />
                       </div>
                     </div>
                   </div>
@@ -692,7 +701,7 @@ export default function InventoryPage() {
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
                 {paginatedVehicles.map((vehicle) => (
                   <Link key={vehicle.id} href={`/inventory/${vehicle.id}`}>
-                    <div className="glass-card-hover rounded-2xl overflow-hidden group h-full flex flex-col">
+                    <div className="glass-card rounded-2xl overflow-hidden group h-full flex flex-col transition-all duration-300 hover:shadow-xl hover:shadow-black/10 hover:-translate-y-1 hover:bg-white/90">
                       <div className="relative h-52 bg-gradient-to-br from-gray-100 to-gray-200 overflow-hidden flex-shrink-0">
                         {(() => {
                           const rec = getVehicleHoldRecord(vehicle.id)
@@ -722,13 +731,19 @@ export default function InventoryPage() {
                             </div>
                           </div>
                         )}
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+                        {/* Hover overlay with View Vehicle button */}
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-end justify-center pb-4">
+                          <span className="inline-flex items-center gap-1.5 text-white text-sm font-semibold bg-white/20 backdrop-blur-sm px-4 py-2 rounded-full border border-white/30">
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
+                            View Vehicle
+                          </span>
+                        </div>
                         <div className="absolute top-4 right-4 price-tag">
                           {formatPrice(vehicle.price)}
                         </div>
                       </div>
                       <div className="p-5 flex flex-col flex-1">
-                        <h3 className="text-lg font-bold text-gray-900 group-hover:text-[#118df0] transition-colors line-clamp-2">
+                        <h3 className="text-lg font-bold text-gray-900 group-hover:text-[#118df0] transition-colors line-clamp-2 leading-snug">
                           {vehicle.year} {vehicle.make} {vehicle.model} {vehicle.series}
                         </h3>
                         {formatLocation(vehicle.city, vehicle.province) && (
@@ -739,17 +754,19 @@ export default function InventoryPage() {
                             {formatLocation(vehicle.city, vehicle.province)}
                           </p>
                         )}
-                        <div className="flex flex-wrap gap-2 mt-3">
-                          <span className="inline-flex items-center text-sm text-gray-500 bg-gray-100/80 px-3 py-1.5 rounded-lg">
+                        <div className="flex flex-wrap gap-1.5 mt-3">
+                          <span className="inline-flex items-center gap-1 text-xs font-medium text-gray-600 bg-gray-100/80 px-2.5 py-1.5 rounded-full">
+                            <svg className="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
                             {formatOdometer(vehicle)}
                           </span>
                           {vehicle.transmission && vehicle.transmission.trim() !== '' && (
-                            <span className="inline-flex items-center text-sm text-gray-500 bg-gray-100/80 px-3 py-1.5 rounded-lg">
+                            <span className="inline-flex items-center text-xs font-medium text-gray-600 bg-gray-100/80 px-2.5 py-1.5 rounded-full">
                               {vehicle.transmission}
                             </span>
                           )}
                           {vehicle.fuelType && vehicle.fuelType.trim() !== '' && (
-                            <span className="inline-flex items-center text-sm text-gray-500 bg-gray-100/80 px-3 py-1.5 rounded-lg">
+                            <span className="inline-flex items-center gap-1 text-xs font-medium text-gray-600 bg-gray-100/80 px-2.5 py-1.5 rounded-full">
+                              <svg className="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
                               {vehicle.fuelType}
                             </span>
                           )}
@@ -824,15 +841,16 @@ export default function InventoryPage() {
               )}
               </>
             ) : (
-              <div className="glass-card rounded-2xl text-center py-16">
-                <div className="icon-container mx-auto mb-6">
-                  <svg className="w-8 h-8 text-[#118df0]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              <div className="glass-card rounded-2xl text-center py-16 px-6">
+                <div className="w-20 h-20 bg-gradient-to-br from-[#118df0]/10 to-[#118df0]/5 rounded-2xl flex items-center justify-center mx-auto mb-6">
+                  <svg className="w-10 h-10 text-[#118df0]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
                 </div>
-                <h3 className="text-xl font-semibold text-gray-700 mb-2">No Vehicles Found</h3>
-                <p className="text-gray-500 mb-6">Try adjusting your filters or search query</p>
-                <button onClick={clearFilters} className="btn-outline">
+                <h3 className="text-xl font-bold text-gray-700 mb-2">No Vehicles Found</h3>
+                <p className="text-gray-500 mb-8 max-w-md mx-auto">Try adjusting your filters or search query to find what you&apos;re looking for.</p>
+                <button onClick={clearFilters} className="inline-flex items-center gap-2 bg-[#118df0] text-white px-6 py-3 rounded-full font-semibold hover:bg-[#0a7dd4] transition-all shadow-lg shadow-[#118df0]/20 hover:shadow-xl hover:-translate-y-0.5">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
                   Clear All Filters
                 </button>
               </div>
