@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import Image from 'next/image'
 import { usePathname, useRouter } from 'next/navigation'
-import { type ReactNode, useEffect, useMemo, useState } from 'react'
+import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 
 type AdminSession = {
@@ -15,13 +15,17 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname()
   const router = useRouter()
   const [session, setSession] = useState<AdminSession | null>(null)
+  const [userName, setUserName] = useState<string | null>(null)
   const [isVerified, setIsVerified] = useState(false)
   const [collapsed, setCollapsed] = useState(false)
+  const [accountMenuOpen, setAccountMenuOpen] = useState(false)
   const [salesOpen, setSalesOpen] = useState(false)
   const [reportsOpen, setReportsOpen] = useState(false)
   const [reportsSalesOpen, setReportsSalesOpen] = useState(false)
   const [reportsInventoryOpen, setReportsInventoryOpen] = useState(false)
   const [showSignOutModal, setShowSignOutModal] = useState(false)
+
+  const accountMenuRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
     const inSales = pathname.startsWith('/admin/sales/')
@@ -90,6 +94,20 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
     }
   }, [])
 
+  useEffect(() => {
+    const run = async () => {
+      try {
+        const { data } = await supabase.auth.getSession()
+        const fullName = (data.session?.user?.user_metadata as any)?.full_name
+        setUserName(typeof fullName === 'string' ? fullName : null)
+      } catch {
+        setUserName(null)
+      }
+    }
+
+    void run()
+  }, [])
+
   const toggleCollapsed = () => {
     setCollapsed((prev) => {
       const next = !prev
@@ -105,6 +123,49 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
   }
 
   const isAuthed = !!session
+
+  const accountFirstName = useMemo(() => {
+    const base = (userName || session?.email || '').toString().trim()
+    if (!base) return 'Account'
+
+    const cleaned = base.replace(/\s+/g, ' ').trim()
+    if (cleaned.includes('@')) {
+      const local = cleaned.split('@')[0] || ''
+      const part = local.split(/[._-]/).filter(Boolean)[0]
+      return part ? `${part[0].toUpperCase()}${part.slice(1)}` : 'Account'
+    }
+
+    const first = cleaned.split(' ').filter(Boolean)[0]
+    return first ? `${first[0].toUpperCase()}${first.slice(1)}` : 'Account'
+  }, [session?.email, userName])
+
+  const accountInitial = useMemo(() => {
+    const n = accountFirstName.trim()
+    return (n[0] || 'A').toUpperCase()
+  }, [accountFirstName])
+
+  useEffect(() => {
+    if (!accountMenuOpen) return
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setAccountMenuOpen(false)
+    }
+
+    const onMouseDown = (e: MouseEvent) => {
+      const el = accountMenuRef.current
+      if (!el) return
+      if (e.target instanceof Node && !el.contains(e.target)) {
+        setAccountMenuOpen(false)
+      }
+    }
+
+    window.addEventListener('keydown', onKeyDown)
+    window.addEventListener('mousedown', onMouseDown)
+    return () => {
+      window.removeEventListener('keydown', onKeyDown)
+      window.removeEventListener('mousedown', onMouseDown)
+    }
+  }, [accountMenuOpen])
 
   const navItems = useMemo(
     () => [
@@ -176,13 +237,83 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
                 : 'fixed inset-y-0 left-0 z-40 w-56 bg-[#0b1220] text-white transition-all duration-300 flex flex-col min-h-0 h-screen'
             }
           >
-            <div className={collapsed ? 'p-3 flex items-center justify-center' : 'p-4 flex items-center gap-2'}>
-              <Link href="/admin" className="flex items-center gap-3">
+            <div
+              className={
+                collapsed
+                  ? 'p-3 flex items-center justify-center'
+                  : 'p-4 flex items-center justify-between gap-2'
+              }
+            >
+              <Link href="/admin" className="flex items-center gap-3 min-w-0">
                 <div className="relative h-8 w-8 shrink-0">
                   <Image src="/images/logo.png" alt="EDC" fill className="object-contain" />
                 </div>
-                {!collapsed ? <div className="font-semibold text-base leading-tight">Admin</div> : null}
               </Link>
+
+              <div ref={accountMenuRef} className="relative flex justify-end overflow-visible">
+                <button
+                  type="button"
+                  onClick={() => setAccountMenuOpen((v) => !v)}
+                  className={
+                    collapsed
+                      ? 'h-9 w-12 rounded-xl bg-white/10 hover:bg-white/15 border border-white/15 flex items-center justify-center text-xs font-bold'
+                      : 'h-9 px-3 rounded-xl bg-white/10 hover:bg-white/15 border border-white/15 inline-flex items-center gap-2 text-sm font-semibold whitespace-nowrap'
+                  }
+                  aria-haspopup="menu"
+                  aria-expanded={accountMenuOpen}
+                  title="Account"
+                >
+                  {collapsed ? (
+                    <span>{accountInitial}</span>
+                  ) : (
+                    <>
+                      <span className="whitespace-nowrap">{accountFirstName}</span>
+                      <svg className={`w-4 h-4 transition-transform ${accountMenuOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                      </svg>
+                    </>
+                  )}
+                </button>
+
+                {accountMenuOpen ? (
+                  <div
+                    role="menu"
+                    className={
+                      collapsed
+                        ? 'absolute left-0 mt-2 w-max min-w-full rounded-xl border border-white/10 bg-[#0b1220] shadow-xl overflow-hidden'
+                        : 'absolute right-0 mt-2 w-max min-w-full rounded-xl border border-white/10 bg-[#0b1220] shadow-xl overflow-hidden'
+                    }
+                  >
+                    <Link
+                      href="/admin/account"
+                      role="menuitem"
+                      className="block px-4 py-3 text-sm text-white/90 hover:bg-white/10"
+                      onClick={() => setAccountMenuOpen(false)}
+                    >
+                      My Profile
+                    </Link>
+                    <Link
+                      href="/admin/settings/dealership"
+                      role="menuitem"
+                      className="block px-4 py-3 text-sm text-white/90 hover:bg-white/10"
+                      onClick={() => setAccountMenuOpen(false)}
+                    >
+                      Settings
+                    </Link>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className="w-full text-left px-4 py-3 text-sm text-white/90 hover:bg-white/10"
+                      onClick={() => {
+                        setAccountMenuOpen(false)
+                        setShowSignOutModal(true)
+                      }}
+                    >
+                      Log Out
+                    </button>
+                  </div>
+                ) : null}
+              </div>
             </div>
 
             <nav className={`${collapsed ? 'px-2 py-3' : 'px-2 py-3'} flex-1 overflow-y-auto min-h-0`} aria-label="Admin navigation">
@@ -430,34 +561,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
               </ul>
             </nav>
 
-            <div className={`${collapsed ? 'p-2' : 'p-4'} mt-4 border-t border-white/10`}>
-              {(() => {
-                const item = { href: '/admin/account', label: 'Account', icon: 'account' }
-                const active = pathname === item.href || pathname.startsWith('/admin/account')
-                const base =
-                  `flex items-center ${collapsed ? 'justify-center gap-0 px-2' : 'gap-2 px-3'} py-2 rounded-xl text-xs font-medium transition-colors`
-                const classes = active
-                  ? `${base} bg-white/10 text-white`
-                  : `${base} text-white/80 hover:bg-white/10 hover:text-white`
-
-                return (
-                  <Link href={item.href} className={classes} title={item.label}>
-                    <Icon name={item.icon} />
-                    {collapsed ? null : <span>{item.label}</span>}
-                  </Link>
-                )
-              })()}
-
-              <button
-                type="button"
-                onClick={() => setShowSignOutModal(true)}
-                className={`w-full flex items-center justify-center gap-2 ${collapsed ? 'px-2' : 'px-4'} py-2.5 rounded-xl bg-white/10 hover:bg-white/15 transition-colors text-sm font-semibold`}
-                title="Sign Out"
-              >
-                <Icon name="logout" />
-                {collapsed ? null : 'Sign Out'}
-              </button>
-            </div>
+            <div className={`${collapsed ? 'p-2' : 'p-4'} mt-4 border-t border-white/10`} />
           </aside>
         ) : null}
 
