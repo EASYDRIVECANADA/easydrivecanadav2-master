@@ -25,7 +25,7 @@ export default function FAQ() {
     },
     {
       question: "Do you deliver vehicles?",
-      answer: "Yes! We offer free home delivery anywhere in Ontario. We&apos;ll bring the vehicle directly to your home or workplace at no extra charge. Delivery typically takes 3-7 business days after purchase. Our driver will walk you through the vehicle features and answer any questions you have upon delivery."
+      answer: "Yes! We offer free home delivery anywhere in Ontario. We'll bring the vehicle directly to your home or workplace at no extra charge. Delivery typically takes 3-7 business days after purchase. Our driver will walk you through the vehicle features and answer any questions you have upon delivery."
     },
     {
       question: "Can I trade in my current vehicle?",
@@ -62,14 +62,19 @@ export default function FAQ() {
   ]
 
   return (
-    <section className="py-24 bg-white" aria-label="Frequently asked questions">
-      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="text-center mb-16">
-          <span className="text-primary-600 font-semibold text-sm uppercase tracking-wider">FAQ</span>
-          <h2 className="text-3xl md:text-4xl font-bold text-secondary-900 mt-2 mb-4">
+    <section className="py-20 lg:py-28 bg-white" aria-label="Frequently asked questions">
+      <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="text-center mb-14">
+          <span className="inline-flex items-center gap-1.5 text-primary-600 font-semibold text-sm uppercase tracking-wider">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            FAQ
+          </span>
+          <h2 className="text-3xl md:text-4xl font-bold text-secondary-900 mt-3 mb-4">
             Frequently Asked Questions
           </h2>
-          <p className="text-lg text-secondary-600 max-w-2xl mx-auto">
+          <p className="text-lg text-secondary-500 max-w-2xl mx-auto leading-relaxed">
             Everything you need to know about buying a car online with Easy Drive Canada
           </p>
         </div>
@@ -78,28 +83,38 @@ export default function FAQ() {
           {faqs.map((faq, index) => (
             <div 
               key={index}
-              className="bg-white border border-secondary-200 rounded-xl overflow-hidden hover:border-primary-300 transition-colors"
+              className={`bg-white rounded-2xl overflow-hidden transition-all duration-200 ${
+                openIndex === index 
+                  ? 'shadow-card border border-primary-200' 
+                  : 'border border-secondary-200 hover:border-secondary-300'
+              }`}
               role="listitem"
             >
               <button
                 onClick={() => setOpenIndex(openIndex === index ? null : index)}
-                className="w-full flex items-center justify-between p-5 sm:p-6 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-2"
+                className="w-full flex items-center justify-between p-5 sm:p-6 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-inset rounded-2xl"
                 aria-expanded={openIndex === index}
               >
-                <span className="font-semibold text-secondary-900 pr-8 text-base sm:text-lg">
+                <span className={`font-semibold pr-8 text-[15px] sm:text-base transition-colors ${
+                  openIndex === index ? 'text-primary-700' : 'text-secondary-900'
+                }`}>
                   {faq.question}
                 </span>
-                <svg
-                  className={`w-5 h-5 text-primary-600 flex-shrink-0 transition-transform duration-200 ${
-                    openIndex === index ? 'transform rotate-180' : ''
-                  }`}
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                  aria-hidden="true"
-                >
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                </svg>
+                <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 transition-all duration-200 ${
+                  openIndex === index 
+                    ? 'bg-primary-100 text-primary-600 rotate-180' 
+                    : 'bg-secondary-100 text-secondary-500'
+                }`}>
+                  <svg
+                    className="w-4 h-4"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                    aria-hidden="true"
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </div>
               </button>
               
               <div
@@ -108,7 +123,7 @@ export default function FAQ() {
                 }`}
               >
                 <div className="px-5 sm:px-6 pb-5 sm:pb-6">
-                  <p className="text-secondary-600 leading-relaxed">
+                  <p className="text-secondary-500 leading-relaxed text-[15px]">
                     {faq.answer}
                   </p>
                 </div>
@@ -118,21 +133,26 @@ export default function FAQ() {
         </div>
 
         {/* Contact CTA */}
-        <div className="mt-12 text-center p-8 bg-secondary-50 rounded-2xl">
+        <div className="mt-14 text-center p-8 sm:p-10 bg-secondary-50 rounded-3xl border border-secondary-100">
+          <div className="w-14 h-14 bg-primary-50 rounded-2xl flex items-center justify-center mx-auto mb-4">
+            <svg className="w-7 h-7 text-primary-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+            </svg>
+          </div>
           <h3 className="text-xl font-bold text-secondary-900 mb-2">
             Still have questions?
           </h3>
-          <p className="text-secondary-600 mb-4">
-            Can&apos;t find the answer you&apos;re looking for? We&apos;re here to help.
+          <p className="text-secondary-500 mb-6 max-w-md mx-auto">
+            Can&apos;t find the answer you&apos;re looking for? Our team is here to help.
           </p>
           <a
             href="/contact"
-            className="inline-flex items-center gap-2 bg-primary-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-primary-700 transition-colors"
+            className="inline-flex items-center gap-2.5 bg-primary-600 text-white px-7 py-3.5 rounded-full font-semibold hover:bg-primary-700 transition-all shadow-lg shadow-primary-600/20 hover:shadow-xl hover:-translate-y-0.5"
           >
-            Contact Us
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" />
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
             </svg>
+            Contact Us
           </a>
         </div>
       </div>
