@@ -210,10 +210,7 @@ export default function NewVehiclePage() {
     setFormData({ ...formData, [name]: value })
   }
 
-  const disclosuresLocked = Boolean(createdVehicleId) && activeTab === 'disclosures' && !disclosuresSaved
-  const purchaseLocked = Boolean(createdVehicleId) && activeTab === 'purchase' && !purchaseSaved
-  const costsLocked = Boolean(createdVehicleId) && activeTab === 'costs' && !costsSaved
-  const wizardLocked = disclosuresLocked || purchaseLocked || costsLocked
+  // Removed tab locking - allow free navigation even if saves fail
 
   const handleSendVin = async () => {
     if (!formData?.vin || String(formData.vin).trim().length < 5) {
@@ -430,61 +427,60 @@ export default function NewVehiclePage() {
           <div className="flex space-x-8">
             <button
               type="button"
-              onClick={() => !wizardLocked && setActiveTab('details')}
-              disabled={wizardLocked}
+              onClick={() => setActiveTab('details')}
               className={`py-4 px-1 border-b-2 font-medium text-sm ${
                 activeTab === 'details'
                   ? 'border-[#118df0] text-[#118df0]'
                   : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              } ${wizardLocked ? 'opacity-50 cursor-not-allowed' : ''}`}
+              }`}
             >
               🚗 Vehicle Details
             </button>
             <button
               type="button"
-              onClick={() => createdVehicleId && !purchaseLocked && setActiveTab('disclosures')}
-              disabled={!createdVehicleId || purchaseLocked}
+              onClick={() => createdVehicleId && setActiveTab('disclosures')}
+              disabled={!createdVehicleId}
               className={`py-4 px-1 border-b-2 font-medium text-sm ${
                 activeTab === 'disclosures'
                   ? 'border-[#118df0] text-[#118df0]'
                   : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              } ${(!createdVehicleId || purchaseLocked) ? 'opacity-50 cursor-not-allowed' : ''}`}
+              } ${!createdVehicleId ? 'opacity-50 cursor-not-allowed' : ''}`}
             >
               📋 Disclosures
             </button>
             <button
               type="button"
-              onClick={() => createdVehicleId && !disclosuresLocked && !purchaseLocked && setActiveTab('purchase')}
-              disabled={!createdVehicleId || disclosuresLocked || purchaseLocked}
+              onClick={() => createdVehicleId && setActiveTab('purchase')}
+              disabled={!createdVehicleId}
               className={`py-4 px-1 border-b-2 font-medium text-sm ${
                 activeTab === 'purchase'
                   ? 'border-[#118df0] text-[#118df0]'
                   : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              } ${(!createdVehicleId || disclosuresLocked || purchaseLocked) ? 'opacity-50 cursor-not-allowed' : ''}`}
+              } ${!createdVehicleId ? 'opacity-50 cursor-not-allowed' : ''}`}
             >
               💰 Purchase
             </button>
             <button
               type="button"
-              onClick={() => createdVehicleId && !wizardLocked && setActiveTab('costs')}
-              disabled={!createdVehicleId || wizardLocked}
+              onClick={() => createdVehicleId && setActiveTab('costs')}
+              disabled={!createdVehicleId}
               className={`py-4 px-1 border-b-2 font-medium text-sm ${
                 activeTab === 'costs'
                   ? 'border-[#118df0] text-[#118df0]'
                   : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              } ${(!createdVehicleId || wizardLocked) ? 'opacity-50 cursor-not-allowed' : ''}`}
+              } ${!createdVehicleId ? 'opacity-50 cursor-not-allowed' : ''}`}
             >
               💵 Costs
             </button>
             <button
               type="button"
-              onClick={() => createdVehicleId && !wizardLocked && setActiveTab('warranty')}
-              disabled={!createdVehicleId || wizardLocked}
+              onClick={() => createdVehicleId && setActiveTab('warranty')}
+              disabled={!createdVehicleId}
               className={`py-4 px-1 border-b-2 font-medium text-sm ${
                 activeTab === 'warranty'
                   ? 'border-[#118df0] text-[#118df0]'
                   : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              } ${(!createdVehicleId || wizardLocked) ? 'opacity-50 cursor-not-allowed' : ''}`}
+              } ${!createdVehicleId ? 'opacity-50 cursor-not-allowed' : ''}`}
             >
               🛡️ Warranty
             </button>

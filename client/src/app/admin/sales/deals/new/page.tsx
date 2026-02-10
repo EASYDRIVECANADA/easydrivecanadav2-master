@@ -1,8 +1,8 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import jsPDF from 'jspdf'
-import { useSearchParams } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 
 import CustomersTabNew from './CustomersTabNew'
 import DeliveryTab from './DeliveryTab'
@@ -14,12 +14,15 @@ import { renderDisclosureFormPdf } from './disclosureFormPdf'
 
 type DealTab = 'customers' | 'vehicles' | 'worksheet' | 'disclosures' | 'delivery'
 
-export default function SalesNewDealPage() {
+function SalesNewDealPageContent() {
+  const router = useRouter()
   const searchParams = useSearchParams()
   const editDealId = searchParams.get('dealId') // present when editing an existing deal
   const vehicleId = searchParams.get('vehicleId') // present when coming from showroom
 
-  const [activeTab, setActiveTab] = useState<DealTab>(vehicleId ? 'vehicles' : 'customers')
+  // Store initial vehicleId to only affect first load
+  const [initialVehicleId] = useState(vehicleId)
+  const [activeTab, setActiveTab] = useState<DealTab>(initialVehicleId ? 'vehicles' : 'customers')
   const [dealId] = useState(() => {
     // If editing, reuse the existing dealId from the URL
     if (typeof window !== 'undefined' && editDealId) return editDealId
@@ -159,6 +162,15 @@ export default function SalesNewDealPage() {
   useEffect(() => {
     fetchVehiclePrefill()
   }, [fetchVehiclePrefill])
+
+  // Clear URL params immediately to prevent navigation issues
+  useEffect(() => {
+    if (initialVehicleId && typeof window !== 'undefined') {
+      // Clear the vehicleId param from URL immediately
+      const newUrl = window.location.pathname + (editDealId ? `?dealId=${editDealId}` : '')
+      window.history.replaceState({}, '', newUrl)
+    }
+  }, [])
 
   // Auto-save prefilled data to Supabase on first load when coming from showroom
   useEffect(() => {
@@ -611,7 +623,7 @@ export default function SalesNewDealPage() {
                   onSaved={() => setActiveTab('worksheet')}
                   initialData={prefill?.vehicles ?? (autoSavedVehicles ? [{ id: dealId }] : null)}
                   autoSaved={autoSavedVehicles}
-                  prefillSelected={vehiclePrefill?.vehicle ? {
+                  prefillSelected={initialVehicleId && vehiclePrefill?.vehicle ? {
                     id: vehiclePrefill.vehicle.id,
                     year: vehiclePrefill.vehicle.year,
                     make: vehiclePrefill.vehicle.make,
@@ -636,7 +648,7 @@ export default function SalesNewDealPage() {
                   onSaved={() => setActiveTab('disclosures')}
                   autoSaved={autoSavedWorksheet}
                   initialData={prefill?.worksheet ?? (
-                    vehiclePrefill?.vehicle ? {
+                    initialVehicleId && vehiclePrefill?.vehicle ? {
                       ...(autoSavedWorksheet ? { id: dealId } : {}),
                       purchase_price: String(getVehicleSellPrice(vehiclePrefill.vehicle)),
                       discount: '0',
@@ -655,7 +667,7 @@ export default function SalesNewDealPage() {
                   onSaved={() => setActiveTab('delivery')}
                   autoSaved={autoSavedDisclosures}
                   initialData={prefill?.disclosures ?? (
-                    vehiclePrefill?.disclosures && vehiclePrefill.disclosures.length > 0
+                    initialVehicleId && vehiclePrefill?.disclosures && vehiclePrefill.disclosures.length > 0
                       ? {
                           ...(autoSavedDisclosures ? { id: dealId } : {}),
                           disclosures_html: vehiclePrefill.disclosures.map((d: any) => `<p><strong>${d.disclosures_tittle || ''}</strong></p><p>${d.disclosures_body || ''}</p>`).join(''),
@@ -713,5 +725,17 @@ export default function SalesNewDealPage() {
         </div>
       )}
     </div>
+  )
+}
+
+export default function SalesNewDealPage() {
+  return (
+    <Suspense fallback={
+      <div className="w-full min-h-[calc(100vh-64px)] bg-gradient-to-b from-[#f6f7f9] to-[#e9eaee] flex items-center justify-center">
+        <div className="text-gray-500 text-sm">Loading...</div>
+      </div>
+    }>
+      <SalesNewDealPageContent />
+    </Suspense>
   )
 }
