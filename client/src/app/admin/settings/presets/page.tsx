@@ -1,6 +1,7 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { supabase } from '@/lib/supabaseClient'
 
 type PresetCategory =
   | 'Fees'
@@ -17,6 +18,18 @@ type PresetRow = {
   name: string
   description?: string
   amount?: string
+}
+
+type FeeRow = {
+  id: string
+  name: string | null
+  description: string | null
+  fee_amount: number | null
+  fee_cost: number | null
+  default_to_new_deals: boolean | null
+  lien_fee: boolean | null
+  default_tax_rate: string | null
+  created_at: string
 }
 
 const categories: PresetCategory[] = [
@@ -135,6 +148,17 @@ export default function SettingsPresetsPage() {
   const [search, setSearch] = useState('')
   const [pageSize, setPageSize] = useState(5)
   const [isModalOpen, setIsModalOpen] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
+  const [saveSuccessOpen, setSaveSuccessOpen] = useState(false)
+  const [saveSuccessMessage, setSaveSuccessMessage] = useState('Successful save')
+  const [taxPickerOpen, setTaxPickerOpen] = useState(false)
+  const [selectedTaxRates, setSelectedTaxRates] = useState<string[]>([])
+  const [editingFeeId, setEditingFeeId] = useState<string | null>(null)
+  const [feeRows, setFeeRows] = useState<FeeRow[]>([])
+  const [loadingFees, setLoadingFees] = useState(false)
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
+  const [feeToDelete, setFeeToDelete] = useState<FeeRow | null>(null)
 
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
@@ -157,6 +181,7 @@ export default function SettingsPresetsPage() {
   const [disclosureBody, setDisclosureBody] = useState('')
 
   const openModal = () => {
+    setEditingFeeId(null)
     setName('')
     setDescription('')
     setAmount('')
@@ -176,27 +201,176 @@ export default function SettingsPresetsPage() {
     setLienFee(false)
     setDealerWarranty(false)
     setDisclosureBody('')
+    setSaveError(null)
+    setTaxPickerOpen(false)
+    setSelectedTaxRates([])
     setIsModalOpen(true)
   }
 
   const closeModal = () => setIsModalOpen(false)
 
-  const rows = useMemo<Record<PresetCategory, PresetRow[]>>(
-    () => ({
-      Fees: [{ id: 'omvic', name: 'OMVIC FEE', description: '', amount: '$22.00' }],
-      Accessories: [],
-      Warranties: [],
-      Insurances: [],
-      'Tax Rates': [],
-      'Lead Properties': [],
-      Disclosures: [],
-      'Inventory Costs': [],
-    }),
-    []
-  )
+  const nullIfEmpty = (v: string) => {
+    const s = (v || '').trim()
+    return s.length ? s : null
+  }
+
+  const formatMoney = (n: number | null) => {
+    if (typeof n !== 'number' || Number.isNaN(n)) return ''
+    return `$${n}`
+  }
+
+  const fetchFees = async () => {
+    setLoadingFees(true)
+    try {
+      const { data, error } = await supabase
+        .from('setting_fee')
+        .select('id, name, description, fee_amount, fee_cost, default_to_new_deals, lien_fee, default_tax_rate, created_at')
+        .order('created_at', { ascending: false })
+
+      if (error) throw error
+      setFeeRows(((data as any) || []) as FeeRow[])
+    } catch {
+      setFeeRows([])
+    } finally {
+      setLoadingFees(false)
+    }
+  }
+
+  useEffect(() => {
+    if (activeCategory === 'Fees') {
+      void fetchFees()
+    }
+  }, [activeCategory])
+
+  const handleSave = async () => {
+    if (saving) return
+    setSaveError(null)
+
+    if (activeCategory !== 'Fees') {
+      closeModal()
+      return
+    }
+
+    setSaving(true)
+    try {
+      const defaultTaxRateText = selectedTaxRates.length ? selectedTaxRates.join(', ') : null
+
+      if (editingFeeId) {
+        const updateRow: any = {
+          name: nullIfEmpty(name),
+          description: nullIfEmpty(description),
+          fee_amount: nullIfEmpty(amount),
+          fee_cost: nullIfEmpty(cost),
+          default_to_new_deals: defaultToNewDeals,
+          lien_fee: lienFee,
+          default_tax_rate: defaultTaxRateText,
+        }
+
+        const { error } = await supabase.from('setting_fee').update(updateRow).eq('id', editingFeeId)
+        if (error) throw error
+
+        closeModal()
+        setSaveSuccessMessage('Successful update')
+        setSaveSuccessOpen(true)
+        await fetchFees()
+        return
+      }
+
+      const payload = {
+        action: 'create',
+        id: null,
+        name: nullIfEmpty(name),
+        description: nullIfEmpty(description),
+        fee_amount: nullIfEmpty(amount),
+        fee_cost: nullIfEmpty(cost),
+        default_to_new_deals: defaultToNewDeals,
+        lien_fee: lienFee,
+        default_tax_rate: defaultTaxRateText,
+      }
+
+      const res = await fetch('https://primary-production-6722.up.railway.app/webhook/fee', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+
+      const text = await res.text().catch(() => '')
+      if (!res.ok) throw new Error(text || `Request failed (${res.status})`)
+      if (String(text).trim() !== 'Done') throw new Error(text || 'Webhook did not return Done')
+
+      closeModal()
+      setSaveSuccessMessage('Successful save')
+      setSaveSuccessOpen(true)
+      await fetchFees()
+    } catch (e) {
+      setSaveError(e instanceof Error ? e.message : 'Save failed')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const openEditFee = (r: FeeRow) => {
+    setEditingFeeId(r.id)
+    setName(r.name || '')
+    setDescription(r.description || '')
+    setAmount(r.fee_amount == null ? '' : String(r.fee_amount))
+    setCost(r.fee_cost == null ? '' : String(r.fee_cost))
+    setDefaultToNewDeals(Boolean(r.default_to_new_deals))
+    setLienFee(Boolean(r.lien_fee))
+    const selected = (r.default_tax_rate || '')
+      .split(',')
+      .map((x) => x.trim())
+      .filter(Boolean)
+    setSelectedTaxRates(selected)
+    setSaveError(null)
+    setTaxPickerOpen(false)
+    setIsModalOpen(true)
+  }
+
+  const requestDeleteFee = (r: FeeRow) => {
+    setFeeToDelete(r)
+    setDeleteConfirmOpen(true)
+  }
+
+  const confirmDeleteFee = async () => {
+    const r = feeToDelete
+    if (!r) {
+      setDeleteConfirmOpen(false)
+      return
+    }
+    if (saving) return
+    setSaveError(null)
+    setSaving(true)
+    try {
+      const { error } = await supabase.from('setting_fee').delete().eq('id', r.id)
+      if (error) throw error
+
+      setDeleteConfirmOpen(false)
+      setFeeToDelete(null)
+      setSaveSuccessMessage('Successful delete')
+      setSaveSuccessOpen(true)
+      await fetchFees()
+    } catch (e) {
+      setSaveError(e instanceof Error ? e.message : 'Delete failed')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const currentRows = useMemo<PresetRow[]>(() => {
+    if (activeCategory === 'Fees') {
+      return feeRows.map((r) => ({
+        id: r.id,
+        name: r.name || '',
+        description: r.description || '',
+        amount: formatMoney(r.fee_amount),
+      }))
+    }
+    return []
+  }, [activeCategory, feeRows])
 
   const filtered = useMemo(() => {
-    const list = rows[activeCategory] || []
+    const list = currentRows
     const q = search.trim().toLowerCase()
     if (!q) return list
     return list.filter((r) => {
@@ -206,12 +380,75 @@ export default function SettingsPresetsPage() {
         (r.amount || '').toLowerCase().includes(q)
       )
     })
-  }, [activeCategory, rows, search])
+  }, [currentRows, search])
 
   const visible = useMemo(() => filtered.slice(0, pageSize), [filtered, pageSize])
 
   return (
     <div>
+      {saveSuccessOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center" role="dialog" aria-modal="true">
+          <div className="absolute inset-0 bg-black/50" onMouseDown={() => setSaveSuccessOpen(false)} />
+          <div className="relative w-[360px] bg-white shadow-lg">
+            <div className="h-11 px-4 border-b border-gray-200 flex items-center justify-between">
+              <div className="text-sm font-semibold text-gray-800">Success</div>
+              <button type="button" className="h-8 w-8 flex items-center justify-center" onClick={() => setSaveSuccessOpen(false)}>
+                <span className="text-xl leading-none text-gray-500">×</span>
+              </button>
+            </div>
+            <div className="p-4 text-xs text-gray-700">{saveSuccessMessage}</div>
+            <div className="h-12 px-4 border-t border-gray-200 flex items-center justify-end">
+              <button type="button" className="h-8 px-4 bg-[#118df0] text-white text-xs font-semibold" onClick={() => setSaveSuccessOpen(false)}>
+                OK
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {deleteConfirmOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center" role="dialog" aria-modal="true">
+          <div className="absolute inset-0 bg-black/50" onMouseDown={() => setDeleteConfirmOpen(false)} />
+          <div className="relative w-[420px] bg-white shadow-lg" onMouseDown={(e) => e.stopPropagation()}>
+            <div className="h-11 px-4 border-b border-gray-200 flex items-center justify-between">
+              <div className="text-sm font-semibold text-gray-800">Warning</div>
+              <button
+                type="button"
+                className="h-8 w-8 flex items-center justify-center"
+                onClick={() => setDeleteConfirmOpen(false)}
+              >
+                <span className="text-xl leading-none text-gray-500">×</span>
+              </button>
+            </div>
+            <div className="p-4 text-xs text-gray-700">
+              Delete fee {feeToDelete?.name || ''}? This cannot be undone.
+            </div>
+            <div className="h-12 px-4 border-t border-gray-200 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                className="h-8 px-4 bg-gray-600 text-white text-xs font-semibold"
+                onClick={() => setDeleteConfirmOpen(false)}
+                disabled={saving}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className={
+                  saving
+                    ? 'h-8 px-4 bg-red-600/60 text-white text-xs font-semibold cursor-not-allowed'
+                    : 'h-8 px-4 bg-red-600 text-white text-xs font-semibold'
+                }
+                onClick={() => void confirmDeleteFee()}
+                disabled={saving}
+              >
+                {saving ? 'Deleting…' : 'Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       <div className="grid grid-cols-[240px_1fr] gap-6">
         <div>
           <div className="text-[11px] text-gray-500 mb-1">{activeCategory}</div>
@@ -307,17 +544,24 @@ export default function SettingsPresetsPage() {
               <div className="h-8 flex items-center text-[11px] font-semibold text-gray-700">Amount</div>
             </div>
 
-            {visible.length === 0 ? (
+            {activeCategory === 'Fees' && loadingFees ? (
+              <div className="p-6 text-xs text-gray-500">Loading…</div>
+            ) : visible.length === 0 ? (
               <div className="p-6 text-xs text-gray-500">No presets found.</div>
             ) : (
               <div>
-                {visible.map((r) => (
+                {visible.map((r) => {
+                  const fee = activeCategory === 'Fees' ? feeRows.find((x) => x.id === r.id) : null
+                  return (
                   <div key={r.id} className="grid grid-cols-[48px_1.3fr_2fr_140px] border-b border-gray-100">
                     <div className="h-10 flex items-center gap-2 px-2">
                       <button
                         type="button"
                         className="h-6 w-6 flex items-center justify-center text-gray-500 hover:text-gray-800"
                         title="Edit"
+                        onClick={() => {
+                          if (activeCategory === 'Fees' && fee) openEditFee(fee)
+                        }}
                       >
                         <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
                           <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M12 20h9" />
@@ -328,6 +572,9 @@ export default function SettingsPresetsPage() {
                         type="button"
                         className="h-6 w-6 flex items-center justify-center text-red-600 hover:text-red-700"
                         title="Delete"
+                        onClick={() => {
+                          if (activeCategory === 'Fees' && fee) requestDeleteFee(fee)
+                        }}
                       >
                         <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
                           <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M3 6h18" />
@@ -340,30 +587,11 @@ export default function SettingsPresetsPage() {
                     <div className="h-10 flex items-center text-xs text-gray-800">{r.description || ''}</div>
                     <div className="h-10 flex items-center text-xs text-gray-800">{r.amount || ''}</div>
                   </div>
-                ))}
+                )})}
               </div>
             )}
           </div>
         </div>
-      </div>
-
-      <div className="flex items-center justify-between pt-8">
-        <button type="button" className="h-8 px-3 bg-gray-600 text-white text-xs font-semibold">
-          <span className="inline-flex items-center gap-2">
-            <span className="text-sm leading-none">×</span>
-            Cancel
-          </span>
-        </button>
-        <button type="button" className="h-8 px-4 bg-[#118df0] text-white text-xs font-semibold">
-          <span className="inline-flex items-center gap-2">
-            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-              <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z" />
-              <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M17 21v-8H7v8" />
-              <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M7 3v5h8" />
-            </svg>
-            Save
-          </span>
-        </button>
       </div>
 
       {isModalOpen ? (
@@ -387,6 +615,47 @@ export default function SettingsPresetsPage() {
           }
           onClose={closeModal}
         >
+          {taxPickerOpen ? (
+            <div className="fixed inset-0 z-50 flex items-center justify-center" role="dialog" aria-modal="true">
+              <div className="absolute inset-0" onMouseDown={() => setTaxPickerOpen(false)} />
+              <div className="relative w-[240px] border border-gray-200 bg-white shadow-lg" onMouseDown={(e) => e.stopPropagation()}>
+                <div className="p-3 space-y-2">
+                  {[
+                    'HST 13 %',
+                    'RST 8 %',
+                    'GST 5 %',
+                    'PST 6 %',
+                    'Exempt 0 %',
+                    'QST 9.975 %',
+                  ].map((label) => {
+                    const checked = selectedTaxRates.includes(label)
+                    return (
+                      <label key={label} className="flex items-center gap-2 text-xs text-gray-700">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={(e) => {
+                            const next = e.target.checked
+                            setSelectedTaxRates((prev) => {
+                              if (next) return prev.includes(label) ? prev : [...prev, label]
+                              return prev.filter((x) => x !== label)
+                            })
+                          }}
+                        />
+                        {label}
+                      </label>
+                    )
+                  })}
+                </div>
+                <div className="p-3 pt-0 flex items-center justify-end">
+                  <button type="button" className="h-8 px-4 bg-[#118df0] text-white text-xs font-semibold" onClick={() => setTaxPickerOpen(false)}>
+                    Close
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : null}
+
           <div className="space-y-3">
             <div>
               <div className="text-[11px] text-gray-700 mb-1">
@@ -425,8 +694,8 @@ export default function SettingsPresetsPage() {
                 </div>
                 <div className="flex items-center justify-between">
                   <div className="text-[11px] text-gray-700">Default Tax Rates:</div>
-                  <button type="button" className="text-[11px] text-[#118df0]">
-                    Choose tax rate ▾
+                  <button type="button" className="text-[11px] text-[#118df0]" onClick={() => setTaxPickerOpen(true)}>
+                    {selectedTaxRates.length ? `${selectedTaxRates.length} selected` : 'Choose tax rate'} ▾
                   </button>
                 </div>
                 <div className="flex items-center justify-between">
@@ -716,6 +985,8 @@ export default function SettingsPresetsPage() {
             ) : null}
           </div>
 
+          {saveError ? <div className="mt-2 text-[11px] text-red-600">{saveError}</div> : null}
+
           <div className="mt-6 flex items-center justify-end gap-2">
             <button
               type="button"
@@ -732,14 +1003,15 @@ export default function SettingsPresetsPage() {
             </button>
             <button
               type="button"
-              onClick={closeModal}
+              disabled={saving}
+              onClick={() => void handleSave()}
               className={
                 activeCategory === 'Tax Rates' || activeCategory === 'Lead Properties' || activeCategory === 'Disclosures'
                   ? 'h-7 px-3 bg-green-600 text-white text-xs'
                   : 'h-7 px-3 bg-[#118df0] text-white text-xs'
               }
             >
-              Save
+              {saving ? 'Saving…' : editingFeeId ? 'Update' : 'Save'}
             </button>
           </div>
         </ModalShell>
