@@ -170,6 +170,9 @@ export default function SettingsPresetsPage() {
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [feeToDelete, setFeeToDelete] = useState<FeeRow | null>(null)
 
+  const [feeTaxOptions, setFeeTaxOptions] = useState<TaxRow[]>([])
+  const [loadingFeeTaxOptions, setLoadingFeeTaxOptions] = useState(false)
+
   const [editingTaxId, setEditingTaxId] = useState<string | null>(null)
   const [taxRows, setTaxRows] = useState<TaxRow[]>([])
   const [loadingTaxes, setLoadingTaxes] = useState(false)
@@ -251,7 +254,7 @@ export default function SettingsPresetsPage() {
     setLoadingFees(true)
     try {
       const { data, error } = await supabase
-        .from('setting_fee')
+        .from('presets_fee')
         .select('id, name, description, fee_amount, fee_cost, default_to_new_deals, lien_fee, default_tax_rate, created_at')
         .order('created_at', { ascending: false })
 
@@ -261,6 +264,23 @@ export default function SettingsPresetsPage() {
       setFeeRows([])
     } finally {
       setLoadingFees(false)
+    }
+  }
+
+  const fetchFeeTaxOptions = async () => {
+    setLoadingFeeTaxOptions(true)
+    try {
+      const { data, error } = await supabase
+        .from('presets_tax')
+        .select('id, name, description, rate, default_tax_rate, default_to_sales, default_to_purchases_or_costs')
+        .order('name', { ascending: true })
+
+      if (error) throw error
+      setFeeTaxOptions(((data as any) || []) as TaxRow[])
+    } catch {
+      setFeeTaxOptions([])
+    } finally {
+      setLoadingFeeTaxOptions(false)
     }
   }
 
@@ -361,7 +381,7 @@ export default function SettingsPresetsPage() {
           default_tax_rate: defaultTaxRateText,
         }
 
-        const { error } = await supabase.from('setting_fee').update(updateRow).eq('id', editingFeeId)
+        const { error } = await supabase.from('presets_fee').update(updateRow).eq('id', editingFeeId)
         if (error) throw error
 
         closeModal()
@@ -457,7 +477,7 @@ export default function SettingsPresetsPage() {
     setSaveError(null)
     setSaving(true)
     try {
-      const { error } = await supabase.from('setting_fee').delete().eq('id', r.id)
+      const { error } = await supabase.from('presets_fee').delete().eq('id', r.id)
       if (error) throw error
 
       setDeleteConfirmOpen(false)
@@ -823,32 +843,32 @@ export default function SettingsPresetsPage() {
               <div className="absolute inset-0" onMouseDown={() => setTaxPickerOpen(false)} />
               <div className="relative w-[240px] border border-gray-200 bg-white shadow-lg" onMouseDown={(e) => e.stopPropagation()}>
                 <div className="p-3 space-y-2">
-                  {[
-                    'HST 13 %',
-                    'RST 8 %',
-                    'GST 5 %',
-                    'PST 6 %',
-                    'Exempt 0 %',
-                    'QST 9.975 %',
-                  ].map((label) => {
-                    const checked = selectedTaxRates.includes(label)
-                    return (
-                      <label key={label} className="flex items-center gap-2 text-xs text-gray-700">
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          onChange={(e) => {
-                            const next = e.target.checked
-                            setSelectedTaxRates((prev) => {
-                              if (next) return prev.includes(label) ? prev : [...prev, label]
-                              return prev.filter((x) => x !== label)
-                            })
-                          }}
-                        />
-                        {label}
-                      </label>
-                    )
-                  })}
+                  {loadingFeeTaxOptions ? (
+                    <div className="py-2 text-xs text-gray-500">Loading…</div>
+                  ) : feeTaxOptions.length === 0 ? (
+                    <div className="py-2 text-xs text-gray-500">No tax rates found.</div>
+                  ) : (
+                    feeTaxOptions.map((t) => {
+                      const label = `${t.name || ''} ${t.rate == null ? '' : `${t.rate}%`}`.trim()
+                      const checked = selectedTaxRates.includes(label)
+                      return (
+                        <label key={t.id} className="flex items-center gap-2 text-xs text-gray-700">
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={(e) => {
+                              const next = e.target.checked
+                              setSelectedTaxRates((prev) => {
+                                if (next) return prev.includes(label) ? prev : [...prev, label]
+                                return prev.filter((x) => x !== label)
+                              })
+                            }}
+                          />
+                          {label}
+                        </label>
+                      )
+                    })
+                  )}
                 </div>
                 <div className="p-3 pt-0 flex items-center justify-end">
                   <button type="button" className="h-8 px-4 bg-[#118df0] text-white text-xs font-semibold" onClick={() => setTaxPickerOpen(false)}>
@@ -897,7 +917,14 @@ export default function SettingsPresetsPage() {
                 </div>
                 <div className="flex items-center justify-between">
                   <div className="text-[11px] text-gray-700">Default Tax Rates:</div>
-                  <button type="button" className="text-[11px] text-[#118df0]" onClick={() => setTaxPickerOpen(true)}>
+                  <button
+                    type="button"
+                    className="text-[11px] text-[#118df0]"
+                    onClick={() => {
+                      setTaxPickerOpen(true)
+                      void fetchFeeTaxOptions()
+                    }}
+                  >
                     {selectedTaxRates.length ? `${selectedTaxRates.length} selected` : 'Choose tax rate'} ▾
                   </button>
                 </div>
