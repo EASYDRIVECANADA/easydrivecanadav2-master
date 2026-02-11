@@ -32,6 +32,16 @@ type FeeRow = {
   created_at: string
 }
 
+type TaxRow = {
+  id: string
+  name: string | null
+  description: string | null
+  rate: number | null
+  default_tax_rate: boolean | null
+  default_to_sales: string | null
+  default_to_purchases_or_costs: string | null
+}
+
 const categories: PresetCategory[] = [
   'Fees',
   'Accessories',
@@ -160,6 +170,12 @@ export default function SettingsPresetsPage() {
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [feeToDelete, setFeeToDelete] = useState<FeeRow | null>(null)
 
+  const [editingTaxId, setEditingTaxId] = useState<string | null>(null)
+  const [taxRows, setTaxRows] = useState<TaxRow[]>([])
+  const [loadingTaxes, setLoadingTaxes] = useState(false)
+  const [deleteTaxConfirmOpen, setDeleteTaxConfirmOpen] = useState(false)
+  const [taxToDelete, setTaxToDelete] = useState<TaxRow | null>(null)
+
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
   const [amount, setAmount] = useState('')
@@ -171,6 +187,8 @@ export default function SettingsPresetsPage() {
   const [price, setPrice] = useState('')
   const [rate, setRate] = useState('')
   const [isDefaultTaxRate, setIsDefaultTaxRate] = useState(false)
+  const [defaultToSales, setDefaultToSales] = useState(false)
+  const [defaultToPurchasesOrCosts, setDefaultToPurchasesOrCosts] = useState(false)
   const [fieldType, setFieldType] = useState('Single-line text')
   const [groupName, setGroupName] = useState('')
   const [vendor, setVendor] = useState('')
@@ -182,6 +200,7 @@ export default function SettingsPresetsPage() {
 
   const openModal = () => {
     setEditingFeeId(null)
+    setEditingTaxId(null)
     setName('')
     setDescription('')
     setAmount('')
@@ -193,6 +212,8 @@ export default function SettingsPresetsPage() {
     setPrice('')
     setRate('')
     setIsDefaultTaxRate(false)
+    setDefaultToSales(false)
+    setDefaultToPurchasesOrCosts(false)
     setFieldType('Single-line text')
     setGroupName('')
     setVendor('')
@@ -212,6 +233,13 @@ export default function SettingsPresetsPage() {
   const nullIfEmpty = (v: string) => {
     const s = (v || '').trim()
     return s.length ? s : null
+  }
+
+  const parseBoolish = (v: unknown) => {
+    if (typeof v === 'boolean') return v
+    const s = String(v ?? '').trim().toLowerCase()
+    if (!s) return false
+    return s === 'yes' || s === 'true' || s === '1'
   }
 
   const formatMoney = (n: number | null) => {
@@ -236,9 +264,29 @@ export default function SettingsPresetsPage() {
     }
   }
 
+  const fetchTaxes = async () => {
+    setLoadingTaxes(true)
+    try {
+      const { data, error } = await supabase
+        .from('presets_tax')
+        .select('id, name, description, rate, default_tax_rate, default_to_sales, default_to_purchases_or_costs')
+        .order('name', { ascending: true })
+
+      if (error) throw error
+      setTaxRows(((data as any) || []) as TaxRow[])
+    } catch {
+      setTaxRows([])
+    } finally {
+      setLoadingTaxes(false)
+    }
+  }
+
   useEffect(() => {
     if (activeCategory === 'Fees') {
       void fetchFees()
+    }
+    if (activeCategory === 'Tax Rates') {
+      void fetchTaxes()
     }
   }, [activeCategory])
 
@@ -246,13 +294,60 @@ export default function SettingsPresetsPage() {
     if (saving) return
     setSaveError(null)
 
-    if (activeCategory !== 'Fees') {
-      closeModal()
-      return
-    }
-
     setSaving(true)
     try {
+      if (activeCategory === 'Tax Rates') {
+        if (editingTaxId) {
+          const updateRow: any = {
+            name: nullIfEmpty(name),
+            description: nullIfEmpty(description),
+            rate: nullIfEmpty(rate),
+            default_tax_rate: isDefaultTaxRate,
+            default_to_sales: isDefaultTaxRate ? (defaultToSales ? 'Yes' : 'No') : null,
+            default_to_purchases_or_costs: isDefaultTaxRate ? (defaultToPurchasesOrCosts ? 'Yes' : 'No') : null,
+          }
+
+          const { error } = await supabase.from('presets_tax').update(updateRow).eq('id', editingTaxId)
+          if (error) throw error
+
+          closeModal()
+          setSaveSuccessMessage('Tax rate updated')
+          setSaveSuccessOpen(true)
+          await fetchTaxes()
+          return
+        }
+
+        const payload = {
+          name: nullIfEmpty(name),
+          description: nullIfEmpty(description),
+          rate: nullIfEmpty(rate),
+          default_tax_rate: isDefaultTaxRate,
+          default_to_sales: isDefaultTaxRate ? defaultToSales : null,
+          default_to_purchases_or_costs: isDefaultTaxRate ? defaultToPurchasesOrCosts : null,
+        }
+
+        const res = await fetch('https://primary-production-6722.up.railway.app/webhook/tax', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        })
+
+        const text = await res.text().catch(() => '')
+        if (!res.ok) throw new Error(text || `Request failed (${res.status})`)
+        if (String(text).trim() !== 'Done') throw new Error(text || 'Webhook did not return Done')
+
+        closeModal()
+        setSaveSuccessMessage('Tax rate saved')
+        setSaveSuccessOpen(true)
+        await fetchTaxes()
+        return
+      }
+
+      if (activeCategory !== 'Fees') {
+        closeModal()
+        return
+      }
+
       const defaultTaxRateText = selectedTaxRates.length ? selectedTaxRates.join(', ') : null
 
       if (editingFeeId) {
@@ -311,6 +406,7 @@ export default function SettingsPresetsPage() {
 
   const openEditFee = (r: FeeRow) => {
     setEditingFeeId(r.id)
+    setEditingTaxId(null)
     setName(r.name || '')
     setDescription(r.description || '')
     setAmount(r.fee_amount == null ? '' : String(r.fee_amount))
@@ -327,9 +423,28 @@ export default function SettingsPresetsPage() {
     setIsModalOpen(true)
   }
 
+  const openEditTax = (r: TaxRow) => {
+    setEditingFeeId(null)
+    setEditingTaxId(r.id)
+    setName(r.name || '')
+    setDescription(r.description || '')
+    setRate(r.rate == null ? '' : String(r.rate))
+    setIsDefaultTaxRate(Boolean(r.default_tax_rate))
+    setDefaultToSales(parseBoolish(r.default_to_sales))
+    setDefaultToPurchasesOrCosts(parseBoolish(r.default_to_purchases_or_costs))
+    setSaveError(null)
+    setTaxPickerOpen(false)
+    setIsModalOpen(true)
+  }
+
   const requestDeleteFee = (r: FeeRow) => {
     setFeeToDelete(r)
     setDeleteConfirmOpen(true)
+  }
+
+  const requestDeleteTax = (r: TaxRow) => {
+    setTaxToDelete(r)
+    setDeleteTaxConfirmOpen(true)
   }
 
   const confirmDeleteFee = async () => {
@@ -357,6 +472,31 @@ export default function SettingsPresetsPage() {
     }
   }
 
+  const confirmDeleteTax = async () => {
+    const r = taxToDelete
+    if (!r) {
+      setDeleteTaxConfirmOpen(false)
+      return
+    }
+    if (saving) return
+    setSaveError(null)
+    setSaving(true)
+    try {
+      const { error } = await supabase.from('presets_tax').delete().eq('id', r.id)
+      if (error) throw error
+
+      setDeleteTaxConfirmOpen(false)
+      setTaxToDelete(null)
+      setSaveSuccessMessage('Tax rate deleted')
+      setSaveSuccessOpen(true)
+      await fetchTaxes()
+    } catch (e) {
+      setSaveError(e instanceof Error ? e.message : 'Delete failed')
+    } finally {
+      setSaving(false)
+    }
+  }
+
   const currentRows = useMemo<PresetRow[]>(() => {
     if (activeCategory === 'Fees') {
       return feeRows.map((r) => ({
@@ -366,8 +506,21 @@ export default function SettingsPresetsPage() {
         amount: formatMoney(r.fee_amount),
       }))
     }
+    if (activeCategory === 'Tax Rates') {
+      return taxRows.map((r) => ({
+        id: r.id,
+        name: r.name || '',
+        description: r.description || '',
+        amount: r.rate == null ? '' : `${r.rate}%`,
+      }))
+    }
     return []
-  }, [activeCategory, feeRows])
+  }, [activeCategory, feeRows, taxRows])
+
+  const amountHeader = useMemo(() => {
+    if (activeCategory === 'Tax Rates') return 'Rate'
+    return 'Amount'
+  }, [activeCategory])
 
   const filtered = useMemo(() => {
     const list = currentRows
@@ -400,6 +553,47 @@ export default function SettingsPresetsPage() {
             <div className="h-12 px-4 border-t border-gray-200 flex items-center justify-end">
               <button type="button" className="h-8 px-4 bg-[#118df0] text-white text-xs font-semibold" onClick={() => setSaveSuccessOpen(false)}>
                 OK
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {deleteTaxConfirmOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center" role="dialog" aria-modal="true">
+          <div className="absolute inset-0 bg-black/50" onMouseDown={() => setDeleteTaxConfirmOpen(false)} />
+          <div className="relative w-[420px] bg-white shadow-lg" onMouseDown={(e) => e.stopPropagation()}>
+            <div className="h-11 px-4 border-b border-gray-200 flex items-center justify-between">
+              <div className="text-sm font-semibold text-gray-800">Warning</div>
+              <button
+                type="button"
+                className="h-8 w-8 flex items-center justify-center"
+                onClick={() => setDeleteTaxConfirmOpen(false)}
+              >
+                <span className="text-xl leading-none text-gray-500">×</span>
+              </button>
+            </div>
+            <div className="p-4 text-xs text-gray-700">Delete tax rate {taxToDelete?.name || ''}? This cannot be undone.</div>
+            <div className="h-12 px-4 border-t border-gray-200 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                className="h-8 px-4 bg-gray-600 text-white text-xs font-semibold"
+                onClick={() => setDeleteTaxConfirmOpen(false)}
+                disabled={saving}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className={
+                  saving
+                    ? 'h-8 px-4 bg-red-600/60 text-white text-xs font-semibold cursor-not-allowed'
+                    : 'h-8 px-4 bg-red-600 text-white text-xs font-semibold'
+                }
+                onClick={() => void confirmDeleteTax()}
+                disabled={saving}
+              >
+                {saving ? 'Deleting…' : 'Delete'}
               </button>
             </div>
           </div>
@@ -541,10 +735,12 @@ export default function SettingsPresetsPage() {
               <div className="h-8" />
               <div className="h-8 flex items-center text-[11px] font-semibold text-gray-700">Name</div>
               <div className="h-8 flex items-center text-[11px] font-semibold text-gray-700">Description</div>
-              <div className="h-8 flex items-center text-[11px] font-semibold text-gray-700">Amount</div>
+              <div className="h-8 flex items-center text-[11px] font-semibold text-gray-700">{amountHeader}</div>
             </div>
 
             {activeCategory === 'Fees' && loadingFees ? (
+              <div className="p-6 text-xs text-gray-500">Loading…</div>
+            ) : activeCategory === 'Tax Rates' && loadingTaxes ? (
               <div className="p-6 text-xs text-gray-500">Loading…</div>
             ) : visible.length === 0 ? (
               <div className="p-6 text-xs text-gray-500">No presets found.</div>
@@ -552,6 +748,7 @@ export default function SettingsPresetsPage() {
               <div>
                 {visible.map((r) => {
                   const fee = activeCategory === 'Fees' ? feeRows.find((x) => x.id === r.id) : null
+                  const tax = activeCategory === 'Tax Rates' ? taxRows.find((x) => x.id === r.id) : null
                   return (
                   <div key={r.id} className="grid grid-cols-[48px_1.3fr_2fr_140px] border-b border-gray-100">
                     <div className="h-10 flex items-center gap-2 px-2">
@@ -561,6 +758,7 @@ export default function SettingsPresetsPage() {
                         title="Edit"
                         onClick={() => {
                           if (activeCategory === 'Fees' && fee) openEditFee(fee)
+                          if (activeCategory === 'Tax Rates' && tax) openEditTax(tax)
                         }}
                       >
                         <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
@@ -574,6 +772,7 @@ export default function SettingsPresetsPage() {
                         title="Delete"
                         onClick={() => {
                           if (activeCategory === 'Fees' && fee) requestDeleteFee(fee)
+                          if (activeCategory === 'Tax Rates' && tax) requestDeleteTax(tax)
                         }}
                       >
                         <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
@@ -598,7 +797,9 @@ export default function SettingsPresetsPage() {
         <ModalShell
           title={
             activeCategory === 'Fees'
-              ? 'New Fee'
+              ? editingFeeId
+                ? 'Edit Fee'
+                : 'New Fee'
               : activeCategory === 'Accessories'
                 ? 'New Accessory'
                 : activeCategory === 'Warranties'
@@ -606,7 +807,9 @@ export default function SettingsPresetsPage() {
                   : activeCategory === 'Insurances'
                     ? 'New Insurance'
                     : activeCategory === 'Tax Rates'
-                      ? 'New Tax Rate'
+                      ? editingTaxId
+                        ? 'Edit Tax Rate'
+                        : 'New Tax Rate'
                       : activeCategory === 'Lead Properties'
                         ? 'New Lead Property'
                         : activeCategory === 'Disclosures'
@@ -866,12 +1069,32 @@ export default function SettingsPresetsPage() {
                     type="checkbox"
                     className="h-3.5 w-3.5"
                     checked={isDefaultTaxRate}
-                    onChange={(e) => setIsDefaultTaxRate(e.target.checked)}
+                    onChange={(e) => {
+                      const next = e.target.checked
+                      setIsDefaultTaxRate(next)
+                      if (!next) {
+                        setDefaultToSales(false)
+                        setDefaultToPurchasesOrCosts(false)
+                      }
+                    }}
                   />
                   <label htmlFor="defaultTaxRate" className="text-[11px] text-gray-700">
                     Default Tax Rate?
                   </label>
                 </div>
+
+                {isDefaultTaxRate ? (
+                  <>
+                    <div className="flex items-center justify-between">
+                      <div className="text-[11px] text-gray-700">Default to sales?</div>
+                      <Toggle checked={defaultToSales} onChange={setDefaultToSales} />
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <div className="text-[11px] text-gray-700">Default to purchases or costs?</div>
+                      <Toggle checked={defaultToPurchasesOrCosts} onChange={setDefaultToPurchasesOrCosts} />
+                    </div>
+                  </>
+                ) : null}
               </>
             ) : null}
 
@@ -1011,7 +1234,7 @@ export default function SettingsPresetsPage() {
                   : 'h-7 px-3 bg-[#118df0] text-white text-xs'
               }
             >
-              {saving ? 'Saving…' : editingFeeId ? 'Update' : 'Save'}
+              {saving ? 'Saving…' : editingFeeId || editingTaxId ? 'Update' : 'Save'}
             </button>
           </div>
         </ModalShell>
