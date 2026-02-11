@@ -32,6 +32,16 @@ type FeeRow = {
   created_at: string
 }
 
+type AccessoryRow = {
+  id: string
+  name: string | null
+  description: string | null
+  amount: number | null
+  cost: number | null
+  type: string | null
+  default_tax_rate: string | null
+}
+
 type TaxRow = {
   id: string
   name: string | null
@@ -173,6 +183,12 @@ export default function SettingsPresetsPage() {
   const [feeTaxOptions, setFeeTaxOptions] = useState<TaxRow[]>([])
   const [loadingFeeTaxOptions, setLoadingFeeTaxOptions] = useState(false)
 
+  const [editingAccessoryId, setEditingAccessoryId] = useState<string | null>(null)
+  const [accessoryRows, setAccessoryRows] = useState<AccessoryRow[]>([])
+  const [loadingAccessories, setLoadingAccessories] = useState(false)
+  const [deleteAccessoryConfirmOpen, setDeleteAccessoryConfirmOpen] = useState(false)
+  const [accessoryToDelete, setAccessoryToDelete] = useState<AccessoryRow | null>(null)
+
   const [editingTaxId, setEditingTaxId] = useState<string | null>(null)
   const [taxRows, setTaxRows] = useState<TaxRow[]>([])
   const [loadingTaxes, setLoadingTaxes] = useState(false)
@@ -204,6 +220,7 @@ export default function SettingsPresetsPage() {
   const openModal = () => {
     setEditingFeeId(null)
     setEditingTaxId(null)
+    setEditingAccessoryId(null)
     setName('')
     setDescription('')
     setAmount('')
@@ -267,6 +284,23 @@ export default function SettingsPresetsPage() {
     }
   }
 
+  const fetchAccessories = async () => {
+    setLoadingAccessories(true)
+    try {
+      const { data, error } = await supabase
+        .from('presets_accesories')
+        .select('id, name, description, amount, cost, type, default_tax_rate')
+        .order('name', { ascending: true })
+
+      if (error) throw error
+      setAccessoryRows(((data as any) || []) as AccessoryRow[])
+    } catch {
+      setAccessoryRows([])
+    } finally {
+      setLoadingAccessories(false)
+    }
+  }
+
   const fetchFeeTaxOptions = async () => {
     setLoadingFeeTaxOptions(true)
     try {
@@ -304,6 +338,9 @@ export default function SettingsPresetsPage() {
   useEffect(() => {
     if (activeCategory === 'Fees') {
       void fetchFees()
+    }
+    if (activeCategory === 'Accessories') {
+      void fetchAccessories()
     }
     if (activeCategory === 'Tax Rates') {
       void fetchTaxes()
@@ -360,6 +397,57 @@ export default function SettingsPresetsPage() {
         setSaveSuccessMessage('Tax rate saved')
         setSaveSuccessOpen(true)
         await fetchTaxes()
+        return
+      }
+
+      if (activeCategory === 'Accessories') {
+        const defaultTaxRateText = selectedTaxRates.length ? selectedTaxRates.join(', ') : null
+
+        if (editingAccessoryId) {
+          const updateRow: any = {
+            name: nullIfEmpty(name),
+            description: nullIfEmpty(description),
+            amount: nullIfEmpty(amount),
+            cost: nullIfEmpty(cost),
+            type: nullIfEmpty(type),
+            default_tax_rate: defaultTaxRateText,
+          }
+
+          const { error } = await supabase.from('presets_accesories').update(updateRow).eq('id', editingAccessoryId)
+          if (error) throw error
+
+          closeModal()
+          setSaveSuccessMessage('Accessory updated')
+          setSaveSuccessOpen(true)
+          await fetchAccessories()
+          return
+        }
+
+        const payload = {
+          action: 'create',
+          id: null,
+          name: nullIfEmpty(name),
+          description: nullIfEmpty(description),
+          amount: nullIfEmpty(amount),
+          cost: nullIfEmpty(cost),
+          type: nullIfEmpty(type),
+          default_tax_rate: defaultTaxRateText,
+        }
+
+        const res = await fetch('https://primary-production-6722.up.railway.app/webhook/accesories', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        })
+
+        const text = await res.text().catch(() => '')
+        if (!res.ok) throw new Error(text || `Request failed (${res.status})`)
+        if (String(text).trim() !== 'Done') throw new Error(text || 'Webhook did not return Done')
+
+        closeModal()
+        setSaveSuccessMessage('Accessory saved')
+        setSaveSuccessOpen(true)
+        await fetchAccessories()
         return
       }
 
@@ -427,6 +515,7 @@ export default function SettingsPresetsPage() {
   const openEditFee = (r: FeeRow) => {
     setEditingFeeId(r.id)
     setEditingTaxId(null)
+    setEditingAccessoryId(null)
     setName(r.name || '')
     setDescription(r.description || '')
     setAmount(r.fee_amount == null ? '' : String(r.fee_amount))
@@ -446,6 +535,7 @@ export default function SettingsPresetsPage() {
   const openEditTax = (r: TaxRow) => {
     setEditingFeeId(null)
     setEditingTaxId(r.id)
+    setEditingAccessoryId(null)
     setName(r.name || '')
     setDescription(r.description || '')
     setRate(r.rate == null ? '' : String(r.rate))
@@ -460,6 +550,30 @@ export default function SettingsPresetsPage() {
   const requestDeleteFee = (r: FeeRow) => {
     setFeeToDelete(r)
     setDeleteConfirmOpen(true)
+  }
+
+  const openEditAccessory = (r: AccessoryRow) => {
+    setEditingFeeId(null)
+    setEditingTaxId(null)
+    setEditingAccessoryId(r.id)
+    setName(r.name || '')
+    setDescription(r.description || '')
+    setAmount(r.amount == null ? '' : String(r.amount))
+    setCost(r.cost == null ? '' : String(r.cost))
+    setType(r.type || 'Car')
+    const selected = (r.default_tax_rate || '')
+      .split(',')
+      .map((x) => x.trim())
+      .filter(Boolean)
+    setSelectedTaxRates(selected)
+    setSaveError(null)
+    setTaxPickerOpen(false)
+    setIsModalOpen(true)
+  }
+
+  const requestDeleteAccessory = (r: AccessoryRow) => {
+    setAccessoryToDelete(r)
+    setDeleteAccessoryConfirmOpen(true)
   }
 
   const requestDeleteTax = (r: TaxRow) => {
@@ -517,6 +631,31 @@ export default function SettingsPresetsPage() {
     }
   }
 
+  const confirmDeleteAccessory = async () => {
+    const r = accessoryToDelete
+    if (!r) {
+      setDeleteAccessoryConfirmOpen(false)
+      return
+    }
+    if (saving) return
+    setSaveError(null)
+    setSaving(true)
+    try {
+      const { error } = await supabase.from('presets_accesories').delete().eq('id', r.id)
+      if (error) throw error
+
+      setDeleteAccessoryConfirmOpen(false)
+      setAccessoryToDelete(null)
+      setSaveSuccessMessage('Accessory deleted')
+      setSaveSuccessOpen(true)
+      await fetchAccessories()
+    } catch (e) {
+      setSaveError(e instanceof Error ? e.message : 'Delete failed')
+    } finally {
+      setSaving(false)
+    }
+  }
+
   const currentRows = useMemo<PresetRow[]>(() => {
     if (activeCategory === 'Fees') {
       return feeRows.map((r) => ({
@@ -524,6 +663,14 @@ export default function SettingsPresetsPage() {
         name: r.name || '',
         description: r.description || '',
         amount: formatMoney(r.fee_amount),
+      }))
+    }
+    if (activeCategory === 'Accessories') {
+      return accessoryRows.map((r) => ({
+        id: r.id,
+        name: r.name || '',
+        description: r.description || '',
+        amount: formatMoney(r.amount),
       }))
     }
     if (activeCategory === 'Tax Rates') {
@@ -535,7 +682,7 @@ export default function SettingsPresetsPage() {
       }))
     }
     return []
-  }, [activeCategory, feeRows, taxRows])
+  }, [activeCategory, feeRows, accessoryRows, taxRows])
 
   const amountHeader = useMemo(() => {
     if (activeCategory === 'Tax Rates') return 'Rate'
@@ -573,6 +720,49 @@ export default function SettingsPresetsPage() {
             <div className="h-12 px-4 border-t border-gray-200 flex items-center justify-end">
               <button type="button" className="h-8 px-4 bg-[#118df0] text-white text-xs font-semibold" onClick={() => setSaveSuccessOpen(false)}>
                 OK
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {deleteAccessoryConfirmOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center" role="dialog" aria-modal="true">
+          <div className="absolute inset-0 bg-black/50" onMouseDown={() => setDeleteAccessoryConfirmOpen(false)} />
+          <div className="relative w-[420px] bg-white shadow-lg" onMouseDown={(e) => e.stopPropagation()}>
+            <div className="h-11 px-4 border-b border-gray-200 flex items-center justify-between">
+              <div className="text-sm font-semibold text-gray-800">Warning</div>
+              <button
+                type="button"
+                className="h-8 w-8 flex items-center justify-center"
+                onClick={() => setDeleteAccessoryConfirmOpen(false)}
+              >
+                <span className="text-xl leading-none text-gray-500">×</span>
+              </button>
+            </div>
+            <div className="p-4 text-xs text-gray-700">
+              Delete accessory {accessoryToDelete?.name || ''}? This cannot be undone.
+            </div>
+            <div className="h-12 px-4 border-t border-gray-200 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                className="h-8 px-4 bg-gray-600 text-white text-xs font-semibold"
+                onClick={() => setDeleteAccessoryConfirmOpen(false)}
+                disabled={saving}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className={
+                  saving
+                    ? 'h-8 px-4 bg-red-600/60 text-white text-xs font-semibold cursor-not-allowed'
+                    : 'h-8 px-4 bg-red-600 text-white text-xs font-semibold'
+                }
+                onClick={() => void confirmDeleteAccessory()}
+                disabled={saving}
+              >
+                {saving ? 'Deleting…' : 'Delete'}
               </button>
             </div>
           </div>
@@ -760,6 +950,8 @@ export default function SettingsPresetsPage() {
 
             {activeCategory === 'Fees' && loadingFees ? (
               <div className="p-6 text-xs text-gray-500">Loading…</div>
+            ) : activeCategory === 'Accessories' && loadingAccessories ? (
+              <div className="p-6 text-xs text-gray-500">Loading…</div>
             ) : activeCategory === 'Tax Rates' && loadingTaxes ? (
               <div className="p-6 text-xs text-gray-500">Loading…</div>
             ) : visible.length === 0 ? (
@@ -768,6 +960,7 @@ export default function SettingsPresetsPage() {
               <div>
                 {visible.map((r) => {
                   const fee = activeCategory === 'Fees' ? feeRows.find((x) => x.id === r.id) : null
+                  const accessory = activeCategory === 'Accessories' ? accessoryRows.find((x) => x.id === r.id) : null
                   const tax = activeCategory === 'Tax Rates' ? taxRows.find((x) => x.id === r.id) : null
                   return (
                   <div key={r.id} className="grid grid-cols-[48px_1.3fr_2fr_140px] border-b border-gray-100">
@@ -778,6 +971,7 @@ export default function SettingsPresetsPage() {
                         title="Edit"
                         onClick={() => {
                           if (activeCategory === 'Fees' && fee) openEditFee(fee)
+                          if (activeCategory === 'Accessories' && accessory) openEditAccessory(accessory)
                           if (activeCategory === 'Tax Rates' && tax) openEditTax(tax)
                         }}
                       >
@@ -792,6 +986,7 @@ export default function SettingsPresetsPage() {
                         title="Delete"
                         onClick={() => {
                           if (activeCategory === 'Fees' && fee) requestDeleteFee(fee)
+                          if (activeCategory === 'Accessories' && accessory) requestDeleteAccessory(accessory)
                           if (activeCategory === 'Tax Rates' && tax) requestDeleteTax(tax)
                         }}
                       >
@@ -821,7 +1016,9 @@ export default function SettingsPresetsPage() {
                 ? 'Edit Fee'
                 : 'New Fee'
               : activeCategory === 'Accessories'
-                ? 'New Accessory'
+                ? editingAccessoryId
+                  ? 'Edit Accessory'
+                  : 'New Accessory'
                 : activeCategory === 'Warranties'
                   ? 'New Warranty'
                   : activeCategory === 'Insurances'
@@ -957,14 +1154,23 @@ export default function SettingsPresetsPage() {
                     onChange={(e) => setType(e.target.value)}
                   >
                     <option>Car</option>
+                    <option>Van</option>
+                    <option>Mini Van</option>
+                    <option>SUV</option>
                     <option>Truck</option>
-                    <option>Other</option>
                   </select>
                 </div>
                 <div className="flex items-center justify-between">
                   <div className="text-[11px] text-gray-700">Default Tax Rates:</div>
-                  <button type="button" className="text-[11px] text-[#118df0]">
-                    Choose tax rate ▾
+                  <button
+                    type="button"
+                    className="text-[11px] text-[#118df0]"
+                    onClick={() => {
+                      setTaxPickerOpen(true)
+                      void fetchFeeTaxOptions()
+                    }}
+                  >
+                    {selectedTaxRates.length ? `${selectedTaxRates.length} selected` : 'Choose tax rate'} ▾
                   </button>
                 </div>
               </>
