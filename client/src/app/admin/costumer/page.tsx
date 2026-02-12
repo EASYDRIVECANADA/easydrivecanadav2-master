@@ -15,9 +15,49 @@ export default function AdminCostumerPage() {
   const [showCreate, setShowCreate] = useState(false)
   const [activeTab, setActiveTab] = useState<'customer' | 'credit'>('customer')
   const [saving, setSaving] = useState(false)
+  const [saveSuccessOpen, setSaveSuccessOpen] = useState(false)
+  const [saveSuccessMessage, setSaveSuccessMessage] = useState('Saved successfully')
+  const [saveErrorOpen, setSaveErrorOpen] = useState(false)
+  const [saveErrorMessage, setSaveErrorMessage] = useState<string | null>(null)
+  const [lastSavedTab, setLastSavedTab] = useState<'customer' | 'credit' | null>(null)
   const [rows, setRows] = useState<CustomerRow[]>([])
   const [editingId, setEditingId] = useState<string | null>(null)
+  const [isCreate, setIsCreate] = useState(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+
+  const getLoggedInAdminDbUserId = async (): Promise<string | null> => {
+    try {
+      if (typeof window === 'undefined') return null
+      const raw = window.localStorage.getItem('edc_admin_session')
+      if (!raw) return null
+      const parsed = JSON.parse(raw) as { email?: string }
+      const email = String(parsed?.email ?? '').trim().toLowerCase()
+      if (!email) return null
+
+      const { data, error } = await supabase
+        .from('edc_account_verifications')
+        .select('id')
+        .eq('email', email)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+
+      if (error) return null
+      return (data as any)?.id ?? null
+    } catch {
+      return null
+    }
+  }
+
+  const getWebhookUserId = async () => {
+    const {
+      data: { user },
+      error: userError,
+    } = await supabase.auth.getUser()
+    if (userError) throw userError
+    const dbUserId = await getLoggedInAdminDbUserId()
+    return dbUserId ?? user?.id ?? null
+  }
 
   const getDefaultForm = (): CustomerForm => ({
     customerType: 'IND',
@@ -101,9 +141,12 @@ export default function AdminCostumerPage() {
   useEffect(() => {
     let cancelled = false
     const load = async () => {
+      const user_id = await getWebhookUserId().catch(() => null)
+      if (!user_id) return
       const { data, error } = await supabase
         .from('edc_customer')
         .select('id, first_name, last_name, phone, mobile, email, drivers_license, rin, date_of_birth')
+        .eq('user_id', user_id)
         .order('created_at', { ascending: false })
         .limit(100)
       if (error) {
@@ -166,6 +209,7 @@ export default function AdminCostumerPage() {
   const handleOpenCreate = () => {
     setActiveTab('customer')
     setEditingId(null)
+    setIsCreate(true)
     setForm(getDefaultForm())
     setCredit(getDefaultCredit())
     setShowCreate(true)
@@ -174,9 +218,14 @@ export default function AdminCostumerPage() {
   const handleEdit = async (id: string) => {
     setActiveTab('customer')
     setEditingId(id)
+    setIsCreate(false)
+    setForm(getDefaultForm())
+    setCredit(getDefaultCredit())
     setShowCreate(true)
     try {
-      const { data, error } = await supabase.from('edc_customer').select('*').eq('id', id).single()
+      const user_id = await getWebhookUserId().catch(() => null)
+      if (!user_id) return
+      const { data, error } = await supabase.from('edc_customer').select('*').eq('id', id).eq('user_id', user_id).single()
       if (error || !data) return
 
       const r: any = data
@@ -234,50 +283,95 @@ export default function AdminCostumerPage() {
       const emp = toArray(r.employments) as any[] | null
       const inc = toArray(r.incomes) as any[] | null
 
-      setCredit((prev) => ({
-        ...prev,
-        salutation: r.salutation ?? prev.salutation,
-        gender: r.gender ?? prev.gender,
-        maritalStatus: r.marital_status ?? r.maritalStatus ?? prev.maritalStatus,
-        residenceOwnership: r.residence_ownership ?? r.residenceOwnership ?? prev.residenceOwnership,
-        marketValue: String(r.market_value ?? r.marketValue ?? prev.marketValue ?? '0'),
-        mortgageAmount: String(r.mortgage_amount ?? r.mortgageAmount ?? prev.mortgageAmount ?? '0'),
-        monthlyPayment: String(r.monthly_payment ?? r.monthlyPayment ?? prev.monthlyPayment ?? '0'),
-        bank: r.bank ?? prev.bank,
-        yearsAtPresentAddress: r.years_at_present_address ?? r.yearsAtPresentAddress ?? prev.yearsAtPresentAddress,
-        employments: emp
-          ? emp.map((e: any) => ({
-              employmentType: e.employment_type ?? e.employmentType ?? 'Full Time',
-              position: e.position ?? '',
-              occupation: e.occupation ?? '',
-              employerName: e.employer_name ?? e.employerName ?? '',
-              employerPhone: e.employer_phone ?? e.employerPhone ?? '',
-              yearsEmployed: e.years_employed ?? e.yearsEmployed ?? '',
-              streetAddress: e.street_address ?? e.streetAddress ?? '',
-              suiteApt: e.suite_apt ?? e.suiteApt ?? '',
-              city: e.city ?? '',
-              province: e.province ?? 'ON',
-              postalCode: e.postal_code ?? e.postalCode ?? '',
-              country: e.country ?? 'CA',
-            }))
-          : prev.employments,
-        incomes: inc
-          ? inc.map((i: any) => ({
-              incomeType: i.income_type ?? i.incomeType ?? 'Employment',
-              rateHr: String(i.rate_hr ?? i.rateHr ?? '0'),
-              hrsWeek: String(i.hrs_week ?? i.hrsWeek ?? '0'),
-              monthlyGross: String(i.monthly_gross ?? i.monthlyGross ?? '0'),
-              annualGross: String(i.annual_gross ?? i.annualGross ?? '0'),
-              incomeNotes: i.income_notes ?? i.incomeNotes ?? '',
-            }))
-          : prev.incomes,
-        declaredBankruptcy: Boolean(r.declared_bankruptcy ?? r.declaredBankruptcy ?? prev.declaredBankruptcy),
-        bankruptcyDuration: r.bankruptcy_duration ?? r.bankruptcyDuration ?? prev.bankruptcyDuration,
-        hasCollections: Boolean(r.has_collections ?? r.hasCollections ?? prev.hasCollections),
-        collectionNotes: r.collection_notes ?? r.collectionNotes ?? prev.collectionNotes,
-        financialInstitution: r.financial_institution ?? r.financialInstitution ?? prev.financialInstitution,
-        desiredMonthlyPayment: String(r.desired_monthly_payment ?? r.desiredMonthlyPayment ?? prev.desiredMonthlyPayment ?? '0'),
-      }))
+      const { data: creditData, error: creditError } = await supabase
+        .from('edc_creditapp')
+        .select('*')
+        .eq('customer_id', id)
+        .eq('user_id', user_id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+
+      if (!creditError && creditData) {
+        const c: any = creditData
+        const creditEmp = toArray(c.employments) as any[] | null
+        const creditInc = toArray(c.incomes) as any[] | null
+
+        setCredit((prev) => ({
+          ...prev,
+          salutation: c.salutation ?? prev.salutation,
+          gender: c.gender ?? prev.gender,
+          maritalStatus: c.marital_status ?? c.maritalStatus ?? prev.maritalStatus,
+          residenceOwnership: c.residence_ownership ?? c.residenceOwnership ?? prev.residenceOwnership,
+          marketValue: String(c.market_value ?? c.marketValue ?? prev.marketValue ?? '0'),
+          mortgageAmount: String(c.mortgage_amount ?? c.mortgageAmount ?? prev.mortgageAmount ?? '0'),
+          monthlyPayment: String(c.monthly_payment ?? c.monthlyPayment ?? prev.monthlyPayment ?? '0'),
+          bank: c.bank ?? prev.bank,
+          yearsAtPresentAddress: c.years_at_present_address ?? c.yearsAtPresentAddress ?? prev.yearsAtPresentAddress,
+          employments: creditEmp
+            ? creditEmp.map((e: any) => ({
+                employmentType: e.employment_type ?? e.employmentType ?? 'Full Time',
+                position: e.position ?? '',
+                occupation: e.occupation ?? '',
+                employerName: e.employer_name ?? e.employerName ?? '',
+                employerPhone: e.employer_phone ?? e.employerPhone ?? '',
+                yearsEmployed: e.years_employed ?? e.yearsEmployed ?? '',
+                streetAddress: e.street_address ?? e.streetAddress ?? '',
+                suiteApt: e.suite_apt ?? e.suiteApt ?? '',
+                city: e.city ?? '',
+                province: e.province ?? 'ON',
+                postalCode: e.postal_code ?? e.postalCode ?? '',
+                country: e.country ?? 'CA',
+              }))
+            : prev.employments,
+          incomes: creditInc
+            ? creditInc.map((i: any) => ({
+                incomeType: i.income_type ?? i.incomeType ?? 'Employment',
+                rateHr: String(i.rate_hr ?? i.rateHr ?? '0'),
+                hrsWeek: String(i.hrs_week ?? i.hrsWeek ?? '0'),
+                monthlyGross: String(i.monthly_gross ?? i.monthlyGross ?? '0'),
+                annualGross: String(i.annual_gross ?? i.annualGross ?? '0'),
+                incomeNotes: i.income_notes ?? i.incomeNotes ?? '',
+              }))
+            : prev.incomes,
+          declaredBankruptcy: Boolean(c.declared_bankruptcy ?? c.declaredBankruptcy ?? prev.declaredBankruptcy),
+          bankruptcyDuration: c.bankruptcy_duration ?? c.bankruptcyDuration ?? prev.bankruptcyDuration,
+          hasCollections: Boolean(c.has_collections ?? c.hasCollections ?? prev.hasCollections),
+          collectionNotes: c.collection_notes ?? c.collectionNotes ?? prev.collectionNotes,
+          financialInstitution: c.financial_institution ?? c.financialInstitution ?? prev.financialInstitution,
+          desiredMonthlyPayment: String(c.desired_monthly_payment ?? c.desiredMonthlyPayment ?? prev.desiredMonthlyPayment ?? '0'),
+        }))
+      } else {
+        setCredit((prev) => ({
+          ...prev,
+          employments: emp
+            ? emp.map((e: any) => ({
+                employmentType: e.employment_type ?? e.employmentType ?? 'Full Time',
+                position: e.position ?? '',
+                occupation: e.occupation ?? '',
+                employerName: e.employer_name ?? e.employerName ?? '',
+                employerPhone: e.employer_phone ?? e.employerPhone ?? '',
+                yearsEmployed: e.years_employed ?? e.yearsEmployed ?? '',
+                streetAddress: e.street_address ?? e.streetAddress ?? '',
+                suiteApt: e.suite_apt ?? e.suiteApt ?? '',
+                city: e.city ?? '',
+                province: e.province ?? 'ON',
+                postalCode: e.postal_code ?? e.postalCode ?? '',
+                country: e.country ?? 'CA',
+              }))
+            : prev.employments,
+          incomes: inc
+            ? inc.map((i: any) => ({
+                incomeType: i.income_type ?? i.incomeType ?? 'Employment',
+                rateHr: String(i.rate_hr ?? i.rateHr ?? '0'),
+                hrsWeek: String(i.hrs_week ?? i.hrsWeek ?? '0'),
+                monthlyGross: String(i.monthly_gross ?? i.monthlyGross ?? '0'),
+                annualGross: String(i.annual_gross ?? i.annualGross ?? '0'),
+                incomeNotes: i.income_notes ?? i.incomeNotes ?? '',
+              }))
+            : prev.incomes,
+        }))
+      }
     } catch {
       // ignore
     }
@@ -287,13 +381,23 @@ export default function AdminCostumerPage() {
     setShowCreate(false)
   }
 
+  const closeSuccessModal = () => {
+    setSaveSuccessOpen(false)
+    if (lastSavedTab === 'credit') {
+      setShowCreate(false)
+    }
+    setLastSavedTab(null)
+  }
+
   const handleDelete = async (id: string) => {
     if (deletingId) return
     const ok = confirm('Delete this customer?')
     if (!ok) return
     setDeletingId(id)
     try {
-      const { error } = await supabase.from('edc_customer').delete().eq('id', id)
+      const user_id = await getWebhookUserId().catch(() => null)
+      if (!user_id) return
+      const { error } = await supabase.from('edc_customer').delete().eq('id', id).eq('user_id', user_id)
       if (error) throw error
       setRows((prev) => prev.filter((r) => r.id !== id))
       setChecked((prev) => {
@@ -306,17 +410,24 @@ export default function AdminCostumerPage() {
         setEditingId(null)
       }
     } catch (err) {
-      alert(`Failed to delete: ${err instanceof Error ? err.message : String(err)}`)
+      setSaveErrorMessage(`Failed to delete: ${err instanceof Error ? err.message : String(err)}`)
+      setSaveErrorOpen(true)
     } finally {
       setDeletingId(null)
     }
   }
 
-  const handleSave = async () => {
-    if (saving) return
+  const saveCustomerInfo = async (): Promise<string | null> => {
+    if (saving) return null
+    setSaveSuccessOpen(false)
+    setSaveErrorOpen(false)
+    setSaveErrorMessage(null)
     setSaving(true)
     try {
-      const operation = editingId ? 'edit' : 'create'
+      const operation = isCreate ? 'create' : 'edit'
+
+      const user_id = await getWebhookUserId().catch(() => null)
+      if (!user_id) throw new Error('Missing user')
 
       const toNulls = (obj: Record<string, unknown>) => {
         const out: Record<string, unknown> = {}
@@ -329,6 +440,7 @@ export default function AdminCostumerPage() {
 
       const payload = {
         ...toNulls(form as unknown as Record<string, unknown>),
+        user_id,
         operation,
         customerId: editingId ?? null,
       }
@@ -369,6 +481,7 @@ export default function AdminCostumerPage() {
               .from('edc_customer')
               .select('id')
               .eq('drivers_license', form.driversLicense)
+              .eq('user_id', user_id)
               .order('created_at', { ascending: false })
               .limit(1)
             if (data && data[0]?.id) return data[0].id as string
@@ -379,6 +492,7 @@ export default function AdminCostumerPage() {
               .from('edc_customer')
               .select('id')
               .eq('email', form.email)
+              .eq('user_id', user_id)
               .order('created_at', { ascending: false })
               .limit(1)
             if (data && data[0]?.id) return data[0].id as string
@@ -388,6 +502,7 @@ export default function AdminCostumerPage() {
             let query = supabase
               .from('edc_customer')
               .select('id')
+              .eq('user_id', user_id)
               .order('created_at', { ascending: false })
               .limit(1)
             if (form.firstName) query = query.eq('first_name', form.firstName)
@@ -401,36 +516,128 @@ export default function AdminCostumerPage() {
         createdId = await tryFind()
       }
 
-      // Prepare and send the Credit App payload including the customerId if known
-      const creditToNulls = toNulls(credit as unknown as Record<string, unknown>)
-      const creditPayload = {
-        customerId: createdId ?? editingId ?? null,
-        ...creditToNulls,
-        operation,
-        // Extra snake_case fields expected by webhook schema
-        bankruptcy_duration: (credit as any).bankruptcyDuration ?? null,
-        collection_notes: (credit as any).collectionNotes ?? null,
-      }
-      const resCredit = await fetch('/api/proxy/creditApp', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(creditPayload),
-      })
-      const creditText = await resCredit.text().catch(() => '')
-      if (!resCredit.ok || creditText.trim() !== 'Done') {
-        throw new Error(creditText || `Credit HTTP ${resCredit.status}`)
-      }
+      if (createdId && !editingId) setEditingId(createdId)
 
-      alert('Customer information and credit app sent (Done).')
+      setSaveSuccessMessage('Customer information saved successfully')
+      setSaveSuccessOpen(true)
+      setLastSavedTab('customer')
+      return createdId ?? editingId ?? null
     } catch (err) {
-      alert(`Failed to send: ${err instanceof Error ? err.message : String(err)}`)
+      setSaveErrorMessage(err instanceof Error ? err.message : String(err))
+      setSaveErrorOpen(true)
+      return null
     } finally {
       setSaving(false)
     }
   }
 
+  const saveCreditApp = async (): Promise<void> => {
+    if (saving) return
+    setSaveSuccessOpen(false)
+    setSaveErrorOpen(false)
+    setSaveErrorMessage(null)
+    setSaving(true)
+    try {
+      const operation = isCreate ? 'create' : 'edit'
+      const user_id = await getWebhookUserId().catch(() => null)
+      if (!user_id) throw new Error('Missing user')
+
+      const customerId = editingId
+      if (!customerId) {
+        throw new Error('Please save Customer Information first')
+      }
+
+      const toNulls = (obj: Record<string, unknown>) => {
+        const out: Record<string, unknown> = {}
+        for (const [k, v] of Object.entries(obj)) {
+          if (v === '') out[k] = null
+          else out[k] = v
+        }
+        return out
+      }
+
+      const creditToNulls = toNulls(credit as unknown as Record<string, unknown>)
+      const creditPayload = {
+        user_id,
+        customerId,
+        ...creditToNulls,
+        operation,
+        bankruptcy_duration: (credit as any).bankruptcyDuration ?? null,
+        collection_notes: (credit as any).collectionNotes ?? null,
+      }
+
+      const resCredit = await fetch('/api/proxy/creditApp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(creditPayload),
+      })
+
+      const creditText = await resCredit.text().catch(() => '')
+      if (!resCredit.ok) {
+        throw new Error(creditText || `Credit HTTP ${resCredit.status}`)
+      }
+
+      setSaveSuccessMessage('Credit app saved successfully')
+      setSaveSuccessOpen(true)
+      setLastSavedTab('credit')
+    } catch (err) {
+      setSaveErrorMessage(err instanceof Error ? err.message : String(err))
+      setSaveErrorOpen(true)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleSave = async () => {
+    if (activeTab === 'credit') {
+      await saveCreditApp()
+      return
+    }
+    await saveCustomerInfo()
+  }
+
   return (
     <div className="w-full">
+      {saveSuccessOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center" role="dialog" aria-modal="true">
+          <div className="absolute inset-0 bg-black/50" onMouseDown={closeSuccessModal} />
+          <div className="relative w-[360px] bg-white shadow-lg">
+            <div className="h-11 px-4 border-b border-gray-200 flex items-center justify-between">
+              <div className="text-sm font-semibold text-gray-800">Success</div>
+              <button type="button" className="h-8 w-8 flex items-center justify-center" onClick={closeSuccessModal}>
+                <span className="text-xl leading-none text-gray-500">×</span>
+              </button>
+            </div>
+            <div className="p-4 text-xs text-gray-700">{saveSuccessMessage}</div>
+            <div className="h-12 px-4 border-t border-gray-200 flex items-center justify-end">
+              <button type="button" className="h-8 px-4 bg-[#118df0] text-white text-xs font-semibold" onClick={closeSuccessModal}>
+                OK
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {saveErrorOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center" role="dialog" aria-modal="true">
+          <div className="absolute inset-0 bg-black/50" onMouseDown={() => setSaveErrorOpen(false)} />
+          <div className="relative w-[360px] bg-white shadow-lg">
+            <div className="h-11 px-4 border-b border-gray-200 flex items-center justify-between">
+              <div className="text-sm font-semibold text-gray-800">Error</div>
+              <button type="button" className="h-8 w-8 flex items-center justify-center" onClick={() => setSaveErrorOpen(false)}>
+                <span className="text-xl leading-none text-gray-500">×</span>
+              </button>
+            </div>
+            <div className="p-4 text-xs text-gray-700">{saveErrorMessage || 'Something went wrong'}</div>
+            <div className="h-12 px-4 border-t border-gray-200 flex items-center justify-end">
+              <button type="button" className="h-8 px-4 bg-gray-600 text-white text-xs font-semibold" onClick={() => setSaveErrorOpen(false)}>
+                OK
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       {showCreate ? (
         <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
           <div className="bg-white rounded-xl shadow overflow-hidden flex flex-col">
@@ -478,7 +685,7 @@ export default function AdminCostumerPage() {
               {activeTab === 'customer' ? (
                 <CustomerInformationTab form={form} setForm={setForm} />
               ) : (
-                <CreditAppTab credit={credit} setCredit={setCredit} />
+                <CreditAppTab credit={credit} setCredit={setCredit} isCreate={isCreate} />
               )}
             </div>
 

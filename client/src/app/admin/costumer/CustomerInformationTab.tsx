@@ -1,6 +1,7 @@
+
 'use client'
 
-import { type Dispatch, type SetStateAction, useEffect, useRef, useState } from 'react'
+import { type Dispatch, type SetStateAction, useEffect, useRef } from 'react'
 
 import type { CustomerForm } from './types'
 import { CustomerDateIconField, CustomerIconField, PillIdToggle, PillModeToggle } from './ui'
@@ -16,7 +17,6 @@ export default function CustomerInformationTab({
 }) {
   const editorRef = useRef<HTMLDivElement | null>(null)
   const colorRef = useRef<HTMLInputElement | null>(null)
-  const [postState, setPostState] = useState<'idle' | 'posting' | 'posted'>('idle')
 
   useEffect(() => {
     const el = editorRef.current
@@ -48,23 +48,6 @@ export default function CustomerInformationTab({
     })
 
     setForm((p: CustomerForm) => ({ ...p, notes: el.innerHTML }))
-  }
-
-  const handlePost = async () => {
-    if (postState === 'posting') return
-    setPostState('posting')
-    try {
-      const el = editorRef.current
-      const html = el?.innerHTML ?? form.notes ?? ''
-      const text = el?.innerText ?? ''
-      if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(text || html)
-      }
-      setPostState('posted')
-      window.setTimeout(() => setPostState('idle'), 1200)
-    } catch {
-      setPostState('idle')
-    }
   }
 
   return (
@@ -511,15 +494,6 @@ export default function CustomerInformationTab({
             data-placeholder="enter your note here..."
           />
 
-          <div className="px-4 py-3">
-            <button
-              type="button"
-              onClick={handlePost}
-              className="h-8 px-3 rounded bg-[#118df0] text-white text-xs font-semibold hover:bg-[#0d6ebd]"
-            >
-              {postState === 'posted' ? 'Posted' : 'Post'}
-            </button>
-          </div>
         </div>
       </div>
     </div>

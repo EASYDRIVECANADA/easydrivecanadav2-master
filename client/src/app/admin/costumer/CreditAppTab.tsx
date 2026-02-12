@@ -8,9 +8,11 @@ import { IconField, MoneyField, Section, ToggleYesNo } from './ui'
 export default function CreditAppTab({
   credit,
   setCredit,
+  isCreate,
 }: {
   credit: CreditForm
   setCredit: Dispatch<SetStateAction<CreditForm>>
+  isCreate?: boolean
 }) {
   return (
     <div className="px-6 py-5">
@@ -136,217 +138,221 @@ export default function CreditAppTab({
           </button>
         </div>
 
-        {credit.employments.map((emp: CreditEmployment, idx: number) => (
-          <div key={idx} className="border border-gray-300 rounded-lg overflow-hidden mb-5">
-            <div className="bg-gray-100 px-4 py-3 flex items-center justify-between">
-              <div className="text-sm font-semibold text-gray-800">Primary Employer</div>
-              <button
-                type="button"
-                onClick={() => setCredit((p: CreditForm) => ({ ...p, employments: p.employments.filter((_: CreditEmployment, i: number) => i !== idx) }))}
-                className="w-8 h-8 rounded bg-red-600 text-white flex items-center justify-center hover:bg-red-700"
-                aria-label="Delete"
-                title="Delete"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3m-4 0h14"
-                  />
-                </svg>
-              </button>
-            </div>
+        {credit.employments.length === 0 && isCreate ? (
+          <div className="text-sm text-gray-500 italic">No employment records added yet. Click + to add one.</div>
+        ) : (
+          credit.employments.map((emp: CreditEmployment, idx: number) => (
+            <div key={idx} className="border border-gray-300 rounded-lg overflow-hidden mb-5">
+              <div className="bg-gray-100 px-4 py-3 flex items-center justify-between">
+                <div className="text-sm font-semibold text-gray-800">Primary Employer</div>
+                <button
+                  type="button"
+                  onClick={() => setCredit((p: CreditForm) => ({ ...p, employments: p.employments.filter((_: CreditEmployment, i: number) => i !== idx) }))}
+                  className="w-8 h-8 rounded bg-red-600 text-white flex items-center justify-center hover:bg-red-700"
+                  aria-label="Delete"
+                  title="Delete"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3m-4 0h14"
+                    />
+                  </svg>
+                </button>
+              </div>
 
-            <div className="p-4">
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-                <div>
-                  <div className="text-xs font-semibold text-gray-600 mb-1">Employment Type</div>
-                  <select
-                    value={emp.employmentType}
-                    onChange={(e) =>
-                      setCredit((p: CreditForm) => ({
-                        ...p,
-                        employments: p.employments.map((it: CreditEmployment, i: number) => (i === idx ? { ...it, employmentType: e.target.value } : it)),
-                      }))
-                    }
-                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
-                  >
-                    <option value="Full Time">Full Time</option>
-                    <option value="Part Time">Part Time</option>
-                    <option value="Self Employed">Self Employed</option>
-                  </select>
-                </div>
+              <div className="p-4">
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                  <div>
+                    <div className="text-xs font-semibold text-gray-600 mb-1">Employment Type</div>
+                    <select
+                      value={emp.employmentType}
+                      onChange={(e) =>
+                        setCredit((p: CreditForm) => ({
+                          ...p,
+                          employments: p.employments.map((it: CreditEmployment, i: number) => (i === idx ? { ...it, employmentType: e.target.value } : it)),
+                        }))
+                      }
+                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
+                    >
+                      <option value="Full Time">Full Time</option>
+                      <option value="Part Time">Part Time</option>
+                      <option value="Self Employed">Self Employed</option>
+                    </select>
+                  </div>
 
-                <div>
-                  <div className="text-xs font-semibold text-gray-600 mb-1">Position</div>
-                  <select
-                    value={emp.position}
-                    onChange={(e) =>
-                      setCredit((p: CreditForm) => ({
-                        ...p,
-                        employments: p.employments.map((it: CreditEmployment, i: number) => (i === idx ? { ...it, position: e.target.value } : it)),
-                      }))
-                    }
-                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
-                  >
-                    <option value="">Position</option>
-                    <option value="Manager">Manager</option>
-                    <option value="Staff">Staff</option>
-                    <option value="Owner">Owner</option>
-                  </select>
-                </div>
+                  <div>
+                    <div className="text-xs font-semibold text-gray-600 mb-1">Position</div>
+                    <select
+                      value={emp.position}
+                      onChange={(e) =>
+                        setCredit((p: CreditForm) => ({
+                          ...p,
+                          employments: p.employments.map((it: CreditEmployment, i: number) => (i === idx ? { ...it, position: e.target.value } : it)),
+                        }))
+                      }
+                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
+                    >
+                      <option value="">Position</option>
+                      <option value="Manager">Manager</option>
+                      <option value="Staff">Staff</option>
+                      <option value="Owner">Owner</option>
+                    </select>
+                  </div>
 
-                <IconField
-                  label="Occupation"
-                  value={emp.occupation}
-                  onChange={(v) =>
-                    setCredit((p: CreditForm) => ({
-                      ...p,
-                      employments: p.employments.map((it: CreditEmployment, i: number) => (i === idx ? { ...it, occupation: v } : it)),
-                    }))
-                  }
-                  icon="user"
-                  placeholder="ex Office Administrator"
-                />
-
-                <IconField
-                  label="Employer Name"
-                  value={emp.employerName}
-                  onChange={(v) =>
-                    setCredit((p: CreditForm) => ({
-                      ...p,
-                      employments: p.employments.map((it: CreditEmployment, i: number) => (i === idx ? { ...it, employerName: v } : it)),
-                    }))
-                  }
-                  icon="calendar"
-                  placeholder="employer name"
-                />
-
-                <IconField
-                  label="Employer Phone"
-                  value={emp.employerPhone}
-                  onChange={(v) =>
-                    setCredit((p: CreditForm) => ({
-                      ...p,
-                      employments: p.employments.map((it: CreditEmployment, i: number) => (i === idx ? { ...it, employerPhone: v } : it)),
-                    }))
-                  }
-                  icon="phone"
-                  placeholder="employer phone"
-                />
-
-                <IconField
-                  label="Years Employed"
-                  value={emp.yearsEmployed}
-                  onChange={(v) =>
-                    setCredit((p: CreditForm) => ({
-                      ...p,
-                      employments: p.employments.map((it: CreditEmployment, i: number) => (i === idx ? { ...it, yearsEmployed: v } : it)),
-                    }))
-                  }
-                  icon="clock"
-                  placeholder="years employed"
-                />
-
-                <div className="lg:col-span-3">
-                  <div className="text-xs font-semibold text-gray-600 mb-1">Employer Address</div>
-                </div>
-
-                <div className="lg:col-span-2">
                   <IconField
-                    label="Street Address"
-                    value={emp.streetAddress}
+                    label="Occupation"
+                    value={emp.occupation}
                     onChange={(v) =>
                       setCredit((p: CreditForm) => ({
                         ...p,
-                        employments: p.employments.map((it: CreditEmployment, i: number) => (i === idx ? { ...it, streetAddress: v } : it)),
+                        employments: p.employments.map((it: CreditEmployment, i: number) => (i === idx ? { ...it, occupation: v } : it)),
+                      }))
+                    }
+                    icon="user"
+                    placeholder="ex Office Administrator"
+                  />
+
+                  <IconField
+                    label="Employer Name"
+                    value={emp.employerName}
+                    onChange={(v) =>
+                      setCredit((p: CreditForm) => ({
+                        ...p,
+                        employments: p.employments.map((it: CreditEmployment, i: number) => (i === idx ? { ...it, employerName: v } : it)),
+                      }))
+                    }
+                    icon="calendar"
+                    placeholder="employer name"
+                  />
+
+                  <IconField
+                    label="Employer Phone"
+                    value={emp.employerPhone}
+                    onChange={(v) =>
+                      setCredit((p: CreditForm) => ({
+                        ...p,
+                        employments: p.employments.map((it: CreditEmployment, i: number) => (i === idx ? { ...it, employerPhone: v } : it)),
+                      }))
+                    }
+                    icon="phone"
+                    placeholder="employer phone"
+                  />
+
+                  <IconField
+                    label="Years Employed"
+                    value={emp.yearsEmployed}
+                    onChange={(v) =>
+                      setCredit((p: CreditForm) => ({
+                        ...p,
+                        employments: p.employments.map((it: CreditEmployment, i: number) => (i === idx ? { ...it, yearsEmployed: v } : it)),
+                      }))
+                    }
+                    icon="clock"
+                    placeholder="years employed"
+                  />
+
+                  <div className="lg:col-span-3">
+                    <div className="text-xs font-semibold text-gray-600 mb-1">Employer Address</div>
+                  </div>
+
+                  <div className="lg:col-span-2">
+                    <IconField
+                      label="Street Address"
+                      value={emp.streetAddress}
+                      onChange={(v) =>
+                        setCredit((p: CreditForm) => ({
+                          ...p,
+                          employments: p.employments.map((it: CreditEmployment, i: number) => (i === idx ? { ...it, streetAddress: v } : it)),
+                        }))
+                      }
+                      icon="pin"
+                      placeholder="Enter a location"
+                    />
+                  </div>
+
+                  <IconField
+                    label="Suite/Apt"
+                    value={emp.suiteApt}
+                    onChange={(v) =>
+                      setCredit((p: CreditForm) => ({
+                        ...p,
+                        employments: p.employments.map((it: CreditEmployment, i: number) => (i === idx ? { ...it, suiteApt: v } : it)),
                       }))
                     }
                     icon="pin"
-                    placeholder="Enter a location"
+                    placeholder="apt/suite #"
                   />
-                </div>
 
-                <IconField
-                  label="Suite/Apt"
-                  value={emp.suiteApt}
-                  onChange={(v) =>
-                    setCredit((p: CreditForm) => ({
-                      ...p,
-                      employments: p.employments.map((it: CreditEmployment, i: number) => (i === idx ? { ...it, suiteApt: v } : it)),
-                    }))
-                  }
-                  icon="pin"
-                  placeholder="apt/suite #"
-                />
-
-                <IconField
-                  label="City"
-                  value={emp.city}
-                  onChange={(v) =>
-                    setCredit((p: CreditForm) => ({
-                      ...p,
-                      employments: p.employments.map((it: CreditEmployment, i: number) => (i === idx ? { ...it, city: v } : it)),
-                    }))
-                  }
-                  icon="pin"
-                  placeholder="city"
-                />
-
-                <div>
-                  <div className="text-xs font-semibold text-gray-600 mb-1">Province</div>
-                  <select
-                    value={emp.province}
-                    onChange={(e) =>
+                  <IconField
+                    label="City"
+                    value={emp.city}
+                    onChange={(v) =>
                       setCredit((p: CreditForm) => ({
                         ...p,
-                        employments: p.employments.map((it: CreditEmployment, i: number) => (i === idx ? { ...it, province: e.target.value } : it)),
+                        employments: p.employments.map((it: CreditEmployment, i: number) => (i === idx ? { ...it, city: v } : it)),
                       }))
                     }
-                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
-                  >
-                    <option value="ON">ON</option>
-                    <option value="BC">BC</option>
-                    <option value="AB">AB</option>
-                    <option value="MB">MB</option>
-                    <option value="QC">QC</option>
-                  </select>
-                </div>
+                    icon="pin"
+                    placeholder="city"
+                  />
 
-                <IconField
-                  label="Postal Code"
-                  value={emp.postalCode}
-                  onChange={(v) =>
-                    setCredit((p: CreditForm) => ({
-                      ...p,
-                      employments: p.employments.map((it: CreditEmployment, i: number) => (i === idx ? { ...it, postalCode: v } : it)),
-                    }))
-                  }
-                  icon="pin"
-                  placeholder="Postal Code"
-                />
+                  <div>
+                    <div className="text-xs font-semibold text-gray-600 mb-1">Province</div>
+                    <select
+                      value={emp.province}
+                      onChange={(e) =>
+                        setCredit((p: CreditForm) => ({
+                          ...p,
+                          employments: p.employments.map((it: CreditEmployment, i: number) => (i === idx ? { ...it, province: e.target.value } : it)),
+                        }))
+                      }
+                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
+                    >
+                      <option value="ON">ON</option>
+                      <option value="BC">BC</option>
+                      <option value="AB">AB</option>
+                      <option value="MB">MB</option>
+                      <option value="QC">QC</option>
+                    </select>
+                  </div>
 
-                <div>
-                  <div className="text-xs font-semibold text-gray-600 mb-1">Country</div>
-                  <select
-                    value={emp.country}
-                    onChange={(e) =>
+                  <IconField
+                    label="Postal Code"
+                    value={emp.postalCode}
+                    onChange={(v) =>
                       setCredit((p: CreditForm) => ({
                         ...p,
-                        employments: p.employments.map((it: CreditEmployment, i: number) => (i === idx ? { ...it, country: e.target.value } : it)),
+                        employments: p.employments.map((it: CreditEmployment, i: number) => (i === idx ? { ...it, postalCode: v } : it)),
                       }))
                     }
-                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
-                  >
-                    <option value="CA">CA</option>
-                    <option value="US">US</option>
-                  </select>
+                    icon="pin"
+                    placeholder="Postal Code"
+                  />
+
+                  <div>
+                    <div className="text-xs font-semibold text-gray-600 mb-1">Country</div>
+                    <select
+                      value={emp.country}
+                      onChange={(e) =>
+                        setCredit((p: CreditForm) => ({
+                          ...p,
+                          employments: p.employments.map((it: CreditEmployment, i: number) => (i === idx ? { ...it, country: e.target.value } : it)),
+                        }))
+                      }
+                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
+                    >
+                      <option value="CA">CA</option>
+                      <option value="US">US</option>
+                    </select>
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
-        ))}
+          ))
+        )} 
       </div>
 
       <div className="mt-7">
@@ -380,113 +386,117 @@ export default function CreditAppTab({
           </button>
         </div>
 
-        {credit.incomes.map((inc: CreditIncome, idx: number) => (
-          <div key={idx} className="border border-gray-300 rounded-lg overflow-hidden mb-5">
-            <div className="bg-gray-100 px-4 py-3 flex items-center justify-between">
-              <div className="text-sm font-semibold text-gray-800">Primary Income</div>
-              <button
-                type="button"
-                onClick={() => setCredit((p: CreditForm) => ({ ...p, incomes: p.incomes.filter((_: CreditIncome, i: number) => i !== idx) }))}
-                className="w-8 h-8 rounded bg-red-600 text-white flex items-center justify-center hover:bg-red-700"
-                aria-label="Delete"
-                title="Delete"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3m-4 0h14"
-                  />
-                </svg>
-              </button>
-            </div>
+        {credit.incomes.length === 0 && isCreate ? (
+          <div className="text-sm text-gray-500 italic">No income records added yet. Click + to add one.</div>
+        ) : (
+          credit.incomes.map((inc: CreditIncome, idx: number) => (
+            <div key={idx} className="border border-gray-300 rounded-lg overflow-hidden mb-5">
+              <div className="bg-gray-100 px-4 py-3 flex items-center justify-between">
+                <div className="text-sm font-semibold text-gray-800">Primary Income</div>
+                <button
+                  type="button"
+                  onClick={() => setCredit((p: CreditForm) => ({ ...p, incomes: p.incomes.filter((_: CreditIncome, i: number) => i !== idx) }))}
+                  className="w-8 h-8 rounded bg-red-600 text-white flex items-center justify-center hover:bg-red-700"
+                  aria-label="Delete"
+                  title="Delete"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3m-4 0h14"
+                    />
+                  </svg>
+                </button>
+              </div>
 
-            <div className="p-4">
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-                <div>
-                  <div className="text-xs font-semibold text-gray-600 mb-1">Income Type</div>
-                  <select
-                    value={inc.incomeType}
-                    onChange={(e) =>
+              <div className="p-4">
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                  <div>
+                    <div className="text-xs font-semibold text-gray-600 mb-1">Income Type</div>
+                    <select
+                      value={inc.incomeType}
+                      onChange={(e) =>
+                        setCredit((p: CreditForm) => ({
+                          ...p,
+                          incomes: p.incomes.map((it: CreditIncome, i: number) => (i === idx ? { ...it, incomeType: e.target.value } : it)),
+                        }))
+                      }
+                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
+                    >
+                      <option value="Employment">Employment</option>
+                      <option value="Self Employment">Self Employment</option>
+                      <option value="Other">Other</option>
+                    </select>
+                  </div>
+
+                  <MoneyField
+                    label="Rate/Hr"
+                    value={inc.rateHr}
+                    onChange={(v) =>
                       setCredit((p: CreditForm) => ({
                         ...p,
-                        incomes: p.incomes.map((it: CreditIncome, i: number) => (i === idx ? { ...it, incomeType: e.target.value } : it)),
+                        incomes: p.incomes.map((it: CreditIncome, i: number) => (i === idx ? { ...it, rateHr: v } : it)),
                       }))
                     }
-                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
-                  >
-                    <option value="Employment">Employment</option>
-                    <option value="Self Employment">Self Employment</option>
-                    <option value="Other">Other</option>
-                  </select>
-                </div>
-
-                <MoneyField
-                  label="Rate/Hr"
-                  value={inc.rateHr}
-                  onChange={(v) =>
-                    setCredit((p: CreditForm) => ({
-                      ...p,
-                      incomes: p.incomes.map((it: CreditIncome, i: number) => (i === idx ? { ...it, rateHr: v } : it)),
-                    }))
-                  }
-                />
-
-                <IconField
-                  label="Hrs/Week"
-                  value={inc.hrsWeek}
-                  onChange={(v) =>
-                    setCredit((p: CreditForm) => ({
-                      ...p,
-                      incomes: p.incomes.map((it: CreditIncome, i: number) => (i === idx ? { ...it, hrsWeek: v } : it)),
-                    }))
-                  }
-                  icon="clock"
-                  placeholder="0"
-                />
-
-                <MoneyField
-                  label="Monthly Gross"
-                  value={inc.monthlyGross}
-                  onChange={(v) =>
-                    setCredit((p: CreditForm) => ({
-                      ...p,
-                      incomes: p.incomes.map((it: CreditIncome, i: number) => (i === idx ? { ...it, monthlyGross: v } : it)),
-                    }))
-                  }
-                />
-
-                <MoneyField
-                  label="Annual Gross"
-                  value={inc.annualGross}
-                  onChange={(v) =>
-                    setCredit((p: CreditForm) => ({
-                      ...p,
-                      incomes: p.incomes.map((it: CreditIncome, i: number) => (i === idx ? { ...it, annualGross: v } : it)),
-                    }))
-                  }
-                />
-
-                <div className="lg:col-span-3">
-                  <div className="text-xs font-semibold text-gray-600 mb-1">Income Notes</div>
-                  <textarea
-                    rows={4}
-                    value={inc.incomeNotes}
-                    onChange={(e) =>
-                      setCredit((p) => ({
-                        ...p,
-                        incomes: p.incomes.map((it, i) => (i === idx ? { ...it, incomeNotes: e.target.value } : it)),
-                      }))
-                    }
-                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
-                    placeholder="income notes"
                   />
+
+                  <IconField
+                    label="Hrs/Week"
+                    value={inc.hrsWeek}
+                    onChange={(v) =>
+                      setCredit((p: CreditForm) => ({
+                        ...p,
+                        incomes: p.incomes.map((it: CreditIncome, i: number) => (i === idx ? { ...it, hrsWeek: v } : it)),
+                      }))
+                    }
+                    icon="clock"
+                    placeholder="0"
+                  />
+
+                  <MoneyField
+                    label="Monthly Gross"
+                    value={inc.monthlyGross}
+                    onChange={(v) =>
+                      setCredit((p: CreditForm) => ({
+                        ...p,
+                        incomes: p.incomes.map((it: CreditIncome, i: number) => (i === idx ? { ...it, monthlyGross: v } : it)),
+                      }))
+                    }
+                  />
+
+                  <MoneyField
+                    label="Annual Gross"
+                    value={inc.annualGross}
+                    onChange={(v) =>
+                      setCredit((p: CreditForm) => ({
+                        ...p,
+                        incomes: p.incomes.map((it: CreditIncome, i: number) => (i === idx ? { ...it, annualGross: v } : it)),
+                      }))
+                    }
+                  />
+
+                  <div className="lg:col-span-3">
+                    <div className="text-xs font-semibold text-gray-600 mb-1">Income Notes</div>
+                    <textarea
+                      rows={4}
+                      value={inc.incomeNotes}
+                      onChange={(e) =>
+                        setCredit((p) => ({
+                          ...p,
+                          incomes: p.incomes.map((it, i) => (i === idx ? { ...it, incomeNotes: e.target.value } : it)),
+                        }))
+                      }
+                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
+                      placeholder="income notes"
+                    />
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
-        ))}
+          ))
+        )}
       </div>
 
       <Section title="Other Details">
