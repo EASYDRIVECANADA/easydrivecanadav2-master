@@ -292,14 +292,26 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
                     >
                       My Profile
                     </Link>
-                    <Link
-                      href="/admin/settings/dealership"
-                      role="menuitem"
-                      className="block px-4 py-3 text-sm text-white/90 hover:bg-white/10"
-                      onClick={() => setAccountMenuOpen(false)}
-                    >
-                      Settings
-                    </Link>
+                    {isVerified ? (
+                      <Link
+                        href="/admin/settings/dealership"
+                        role="menuitem"
+                        className="block px-4 py-3 text-sm text-white/90 hover:bg-white/10"
+                        onClick={() => setAccountMenuOpen(false)}
+                      >
+                        Settings
+                      </Link>
+                    ) : (
+                      <button
+                        type="button"
+                        role="menuitem"
+                        className="w-full text-left px-4 py-3 text-sm text-white/40 cursor-not-allowed"
+                        disabled
+                        onClick={() => setAccountMenuOpen(false)}
+                      >
+                        Settings
+                      </button>
+                    )}
                     <button
                       type="button"
                       role="menuitem"

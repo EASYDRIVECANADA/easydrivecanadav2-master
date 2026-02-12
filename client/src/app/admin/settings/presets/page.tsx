@@ -2,6 +2,9 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
+import Link from 'next/link'
+
+const PRESETS_WEBHOOK_URL = 'https://primary-production-6722.up.railway.app/webhook/presets'
 
 type PresetCategory =
   | 'Fees'
@@ -18,6 +21,14 @@ type PresetRow = {
   name: string
   description?: string
   amount?: string
+  fieldType?: string
+  disclosure?: string
+  favourite?: string
+  groupName?: string
+  duration?: string
+  distance?: string
+  deductible?: string
+  price?: string
 }
 
 type FeeRow = {
@@ -50,6 +61,58 @@ type TaxRow = {
   default_tax_rate: boolean | null
   default_to_sales: string | null
   default_to_purchases_or_costs: string | null
+}
+
+type WarrantyRow = {
+  id: string
+  name: string | null
+  description: string | null
+  deductible: string | null
+  duration: string | null
+  distance: string | null
+  price: string | null
+  cost: string | null
+  dealer_warranty: boolean | null
+  default_tax_rate: string | null
+}
+
+type InsuranceRow = {
+  id: string
+  user_id: string | null
+  name: string | null
+  description: string | null
+  deductible: string | null
+  duration: string | null
+  price: string | null
+  cost: string | null
+  type: string | null
+  default_tax_rate: string | null
+}
+
+type LeadPropertyRow = {
+  id: string
+  user_id: string | null
+  name: string | null
+  description: string | null
+  field_type: string | null
+}
+
+type DisclosureRow = {
+  id: string
+  user_id: string | null
+  name: string | null
+  disclosure: string | null
+}
+
+type InventoryCostRow = {
+  id: string
+  user_id: string | null
+  name: string | null
+  group_name: string | null
+  vendor: string | null
+  amount: string | null
+  discount: string | null
+  default_tax_rate: string | null
 }
 
 const categories: PresetCategory[] = [
@@ -164,9 +227,10 @@ function ModalShell({
 }
 
 export default function SettingsPresetsPage() {
+  const [isVerified, setIsVerified] = useState(false)
   const [activeCategory, setActiveCategory] = useState<PresetCategory>('Fees')
   const [search, setSearch] = useState('')
-  const [pageSize, setPageSize] = useState(5)
+  const [pageSize, setPageSize] = useState(100)
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
@@ -195,6 +259,36 @@ export default function SettingsPresetsPage() {
   const [deleteTaxConfirmOpen, setDeleteTaxConfirmOpen] = useState(false)
   const [taxToDelete, setTaxToDelete] = useState<TaxRow | null>(null)
 
+  const [editingWarrantyId, setEditingWarrantyId] = useState<string | null>(null)
+  const [warrantyRows, setWarrantyRows] = useState<WarrantyRow[]>([])
+  const [loadingWarranties, setLoadingWarranties] = useState(false)
+  const [deleteWarrantyConfirmOpen, setDeleteWarrantyConfirmOpen] = useState(false)
+  const [warrantyToDelete, setWarrantyToDelete] = useState<WarrantyRow | null>(null)
+
+  const [editingInsuranceId, setEditingInsuranceId] = useState<string | null>(null)
+  const [insuranceRows, setInsuranceRows] = useState<InsuranceRow[]>([])
+  const [loadingInsurances, setLoadingInsurances] = useState(false)
+  const [deleteInsuranceConfirmOpen, setDeleteInsuranceConfirmOpen] = useState(false)
+  const [insuranceToDelete, setInsuranceToDelete] = useState<InsuranceRow | null>(null)
+
+  const [editingLeadPropertyId, setEditingLeadPropertyId] = useState<string | null>(null)
+  const [leadPropertyRows, setLeadPropertyRows] = useState<LeadPropertyRow[]>([])
+  const [loadingLeadProperties, setLoadingLeadProperties] = useState(false)
+  const [deleteLeadPropertyConfirmOpen, setDeleteLeadPropertyConfirmOpen] = useState(false)
+  const [leadPropertyToDelete, setLeadPropertyToDelete] = useState<LeadPropertyRow | null>(null)
+
+  const [editingDisclosureId, setEditingDisclosureId] = useState<string | null>(null)
+  const [disclosureRows, setDisclosureRows] = useState<DisclosureRow[]>([])
+  const [loadingDisclosures, setLoadingDisclosures] = useState(false)
+  const [deleteDisclosureConfirmOpen, setDeleteDisclosureConfirmOpen] = useState(false)
+  const [disclosureToDelete, setDisclosureToDelete] = useState<DisclosureRow | null>(null)
+
+  const [editingInventoryCostId, setEditingInventoryCostId] = useState<string | null>(null)
+  const [inventoryCostRows, setInventoryCostRows] = useState<InventoryCostRow[]>([])
+  const [loadingInventoryCosts, setLoadingInventoryCosts] = useState(false)
+  const [deleteInventoryCostConfirmOpen, setDeleteInventoryCostConfirmOpen] = useState(false)
+  const [inventoryCostToDelete, setInventoryCostToDelete] = useState<InventoryCostRow | null>(null)
+
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
   const [amount, setAmount] = useState('')
@@ -217,10 +311,43 @@ export default function SettingsPresetsPage() {
   const [dealerWarranty, setDealerWarranty] = useState(false)
   const [disclosureBody, setDisclosureBody] = useState('')
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+
+    const read = () => {
+      try {
+        setIsVerified(window.localStorage.getItem('edc_account_verified') === 'true')
+      } catch {
+        setIsVerified(false)
+      }
+    }
+
+    read()
+
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === 'edc_account_verified') read()
+    }
+    const onAdminSessionChanged = () => {
+      read()
+    }
+
+    window.addEventListener('storage', onStorage)
+    window.addEventListener('edc_admin_session_changed', onAdminSessionChanged)
+    return () => {
+      window.removeEventListener('storage', onStorage)
+      window.removeEventListener('edc_admin_session_changed', onAdminSessionChanged)
+    }
+  }, [])
+
   const openModal = () => {
     setEditingFeeId(null)
     setEditingTaxId(null)
     setEditingAccessoryId(null)
+    setEditingWarrantyId(null)
+    setEditingInsuranceId(null)
+    setEditingLeadPropertyId(null)
+    setEditingDisclosureId(null)
+    setEditingInventoryCostId(null)
     setName('')
     setDescription('')
     setAmount('')
@@ -262,6 +389,123 @@ export default function SettingsPresetsPage() {
     return s === 'yes' || s === 'true' || s === '1'
   }
 
+  const getLoggedInAdminDbUserId = async (): Promise<string | null> => {
+    try {
+      if (typeof window === 'undefined') return null
+      const raw = window.localStorage.getItem('edc_admin_session')
+      if (!raw) return null
+      const parsed = JSON.parse(raw) as { email?: string }
+      const email = String(parsed?.email ?? '').trim().toLowerCase()
+      if (!email) return null
+
+      const { data, error } = await supabase
+        .from('edc_account_verifications')
+        .select('id')
+        .eq('email', email)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+
+      if (error) return null
+      return (data as any)?.id ?? null
+    } catch {
+      return null
+    }
+  }
+
+  const fetchLeadProperties = async () => {
+    setLoadingLeadProperties(true)
+    try {
+      const { data, error } = await supabase
+        .from('presets_leadproperties')
+        .select('id, user_id, name, description, field_type')
+        .order('name', { ascending: true })
+
+      if (error) throw error
+      setLeadPropertyRows(((data as any) || []) as LeadPropertyRow[])
+    } catch {
+      setLeadPropertyRows([])
+    } finally {
+      setLoadingLeadProperties(false)
+    }
+  }
+
+  const fetchDisclosures = async () => {
+    setLoadingDisclosures(true)
+    try {
+      const { data, error } = await supabase
+        .from('presets_disclosures')
+        .select('id, user_id, name, disclosure')
+        .order('name', { ascending: true })
+
+      if (error) throw error
+      setDisclosureRows(((data as any) || []) as DisclosureRow[])
+    } catch {
+      setDisclosureRows([])
+    } finally {
+      setLoadingDisclosures(false)
+    }
+  }
+
+  const fetchInventoryCosts = async () => {
+    setLoadingInventoryCosts(true)
+    try {
+      const { data, error } = await supabase
+        .from('presets_inventorycosts')
+        .select('id, user_id, name, group_name, vendor, amount, discount, default_tax_rate')
+        .order('name', { ascending: true })
+
+      if (error) throw error
+      setInventoryCostRows(((data as any) || []) as InventoryCostRow[])
+    } catch {
+      setInventoryCostRows([])
+    } finally {
+      setLoadingInventoryCosts(false)
+    }
+  }
+
+  const fetchInsurances = async () => {
+    setLoadingInsurances(true)
+    try {
+      const { data, error } = await supabase
+        .from('presets_insurance')
+        .select('id, user_id, name, description, deductible, duration, price, cost, type, default_tax_rate')
+        .order('name', { ascending: true })
+
+      if (error) throw error
+      setInsuranceRows(((data as any) || []) as InsuranceRow[])
+    } catch {
+      setInsuranceRows([])
+    } finally {
+      setLoadingInsurances(false)
+    }
+  }
+
+  const confirmDeleteWarranty = async () => {
+    const r = warrantyToDelete
+    if (!r) {
+      setDeleteWarrantyConfirmOpen(false)
+      return
+    }
+    if (saving) return
+    setSaveError(null)
+    setSaving(true)
+    try {
+      const { error } = await supabase.from('presets_warranty').delete().eq('id', r.id)
+      if (error) throw error
+
+      setDeleteWarrantyConfirmOpen(false)
+      setWarrantyToDelete(null)
+      setSaveSuccessMessage('Warranty deleted')
+      setSaveSuccessOpen(true)
+      await fetchWarranties()
+    } catch (e) {
+      setSaveError(e instanceof Error ? e.message : 'Delete failed')
+    } finally {
+      setSaving(false)
+    }
+  }
+
   const formatMoney = (n: number | null) => {
     if (typeof n !== 'number' || Number.isNaN(n)) return ''
     return `$${n}`
@@ -281,6 +525,23 @@ export default function SettingsPresetsPage() {
       setFeeRows([])
     } finally {
       setLoadingFees(false)
+    }
+  }
+
+  const fetchWarranties = async () => {
+    setLoadingWarranties(true)
+    try {
+      const { data, error } = await supabase
+        .from('presets_warranty')
+        .select('id, name, description, deductible, duration, distance, price, cost, dealer_warranty, default_tax_rate')
+        .order('name', { ascending: true })
+
+      if (error) throw error
+      setWarrantyRows(((data as any) || []) as WarrantyRow[])
+    } catch {
+      setWarrantyRows([])
+    } finally {
+      setLoadingWarranties(false)
     }
   }
 
@@ -342,6 +603,21 @@ export default function SettingsPresetsPage() {
     if (activeCategory === 'Accessories') {
       void fetchAccessories()
     }
+    if (activeCategory === 'Warranties') {
+      void fetchWarranties()
+    }
+    if (activeCategory === 'Insurances') {
+      void fetchInsurances()
+    }
+    if (activeCategory === 'Lead Properties') {
+      void fetchLeadProperties()
+    }
+    if (activeCategory === 'Disclosures') {
+      void fetchDisclosures()
+    }
+    if (activeCategory === 'Inventory Costs') {
+      void fetchInventoryCosts()
+    }
     if (activeCategory === 'Tax Rates') {
       void fetchTaxes()
     }
@@ -353,6 +629,80 @@ export default function SettingsPresetsPage() {
 
     setSaving(true)
     try {
+      const getWebhookUserId = async () => {
+        const {
+          data: { user },
+          error: userError,
+        } = await supabase.auth.getUser()
+        if (userError) throw userError
+        const dbUserId = await getLoggedInAdminDbUserId()
+        return dbUserId ?? user?.id ?? null
+      }
+
+      const callPresetsWebhook = async (payload: Record<string, unknown>) => {
+        const res = await fetch(PRESETS_WEBHOOK_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        })
+
+        const text = await res.text().catch(() => '')
+        if (!res.ok) throw new Error(text || `Request failed (${res.status})`)
+        if (String(text).trim() !== 'Done') throw new Error(text || 'Webhook did not return Done')
+      }
+
+      if (activeCategory === 'Warranties') {
+        const defaultTaxRateText = selectedTaxRates.length ? selectedTaxRates.join(', ') : null
+
+        if (editingWarrantyId) {
+          const updateRow: any = {
+            name: nullIfEmpty(name),
+            description: nullIfEmpty(description),
+            deductible: nullIfEmpty(deductible),
+            duration: nullIfEmpty(duration),
+            distance: nullIfEmpty(distance),
+            price: nullIfEmpty(price),
+            cost: nullIfEmpty(cost),
+            dealer_warranty: dealerWarranty,
+            default_tax_rate: defaultTaxRateText,
+          }
+
+          const { error } = await supabase.from('presets_warranty').update(updateRow).eq('id', editingWarrantyId)
+          if (error) throw error
+
+          closeModal()
+          setSaveSuccessMessage('Warranty updated')
+          setSaveSuccessOpen(true)
+          await fetchWarranties()
+          return
+        }
+
+        const user_id = await getWebhookUserId()
+        const payload = {
+          category: activeCategory,
+          action: 'create',
+          id: null,
+          user_id,
+          name: nullIfEmpty(name),
+          description: nullIfEmpty(description),
+          deductible: nullIfEmpty(deductible),
+          duration: nullIfEmpty(duration),
+          distance: nullIfEmpty(distance),
+          price: nullIfEmpty(price),
+          cost: nullIfEmpty(cost),
+          dealer_warranty: dealerWarranty,
+          default_tax_rate: defaultTaxRateText,
+        }
+
+        await callPresetsWebhook(payload)
+
+        closeModal()
+        setSaveSuccessMessage('Warranty successfully added')
+        setSaveSuccessOpen(true)
+        await fetchWarranties()
+        return
+      }
+
       if (activeCategory === 'Tax Rates') {
         if (editingTaxId) {
           const updateRow: any = {
@@ -374,7 +724,13 @@ export default function SettingsPresetsPage() {
           return
         }
 
+        const user_id = await getWebhookUserId()
+
         const payload = {
+          category: activeCategory,
+          action: 'create',
+          id: null,
+          user_id,
           name: nullIfEmpty(name),
           description: nullIfEmpty(description),
           rate: nullIfEmpty(rate),
@@ -383,15 +739,7 @@ export default function SettingsPresetsPage() {
           default_to_purchases_or_costs: isDefaultTaxRate ? defaultToPurchasesOrCosts : null,
         }
 
-        const res = await fetch('https://primary-production-6722.up.railway.app/webhook/tax', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        })
-
-        const text = await res.text().catch(() => '')
-        if (!res.ok) throw new Error(text || `Request failed (${res.status})`)
-        if (String(text).trim() !== 'Done') throw new Error(text || 'Webhook did not return Done')
+        await callPresetsWebhook(payload)
 
         closeModal()
         setSaveSuccessMessage('Tax rate saved')
@@ -423,9 +771,13 @@ export default function SettingsPresetsPage() {
           return
         }
 
+        const user_id = await getWebhookUserId()
+
         const payload = {
+          category: activeCategory,
           action: 'create',
           id: null,
+          user_id,
           name: nullIfEmpty(name),
           description: nullIfEmpty(description),
           amount: nullIfEmpty(amount),
@@ -434,20 +786,181 @@ export default function SettingsPresetsPage() {
           default_tax_rate: defaultTaxRateText,
         }
 
-        const res = await fetch('https://primary-production-6722.up.railway.app/webhook/accesories', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        })
-
-        const text = await res.text().catch(() => '')
-        if (!res.ok) throw new Error(text || `Request failed (${res.status})`)
-        if (String(text).trim() !== 'Done') throw new Error(text || 'Webhook did not return Done')
+        await callPresetsWebhook(payload)
 
         closeModal()
         setSaveSuccessMessage('Accessory saved')
         setSaveSuccessOpen(true)
         await fetchAccessories()
+        return
+      }
+
+      if (activeCategory === 'Lead Properties') {
+        if (editingLeadPropertyId) {
+          const updateRow: any = {
+            name: nullIfEmpty(name),
+            description: nullIfEmpty(description),
+            field_type: nullIfEmpty(fieldType),
+          }
+
+          const { error } = await supabase.from('presets_leadproperties').update(updateRow).eq('id', editingLeadPropertyId)
+          if (error) throw error
+
+          closeModal()
+          setSaveSuccessMessage('Lead property updated')
+          setSaveSuccessOpen(true)
+          await fetchLeadProperties()
+          return
+        }
+
+        const user_id = await getWebhookUserId()
+        const payload = {
+          category: activeCategory,
+          action: 'create',
+          id: null,
+          user_id,
+          name: nullIfEmpty(name),
+          description: nullIfEmpty(description),
+          field_type: nullIfEmpty(fieldType),
+        }
+
+        await callPresetsWebhook(payload)
+
+        closeModal()
+        setSaveSuccessMessage('Successful save')
+        setSaveSuccessOpen(true)
+        await fetchLeadProperties()
+        return
+      }
+
+      if (activeCategory === 'Disclosures') {
+        if (editingDisclosureId) {
+          const updateRow: any = {
+            name: nullIfEmpty(name),
+            disclosure: nullIfEmpty(disclosureBody),
+          }
+
+          const { error } = await supabase.from('presets_disclosures').update(updateRow).eq('id', editingDisclosureId)
+          if (error) throw error
+
+          closeModal()
+          setSaveSuccessMessage('Disclosure updated')
+          setSaveSuccessOpen(true)
+          await fetchDisclosures()
+          return
+        }
+
+        const user_id = await getWebhookUserId()
+        const payload = {
+          category: activeCategory,
+          action: 'create',
+          id: null,
+          user_id,
+          name: nullIfEmpty(name),
+          disclosure: nullIfEmpty(disclosureBody),
+        }
+
+        await callPresetsWebhook(payload)
+
+        closeModal()
+        setSaveSuccessMessage('Successful save')
+        setSaveSuccessOpen(true)
+        await fetchDisclosures()
+        return
+      }
+
+      if (activeCategory === 'Inventory Costs') {
+        const defaultTaxRateText = selectedTaxRates.length ? selectedTaxRates.join(', ') : null
+
+        if (editingInventoryCostId) {
+          const updateRow: any = {
+            name: nullIfEmpty(name),
+            group_name: nullIfEmpty(groupName),
+            vendor: nullIfEmpty(vendor),
+            amount: nullIfEmpty(amount),
+            discount: nullIfEmpty(discount),
+            default_tax_rate: defaultTaxRateText,
+          }
+
+          const { error } = await supabase.from('presets_inventorycosts').update(updateRow).eq('id', editingInventoryCostId)
+          if (error) throw error
+
+          closeModal()
+          setSaveSuccessMessage('Inventory cost updated')
+          setSaveSuccessOpen(true)
+          await fetchInventoryCosts()
+          return
+        }
+
+        const user_id = await getWebhookUserId()
+        const payload = {
+          category: activeCategory,
+          action: 'create',
+          id: null,
+          user_id,
+          name: nullIfEmpty(name),
+          group_name: nullIfEmpty(groupName),
+          vendor: nullIfEmpty(vendor),
+          amount: nullIfEmpty(amount),
+          discount: nullIfEmpty(discount),
+          default_tax_rate: defaultTaxRateText,
+        }
+
+        await callPresetsWebhook(payload)
+
+        closeModal()
+        setSaveSuccessMessage('Successful save')
+        setSaveSuccessOpen(true)
+        return
+      }
+
+      if (activeCategory === 'Insurances') {
+        const defaultTaxRateText = selectedTaxRates.length ? selectedTaxRates.join(', ') : null
+
+        if (editingInsuranceId) {
+          const updateRow: any = {
+            name: nullIfEmpty(name),
+            description: nullIfEmpty(description),
+            deductible: nullIfEmpty(deductible),
+            duration: nullIfEmpty(duration),
+            price: nullIfEmpty(price),
+            cost: nullIfEmpty(cost),
+            type: nullIfEmpty(type),
+            default_tax_rate: defaultTaxRateText,
+          }
+
+          const { error } = await supabase.from('presets_insurance').update(updateRow).eq('id', editingInsuranceId)
+          if (error) throw error
+
+          closeModal()
+          setSaveSuccessMessage('Insurance updated')
+          setSaveSuccessOpen(true)
+          await fetchInsurances()
+          return
+        }
+
+        const user_id = await getWebhookUserId()
+        const payload = {
+          category: activeCategory,
+          action: 'create',
+          id: null,
+          user_id,
+          name: nullIfEmpty(name),
+          description: nullIfEmpty(description),
+          deductible: nullIfEmpty(deductible),
+          duration: nullIfEmpty(duration),
+          price: nullIfEmpty(price),
+          cost: nullIfEmpty(cost),
+          type: nullIfEmpty(type),
+          default_tax_rate: defaultTaxRateText,
+        }
+
+        await callPresetsWebhook(payload)
+
+        closeModal()
+        setSaveSuccessMessage('Successful save')
+        setSaveSuccessOpen(true)
+        await fetchInsurances()
         return
       }
 
@@ -479,9 +992,13 @@ export default function SettingsPresetsPage() {
         return
       }
 
+      const user_id = await getWebhookUserId()
+
       const payload = {
+        category: activeCategory,
         action: 'create',
         id: null,
+        user_id,
         name: nullIfEmpty(name),
         description: nullIfEmpty(description),
         fee_amount: nullIfEmpty(amount),
@@ -491,15 +1008,7 @@ export default function SettingsPresetsPage() {
         default_tax_rate: defaultTaxRateText,
       }
 
-      const res = await fetch('https://primary-production-6722.up.railway.app/webhook/fee', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      })
-
-      const text = await res.text().catch(() => '')
-      if (!res.ok) throw new Error(text || `Request failed (${res.status})`)
-      if (String(text).trim() !== 'Done') throw new Error(text || 'Webhook did not return Done')
+      await callPresetsWebhook(payload)
 
       closeModal()
       setSaveSuccessMessage('Successful save')
@@ -579,6 +1088,234 @@ export default function SettingsPresetsPage() {
   const requestDeleteTax = (r: TaxRow) => {
     setTaxToDelete(r)
     setDeleteTaxConfirmOpen(true)
+  }
+
+  const openEditWarranty = (r: WarrantyRow) => {
+    setEditingFeeId(null)
+    setEditingTaxId(null)
+    setEditingAccessoryId(null)
+    setEditingWarrantyId(r.id)
+    setName(r.name || '')
+    setDescription(r.description || '')
+    setDeductible(r.deductible || '')
+    setDuration(r.duration || '')
+    setDistance(r.distance || '')
+    setPrice(r.price || '')
+    setCost(r.cost || '')
+    setDealerWarranty(Boolean(r.dealer_warranty))
+    const selected = (r.default_tax_rate || '')
+      .split(',')
+      .map((x) => x.trim())
+      .filter(Boolean)
+    setSelectedTaxRates(selected)
+    setSaveError(null)
+    setTaxPickerOpen(false)
+    setIsModalOpen(true)
+  }
+
+  const requestDeleteWarranty = (r: WarrantyRow) => {
+    setWarrantyToDelete(r)
+    setDeleteWarrantyConfirmOpen(true)
+  }
+
+  const openEditInsurance = (r: InsuranceRow) => {
+    setEditingFeeId(null)
+    setEditingTaxId(null)
+    setEditingAccessoryId(null)
+    setEditingWarrantyId(null)
+    setEditingInsuranceId(r.id)
+    setName(r.name || '')
+    setDescription(r.description || '')
+    setDeductible(r.deductible || '')
+    setDuration(r.duration || '')
+    setPrice(r.price || '')
+    setCost(r.cost || '')
+    setType(r.type || 'Life')
+    const selected = (r.default_tax_rate || '')
+      .split(',')
+      .map((x) => x.trim())
+      .filter(Boolean)
+    setSelectedTaxRates(selected)
+    setSaveError(null)
+    setTaxPickerOpen(false)
+    setIsModalOpen(true)
+  }
+
+  const requestDeleteInsurance = (r: InsuranceRow) => {
+    setInsuranceToDelete(r)
+    setDeleteInsuranceConfirmOpen(true)
+  }
+
+  const openEditLeadProperty = (r: LeadPropertyRow) => {
+    setEditingFeeId(null)
+    setEditingTaxId(null)
+    setEditingAccessoryId(null)
+    setEditingWarrantyId(null)
+    setEditingInsuranceId(null)
+    setEditingLeadPropertyId(r.id)
+    setEditingDisclosureId(null)
+    setEditingInventoryCostId(null)
+    setName(r.name || '')
+    setDescription(r.description || '')
+    setFieldType(r.field_type || 'Single-line text')
+    setSaveError(null)
+    setTaxPickerOpen(false)
+    setIsModalOpen(true)
+  }
+
+  const requestDeleteLeadProperty = (r: LeadPropertyRow) => {
+    setLeadPropertyToDelete(r)
+    setDeleteLeadPropertyConfirmOpen(true)
+  }
+
+  const openEditDisclosure = (r: DisclosureRow) => {
+    setEditingFeeId(null)
+    setEditingTaxId(null)
+    setEditingAccessoryId(null)
+    setEditingWarrantyId(null)
+    setEditingInsuranceId(null)
+    setEditingLeadPropertyId(null)
+    setEditingDisclosureId(r.id)
+    setEditingInventoryCostId(null)
+    setName(r.name || '')
+    setDisclosureBody(r.disclosure || '')
+    setSaveError(null)
+    setTaxPickerOpen(false)
+    setIsModalOpen(true)
+  }
+
+  const requestDeleteDisclosure = (r: DisclosureRow) => {
+    setDisclosureToDelete(r)
+    setDeleteDisclosureConfirmOpen(true)
+  }
+
+  const openEditInventoryCost = (r: InventoryCostRow) => {
+    setEditingFeeId(null)
+    setEditingTaxId(null)
+    setEditingAccessoryId(null)
+    setEditingWarrantyId(null)
+    setEditingInsuranceId(null)
+    setEditingLeadPropertyId(null)
+    setEditingDisclosureId(null)
+    setEditingInventoryCostId(r.id)
+    setName(r.name || '')
+    setGroupName(r.group_name || '')
+    setVendor(r.vendor || '')
+    setAmount(r.amount || '')
+    setDiscount(r.discount || '')
+    const selected = (r.default_tax_rate || '')
+      .split(',')
+      .map((x) => x.trim())
+      .filter(Boolean)
+    setSelectedTaxRates(selected)
+    setSaveError(null)
+    setTaxPickerOpen(false)
+    setIsModalOpen(true)
+  }
+
+  const requestDeleteInventoryCost = (r: InventoryCostRow) => {
+    setInventoryCostToDelete(r)
+    setDeleteInventoryCostConfirmOpen(true)
+  }
+
+  const confirmDeleteInsurance = async () => {
+    const r = insuranceToDelete
+    if (!r) {
+      setDeleteInsuranceConfirmOpen(false)
+      return
+    }
+    if (saving) return
+    setSaveError(null)
+    setSaving(true)
+    try {
+      const { error } = await supabase.from('presets_insurance').delete().eq('id', r.id)
+      if (error) throw error
+
+      setDeleteInsuranceConfirmOpen(false)
+      setInsuranceToDelete(null)
+      setSaveSuccessMessage('Insurance deleted')
+      setSaveSuccessOpen(true)
+      await fetchInsurances()
+    } catch (e) {
+      setSaveError(e instanceof Error ? e.message : 'Delete failed')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const confirmDeleteLeadProperty = async () => {
+    const r = leadPropertyToDelete
+    if (!r) {
+      setDeleteLeadPropertyConfirmOpen(false)
+      return
+    }
+    if (saving) return
+    setSaveError(null)
+    setSaving(true)
+    try {
+      const { error } = await supabase.from('presets_leadproperties').delete().eq('id', r.id)
+      if (error) throw error
+
+      setDeleteLeadPropertyConfirmOpen(false)
+      setLeadPropertyToDelete(null)
+      setSaveSuccessMessage('Lead property deleted')
+      setSaveSuccessOpen(true)
+      await fetchLeadProperties()
+    } catch (e) {
+      setSaveError(e instanceof Error ? e.message : 'Delete failed')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const confirmDeleteDisclosure = async () => {
+    const r = disclosureToDelete
+    if (!r) {
+      setDeleteDisclosureConfirmOpen(false)
+      return
+    }
+    if (saving) return
+    setSaveError(null)
+    setSaving(true)
+    try {
+      const { error } = await supabase.from('presets_disclosures').delete().eq('id', r.id)
+      if (error) throw error
+
+      setDeleteDisclosureConfirmOpen(false)
+      setDisclosureToDelete(null)
+      setSaveSuccessMessage('Disclosure deleted')
+      setSaveSuccessOpen(true)
+      await fetchDisclosures()
+    } catch (e) {
+      setSaveError(e instanceof Error ? e.message : 'Delete failed')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const confirmDeleteInventoryCost = async () => {
+    const r = inventoryCostToDelete
+    if (!r) {
+      setDeleteInventoryCostConfirmOpen(false)
+      return
+    }
+    if (saving) return
+    setSaveError(null)
+    setSaving(true)
+    try {
+      const { error } = await supabase.from('presets_inventorycosts').delete().eq('id', r.id)
+      if (error) throw error
+
+      setDeleteInventoryCostConfirmOpen(false)
+      setInventoryCostToDelete(null)
+      setSaveSuccessMessage('Inventory cost deleted')
+      setSaveSuccessOpen(true)
+      await fetchInventoryCosts()
+    } catch (e) {
+      setSaveError(e instanceof Error ? e.message : 'Delete failed')
+    } finally {
+      setSaving(false)
+    }
   }
 
   const confirmDeleteFee = async () => {
@@ -681,13 +1418,98 @@ export default function SettingsPresetsPage() {
         amount: r.rate == null ? '' : `${r.rate}%`,
       }))
     }
+    if (activeCategory === 'Warranties') {
+      return warrantyRows.map((r) => ({
+        id: r.id,
+        name: r.name || '',
+        description: r.description || '',
+        distance: r.distance || '',
+        duration: r.duration || '',
+        deductible: r.deductible || '',
+        price: r.price || '',
+      }))
+    }
+    if (activeCategory === 'Insurances') {
+      return insuranceRows.map((r) => ({
+        id: r.id,
+        name: r.name || '',
+        description: r.description || '',
+        duration: r.duration || '',
+        deductible: r.deductible || '',
+        price: r.price || '',
+      }))
+    }
+    if (activeCategory === 'Lead Properties') {
+      return leadPropertyRows.map((r) => ({
+        id: r.id,
+        name: r.name || '',
+        description: r.description || '',
+        fieldType: r.field_type || '',
+      }))
+    }
+    if (activeCategory === 'Disclosures') {
+      return disclosureRows.map((r) => ({
+        id: r.id,
+        name: r.name || '',
+        disclosure: r.disclosure || '',
+        favourite: '',
+      }))
+    }
+    if (activeCategory === 'Inventory Costs') {
+      return inventoryCostRows.map((r) => ({
+        id: r.id,
+        name: r.name || '',
+        groupName: r.group_name || '',
+        price: r.amount || '',
+      }))
+    }
     return []
-  }, [activeCategory, feeRows, accessoryRows, taxRows])
+  }, [activeCategory, feeRows, accessoryRows, taxRows, warrantyRows, insuranceRows, leadPropertyRows, disclosureRows, inventoryCostRows])
 
   const amountHeader = useMemo(() => {
     if (activeCategory === 'Tax Rates') return 'Rate'
+    if (activeCategory === 'Warranties') return 'Price'
+    if (activeCategory === 'Insurances') return 'Price'
     return 'Amount'
   }, [activeCategory])
+
+  const tableConfig = useMemo(() => {
+    if (activeCategory === 'Lead Properties') {
+      return {
+        grid: 'grid-cols-[48px_1.3fr_2fr_160px]',
+        headers: ['Label', 'Description', 'Field Type'],
+      }
+    }
+    if (activeCategory === 'Disclosures') {
+      return {
+        grid: 'grid-cols-[48px_1.3fr_2fr_140px]',
+        headers: ['Name', 'Disclosure', 'Favourite'],
+      }
+    }
+    if (activeCategory === 'Inventory Costs') {
+      return {
+        grid: 'grid-cols-[48px_1.3fr_2fr_140px]',
+        headers: ['Name', 'Group Name', 'Price'],
+      }
+    }
+    if (activeCategory === 'Insurances') {
+      return {
+        grid: 'grid-cols-[48px_1.2fr_1.6fr_140px_140px_140px]',
+        headers: ['Name', 'Description', 'Duration', 'Deductible', 'Price'],
+      }
+    }
+    if (activeCategory === 'Warranties') {
+      return {
+        grid: 'grid-cols-[48px_1.1fr_1.4fr_140px_140px_140px_140px]',
+        headers: ['Name', 'Description', 'Distance', 'Duration', 'Deductible', 'Price'],
+      }
+    }
+
+    return {
+      grid: 'grid-cols-[48px_1.3fr_2fr_140px]',
+      headers: ['Name', 'Description', amountHeader],
+    }
+  }, [activeCategory, amountHeader])
 
   const filtered = useMemo(() => {
     const list = currentRows
@@ -703,6 +1525,29 @@ export default function SettingsPresetsPage() {
   }, [currentRows, search])
 
   const visible = useMemo(() => filtered.slice(0, pageSize), [filtered, pageSize])
+
+  if (!isVerified) {
+    return (
+      <div className="min-h-screen bg-gray-100">
+        <div className="w-full px-4 sm:px-6 lg:px-8 py-10">
+          <div className="max-w-2xl bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
+            <div className="text-lg font-bold text-gray-900">Settings are disabled</div>
+            <div className="mt-2 text-sm text-gray-700">
+              Your account is not verified yet. Please validate your ID to access Settings.
+            </div>
+            <div className="mt-5 flex items-center gap-3">
+              <Link href="/account/verification" className="px-4 py-2 rounded-lg bg-[#118df0] text-white text-sm font-semibold">
+                Validate ID
+              </Link>
+              <Link href="/admin" className="px-4 py-2 rounded-lg bg-white border border-gray-200 text-sm font-semibold text-gray-800">
+                Back to Dashboard
+              </Link>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div>
@@ -720,6 +1565,219 @@ export default function SettingsPresetsPage() {
             <div className="h-12 px-4 border-t border-gray-200 flex items-center justify-end">
               <button type="button" className="h-8 px-4 bg-[#118df0] text-white text-xs font-semibold" onClick={() => setSaveSuccessOpen(false)}>
                 OK
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {deleteLeadPropertyConfirmOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center" role="dialog" aria-modal="true">
+          <div className="absolute inset-0 bg-black/50" onMouseDown={() => setDeleteLeadPropertyConfirmOpen(false)} />
+          <div className="relative w-[420px] bg-white shadow-lg" onMouseDown={(e) => e.stopPropagation()}>
+            <div className="h-11 px-4 border-b border-gray-200 flex items-center justify-between">
+              <div className="text-sm font-semibold text-gray-800">Warning</div>
+              <button
+                type="button"
+                className="h-8 w-8 flex items-center justify-center"
+                onClick={() => setDeleteLeadPropertyConfirmOpen(false)}
+              >
+                <span className="text-xl leading-none text-gray-500">×</span>
+              </button>
+            </div>
+            <div className="p-4 text-xs text-gray-700">
+              Delete lead property {leadPropertyToDelete?.name || ''}? This cannot be undone.
+            </div>
+            <div className="h-12 px-4 border-t border-gray-200 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                className="h-8 px-4 bg-gray-600 text-white text-xs font-semibold"
+                onClick={() => setDeleteLeadPropertyConfirmOpen(false)}
+                disabled={saving}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className={
+                  saving
+                    ? 'h-8 px-4 bg-red-600/60 text-white text-xs font-semibold cursor-not-allowed'
+                    : 'h-8 px-4 bg-red-600 text-white text-xs font-semibold'
+                }
+                onClick={() => void confirmDeleteLeadProperty()}
+                disabled={saving}
+              >
+                {saving ? 'Deleting…' : 'Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {deleteDisclosureConfirmOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center" role="dialog" aria-modal="true">
+          <div className="absolute inset-0 bg-black/50" onMouseDown={() => setDeleteDisclosureConfirmOpen(false)} />
+          <div className="relative w-[420px] bg-white shadow-lg" onMouseDown={(e) => e.stopPropagation()}>
+            <div className="h-11 px-4 border-b border-gray-200 flex items-center justify-between">
+              <div className="text-sm font-semibold text-gray-800">Warning</div>
+              <button
+                type="button"
+                className="h-8 w-8 flex items-center justify-center"
+                onClick={() => setDeleteDisclosureConfirmOpen(false)}
+              >
+                <span className="text-xl leading-none text-gray-500">×</span>
+              </button>
+            </div>
+            <div className="p-4 text-xs text-gray-700">Delete disclosure {disclosureToDelete?.name || ''}? This cannot be undone.</div>
+            <div className="h-12 px-4 border-t border-gray-200 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                className="h-8 px-4 bg-gray-600 text-white text-xs font-semibold"
+                onClick={() => setDeleteDisclosureConfirmOpen(false)}
+                disabled={saving}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className={
+                  saving
+                    ? 'h-8 px-4 bg-red-600/60 text-white text-xs font-semibold cursor-not-allowed'
+                    : 'h-8 px-4 bg-red-600 text-white text-xs font-semibold'
+                }
+                onClick={() => void confirmDeleteDisclosure()}
+                disabled={saving}
+              >
+                {saving ? 'Deleting…' : 'Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {deleteInventoryCostConfirmOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center" role="dialog" aria-modal="true">
+          <div className="absolute inset-0 bg-black/50" onMouseDown={() => setDeleteInventoryCostConfirmOpen(false)} />
+          <div className="relative w-[420px] bg-white shadow-lg" onMouseDown={(e) => e.stopPropagation()}>
+            <div className="h-11 px-4 border-b border-gray-200 flex items-center justify-between">
+              <div className="text-sm font-semibold text-gray-800">Warning</div>
+              <button
+                type="button"
+                className="h-8 w-8 flex items-center justify-center"
+                onClick={() => setDeleteInventoryCostConfirmOpen(false)}
+              >
+                <span className="text-xl leading-none text-gray-500">×</span>
+              </button>
+            </div>
+            <div className="p-4 text-xs text-gray-700">
+              Delete inventory cost {inventoryCostToDelete?.name || ''}? This cannot be undone.
+            </div>
+            <div className="h-12 px-4 border-t border-gray-200 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                className="h-8 px-4 bg-gray-600 text-white text-xs font-semibold"
+                onClick={() => setDeleteInventoryCostConfirmOpen(false)}
+                disabled={saving}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className={
+                  saving
+                    ? 'h-8 px-4 bg-red-600/60 text-white text-xs font-semibold cursor-not-allowed'
+                    : 'h-8 px-4 bg-red-600 text-white text-xs font-semibold'
+                }
+                onClick={() => void confirmDeleteInventoryCost()}
+                disabled={saving}
+              >
+                {saving ? 'Deleting…' : 'Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {deleteInsuranceConfirmOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center" role="dialog" aria-modal="true">
+          <div className="absolute inset-0 bg-black/50" onMouseDown={() => setDeleteInsuranceConfirmOpen(false)} />
+          <div className="relative w-[420px] bg-white shadow-lg" onMouseDown={(e) => e.stopPropagation()}>
+            <div className="h-11 px-4 border-b border-gray-200 flex items-center justify-between">
+              <div className="text-sm font-semibold text-gray-800">Warning</div>
+              <button
+                type="button"
+                className="h-8 w-8 flex items-center justify-center"
+                onClick={() => setDeleteInsuranceConfirmOpen(false)}
+              >
+                <span className="text-xl leading-none text-gray-500">×</span>
+              </button>
+            </div>
+            <div className="p-4 text-xs text-gray-700">
+              Delete insurance {insuranceToDelete?.name || ''}? This cannot be undone.
+            </div>
+            <div className="h-12 px-4 border-t border-gray-200 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                className="h-8 px-4 bg-gray-600 text-white text-xs font-semibold"
+                onClick={() => setDeleteInsuranceConfirmOpen(false)}
+                disabled={saving}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className={
+                  saving
+                    ? 'h-8 px-4 bg-red-600/60 text-white text-xs font-semibold cursor-not-allowed'
+                    : 'h-8 px-4 bg-red-600 text-white text-xs font-semibold'
+                }
+                onClick={() => void confirmDeleteInsurance()}
+                disabled={saving}
+              >
+                {saving ? 'Deleting…' : 'Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {deleteWarrantyConfirmOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center" role="dialog" aria-modal="true">
+          <div className="absolute inset-0 bg-black/50" onMouseDown={() => setDeleteWarrantyConfirmOpen(false)} />
+          <div className="relative w-[420px] bg-white shadow-lg" onMouseDown={(e) => e.stopPropagation()}>
+            <div className="h-11 px-4 border-b border-gray-200 flex items-center justify-between">
+              <div className="text-sm font-semibold text-gray-800">Warning</div>
+              <button
+                type="button"
+                className="h-8 w-8 flex items-center justify-center"
+                onClick={() => setDeleteWarrantyConfirmOpen(false)}
+              >
+                <span className="text-xl leading-none text-gray-500">×</span>
+              </button>
+            </div>
+            <div className="p-4 text-xs text-gray-700">
+              Delete warranty {warrantyToDelete?.name || ''}? This cannot be undone.
+            </div>
+            <div className="h-12 px-4 border-t border-gray-200 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                className="h-8 px-4 bg-gray-600 text-white text-xs font-semibold"
+                onClick={() => setDeleteWarrantyConfirmOpen(false)}
+                disabled={saving}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className={
+                  saving
+                    ? 'h-8 px-4 bg-red-600/60 text-white text-xs font-semibold cursor-not-allowed'
+                    : 'h-8 px-4 bg-red-600 text-white text-xs font-semibold'
+                }
+                onClick={() => void confirmDeleteWarranty()}
+                disabled={saving}
+              >
+                {saving ? 'Deleting…' : 'Delete'}
               </button>
             </div>
           </div>
@@ -941,16 +1999,28 @@ export default function SettingsPresetsPage() {
           </div>
 
           <div className="mt-2 border border-gray-200">
-            <div className="grid grid-cols-[48px_1.3fr_2fr_140px] gap-0 border-b border-gray-200 bg-white">
+            <div className={`grid ${tableConfig.grid} gap-0 border-b border-gray-200 bg-white`}>
               <div className="h-8" />
-              <div className="h-8 flex items-center text-[11px] font-semibold text-gray-700">Name</div>
-              <div className="h-8 flex items-center text-[11px] font-semibold text-gray-700">Description</div>
-              <div className="h-8 flex items-center text-[11px] font-semibold text-gray-700">{amountHeader}</div>
+              {tableConfig.headers.map((h) => (
+                <div key={h} className="h-8 flex items-center text-[11px] font-semibold text-gray-700">
+                  {h}
+                </div>
+              ))}
             </div>
 
             {activeCategory === 'Fees' && loadingFees ? (
               <div className="p-6 text-xs text-gray-500">Loading…</div>
             ) : activeCategory === 'Accessories' && loadingAccessories ? (
+              <div className="p-6 text-xs text-gray-500">Loading…</div>
+            ) : activeCategory === 'Warranties' && loadingWarranties ? (
+              <div className="p-6 text-xs text-gray-500">Loading…</div>
+            ) : activeCategory === 'Insurances' && loadingInsurances ? (
+              <div className="p-6 text-xs text-gray-500">Loading…</div>
+            ) : activeCategory === 'Lead Properties' && loadingLeadProperties ? (
+              <div className="p-6 text-xs text-gray-500">Loading…</div>
+            ) : activeCategory === 'Disclosures' && loadingDisclosures ? (
+              <div className="p-6 text-xs text-gray-500">Loading…</div>
+            ) : activeCategory === 'Inventory Costs' && loadingInventoryCosts ? (
               <div className="p-6 text-xs text-gray-500">Loading…</div>
             ) : activeCategory === 'Tax Rates' && loadingTaxes ? (
               <div className="p-6 text-xs text-gray-500">Loading…</div>
@@ -962,8 +2032,13 @@ export default function SettingsPresetsPage() {
                   const fee = activeCategory === 'Fees' ? feeRows.find((x) => x.id === r.id) : null
                   const accessory = activeCategory === 'Accessories' ? accessoryRows.find((x) => x.id === r.id) : null
                   const tax = activeCategory === 'Tax Rates' ? taxRows.find((x) => x.id === r.id) : null
+                  const warranty = activeCategory === 'Warranties' ? warrantyRows.find((x) => x.id === r.id) : null
+                  const insurance = activeCategory === 'Insurances' ? insuranceRows.find((x) => x.id === r.id) : null
+                  const leadProp = activeCategory === 'Lead Properties' ? leadPropertyRows.find((x) => x.id === r.id) : null
+                  const disclosure = activeCategory === 'Disclosures' ? disclosureRows.find((x) => x.id === r.id) : null
+                  const invCost = activeCategory === 'Inventory Costs' ? inventoryCostRows.find((x) => x.id === r.id) : null
                   return (
-                  <div key={r.id} className="grid grid-cols-[48px_1.3fr_2fr_140px] border-b border-gray-100">
+                  <div key={r.id} className={`grid ${tableConfig.grid} border-b border-gray-100`}>
                     <div className="h-10 flex items-center gap-2 px-2">
                       <button
                         type="button"
@@ -973,6 +2048,11 @@ export default function SettingsPresetsPage() {
                           if (activeCategory === 'Fees' && fee) openEditFee(fee)
                           if (activeCategory === 'Accessories' && accessory) openEditAccessory(accessory)
                           if (activeCategory === 'Tax Rates' && tax) openEditTax(tax)
+                          if (activeCategory === 'Warranties' && warranty) openEditWarranty(warranty)
+                          if (activeCategory === 'Insurances' && insurance) openEditInsurance(insurance)
+                          if (activeCategory === 'Lead Properties' && leadProp) openEditLeadProperty(leadProp)
+                          if (activeCategory === 'Disclosures' && disclosure) openEditDisclosure(disclosure)
+                          if (activeCategory === 'Inventory Costs' && invCost) openEditInventoryCost(invCost)
                         }}
                       >
                         <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
@@ -988,6 +2068,11 @@ export default function SettingsPresetsPage() {
                           if (activeCategory === 'Fees' && fee) requestDeleteFee(fee)
                           if (activeCategory === 'Accessories' && accessory) requestDeleteAccessory(accessory)
                           if (activeCategory === 'Tax Rates' && tax) requestDeleteTax(tax)
+                          if (activeCategory === 'Warranties' && warranty) requestDeleteWarranty(warranty)
+                          if (activeCategory === 'Insurances' && insurance) requestDeleteInsurance(insurance)
+                          if (activeCategory === 'Lead Properties' && leadProp) requestDeleteLeadProperty(leadProp)
+                          if (activeCategory === 'Disclosures' && disclosure) requestDeleteDisclosure(disclosure)
+                          if (activeCategory === 'Inventory Costs' && invCost) requestDeleteInventoryCost(invCost)
                         }}
                       >
                         <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
@@ -997,9 +2082,48 @@ export default function SettingsPresetsPage() {
                         </svg>
                       </button>
                     </div>
-                    <div className="h-10 flex items-center text-xs text-gray-800">{r.name}</div>
-                    <div className="h-10 flex items-center text-xs text-gray-800">{r.description || ''}</div>
-                    <div className="h-10 flex items-center text-xs text-gray-800">{r.amount || ''}</div>
+                    {activeCategory === 'Lead Properties' ? (
+                      <>
+                        <div className="h-10 flex items-center text-xs text-gray-800">{r.name}</div>
+                        <div className="h-10 flex items-center text-xs text-gray-800">{r.description || ''}</div>
+                        <div className="h-10 flex items-center text-xs text-gray-800">{r.fieldType || ''}</div>
+                      </>
+                    ) : activeCategory === 'Disclosures' ? (
+                      <>
+                        <div className="h-10 flex items-center text-xs text-gray-800">{r.name}</div>
+                        <div className="h-10 flex items-center text-xs text-gray-800">{r.disclosure || ''}</div>
+                        <div className="h-10 flex items-center text-xs text-gray-800">{r.favourite || ''}</div>
+                      </>
+                    ) : activeCategory === 'Inventory Costs' ? (
+                      <>
+                        <div className="h-10 flex items-center text-xs text-gray-800">{r.name}</div>
+                        <div className="h-10 flex items-center text-xs text-gray-800">{r.groupName || ''}</div>
+                        <div className="h-10 flex items-center text-xs text-gray-800">{r.price || ''}</div>
+                      </>
+                    ) : activeCategory === 'Insurances' ? (
+                      <>
+                        <div className="h-10 flex items-center text-xs text-gray-800">{r.name}</div>
+                        <div className="h-10 flex items-center text-xs text-gray-800">{r.description || ''}</div>
+                        <div className="h-10 flex items-center text-xs text-gray-800">{r.duration || ''}</div>
+                        <div className="h-10 flex items-center text-xs text-gray-800">{r.deductible || ''}</div>
+                        <div className="h-10 flex items-center text-xs text-gray-800">{r.price || ''}</div>
+                      </>
+                    ) : activeCategory === 'Warranties' ? (
+                      <>
+                        <div className="h-10 flex items-center text-xs text-gray-800">{r.name}</div>
+                        <div className="h-10 flex items-center text-xs text-gray-800">{r.description || ''}</div>
+                        <div className="h-10 flex items-center text-xs text-gray-800">{r.distance || ''}</div>
+                        <div className="h-10 flex items-center text-xs text-gray-800">{r.duration || ''}</div>
+                        <div className="h-10 flex items-center text-xs text-gray-800">{r.deductible || ''}</div>
+                        <div className="h-10 flex items-center text-xs text-gray-800">{r.price || ''}</div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="h-10 flex items-center text-xs text-gray-800">{r.name}</div>
+                        <div className="h-10 flex items-center text-xs text-gray-800">{r.description || ''}</div>
+                        <div className="h-10 flex items-center text-xs text-gray-800">{r.amount || ''}</div>
+                      </>
+                    )}
                   </div>
                 )})}
               </div>
@@ -1020,17 +2144,25 @@ export default function SettingsPresetsPage() {
                   ? 'Edit Accessory'
                   : 'New Accessory'
                 : activeCategory === 'Warranties'
-                  ? 'New Warranty'
+                  ? editingWarrantyId
+                    ? 'Edit Warranty'
+                    : 'New Warranty'
                   : activeCategory === 'Insurances'
-                    ? 'New Insurance'
+                    ? editingInsuranceId
+                      ? 'Edit Insurance'
+                      : 'New Insurance'
                     : activeCategory === 'Tax Rates'
                       ? editingTaxId
                         ? 'Edit Tax Rate'
                         : 'New Tax Rate'
                       : activeCategory === 'Lead Properties'
-                        ? 'New Lead Property'
+                        ? editingLeadPropertyId
+                          ? 'Edit Lead Property'
+                          : 'New Lead Property'
                         : activeCategory === 'Disclosures'
-                          ? 'New Disclosure'
+                          ? editingDisclosureId
+                            ? 'Edit Disclosure'
+                            : 'New Disclosure'
                           : 'New Inventory Cost Template'
           }
           onClose={closeModal}
@@ -1061,7 +2193,9 @@ export default function SettingsPresetsPage() {
                               })
                             }}
                           />
-                          {label}
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate">{label}</span>
+                          </span>
                         </label>
                       )
                     })
@@ -1239,8 +2373,15 @@ export default function SettingsPresetsPage() {
                 </div>
                 <div className="flex items-center justify-between">
                   <div className="text-[11px] text-gray-700">Default Tax Rates:</div>
-                  <button type="button" className="text-[11px] text-[#118df0]">
-                    Choose tax rate ▾
+                  <button
+                    type="button"
+                    className="text-[11px] text-[#118df0]"
+                    onClick={() => {
+                      setTaxPickerOpen(true)
+                      void fetchFeeTaxOptions()
+                    }}
+                  >
+                    {selectedTaxRates.length ? `${selectedTaxRates.length} selected` : 'Choose tax rate'} ▾
                   </button>
                 </div>
               </>
@@ -1283,8 +2424,15 @@ export default function SettingsPresetsPage() {
                 </div>
                 <div className="flex items-center justify-between">
                   <div className="text-[11px] text-gray-700">Default Tax Rates:</div>
-                  <button type="button" className="text-[11px] text-[#118df0]">
-                    Choose tax rate ▾
+                  <button
+                    type="button"
+                    className="text-[11px] text-[#118df0]"
+                    onClick={() => {
+                      setTaxPickerOpen(true)
+                      void fetchFeeTaxOptions()
+                    }}
+                  >
+                    {selectedTaxRates.length ? `${selectedTaxRates.length} selected` : 'Choose tax rate'} ▾
                   </button>
                 </div>
               </>
@@ -1433,8 +2581,15 @@ export default function SettingsPresetsPage() {
                 </div>
                 <div className="flex items-center justify-between">
                   <div className="text-[11px] text-gray-700">Default Tax Rates:</div>
-                  <button type="button" className="text-[11px] text-[#118df0]">
-                    Choose tax rate ▾
+                  <button
+                    type="button"
+                    className="text-[11px] text-[#118df0]"
+                    onClick={() => {
+                      setTaxPickerOpen(true)
+                      void fetchFeeTaxOptions()
+                    }}
+                  >
+                    {selectedTaxRates.length ? `${selectedTaxRates.length} selected` : 'Choose tax rate'} ▾
                   </button>
                 </div>
               </>
@@ -1467,7 +2622,15 @@ export default function SettingsPresetsPage() {
                   : 'h-7 px-3 bg-[#118df0] text-white text-xs'
               }
             >
-              {saving ? 'Saving…' : editingFeeId || editingTaxId ? 'Update' : 'Save'}
+              {saving
+                ? 'Saving…'
+                : editingFeeId ||
+                    editingTaxId ||
+                    editingAccessoryId ||
+                    editingWarrantyId ||
+                    editingInsuranceId
+                  ? 'Update'
+                  : 'Save'}
             </button>
           </div>
         </ModalShell>

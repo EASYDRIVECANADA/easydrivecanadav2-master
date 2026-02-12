@@ -1,12 +1,41 @@
 'use client'
 
-import { type ReactNode, useMemo, useState } from 'react'
+import { type ReactNode, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 
 export default function AdminSettingsLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname()
   const [dealership, setDealership] = useState('EASYDRIVE CANADA')
+  const [isVerified, setIsVerified] = useState(false)
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+
+    const read = () => {
+      try {
+        setIsVerified(window.localStorage.getItem('edc_account_verified') === 'true')
+      } catch {
+        setIsVerified(false)
+      }
+    }
+
+    read()
+
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === 'edc_account_verified') read()
+    }
+    const onAdminSessionChanged = () => {
+      read()
+    }
+
+    window.addEventListener('storage', onStorage)
+    window.addEventListener('edc_admin_session_changed', onAdminSessionChanged)
+    return () => {
+      window.removeEventListener('storage', onStorage)
+      window.removeEventListener('edc_admin_session_changed', onAdminSessionChanged)
+    }
+  }, [])
 
   const tabs = useMemo(
     () =>
@@ -48,14 +77,25 @@ export default function AdminSettingsLayout({ children }: { children: ReactNode 
           <div className="flex flex-wrap items-center gap-4 text-xs font-medium text-gray-600">
             {tabs.map((t) => {
               const selected = activeKey === t.key
+              const disabled = !isVerified
               return (
                 <Link
                   key={t.key}
                   href={t.href}
+                  aria-disabled={disabled}
+                  tabIndex={disabled ? -1 : 0}
+                  onClick={(e) => {
+                    if (disabled) {
+                      e.preventDefault()
+                      e.stopPropagation()
+                    }
+                  }}
                   className={
-                    selected
-                      ? 'inline-flex items-center gap-1.5 px-2 py-2 border-b-2 border-[#118df0] text-[#118df0]'
-                      : 'inline-flex items-center gap-1.5 px-2 py-2 border-b-2 border-transparent hover:text-gray-900'
+                    disabled
+                      ? 'inline-flex items-center gap-1.5 px-2 py-2 border-b-2 border-transparent text-gray-400 cursor-not-allowed'
+                      : selected
+                        ? 'inline-flex items-center gap-1.5 px-2 py-2 border-b-2 border-[#118df0] text-[#118df0]'
+                        : 'inline-flex items-center gap-1.5 px-2 py-2 border-b-2 border-transparent hover:text-gray-900'
                   }
                 >
                   {t.key === 'dealership' ? (
