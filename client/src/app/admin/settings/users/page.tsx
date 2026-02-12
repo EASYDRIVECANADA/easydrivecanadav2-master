@@ -57,6 +57,7 @@ export default function SettingsUsersPage() {
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [pageSize, setPageSize] = useState(5)
+  const [scopedUserId, setScopedUserId] = useState<string | null>(null)
   const [userAddedOpen, setUserAddedOpen] = useState(false)
   const [userAddedMessage, setUserAddedMessage] = useState('User information added')
   const [sessionEmail, setSessionEmail] = useState<string | null>(null)
@@ -155,6 +156,18 @@ export default function SettingsUsersPage() {
     return dbUserId ?? user?.id ?? null
   }
 
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const id = await getWebhookUserId()
+        setScopedUserId(id)
+      } catch {
+        setScopedUserId(null)
+      }
+    }
+    void load()
+  }, [])
+
   const handleNewUserSave = async () => {
     if (newUserTab !== 'password') return
     if (savingNewUser) return
@@ -204,7 +217,11 @@ export default function SettingsUsersPage() {
           updateRow.password = nullIfEmpty(password)
         }
 
-        const { error: updateError } = await supabase.from('users').update(updateRow).eq('id', editingUserId)
+        const { error: updateError } = await supabase
+          .from('users')
+          .update(updateRow)
+          .eq('id', editingUserId)
+          .eq('user_id', scopedUserId)
         if (updateError) throw updateError
 
         await fetchUsers()
@@ -245,6 +262,7 @@ export default function SettingsUsersPage() {
 
       try {
         const insertRow: any = {
+          user_id: scopedUserId,
           first_name: payload.first_name,
           last_name: payload.last_name,
           title: payload.title,
@@ -291,6 +309,10 @@ export default function SettingsUsersPage() {
   }
 
   const fetchUsers = async () => {
+    if (!scopedUserId) {
+      setRows([])
+      return
+    }
     setLoading(true)
     try {
       const { data, error } = await supabase
@@ -298,6 +320,7 @@ export default function SettingsUsersPage() {
         .select(
           'id, first_name, last_name, title, registration, phone, mobile, email, facebook, twitter, password, access_all_deals, access_all_leads_customers, administrator, approver, vendors, delete_vendors, costs, customers, delete_customers, sales, delete_sales, inventory, delete_inventory, settings, sales_reports_access, inventory_reports_access, created_at'
         )
+        .eq('user_id', scopedUserId)
         .order('created_at', { ascending: false })
 
       if (error) throw error
@@ -310,8 +333,9 @@ export default function SettingsUsersPage() {
   }
 
   useEffect(() => {
+    if (!scopedUserId) return
     void fetchUsers()
-  }, [])
+  }, [scopedUserId])
 
   useEffect(() => {
     const init = async () => {
@@ -388,7 +412,8 @@ export default function SettingsUsersPage() {
   const handleDelete = async (id: string, email: string) => {
     if (!confirm(`Delete user ${email}? This cannot be undone.`)) return
     try {
-      const { error } = await supabase.from('users').delete().eq('id', id)
+      if (!scopedUserId) return
+      const { error } = await supabase.from('users').delete().eq('id', id).eq('user_id', scopedUserId)
       if (error) return
       setRows((prev) => prev.filter((r) => r.id !== id))
     } catch {

@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import Link from 'next/link'
 
@@ -149,6 +149,330 @@ function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean
   )
 }
 
+function ToolbarButton({
+  title,
+  onClick,
+  active,
+  children,
+}: {
+  title: string
+  onClick: () => void
+  active?: boolean
+  children: ReactNode
+}) {
+  return (
+    <button
+      type="button"
+      title={title}
+      onMouseDown={(e) => {
+        e.preventDefault()
+        onClick()
+      }}
+      className={
+        active
+          ? 'h-5 min-w-5 px-1 border border-[#118df0] bg-[#118df0] text-[10px] text-white'
+          : 'h-5 min-w-5 px-1 border border-gray-200 bg-white text-[10px] text-gray-700'
+      }
+      tabIndex={-1}
+    >
+      {children}
+    </button>
+  )
+}
+
+function SimpleRichTextEditor({
+  value,
+  onChange,
+  height = 120,
+}: {
+  value: string
+  onChange: (html: string) => void
+  height?: number
+}) {
+  const editorRef = useRef<HTMLDivElement | null>(null)
+  const toolbarRef = useRef<HTMLDivElement | null>(null)
+  const [toolbarState, setToolbarState] = useState({
+    bold: false,
+    italic: false,
+    underline: false,
+    strike: false,
+  })
+
+  const [colorPopover, setColorPopover] = useState<'text' | null>(null)
+  const [pendingColor, setPendingColor] = useState<string | null>(null)
+
+  const palette = useMemo(
+    () => [
+      '#000000',
+      '#434343',
+      '#666666',
+      '#999999',
+      '#b7b7b7',
+      '#cccccc',
+      '#d9d9d9',
+      '#efefef',
+      '#f3f3f3',
+      '#ffffff',
+      '#980000',
+      '#ff0000',
+      '#ff9900',
+      '#ffff00',
+      '#00ff00',
+      '#00ffff',
+      '#4a86e8',
+      '#0000ff',
+      '#9900ff',
+      '#ff00ff',
+      '#e6b8af',
+      '#f4cccc',
+      '#fce5cd',
+      '#fff2cc',
+      '#d9ead3',
+      '#d0e0e3',
+      '#c9daf8',
+      '#cfe2f3',
+      '#d9d2e9',
+      '#ead1dc',
+      '#dd7e6b',
+      '#ea9999',
+      '#f9cb9c',
+      '#ffe599',
+      '#b6d7a8',
+      '#a2c4c9',
+      '#a4c2f4',
+      '#9fc5e8',
+      '#b4a7d6',
+      '#c27ba0',
+      '#cc4125',
+      '#e06666',
+      '#f6b26b',
+      '#ffd966',
+      '#93c47d',
+      '#76a5af',
+      '#6d9eeb',
+      '#6fa8dc',
+      '#8e7cc3',
+      '#c27ba0',
+      '#a61c00',
+      '#cc0000',
+      '#e69138',
+      '#f1c232',
+      '#6aa84f',
+      '#45818e',
+      '#3c78d8',
+      '#3d85c6',
+      '#674ea7',
+      '#a64d79',
+    ],
+    []
+  )
+
+  const refreshToolbarState = () => {
+    try {
+      setToolbarState({
+        bold: document.queryCommandState('bold'),
+        italic: document.queryCommandState('italic'),
+        underline: document.queryCommandState('underline'),
+        strike: document.queryCommandState('strikeThrough'),
+      })
+    } catch {
+      setToolbarState({ bold: false, italic: false, underline: false, strike: false })
+    }
+  }
+
+  useEffect(() => {
+    const onSel = () => refreshToolbarState()
+    document.addEventListener('selectionchange', onSel)
+    return () => document.removeEventListener('selectionchange', onSel)
+  }, [])
+
+  useEffect(() => {
+    if (!colorPopover) return
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as Node
+      if (!toolbarRef.current) return
+      if (toolbarRef.current.contains(t)) return
+      setColorPopover(null)
+    }
+    document.addEventListener('mousedown', onDown)
+    return () => document.removeEventListener('mousedown', onDown)
+  }, [colorPopover])
+
+  useEffect(() => {
+    const el = editorRef.current
+    if (!el) return
+    const active = typeof document !== 'undefined' ? document.activeElement : null
+    if (active === el) return
+    if (el.innerHTML !== (value || '')) {
+      el.innerHTML = value || ''
+    }
+  }, [value])
+
+  const runCmd = (cmd: string, val?: string) => {
+    const el = editorRef.current
+    if (!el) return
+    el.focus()
+    try {
+      document.execCommand(cmd, false, val)
+    } catch {}
+    onChange(el.innerHTML)
+    window.setTimeout(() => refreshToolbarState(), 0)
+  }
+
+  const onInput = () => {
+    const el = editorRef.current
+    if (!el) return
+    onChange(el.innerHTML)
+  }
+
+  const openTextColorPopover = () => {
+    setColorPopover('text')
+    setPendingColor(null)
+  }
+
+  return (
+    <div className="border border-gray-300">
+      <div
+        ref={toolbarRef}
+        className="min-h-7 px-2 py-1 flex items-center flex-wrap gap-1 border-b border-gray-200 bg-gray-50 relative"
+      >
+        <ToolbarButton title="Bold" active={toolbarState.bold} onClick={() => runCmd('bold')}>
+          B
+        </ToolbarButton>
+        <ToolbarButton title="Italic" active={toolbarState.italic} onClick={() => runCmd('italic')}>
+          I
+        </ToolbarButton>
+        <ToolbarButton title="Underline" active={toolbarState.underline} onClick={() => runCmd('underline')}>
+          U
+        </ToolbarButton>
+        <ToolbarButton title="Strike" active={toolbarState.strike} onClick={() => runCmd('strikeThrough')}>
+          S
+        </ToolbarButton>
+
+        <ToolbarButton title="Bulleted list" onClick={() => runCmd('insertUnorderedList')}>
+          ×
+        </ToolbarButton>
+        <ToolbarButton title="Numbered list" onClick={() => runCmd('insertOrderedList')}>
+          ✓
+        </ToolbarButton>
+
+        <select
+          className="h-5 border border-gray-200 bg-white text-[10px] text-gray-700 px-1"
+          defaultValue=""
+          onChange={(e) => {
+            const v = e.target.value
+            if (v) runCmd('fontSize', v)
+            e.currentTarget.value = ''
+          }}
+          title="Font size"
+        >
+          <option value="" />
+          <option value="1">8</option>
+          <option value="2">10</option>
+          <option value="3">12</option>
+          <option value="4">14</option>
+          <option value="5">18</option>
+          <option value="6">24</option>
+          <option value="7">36</option>
+        </select>
+
+        <button
+          type="button"
+          className={
+            colorPopover === 'text'
+              ? 'h-5 min-w-5 px-1 border border-[#118df0] bg-[#118df0] text-[10px] text-white'
+              : 'h-5 min-w-5 px-1 border border-gray-200 bg-white text-[10px] text-gray-700'
+          }
+          title="Text color"
+          onMouseDown={(e) => {
+            e.preventDefault()
+            openTextColorPopover()
+          }}
+          tabIndex={-1}
+        >
+          A
+        </button>
+
+        {colorPopover === 'text' ? (
+          <div className="absolute left-2 top-full mt-1 w-[420px] border border-gray-200 bg-white shadow">
+            <div className="px-3 py-2 border-b border-gray-200">
+              <div className="text-[11px] font-semibold text-gray-700">Text Color</div>
+              <div className="mt-1 flex items-center justify-between">
+                <button
+                  type="button"
+                  className="text-[11px] text-gray-700"
+                  onMouseDown={(e) => {
+                    e.preventDefault()
+                    setPendingColor('#000000')
+                  }}
+                >
+                  Reset to default
+                </button>
+              </div>
+            </div>
+
+            <div className="p-3">
+              <div className="grid grid-cols-10 gap-1">
+                {palette.map((c) => (
+                  <button
+                    key={c}
+                    type="button"
+                    className={(pendingColor || '') === c ? 'h-4 w-4 border border-[#118df0]' : 'h-4 w-4 border border-gray-200'}
+                    style={{ background: c }}
+                    onMouseDown={(e) => {
+                      e.preventDefault()
+                      setPendingColor(c)
+                    }}
+                    tabIndex={-1}
+                    title={c}
+                  />
+                ))}
+              </div>
+
+              <div className="mt-3 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  className="h-8 px-4 bg-gray-600 text-white text-xs font-semibold"
+                  onMouseDown={(e) => {
+                    e.preventDefault()
+                    setColorPopover(null)
+                  }}
+                >
+                  Close
+                </button>
+                <button
+                  type="button"
+                  className="h-8 px-4 bg-[#118df0] text-white text-xs font-semibold"
+                  onMouseDown={(e) => {
+                    e.preventDefault()
+                    const color = pendingColor ?? '#000000'
+                    runCmd('foreColor', color)
+                    setColorPopover(null)
+                  }}
+                >
+                  Select
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
+      </div>
+      <div
+        ref={editorRef}
+        className="w-full p-3 text-xs text-gray-800 outline-none overflow-auto"
+        style={{ height }}
+        contentEditable
+        suppressContentEditableWarning
+        onInput={onInput}
+        onFocus={() => refreshToolbarState()}
+        onBlur={() => setColorPopover(null)}
+        onKeyUp={() => refreshToolbarState()}
+        onMouseUp={() => refreshToolbarState()}
+      />
+    </div>
+  )
+}
+
 function MoneyField({
   value,
   onChange,
@@ -156,11 +480,11 @@ function MoneyField({
 }: {
   value: string
   onChange: (v: string) => void
-  placeholder: string
+  placeholder?: string
 }) {
   return (
     <div className="relative">
-      <div className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-600 text-xs">$</div>
+      <div className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-gray-500">$</div>
       <input
         value={value}
         onChange={(e) => onChange(e.target.value)}
@@ -227,7 +551,8 @@ function ModalShell({
 }
 
 export default function SettingsPresetsPage() {
-  const [isVerified, setIsVerified] = useState(false)
+  const [isVerified, setIsVerified] = useState<boolean | null>(null)
+  const [scopedUserId, setScopedUserId] = useState<string | null>(null)
   const [activeCategory, setActiveCategory] = useState<PresetCategory>('Fees')
   const [search, setSearch] = useState('')
   const [pageSize, setPageSize] = useState(100)
@@ -413,12 +738,39 @@ export default function SettingsPresetsPage() {
     }
   }
 
+  const getWebhookUserId = async () => {
+    const {
+      data: { user },
+      error: userError,
+    } = await supabase.auth.getUser()
+    if (userError) throw userError
+    const dbUserId = await getLoggedInAdminDbUserId()
+    return dbUserId ?? user?.id ?? null
+  }
+
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const id = await getWebhookUserId()
+        setScopedUserId(id)
+      } catch {
+        setScopedUserId(null)
+      }
+    }
+    void load()
+  }, [])
+
   const fetchLeadProperties = async () => {
+    if (!scopedUserId) {
+      setLeadPropertyRows([])
+      return
+    }
     setLoadingLeadProperties(true)
     try {
       const { data, error } = await supabase
         .from('presets_leadproperties')
         .select('id, user_id, name, description, field_type')
+        .eq('user_id', scopedUserId)
         .order('name', { ascending: true })
 
       if (error) throw error
@@ -431,11 +783,16 @@ export default function SettingsPresetsPage() {
   }
 
   const fetchDisclosures = async () => {
+    if (!scopedUserId) {
+      setDisclosureRows([])
+      return
+    }
     setLoadingDisclosures(true)
     try {
       const { data, error } = await supabase
         .from('presets_disclosures')
         .select('id, user_id, name, disclosure')
+        .eq('user_id', scopedUserId)
         .order('name', { ascending: true })
 
       if (error) throw error
@@ -448,11 +805,16 @@ export default function SettingsPresetsPage() {
   }
 
   const fetchInventoryCosts = async () => {
+    if (!scopedUserId) {
+      setInventoryCostRows([])
+      return
+    }
     setLoadingInventoryCosts(true)
     try {
       const { data, error } = await supabase
         .from('presets_inventorycosts')
         .select('id, user_id, name, group_name, vendor, amount, discount, default_tax_rate')
+        .eq('user_id', scopedUserId)
         .order('name', { ascending: true })
 
       if (error) throw error
@@ -465,11 +827,16 @@ export default function SettingsPresetsPage() {
   }
 
   const fetchInsurances = async () => {
+    if (!scopedUserId) {
+      setInsuranceRows([])
+      return
+    }
     setLoadingInsurances(true)
     try {
       const { data, error } = await supabase
         .from('presets_insurance')
         .select('id, user_id, name, description, deductible, duration, price, cost, type, default_tax_rate')
+        .eq('user_id', scopedUserId)
         .order('name', { ascending: true })
 
       if (error) throw error
@@ -512,11 +879,16 @@ export default function SettingsPresetsPage() {
   }
 
   const fetchFees = async () => {
+    if (!scopedUserId) {
+      setFeeRows([])
+      return
+    }
     setLoadingFees(true)
     try {
       const { data, error } = await supabase
         .from('presets_fee')
-        .select('id, name, description, fee_amount, fee_cost, default_to_new_deals, lien_fee, default_tax_rate, created_at')
+        .select('id, user_id, name, description, fee_amount, fee_cost, default_to_new_deals, lien_fee, default_tax_rate, created_at')
+        .eq('user_id', scopedUserId)
         .order('created_at', { ascending: false })
 
       if (error) throw error
@@ -529,11 +901,16 @@ export default function SettingsPresetsPage() {
   }
 
   const fetchWarranties = async () => {
+    if (!scopedUserId) {
+      setWarrantyRows([])
+      return
+    }
     setLoadingWarranties(true)
     try {
       const { data, error } = await supabase
         .from('presets_warranty')
-        .select('id, name, description, deductible, duration, distance, price, cost, dealer_warranty, default_tax_rate')
+        .select('id, user_id, name, description, deductible, duration, distance, price, cost, dealer_warranty, default_tax_rate')
+        .eq('user_id', scopedUserId)
         .order('name', { ascending: true })
 
       if (error) throw error
@@ -546,11 +923,16 @@ export default function SettingsPresetsPage() {
   }
 
   const fetchAccessories = async () => {
+    if (!scopedUserId) {
+      setAccessoryRows([])
+      return
+    }
     setLoadingAccessories(true)
     try {
       const { data, error } = await supabase
         .from('presets_accesories')
-        .select('id, name, description, amount, cost, type, default_tax_rate')
+        .select('id, user_id, name, description, amount, cost, type, default_tax_rate')
+        .eq('user_id', scopedUserId)
         .order('name', { ascending: true })
 
       if (error) throw error
@@ -563,11 +945,16 @@ export default function SettingsPresetsPage() {
   }
 
   const fetchFeeTaxOptions = async () => {
+    if (!scopedUserId) {
+      setFeeTaxOptions([])
+      return
+    }
     setLoadingFeeTaxOptions(true)
     try {
       const { data, error } = await supabase
         .from('presets_tax')
-        .select('id, name, description, rate, default_tax_rate, default_to_sales, default_to_purchases_or_costs')
+        .select('id, user_id, name, description, rate, default_tax_rate, default_to_sales, default_to_purchases_or_costs')
+        .eq('user_id', scopedUserId)
         .order('name', { ascending: true })
 
       if (error) throw error
@@ -580,11 +967,16 @@ export default function SettingsPresetsPage() {
   }
 
   const fetchTaxes = async () => {
+    if (!scopedUserId) {
+      setTaxRows([])
+      return
+    }
     setLoadingTaxes(true)
     try {
       const { data, error } = await supabase
         .from('presets_tax')
-        .select('id, name, description, rate, default_tax_rate, default_to_sales, default_to_purchases_or_costs')
+        .select('id, user_id, name, description, rate, default_tax_rate, default_to_sales, default_to_purchases_or_costs')
+        .eq('user_id', scopedUserId)
         .order('name', { ascending: true })
 
       if (error) throw error
@@ -597,6 +989,7 @@ export default function SettingsPresetsPage() {
   }
 
   useEffect(() => {
+    if (!scopedUserId) return
     if (activeCategory === 'Fees') {
       void fetchFees()
     }
@@ -621,7 +1014,7 @@ export default function SettingsPresetsPage() {
     if (activeCategory === 'Tax Rates') {
       void fetchTaxes()
     }
-  }, [activeCategory])
+  }, [activeCategory, scopedUserId])
 
   const handleSave = async () => {
     if (saving) return
@@ -629,16 +1022,6 @@ export default function SettingsPresetsPage() {
 
     setSaving(true)
     try {
-      const getWebhookUserId = async () => {
-        const {
-          data: { user },
-          error: userError,
-        } = await supabase.auth.getUser()
-        if (userError) throw userError
-        const dbUserId = await getLoggedInAdminDbUserId()
-        return dbUserId ?? user?.id ?? null
-      }
-
       const callPresetsWebhook = async (payload: Record<string, unknown>) => {
         const res = await fetch(PRESETS_WEBHOOK_URL, {
           method: 'POST',
@@ -2501,26 +2884,7 @@ export default function SettingsPresetsPage() {
               <>
                 <div>
                   <div className="text-[11px] text-gray-700 mb-1">Disclosure</div>
-                  <div className="border border-gray-300">
-                    <div className="h-7 px-2 flex items-center gap-1 border-b border-gray-200 bg-gray-50">
-                      {['B', 'I', 'U', 'S', '×', '✓', '16', 'A'].map((t) => (
-                        <button
-                          key={t}
-                          type="button"
-                          className="h-5 min-w-5 px-1 border border-gray-200 bg-white text-[10px] text-gray-700"
-                          tabIndex={-1}
-                        >
-                          {t}
-                        </button>
-                      ))}
-                    </div>
-                    <textarea
-                      value={disclosureBody}
-                      onChange={(e) => setDisclosureBody(e.target.value)}
-                      className="w-full p-3 text-xs text-gray-800 outline-none resize-none"
-                      style={{ height: 120 }}
-                    />
-                  </div>
+                  <SimpleRichTextEditor value={disclosureBody} onChange={setDisclosureBody} height={120} />
                 </div>
               </>
             ) : null}

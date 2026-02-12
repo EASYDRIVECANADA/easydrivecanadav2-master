@@ -10,6 +10,120 @@ export default function DealershipDetailsSettingsPage() {
   const [successModalOpen, setSuccessModalOpen] = useState(false)
   const [updateModalOpen, setUpdateModalOpen] = useState(false)
 
+  const [scopedUserId, setScopedUserId] = useState<string | null>(null)
+
+  const timezoneOptions = useMemo(() => {
+    const getUtcOffsetMinutes = (timeZone: string, at = new Date()) => {
+      try {
+        const dtf = new Intl.DateTimeFormat('en-US', {
+          timeZone,
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: false,
+          timeZoneName: 'shortOffset',
+        } as any)
+        const parts = (dtf as any).formatToParts(at) as Array<{ type: string; value: string }>
+        const tzPart = parts?.find((p) => p.type === 'timeZoneName')?.value ?? ''
+        const m = String(tzPart).match(/GMT([+-])(\d{1,2})(?::?(\d{2}))?/i)
+        if (!m) return 0
+        const sign = m[1] === '-' ? -1 : 1
+        const hh = Number(m[2] || 0)
+        const mm = Number(m[3] || 0)
+        if (!Number.isFinite(hh) || !Number.isFinite(mm)) return 0
+        return sign * (hh * 60 + mm)
+      } catch {
+        return 0
+      }
+    }
+
+    const formatOffset = (mins: number) => {
+      const sign = mins < 0 ? '-' : '+'
+      const abs = Math.abs(mins)
+      const hh = String(Math.floor(abs / 60)).padStart(2, '0')
+      const mm = String(abs % 60).padStart(2, '0')
+      return `UTC${sign}${hh}:${mm}`
+    }
+
+    const sanitizeName = (tz: string) => tz.replace(/_/g, ' ')
+
+    let zones: string[] = []
+    try {
+      const anyIntl = Intl as any
+      zones = typeof anyIntl?.supportedValuesOf === 'function' ? ((anyIntl.supportedValuesOf('timeZone') as string[]) || []) : []
+    } catch {
+      zones = []
+    }
+
+    if (!Array.isArray(zones) || zones.length === 0) {
+      zones = [
+        'UTC',
+        'America/Toronto',
+        'America/Vancouver',
+        'America/Edmonton',
+        'America/Winnipeg',
+        'America/Halifax',
+        'America/St_Johns',
+        'America/New_York',
+        'America/Chicago',
+        'America/Denver',
+        'America/Los_Angeles',
+        'Europe/London',
+        'Europe/Paris',
+        'Asia/Dubai',
+        'Asia/Kolkata',
+        'Asia/Shanghai',
+        'Asia/Tokyo',
+        'Australia/Sydney',
+      ]
+    }
+
+    const now = new Date()
+    const enriched = zones.map((tz) => {
+      const offsetMinutes = getUtcOffsetMinutes(tz, now)
+      return {
+        value: tz,
+        offsetMinutes,
+        label: `(${formatOffset(offsetMinutes)}) ${sanitizeName(tz)}`,
+      }
+    })
+
+    enriched.sort((a, b) => {
+      if (a.offsetMinutes !== b.offsetMinutes) return a.offsetMinutes - b.offsetMinutes
+      return a.label.localeCompare(b.label)
+    })
+
+    return enriched
+  }, [])
+
+  const provinceOptions = useMemo(
+    () => [
+      { value: 'AB', label: 'AB' },
+      { value: 'BC', label: 'BC' },
+      { value: 'MB', label: 'MB' },
+      { value: 'NB', label: 'NB' },
+      { value: 'NL', label: 'NL' },
+      { value: 'NS', label: 'NS' },
+      { value: 'NT', label: 'NT' },
+      { value: 'NU', label: 'NU' },
+      { value: 'ON', label: 'ON' },
+      { value: 'PE', label: 'PE' },
+      { value: 'QC', label: 'QC' },
+      { value: 'SK', label: 'SK' },
+      { value: 'YT', label: 'YT' },
+    ],
+    []
+  )
+
+  const autoCloseDealOptions = useMemo(
+    () => [
+      { value: 'Never', label: 'Never' },
+      { value: '30 days', label: '30 days' },
+      { value: '60 days', label: '60 days' },
+      { value: '90 days', label: '90 days' },
+    ],
+    []
+  )
+
   const getLoggedInAdminDbUserId = async (): Promise<string | null> => {
     try {
       if (typeof window === 'undefined') return null
@@ -43,6 +157,18 @@ export default function DealershipDetailsSettingsPage() {
     const dbUserId = await getLoggedInAdminDbUserId()
     return dbUserId ?? user?.id ?? null
   }
+
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const id = await getWebhookUserId()
+        setScopedUserId(id)
+      } catch {
+        setScopedUserId(null)
+      }
+    }
+    void load()
+  }, [])
 
   const [actionMode, setActionMode] = useState<'save' | 'update'>('save')
   const [dealershipId, setDealershipId] = useState<string | null>(null)
@@ -172,6 +298,8 @@ export default function DealershipDetailsSettingsPage() {
   ])
 
   useEffect(() => {
+    if (!scopedUserId) return
+
     const load = async () => {
       try {
         const { data, error } = await supabase
@@ -179,6 +307,7 @@ export default function DealershipDetailsSettingsPage() {
           .select(
             'id, company_logo, company_name, mvda_number, timezone, website, street_address, suite_apt, city, province, postal_code, country, phone, fax, email, mobile, tax_number, rin, license_transfer_fee, new_plate_fee, renewal_fee, use_sequential_stock_numbers, next_sales_invoice_number, next_purchase_invoice_number, next_work_order_number, service_rate, finance_interest_rate, auto_close_deals_in'
           )
+          .eq('user_id', scopedUserId)
           .order('created_at', { ascending: true })
           .limit(1)
           .maybeSingle()
@@ -224,7 +353,7 @@ export default function DealershipDetailsSettingsPage() {
     }
 
     void load()
-  }, [])
+  }, [scopedUserId])
 
   const onLogoFileChange = (file: File | null) => {
     if (!file) {
@@ -301,6 +430,7 @@ export default function DealershipDetailsSettingsPage() {
 
     try {
       const row = {
+        user_id: scopedUserId,
         company_logo: logoDataUrl,
         company_name: nullIfEmpty(companyName),
         mvda_number: nullIfEmpty(mvda),
@@ -331,7 +461,7 @@ export default function DealershipDetailsSettingsPage() {
       }
 
       if (dealershipId) {
-        const { error } = await supabase.from('dealership').update(row).eq('id', dealershipId)
+        const { error } = await supabase.from('dealership').update(row).eq('id', dealershipId).eq('user_id', scopedUserId)
         if (error) throw error
       } else {
         const { data, error } = await supabase.from('dealership').insert(row).select('id').single()
@@ -494,8 +624,12 @@ export default function DealershipDetailsSettingsPage() {
               value={timezone}
               onChange={(e) => setTimezone(e.target.value)}
             >
-              <option value="" />
-              <option value="America/Toronto">(UTC-05:00) Eastern Time (US & Canada)</option>
+              <option value="">-- Timezone --</option>
+              {timezoneOptions.map((tz) => (
+                <option key={tz.value} value={tz.value}>
+                  {tz.label}
+                </option>
+              ))}
             </select>
           </div>
           <div>
@@ -571,7 +705,11 @@ export default function DealershipDetailsSettingsPage() {
                 onChange={(e) => setProvince(e.target.value)}
               >
                 <option value="" />
-                <option value="ON">ON</option>
+                {provinceOptions.map((p) => (
+                  <option key={p.value} value={p.value}>
+                    {p.label}
+                  </option>
+                ))}
               </select>
             </div>
             <div>
@@ -718,7 +856,11 @@ export default function DealershipDetailsSettingsPage() {
               onChange={(e) => setAutoCloseDealsIn(e.target.value)}
             >
               <option value="" />
-              <option value="Never">Never</option>
+              {autoCloseDealOptions.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
             </select>
           </div>
         </div>

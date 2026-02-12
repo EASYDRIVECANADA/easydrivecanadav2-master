@@ -507,6 +507,8 @@ export default function SettingsReportsPage() {
   const [saveModalOpen, setSaveModalOpen] = useState(false)
   const [updateModalOpen, setUpdateModalOpen] = useState(false)
 
+  const [scopedUserId, setScopedUserId] = useState<string | null>(null)
+
   const getLoggedInAdminDbUserId = async (): Promise<string | null> => {
     try {
       if (typeof window === 'undefined') return null
@@ -540,6 +542,18 @@ export default function SettingsReportsPage() {
     const dbUserId = await getLoggedInAdminDbUserId()
     return dbUserId ?? user?.id ?? null
   }
+
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const id = await getWebhookUserId()
+        setScopedUserId(id)
+      } catch {
+        setScopedUserId(null)
+      }
+    }
+    void load()
+  }, [])
   const [actionMode, setActionMode] = useState<'save' | 'update'>('save')
   const [reportRowId, setReportRowId] = useState<string | null>(null)
 
@@ -572,9 +586,11 @@ export default function SettingsReportsPage() {
 
   const fetchDealershipIdFromDb = async () => {
     try {
+      if (!scopedUserId) return null
       const { data, error } = await supabase
         .from('dealership')
         .select('id')
+        .eq('user_id', scopedUserId)
         .order('created_at', { ascending: true })
         .limit(1)
         .maybeSingle()
@@ -602,6 +618,8 @@ export default function SettingsReportsPage() {
   const [showRetailServiceInvoiceNote, setShowRetailServiceInvoiceNote] = useState(false)
 
   useEffect(() => {
+    if (!scopedUserId) return
+
     const load = async () => {
       try {
         const storedId = getReportRowId()
@@ -614,6 +632,7 @@ export default function SettingsReportsPage() {
           .select(
             'id, show_deal_date, show_salesperson, show_accepted_by, show_omvic_disclosure, show_vehicle_certification, credit_card_terms_html, disclosures_html, new_car_additional_description_html, used_car_additional_description_html, waiver_of_legal_description_html, retail_legal_description_html, wholesale_legal_description_html, show_labor_detail'
           )
+          .eq('user_id', scopedUserId)
           .order('created_at', { ascending: true })
           .limit(1)
           .maybeSingle()
@@ -645,7 +664,7 @@ export default function SettingsReportsPage() {
       }
     }
     void load()
-  }, [])
+  }, [scopedUserId])
 
   const onSave = async () => {
     setSaveError(null)
@@ -705,7 +724,9 @@ export default function SettingsReportsPage() {
     setUpdateModalOpen(false)
     setSaving(true)
     try {
+      if (!scopedUserId) throw new Error('Missing user')
       const row = {
+        user_id: scopedUserId,
         show_deal_date: showDealDateOnBos,
         show_salesperson: showSalespersonOnBos,
         show_accepted_by: showAcceptedByOnBos,
@@ -726,6 +747,7 @@ export default function SettingsReportsPage() {
         const { data } = await supabase
           .from('report')
           .select('id')
+          .eq('user_id', scopedUserId)
           .order('created_at', { ascending: true })
           .limit(1)
           .maybeSingle()
@@ -733,7 +755,7 @@ export default function SettingsReportsPage() {
       }
 
       if (idToUse) {
-        const { error } = await supabase.from('report').update(row).eq('id', idToUse)
+        const { error } = await supabase.from('report').update(row).eq('id', idToUse).eq('user_id', scopedUserId)
         if (error) throw error
         setReportRowId(idToUse)
         persistReportRowId(idToUse)
