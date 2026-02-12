@@ -4,6 +4,8 @@ import { useEffect, useMemo, useState } from 'react'
 
 import CreditAppTab from './CreditAppTab'
 import CustomerInformationTab from './CustomerInformationTab'
+import HistoryTab from './HistoryTab'
+import PrintModal from './PrintModal'
 import type { CreditForm, CustomerForm, CustomerRow } from './types'
 import { supabase } from '@/lib/supabaseClient'
 
@@ -13,7 +15,6 @@ export default function AdminCostumerPage() {
   const [checked, setChecked] = useState<Record<string, boolean>>({})
   const [checkedAll, setCheckedAll] = useState(false)
   const [showCreate, setShowCreate] = useState(false)
-  const [activeTab, setActiveTab] = useState<'customer' | 'credit'>('customer')
   const [saving, setSaving] = useState(false)
   const [saveSuccessOpen, setSaveSuccessOpen] = useState(false)
   const [saveSuccessMessage, setSaveSuccessMessage] = useState('Saved successfully')
@@ -24,6 +25,10 @@ export default function AdminCostumerPage() {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [isCreate, setIsCreate] = useState(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [activeTab, setActiveTab] = useState<'customer' | 'credit' | 'history'>('customer')
+  const [printDropdownOpen, setPrintDropdownOpen] = useState(false)
+  const [creditConsent, setCreditConsent] = useState(false)
+  const [printModalOpen, setPrintModalOpen] = useState(false)
 
   const getLoggedInAdminDbUserId = async (): Promise<string | null> => {
     try {
@@ -171,6 +176,19 @@ export default function AdminCostumerPage() {
       cancelled = true
     }
   }, [])
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (printDropdownOpen) {
+        const target = event.target as Element
+        if (!target.closest('.print-dropdown')) {
+          setPrintDropdownOpen(false)
+        }
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [printDropdownOpen])
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -666,7 +684,71 @@ export default function AdminCostumerPage() {
                   >
                     Credit App.
                   </button>
+                  <button
+                    type="button"
+                    className={
+                      activeTab === 'history'
+                        ? 'h-9 px-4 rounded-t-md bg-[#118df0] text-white text-sm font-semibold'
+                        : 'h-9 px-4 rounded-t-md bg-gray-100 text-gray-700 text-sm font-semibold hover:bg-gray-200'
+                    }
+                    onClick={() => setActiveTab('history')}
+                  >
+                    History
+                  </button>
                 </div>
+              </div>
+
+              {/* Print dropdown */}
+              <div className="relative print-dropdown">
+                <button
+                  type="button"
+                  className="h-10 px-5 rounded-md bg-[#118df0] text-white text-sm font-bold hover:bg-[#0d6ebd] flex items-center gap-2 shadow-sm"
+                  onClick={() => setPrintDropdownOpen((o) => !o)}
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+                  </svg>
+                  Print
+                </button>
+                {printDropdownOpen && (
+                  <div className="absolute right-0 mt-1 w-56 bg-white border border-gray-200 rounded-lg shadow-lg z-10">
+                    <div className="p-3">
+                      <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={creditConsent}
+                          onChange={(e) => setCreditConsent(e.target.checked)}
+                          className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                        />
+                        Credit Consent
+                      </label>
+                    </div>
+                    <div className="border-t border-gray-200 px-3 py-2">
+                      <button
+                        type="button"
+                        disabled={!creditConsent}
+                        className={`w-full h-10 px-5 rounded text-sm font-bold flex items-center justify-center gap-2 shadow-sm ${
+                          creditConsent
+                            ? 'bg-[#118df0] text-white hover:bg-[#0d6ebd]'
+                            : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                        }`}
+                        onClick={() => {
+                          if (creditConsent) {
+                            setPrintDropdownOpen(false)
+                            setPrintModalOpen(true)
+                            // Auto-trigger print after modal loads
+                            setTimeout(() => window.print(), 500)
+                          }
+                        }}
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+                        </svg>
+                        Print
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
 
               <button
@@ -684,8 +766,10 @@ export default function AdminCostumerPage() {
             <div className="flex-1 overflow-y-auto bg-white">
               {activeTab === 'customer' ? (
                 <CustomerInformationTab form={form} setForm={setForm} />
-              ) : (
+              ) : activeTab === 'credit' ? (
                 <CreditAppTab credit={credit} setCredit={setCredit} isCreate={isCreate} />
+              ) : (
+                <HistoryTab customerId={editingId ?? ''} />
               )}
             </div>
 
@@ -867,6 +951,8 @@ export default function AdminCostumerPage() {
           </div>
         </div>
       )}
+
+      <PrintModal open={printModalOpen} onClose={() => setPrintModalOpen(false)} customerId={editingId ?? ''} />
     </div>
   )
 }
