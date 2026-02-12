@@ -121,6 +121,40 @@ export default function SettingsUsersPage() {
     return s.length ? s : null
   }
 
+  const getLoggedInAdminDbUserId = async (): Promise<string | null> => {
+    try {
+      if (typeof window === 'undefined') return null
+      const raw = window.localStorage.getItem('edc_admin_session')
+      if (!raw) return null
+      const parsed = JSON.parse(raw) as { email?: string }
+      const email = String(parsed?.email ?? '').trim().toLowerCase()
+      if (!email) return null
+
+      const { data, error } = await supabase
+        .from('edc_account_verifications')
+        .select('id')
+        .eq('email', email)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+
+      if (error) return null
+      return (data as any)?.id ?? null
+    } catch {
+      return null
+    }
+  }
+
+  const getWebhookUserId = async () => {
+    const {
+      data: { user },
+      error: userError,
+    } = await supabase.auth.getUser()
+    if (userError) throw userError
+    const dbUserId = await getLoggedInAdminDbUserId()
+    return dbUserId ?? user?.id ?? null
+  }
+
   const handleNewUserSave = async () => {
     if (newUserTab !== 'password') return
     if (savingNewUser) return
@@ -181,6 +215,7 @@ export default function SettingsUsersPage() {
       }
 
       const payload = {
+        user_id: await getWebhookUserId(),
         first_name: nullIfEmpty(firstName),
         last_name: nullIfEmpty(lastName),
         title: nullIfEmpty(title),

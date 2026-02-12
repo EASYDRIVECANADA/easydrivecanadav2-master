@@ -147,7 +147,7 @@ function RichTextEditorBlock({
       '#a4c2f4',
       '#9fc5e8',
       '#b4a7d6',
-      '#d5a6bd',
+      '#c27ba0',
       '#cc4125',
       '#e06666',
       '#f6b26b',
@@ -506,6 +506,40 @@ export default function SettingsReportsPage() {
   const [saveError, setSaveError] = useState<string | null>(null)
   const [saveModalOpen, setSaveModalOpen] = useState(false)
   const [updateModalOpen, setUpdateModalOpen] = useState(false)
+
+  const getLoggedInAdminDbUserId = async (): Promise<string | null> => {
+    try {
+      if (typeof window === 'undefined') return null
+      const raw = window.localStorage.getItem('edc_admin_session')
+      if (!raw) return null
+      const parsed = JSON.parse(raw) as { email?: string }
+      const email = String(parsed?.email ?? '').trim().toLowerCase()
+      if (!email) return null
+
+      const { data, error } = await supabase
+        .from('edc_account_verifications')
+        .select('id')
+        .eq('email', email)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+
+      if (error) return null
+      return (data as any)?.id ?? null
+    } catch {
+      return null
+    }
+  }
+
+  const getWebhookUserId = async () => {
+    const {
+      data: { user },
+      error: userError,
+    } = await supabase.auth.getUser()
+    if (userError) throw userError
+    const dbUserId = await getLoggedInAdminDbUserId()
+    return dbUserId ?? user?.id ?? null
+  }
   const [actionMode, setActionMode] = useState<'save' | 'update'>('save')
   const [reportRowId, setReportRowId] = useState<string | null>(null)
 
@@ -623,7 +657,10 @@ export default function SettingsReportsPage() {
       if (!dealership_id) {
         dealership_id = await fetchDealershipIdFromDb()
       }
+
+      const user_id = await getWebhookUserId()
       const body = {
+        user_id,
         dealership_id,
         bill_of_sale: {
           show_deal_date: showDealDateOnBos,
