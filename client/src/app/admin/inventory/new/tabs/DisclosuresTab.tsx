@@ -10,6 +10,7 @@ interface Disclosure {
 
 interface DisclosuresTabProps {
   vehicleId: string
+  userId?: string | null
   vehicleData?: any
   onError?: (message: string) => void
   hideSaveButton?: boolean
@@ -29,7 +30,7 @@ const PRESET_DISCLOSURES = [
 
 const NOTES_DISCLOSURE_ID = '__custom_note__'
 
-const DisclosuresTab = forwardRef<DisclosuresTabHandle, DisclosuresTabProps>(function DisclosuresTab({ vehicleId, vehicleData, onError, hideSaveButton }, ref) {
+const DisclosuresTab = forwardRef<DisclosuresTabHandle, DisclosuresTabProps>(function DisclosuresTab({ vehicleId, userId, vehicleData, onError, hideSaveButton }, ref) {
   const [brandType, setBrandType] = useState<'N/A' | 'None' | 'Rebuilt' | 'Salvage' | 'Irreparable'>('N/A')
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedDisclosures, setSelectedDisclosures] = useState<Disclosure[]>([])
@@ -154,6 +155,7 @@ const DisclosuresTab = forwardRef<DisclosuresTabHandle, DisclosuresTabProps>(fun
       const stockNumber = typeof stockNumberRaw === 'string' ? (stockNumberRaw.trim() || null) : stockNumberRaw ?? null
 
       const webhookBody = {
+        user_id: userId ?? null,
         vehicleId,
         stockNumber,
         brandType,

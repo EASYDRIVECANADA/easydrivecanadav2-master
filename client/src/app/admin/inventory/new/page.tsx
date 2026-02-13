@@ -17,6 +17,7 @@ export default function NewVehiclePage() {
   const [disclosuresSaved, setDisclosuresSaved] = useState(false)
   const [purchaseSaved, setPurchaseSaved] = useState(false)
   const [costsSaved, setCostsSaved] = useState(false)
+  const [webhookUserId, setWebhookUserId] = useState<string | null>(null)
   const [formData, setFormData] = useState({
     make: '',
     model: '',
@@ -185,6 +186,51 @@ export default function NewVehiclePage() {
     }
   }, [router])
 
+  const getLoggedInAdminDbUserId = async (): Promise<string | null> => {
+    try {
+      if (typeof window === 'undefined') return null
+      const raw = window.localStorage.getItem('edc_admin_session')
+      if (!raw) return null
+      const parsed = JSON.parse(raw) as { email?: string }
+      const email = String(parsed?.email ?? '').trim().toLowerCase()
+      if (!email) return null
+
+      const { data, error } = await supabase
+        .from('edc_account_verifications')
+        .select('id')
+        .eq('email', email)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+
+      if (error) return null
+      return (data as any)?.id ? String((data as any).id) : null
+    } catch {
+      return null
+    }
+  }
+
+  const getWebhookUserId = async (): Promise<string | null> => {
+    try {
+      const dbUserId = await getLoggedInAdminDbUserId()
+      return dbUserId
+    } catch {
+      return null
+    }
+  }
+
+  useEffect(() => {
+    let cancelled = false
+    const load = async () => {
+      const id = await getWebhookUserId()
+      if (!cancelled) setWebhookUserId(id)
+    }
+    load()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
   useEffect(() => {
     if (!createdVehicleId && activeTab !== 'details') {
       setActiveTab('details')
@@ -219,10 +265,12 @@ export default function NewVehiclePage() {
     }
     try {
       setSendingVin(true)
+      const user_id = webhookUserId ?? (await getWebhookUserId())
       const res = await fetch('/api/vincode', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          user_id,
           vin: String(formData.vin).trim(),
         }),
       })
@@ -309,6 +357,12 @@ export default function NewVehiclePage() {
     setError('')
 
     try {
+      const user_id = webhookUserId ?? (await getWebhookUserId())
+      if (!user_id) {
+        setError('Missing user session. Please re-login.')
+        return
+      }
+
       const formatDbError = (err: any) => {
         if (!err) return ''
         const parts: string[] = []
@@ -338,6 +392,8 @@ export default function NewVehiclePage() {
             return [k, v]
           })
         )
+
+        ;(webhookBody as any).user_id = user_id
 
         ;(webhookBody as any).ad_description = String((formData as any).adDescription ?? '').trim() === ''
           ? null
@@ -370,7 +426,13 @@ export default function NewVehiclePage() {
         }
       } catch (err: any) {
         const msg = typeof err?.message === 'string' && err.message.trim() ? err.message.trim() : ''
-        setError(msg ? `Webhook failed: ${msg}` : 'Webhook failed')
+        const isDuplicateVin =
+          msg.toLowerCase().includes('duplicate key value violates unique constraint') ||
+          msg.toLowerCase().includes('edc_vehicles_vin_key')
+
+        if (!isDuplicateVin) {
+          setError(msg ? `Webhook failed: ${msg}` : 'Webhook failed')
+        }
         return
       }
 
@@ -952,12 +1014,14 @@ export default function NewVehiclePage() {
               <DisclosuresTab
                 ref={disclosuresTabRef}
                 vehicleId={createdVehicleId}
+                userId={webhookUserId}
                 vehicleData={formData}
                 onError={(msg) => setError(msg)}
                 hideSaveButton
               />
               <div className="mt-6">
                 <button
+                  type="button"
                   onClick={async () => {
                     if (nextPurchaseSaving) return
                     try {
@@ -985,12 +1049,14 @@ export default function NewVehiclePage() {
               <PurchaseTab
                 ref={purchaseTabRef}
                 vehicleId={createdVehicleId}
+                userId={webhookUserId}
                 stockNumber={formData.stockNumber}
                 onError={(msg) => setError(msg)}
                 hideSaveButton
               />
               <div className="mt-6">
                 <button
+                  type="button"
                   onClick={async () => {
                     if (nextCostsSaving) return
                     try {
@@ -1023,12 +1089,14 @@ export default function NewVehiclePage() {
               <CostsTab
                 ref={costsTabRef}
                 vehicleId={createdVehicleId}
+                userId={webhookUserId}
                 vehiclePrice={parseFloat(String(formData.price || 0)) || 0}
                 stockNumber={formData.stockNumber || ''}
                 onError={(msg) => setError(msg)}
               />
               <div className="mt-6">
                 <button
+                  type="button"
                   onClick={async () => {
                     if (nextWarrantySaving) return
                     try {

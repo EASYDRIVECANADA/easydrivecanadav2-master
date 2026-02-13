@@ -78,6 +78,7 @@ export default function AdminInventoryPage() {
   const [modalMessage, setModalMessage] = useState('')
   const [modalBusy, setModalBusy] = useState(false)
   const [modalOnConfirm, setModalOnConfirm] = useState<(() => Promise<void> | void) | null>(null)
+  const [scopedUserId, setScopedUserId] = useState<string | null>(null)
   const [addFormData, setAddFormData] = useState({
     make: '',
     model: '',
@@ -135,6 +136,30 @@ export default function AdminInventoryPage() {
       }
     }
     return val
+  }
+
+  const getLoggedInAdminDbUserId = async (): Promise<string | null> => {
+    try {
+      if (typeof window === 'undefined') return null
+      const raw = window.localStorage.getItem('edc_admin_session')
+      if (!raw) return null
+      const parsed = JSON.parse(raw) as { email?: string }
+      const email = String(parsed?.email ?? '').trim().toLowerCase()
+      if (!email) return null
+
+      const { data, error } = await supabase
+        .from('edc_account_verifications')
+        .select('id')
+        .eq('email', email)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+
+      if (error) return null
+      return (data as any)?.id ?? null
+    } catch {
+      return null
+    }
   }
 
   const normalizeStatus = (raw: any) => {
@@ -236,7 +261,12 @@ export default function AdminInventoryPage() {
       router.push('/admin')
       return
     }
-    fetchVehicles()
+    const boot = async () => {
+      const uid = await getLoggedInAdminDbUserId()
+      setScopedUserId(uid)
+      await fetchVehicles(uid)
+    }
+    void boot()
   }, [])
 
   const handleOpenAddModal = () => {
@@ -268,6 +298,7 @@ export default function AdminInventoryPage() {
       const { data, error: dbError } = await supabase
         .from('edc_vehicles')
         .insert({
+          user_id: scopedUserId,
           make: payload.make,
           model: payload.model,
           year: payload.year,
@@ -310,16 +341,22 @@ export default function AdminInventoryPage() {
     }
   }
 
-  const fetchVehicles = async () => {
+  const fetchVehicles = async (userId: string | null) => {
     setLoading(true)
     try {
-      const { data, error } = await supabase
+      let q = supabase
         .from('edc_vehicles')
         .select('*')
         // Order by stock_number descending so the most recent is on top
         // Note: stock_number is stored as text; server-side order will be lexicographic.
         // We'll enforce a numeric sort on the client after mapping as a reliable fallback.
         .order('stock_number', { ascending: false })
+
+      if (userId) {
+        q = q.eq('user_id', userId)
+      }
+
+      const { data, error } = await q
 
       if (error) throw error
 

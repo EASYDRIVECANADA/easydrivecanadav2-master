@@ -13,6 +13,13 @@ const TAX_RATES: Record<string, number> = {
   Exempt: 0,
 }
 
+type TaxPresetRow = {
+  id: string
+  name: string | null
+  rate: number | string | null
+  default_tax_rate: boolean | null
+}
+
 interface CostItem {
   id: string
   date: string
@@ -40,6 +47,7 @@ interface CostsData {
 
 interface CostsTabProps {
   vehicleId: string
+  userId?: string | null
   vehiclePrice: number
   stockNumber?: string
   onError?: (message: string) => void
@@ -49,7 +57,7 @@ export interface CostsTabHandle {
   save: () => Promise<boolean>
 }
 
-const CostsTab = forwardRef<CostsTabHandle, CostsTabProps>(function CostsTab({ vehicleId, vehiclePrice, stockNumber, onError }, ref) {
+const CostsTab = forwardRef<CostsTabHandle, CostsTabProps>(function CostsTab({ vehicleId, userId, vehiclePrice, stockNumber, onError }, ref) {
   const [costsData, setCostsData] = useState<CostsData>({
     listPrice: vehiclePrice || 0,
     salePrice: 0,
@@ -64,6 +72,8 @@ const CostsTab = forwardRef<CostsTabHandle, CostsTabProps>(function CostsTab({ v
   const [showSearchTip, setShowSearchTip] = useState(true)
   const [showPresetTip, setShowPresetTip] = useState(true)
   const [editingCost, setEditingCost] = useState<CostItem | null>(null)
+  const [taxPresets, setTaxPresets] = useState<TaxPresetRow[]>([])
+  const [loadingTaxPresets, setLoadingTaxPresets] = useState(false)
   const [modalForm, setModalForm] = useState<Partial<CostItem>>({
     date: new Date().toISOString().split('T')[0],
     name: '',
@@ -77,6 +87,95 @@ const CostsTab = forwardRef<CostsTabHandle, CostsTabProps>(function CostsTab({ v
     tax: 0,
     taxType: 'HST',
   })
+
+  useEffect(() => {
+    const getLoggedInAdminDbUserId = async (): Promise<string | null> => {
+      try {
+        if (typeof window === 'undefined') return null
+        const raw = window.localStorage.getItem('edc_admin_session')
+        if (!raw) return null
+        const parsed = JSON.parse(raw) as { email?: string }
+        const email = String(parsed?.email ?? '').trim().toLowerCase()
+        if (!email) return null
+
+        const { data, error } = await supabase
+          .from('edc_account_verifications')
+          .select('id')
+          .eq('email', email)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+
+        if (error) return null
+        return (data as any)?.id ?? null
+      } catch {
+        return null
+      }
+    }
+
+    const load = async () => {
+      setLoadingTaxPresets(true)
+      try {
+        const scopedUserId = await getLoggedInAdminDbUserId()
+        if (!scopedUserId) {
+          setTaxPresets([])
+          return
+        }
+
+        const { data, error } = await supabase
+          .from('presets_tax')
+          .select('id, name, rate, default_tax_rate')
+          .eq('user_id', scopedUserId)
+          .order('name', { ascending: true })
+
+        if (error) throw error
+        const rows = Array.isArray(data) ? (data as TaxPresetRow[]) : []
+        setTaxPresets(rows)
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e)
+        onError?.(msg)
+        setTaxPresets([])
+      } finally {
+        setLoadingTaxPresets(false)
+      }
+    }
+
+    void load()
+  }, [userId, onError])
+
+  useEffect(() => {
+    if (!taxPresets.length) return
+    setModalForm((prev) => {
+      const current = String(prev.taxType || '').trim()
+      const hasCurrent = current && taxPresets.some((t) => String(t.name || '').trim() === current)
+      if (hasCurrent) return prev
+
+      const defaultRow = taxPresets.find((t) => Boolean(t.default_tax_rate) && String(t.name || '').trim())
+      const firstRow = taxPresets.find((t) => String(t.name || '').trim())
+      const nextName = String((defaultRow || firstRow)?.name || '').trim()
+      if (!nextName) return prev
+      return { ...prev, taxType: nextName }
+    })
+  }, [taxPresets])
+
+  const resolveTaxRate = (taxType: string | undefined) => {
+    const key = String(taxType || '').trim()
+    if (!key) return 0
+
+    const preset = taxPresets.find((t) => String(t.name || '').trim() === key)
+    if (preset) {
+      const n = typeof preset.rate === 'number' ? preset.rate : parseFloat(String(preset.rate || '0'))
+      return Number.isFinite(n) ? n : 0
+    }
+
+    return TAX_RATES[key] ?? 0
+  }
+
+  const formatTaxLabel = (name: string, rate: number) => {
+    const pct = rate * 100
+    const pctStr = Number.isFinite(pct) ? String(pct.toFixed(3)).replace(/\.?(0+)$/, '').replace(/\.$/, '') : '0'
+    return `${name} ${pctStr}%`
+  }
 
   // Load purchase price from edc_purchase by stock_number
   const fetchPurchasePriceByStock = async () => {
@@ -224,7 +323,11 @@ const CostsTab = forwardRef<CostsTabHandle, CostsTabProps>(function CostsTab({ v
             total,
           }
         })
-        setCostsData(prev => ({ ...prev, additionalExpenses: mapped }))
+
+        setCostsData((prev) => {
+          if (mapped.length === 0 && prev.additionalExpenses.length > 0) return prev
+          return { ...prev, additionalExpenses: mapped }
+        })
       }
     } catch (err) {
       console.error('Error fetching edc_costs by stock number:', err)
@@ -279,8 +382,9 @@ const CostsTab = forwardRef<CostsTabHandle, CostsTabProps>(function CostsTab({ v
       const qty = Number(next.qty || 1)
       const discount = Number(next.discount || 0)
       const subtotal = Math.max(0, price * qty - discount)
-      const rate = TAX_RATES[next.taxType || 'Exempt'] ?? 0
+      const rate = resolveTaxRate(next.taxType)
       next.tax = subtotal * rate
+      next.total = subtotal + (next.tax || 0)
       return next
     })
   }
@@ -289,7 +393,7 @@ const CostsTab = forwardRef<CostsTabHandle, CostsTabProps>(function CostsTab({ v
     const price = modalForm.price || 0
     const qty = modalForm.qty || 1
     const discount = modalForm.discount || 0
-    const rate = TAX_RATES[modalForm.taxType || 'Exempt'] ?? 0
+    const rate = resolveTaxRate(modalForm.taxType)
     const tax = Math.max(0, (price * qty) - discount) * rate
     const total = (price * qty) - discount + tax
 
@@ -351,30 +455,56 @@ const CostsTab = forwardRef<CostsTabHandle, CostsTabProps>(function CostsTab({ v
         taxType: modalForm.taxType || 'HST',
         total,
       }
+
+      const nextAdditionalExpenses = [...(costsData.additionalExpenses || []), newItem]
       setCostsData(prev => ({
         ...prev,
-        additionalExpenses: [...prev.additionalExpenses, newItem]
+        additionalExpenses: nextAdditionalExpenses,
       }))
 
-      // Post to external webhook and wait for response, then refresh from Supabase if successful
+      // Add Cost should only use the /webhook/costs flow (proxied by /api/costs)
       try {
-        const res = await fetch('https://primary-production-6722.up.railway.app/webhook/Cost', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            stockNumber: stockNumber || null,
-            vehicleId,
-            cost: newItem,
-          }),
-        })
-        if (res.ok) {
-          // Optionally inspect response body if needed
-          await fetchCostsByStock()
+        if (!stockNumber || !String(stockNumber).trim()) {
+          const msg = 'Missing stock number. Please set Stock # in Vehicle Details first.'
+          onError?.(msg)
         } else {
-          console.error('Webhook responded with non-OK status:', res.status)
+          const fullPayload: Record<string, any> = {
+            user_id: userId ?? null,
+            vehicleId: String(vehicleId),
+            stockNumber: String(stockNumber).trim(),
+            listPrice: costsData.listPrice,
+            salePrice: costsData.salePrice,
+            msrp: costsData.msrp,
+            purchasePrice: costsData.purchasePrice,
+            actualCashValue: costsData.actualCashValue,
+            additionalExpenses: nextAdditionalExpenses,
+          }
+
+          const payload = Object.fromEntries(
+            Object.entries(fullPayload).map(([k, v]) => {
+              if (v === undefined) return [k, null]
+              if (typeof v === 'string') {
+                const trimmed = v.trim()
+                return [k, trimmed === '' ? null : trimmed]
+              }
+              return [k, v]
+            })
+          )
+
+          const res = await fetch('/api/costs', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          })
+
+          const text = await res.text().catch(() => '')
+          if (!res.ok) throw new Error(text || `Webhook responded with ${res.status}`)
+          if (!String(text).toLowerCase().includes('done')) throw new Error(text || 'Webhook did not return done')
+          await fetchCostsByStock()
         }
       } catch (err) {
-        console.error('Failed to send cost to webhook:', err)
+        const msg = err instanceof Error ? err.message : String(err)
+        onError?.(msg)
       }
     }
     setShowModal(false)
@@ -389,7 +519,7 @@ const CostsTab = forwardRef<CostsTabHandle, CostsTabProps>(function CostsTab({ v
           const price = Number(updated.price || 0)
           const qty = Number(updated.qty || 1)
           const discount = Number(updated.discount || 0)
-          const rate = TAX_RATES[updated.taxType || 'Exempt'] ?? 0
+          const rate = resolveTaxRate(updated.taxType)
           const tax = Math.max(0, (price * qty) - discount) * rate
           updated.tax = tax
           updated.total = (price * qty) - discount + tax
@@ -440,6 +570,7 @@ const CostsTab = forwardRef<CostsTabHandle, CostsTabProps>(function CostsTab({ v
       }
 
       const fullPayload: Record<string, any> = {
+        user_id: userId ?? null,
         vehicleId: String(vehicleId),
         stockNumber: String(stockNumber).trim(),
         listPrice: costsData.listPrice,
@@ -489,9 +620,13 @@ const CostsTab = forwardRef<CostsTabHandle, CostsTabProps>(function CostsTab({ v
   }))
 
   // Calculate totals
-  const additionalExpensesTotal = costsData.additionalExpenses.reduce((sum, item) => sum + item.total, 0)
-  const totalInvested = costsData.purchasePrice + additionalExpensesTotal
   const totalTax = costsData.additionalExpenses.reduce((sum, item) => sum + item.tax, 0)
+  const additionalExpensesSubtotal = costsData.additionalExpenses.reduce(
+    (sum, item) => sum + Math.max(0, Number(item.price || 0) * Number(item.qty || 1) - Number(item.discount || 0)),
+    0
+  )
+  const additionalExpensesTotal = additionalExpensesSubtotal + totalTax
+  const totalInvested = costsData.purchasePrice + additionalExpensesSubtotal
   const grandTotal = totalInvested + totalTax
   const potentialProfit = costsData.listPrice - grandTotal
 
@@ -624,9 +759,9 @@ const CostsTab = forwardRef<CostsTabHandle, CostsTabProps>(function CostsTab({ v
         <div className="flex items-center justify-center">
           <div className="relative w-48 h-48">
             {(() => {
-              const total = costsData.purchasePrice + additionalExpensesTotal + Math.max(0, potentialProfit)
+              const total = costsData.purchasePrice + additionalExpensesSubtotal + Math.max(0, potentialProfit)
               const purchasePercent = total > 0 ? (costsData.purchasePrice / total) * 100 : 33
-              const expensesPercent = total > 0 ? (additionalExpensesTotal / total) * 100 : 33
+              const expensesPercent = total > 0 ? (additionalExpensesSubtotal / total) * 100 : 33
               const profitPercent = total > 0 ? (Math.max(0, potentialProfit) / total) * 100 : 34
               const circumference = 2 * Math.PI * 35
               const purchaseDash = (purchasePercent / 100) * circumference
@@ -943,12 +1078,31 @@ const CostsTab = forwardRef<CostsTabHandle, CostsTabProps>(function CostsTab({ v
                       onChange={handleModalChange}
                       className="bg-gray-50 border border-gray-200 rounded-lg px-4 py-2.5 text-gray-900 focus:bg-white focus:ring-2 focus:ring-[#118df0] focus:border-transparent transition-all cursor-pointer"
                     >
-                      <option value="HST">HST 13%</option>
-                      <option value="RST">RST 8%</option>
-                      <option value="GST">GST 5%</option>
-                      <option value="PST">PST 6%</option>
-                      <option value="QST">QST 9.975%</option>
-                      <option value="Exempt">Exempt 0%</option>
+                      {loadingTaxPresets ? (
+                        <option value="">Loading...</option>
+                      ) : taxPresets.length ? (
+                        taxPresets
+                          .filter((t) => String(t.name || '').trim())
+                          .map((t) => {
+                            const name = String(t.name || '').trim()
+                            const rate = typeof t.rate === 'number' ? t.rate : parseFloat(String(t.rate || '0'))
+                            const normalizedRate = Number.isFinite(rate) ? rate : 0
+                            return (
+                              <option key={t.id} value={name}>
+                                {formatTaxLabel(name, normalizedRate)}
+                              </option>
+                            )
+                          })
+                      ) : (
+                        <>
+                          <option value="HST">HST 13%</option>
+                          <option value="RST">RST 8%</option>
+                          <option value="GST">GST 5%</option>
+                          <option value="PST">PST 6%</option>
+                          <option value="QST">QST 9.975%</option>
+                          <option value="Exempt">Exempt 0%</option>
+                        </>
+                      )}
                     </select>
                   </div>
                 </div>

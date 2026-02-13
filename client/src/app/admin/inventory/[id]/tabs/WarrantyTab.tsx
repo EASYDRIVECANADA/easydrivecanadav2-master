@@ -3,6 +3,11 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 
+type WarrantyPresetRow = {
+  id: string
+  name: string | null
+}
+
 interface WarrantyData {
   hasWarranty: boolean
   warrantyType?: string
@@ -32,23 +37,137 @@ export default function WarrantyTab({ vehicleId }: WarrantyTabProps) {
     hasWarranty: false,
     extendedWarranty: false,
   })
+  const [warrantyRowExists, setWarrantyRowExists] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [resultModalOpen, setResultModalOpen] = useState(false)
+  const [resultModalTitle, setResultModalTitle] = useState('')
+  const [resultModalMessage, setResultModalMessage] = useState('')
+  const [warrantyPresets, setWarrantyPresets] = useState<WarrantyPresetRow[]>([])
+  const [loadingWarrantyPresets, setLoadingWarrantyPresets] = useState(false)
+
+  const formatAnyError = (err: any) => {
+    if (!err) return ''
+    if (err instanceof Error) return err.message
+    const msg = typeof err?.message === 'string' ? err.message : ''
+    const details = typeof err?.details === 'string' ? err.details : ''
+    const hint = typeof err?.hint === 'string' ? err.hint : ''
+    const code = typeof err?.code === 'string' ? err.code : ''
+    const parts = [msg, details, hint, code ? `code: ${code}` : ''].filter(Boolean)
+    if (parts.length) return parts.join(' | ')
+    try {
+      return JSON.stringify(err)
+    } catch {
+      return String(err)
+    }
+  }
+
+  const getLoggedInAdminDbUserId = async (): Promise<string | null> => {
+    try {
+      if (typeof window === 'undefined') return null
+      const raw = window.localStorage.getItem('edc_admin_session')
+      if (!raw) return null
+      const parsed = JSON.parse(raw) as { email?: string }
+      const email = String(parsed?.email ?? '').trim().toLowerCase()
+      if (!email) return null
+
+      const { data, error } = await supabase
+        .from('edc_account_verifications')
+        .select('id')
+        .eq('email', email)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+
+      if (error) return null
+      return (data as any)?.id ?? null
+    } catch {
+      return null
+    }
+  }
 
   useEffect(() => {
     fetchWarrantyData()
   }, [vehicleId])
 
+  useEffect(() => {
+    const load = async () => {
+      setLoadingWarrantyPresets(true)
+      try {
+        const scopedUserId = await getLoggedInAdminDbUserId()
+        if (!scopedUserId) {
+          setWarrantyPresets([])
+          return
+        }
+
+        const { data, error } = await supabase
+          .from('presets_warranty')
+          .select('id, name')
+          .eq('user_id', scopedUserId)
+          .order('name', { ascending: true })
+
+        if (error) throw error
+        const rows = Array.isArray(data) ? (data as WarrantyPresetRow[]) : []
+        setWarrantyPresets(rows)
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e)
+        console.error('Error loading warranty presets:', msg)
+        setWarrantyPresets([])
+      } finally {
+        setLoadingWarrantyPresets(false)
+      }
+    }
+
+    void load()
+  }, [])
+
+  useEffect(() => {
+    if (!warrantyPresets.length) return
+    setWarrantyData((prev) => {
+      const current = String(prev.warrantyType || '').trim()
+      const hasCurrent = current && warrantyPresets.some((w) => String(w.name || '').trim() === current)
+      if (hasCurrent) return prev
+      const first = warrantyPresets.find((w) => String(w.name || '').trim())
+      const nextName = String(first?.name || '').trim()
+      if (!nextName) return prev
+      return { ...prev, warrantyType: nextName }
+    })
+  }, [warrantyPresets])
+
   const fetchWarrantyData = async () => {
     try {
       const { data, error } = await supabase
-        .from('edc_vehicles')
-        .select('warranty_data')
-        .eq('id', vehicleId)
+        .from('edc_warranty')
+        .select('*')
+        .eq('vehicle_id', vehicleId)
+        .order('created_at', { ascending: false })
+        .limit(1)
         .maybeSingle()
 
-      if (data?.warranty_data) {
-        setWarrantyData(data.warranty_data)
-      }
+      if (error) return
+      if (!data) return
+
+      setWarrantyRowExists(true)
+
+      setWarrantyData((prev) => ({
+        ...prev,
+        hasWarranty: Boolean((data as any).has_warranty ?? prev.hasWarranty),
+        warrantyType: (data as any).warranty_type ?? prev.warrantyType,
+        warrantyProvider: (data as any).warranty_provider ?? prev.warrantyProvider,
+        warrantyStartDate: (data as any).warranty_start_date ?? prev.warrantyStartDate,
+        warrantyEndDate: (data as any).warranty_end_date ?? prev.warrantyEndDate,
+        warrantyMileageLimit: (data as any).warranty_mileage_limit ?? prev.warrantyMileageLimit,
+        warrantyDescription: (data as any).warranty_description ?? prev.warrantyDescription,
+        warrantyTerms: (data as any).warranty_terms ?? prev.warrantyTerms,
+        warrantyContact: (data as any).warranty_contact ?? prev.warrantyContact,
+        warrantyPhone: (data as any).warranty_phone ?? prev.warrantyPhone,
+        warrantyEmail: (data as any).warranty_email ?? prev.warrantyEmail,
+        warrantyClaimProcess: (data as any).warranty_claim_process ?? prev.warrantyClaimProcess,
+        extendedWarranty: Boolean((data as any).extended_warranty ?? prev.extendedWarranty),
+        extendedWarrantyProvider: (data as any).extended_warranty_provider ?? prev.extendedWarrantyProvider,
+        extendedWarrantyEndDate: (data as any).extended_warranty_end_date ?? prev.extendedWarrantyEndDate,
+        extendedWarrantyMileageLimit: (data as any).extended_warranty_mileage_limit ?? prev.extendedWarrantyMileageLimit,
+        extendedWarrantyCost: (data as any).extended_warranty_cost ?? prev.extendedWarrantyCost,
+      }))
     } catch (error) {
       console.error('Error fetching warranty data:', error)
     }
@@ -66,16 +185,56 @@ export default function WarrantyTab({ vehicleId }: WarrantyTabProps) {
   const handleSave = async () => {
     setSaving(true)
     try {
-      const { error } = await supabase
-        .from('edc_vehicles')
-        .update({ warranty_data: warrantyData })
-        .eq('id', vehicleId)
+      const user_id = await getLoggedInAdminDbUserId()
+      const fullWarranty: Record<string, any> = {
+        hasWarranty: warrantyData.hasWarranty ?? false,
+        warrantyType: warrantyData.warrantyType ?? null,
+        warrantyProvider: warrantyData.warrantyProvider ?? null,
+        warrantyStartDate: warrantyData.warrantyStartDate ?? null,
+        warrantyEndDate: warrantyData.warrantyEndDate ?? null,
+        warrantyMileageLimit: warrantyData.warrantyMileageLimit ?? null,
+        warrantyDescription: warrantyData.warrantyDescription ?? null,
+        warrantyTerms: warrantyData.warrantyTerms ?? null,
+        warrantyContact: warrantyData.warrantyContact ?? null,
+        warrantyPhone: warrantyData.warrantyPhone ?? null,
+        warrantyEmail: warrantyData.warrantyEmail ?? null,
+        warrantyClaimProcess: warrantyData.warrantyClaimProcess ?? null,
+        extendedWarranty: warrantyData.extendedWarranty ?? false,
+        extendedWarrantyProvider: warrantyData.extendedWarrantyProvider ?? null,
+        extendedWarrantyEndDate: warrantyData.extendedWarrantyEndDate ?? null,
+        extendedWarrantyMileageLimit: warrantyData.extendedWarrantyMileageLimit ?? null,
+        extendedWarrantyCost: warrantyData.extendedWarrantyCost ?? null,
+      }
 
-      if (error) throw error
-      alert('Warranty information saved successfully!')
+      const res = await fetch('/api/warranty', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          user_id: user_id ?? null,
+          vehicleId: String(vehicleId),
+          action: warrantyRowExists ? 'edit' : 'create',
+          warranty_data: fullWarranty,
+        }),
+      })
+
+      const text = await res.text().catch(() => '')
+      if (!res.ok) throw new Error(text || `Webhook responded with ${res.status}`)
+
+      const webhookMessage = text || 'done'
+
+      setResultModalTitle('Warranty Saved')
+      setResultModalMessage(webhookMessage)
+      setResultModalOpen(true)
+
+      if (webhookMessage.toLowerCase().includes('done')) {
+        setWarrantyRowExists(true)
+      }
     } catch (error) {
       console.error('Error saving warranty data:', error)
-      alert('Error saving warranty information')
+      const msg = formatAnyError(error)
+      setResultModalTitle('Save Failed')
+      setResultModalMessage(msg || 'Error saving warranty information')
+      setResultModalOpen(true)
     } finally {
       setSaving(false)
     }
@@ -83,6 +242,34 @@ export default function WarrantyTab({ vehicleId }: WarrantyTabProps) {
 
   return (
     <div className="bg-white rounded-xl shadow p-6">
+      {resultModalOpen && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+            <div className="px-6 py-4 border-b border-gray-100 bg-gradient-to-r from-gray-50 to-white flex items-center justify-between">
+              <h3 className="text-lg font-semibold text-gray-900">{resultModalTitle}</h3>
+              <button
+                onClick={() => setResultModalOpen(false)}
+                className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full transition-colors"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="px-6 py-5">
+              <p className="text-sm text-gray-700 whitespace-pre-wrap">{resultModalMessage}</p>
+            </div>
+            <div className="px-6 py-4 border-t border-gray-100 bg-gray-50">
+              <button
+                onClick={() => setResultModalOpen(false)}
+                className="w-full bg-[#118df0] text-white py-2.5 rounded-lg font-semibold hover:bg-[#0d6ebd] transition-colors"
+              >
+                OK
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       <h2 className="text-lg font-semibold text-gray-900 mb-6">Warranty Information</h2>
 
       {/* Has Warranty Toggle */}
@@ -111,13 +298,22 @@ export default function WarrantyTab({ vehicleId }: WarrantyTabProps) {
                 onChange={handleChange}
                 className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
               >
-                <option value="">Select type...</option>
-                <option value="manufacturer">Manufacturer Warranty</option>
-                <option value="dealer">Dealer Warranty</option>
-                <option value="third-party">Third-Party Warranty</option>
-                <option value="powertrain">Powertrain Warranty</option>
-                <option value="bumper-to-bumper">Bumper-to-Bumper</option>
-                <option value="certified-preowned">Certified Pre-Owned</option>
+                {loadingWarrantyPresets ? (
+                  <option value="">Loading...</option>
+                ) : warrantyPresets.length ? (
+                  warrantyPresets
+                    .filter((w) => String(w.name || '').trim())
+                    .map((w) => {
+                      const name = String(w.name || '').trim()
+                      return (
+                        <option key={w.id} value={name}>
+                          {name}
+                        </option>
+                      )
+                    })
+                ) : (
+                  <option value="">No warranty presets</option>
+                )}
               </select>
             </div>
 

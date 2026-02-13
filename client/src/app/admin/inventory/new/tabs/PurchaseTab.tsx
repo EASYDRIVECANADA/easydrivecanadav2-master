@@ -13,6 +13,13 @@ const TAX_RATES: Record<string, number> = {
   Exempt: 0,
 }
 
+type TaxPresetRow = {
+  id: string
+  name: string | null
+  rate: number | string | null
+  default_tax_rate: boolean | null
+}
+
 interface PurchaseData {
   purchasedOn?: string
   dateReceived?: string
@@ -79,6 +86,7 @@ interface VendorRow {
 
 interface PurchaseTabProps {
   vehicleId: string
+  userId?: string | null
   stockNumber?: string
   onError?: (message: string) => void
   hideSaveButton?: boolean
@@ -89,7 +97,7 @@ export interface PurchaseTabHandle {
   getData: () => PurchaseData
 }
 
-const PurchaseTab = forwardRef<PurchaseTabHandle, PurchaseTabProps>(function PurchaseTab({ vehicleId, stockNumber, onError, hideSaveButton }, ref) {
+const PurchaseTab = forwardRef<PurchaseTabHandle, PurchaseTabProps>(function PurchaseTab({ vehicleId, userId, stockNumber, onError, hideSaveButton }, ref) {
   const [formData, setFormData] = useState<PurchaseData>({
     publicOrCompany: 'public',
     purchasedThroughAuction: false,
@@ -102,6 +110,8 @@ const PurchaseTab = forwardRef<PurchaseTabHandle, PurchaseTabProps>(function Pur
     totalVehicleTax: 0,
   })
   const [saving, setSaving] = useState(false)
+  const [taxPresets, setTaxPresets] = useState<TaxPresetRow[]>([])
+  const [loadingTaxPresets, setLoadingTaxPresets] = useState(false)
   const [vendorSearch, setVendorSearch] = useState('')
   const [vendorResults, setVendorResults] = useState<VendorRow[]>([])
   const [vendorLoading, setVendorLoading] = useState(false)
@@ -140,6 +150,100 @@ const PurchaseTab = forwardRef<PurchaseTabHandle, PurchaseTabProps>(function Pur
   useEffect(() => {
     // webhook-driven: no client-side supabase prefill
   }, [vehicleId, stockNumber])
+
+  useEffect(() => {
+    const getLoggedInAdminDbUserId = async (): Promise<string | null> => {
+      try {
+        if (typeof window === 'undefined') return null
+        const raw = window.localStorage.getItem('edc_admin_session')
+        if (!raw) return null
+        const parsed = JSON.parse(raw) as { email?: string }
+        const email = String(parsed?.email ?? '').trim().toLowerCase()
+        if (!email) return null
+
+        const { data, error } = await supabase
+          .from('edc_account_verifications')
+          .select('id')
+          .eq('email', email)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+
+        if (error) return null
+        return (data as any)?.id ?? null
+      } catch {
+        return null
+      }
+    }
+
+    const load = async () => {
+      setLoadingTaxPresets(true)
+      try {
+        const scopedUserId = await getLoggedInAdminDbUserId()
+        if (!scopedUserId) {
+          setTaxPresets([])
+          return
+        }
+
+        const { data, error } = await supabase
+          .from('presets_tax')
+          .select('id, name, rate, default_tax_rate')
+          .eq('user_id', scopedUserId)
+          .order('name', { ascending: true })
+
+        if (error) throw error
+        const rows = Array.isArray(data) ? (data as TaxPresetRow[]) : []
+        setTaxPresets(rows)
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e)
+        onError?.(msg)
+        setTaxPresets([])
+      } finally {
+        setLoadingTaxPresets(false)
+      }
+    }
+
+    void load()
+  }, [userId, onError])
+
+  useEffect(() => {
+    if (!taxPresets.length) return
+    setFormData((prev) => {
+      const current = String(prev.taxType || '').trim()
+      const hasCurrent = current && taxPresets.some((t) => String(t.name || '').trim() === current)
+      if (hasCurrent) return prev
+
+      const defaultRow = taxPresets.find((t) => Boolean(t.default_tax_rate) && String(t.name || '').trim())
+      const firstRow = taxPresets.find((t) => String(t.name || '').trim())
+      const nextName = String((defaultRow || firstRow)?.name || '').trim()
+      if (!nextName) return prev
+      return { ...prev, taxType: nextName }
+    })
+  }, [taxPresets])
+
+  const resolveTaxRate = (taxType: string | undefined) => {
+    const key = String(taxType || '').trim()
+    if (!key) return 0
+    const preset = taxPresets.find((t) => String(t.name || '').trim() === key)
+    if (preset) {
+      const n = typeof preset.rate === 'number' ? preset.rate : parseFloat(String(preset.rate || '0'))
+      return Number.isFinite(n) ? n : 0
+    }
+    return 0
+  }
+
+  const formatTaxLabel = (name: string, rate: number) => {
+    const pct = rate * 100
+    const pctStr = Number.isFinite(pct) ? String(pct.toFixed(3)).replace(/\.?(0+)$/, '').replace(/\.$/, '') : '0'
+    return `${name} ${pctStr}%`
+  }
+
+  const getSelectedTaxLabel = () => {
+    const name = String(formData.taxType || '').trim() || 'Tax'
+    const rate = resolveTaxRate(formData.taxType)
+    if (rate === 0 && name === 'Tax') return 'Tax'
+    return formatTaxLabel(name, rate)
+  }
 
   useEffect(() => {
     const q = vendorSearch.trim()
@@ -247,7 +351,7 @@ const PurchaseTab = forwardRef<PurchaseTabHandle, PurchaseTabProps>(function Pur
 
       // Recompute taxes when inputs change, unless taxOverride is enabled and user is editing vehicleTax directly
       if (!next.taxOverride || (name !== 'vehicleTax')) {
-        const rate = TAX_RATES[next.taxType || 'Exempt'] ?? 0
+        const rate = resolveTaxRate(next.taxType) ?? 0
         const purchasePrice = Number(next.purchasePrice || 0)
         const acv = Number(next.actualCashValue || 0)
         const discount = Number(next.discount || 0)
@@ -267,15 +371,35 @@ const PurchaseTab = forwardRef<PurchaseTabHandle, PurchaseTabProps>(function Pur
     setSaving(true)
     try {
       if (!vehicleId) return false
-      if (!stockNumber || !String(stockNumber).trim()) {
+
+      let resolvedStockNumber = stockNumber ? String(stockNumber).trim() : ''
+      if (!resolvedStockNumber) {
+        const { data, error } = await supabase
+          .from('edc_vehicles')
+          .select('stock_number')
+          .eq('id', String(vehicleId))
+          .limit(1)
+          .maybeSingle()
+
+        if (error) {
+          onError?.(error.message)
+          return false
+        }
+
+        const dbStock = (data as any)?.stock_number
+        resolvedStockNumber = dbStock ? String(dbStock).trim() : ''
+      }
+
+      if (!resolvedStockNumber) {
         const msg = 'Missing stock number. Please set Stock # in Vehicle Details first.'
         onError?.(msg)
         return false
       }
 
       const fullPayload: Record<string, any> = {
+        user_id: userId ?? null,
         vehicleId: String(vehicleId),
-        stockNumber: String(stockNumber).trim(),
+        stockNumber: resolvedStockNumber,
         purchasedOn: formData.purchasedOn,
         dateReceived: formData.dateReceived,
         dateDelivered: formData.dateDelivered,
@@ -409,6 +533,7 @@ const PurchaseTab = forwardRef<PurchaseTabHandle, PurchaseTabProps>(function Pur
     try {
       const fullName = `${newVendorForm.contactFirstName} ${newVendorForm.contactLastName}`.trim()
       const payload = {
+        user_id: userId ?? null,
         ...newVendorForm,
         vendorName: fullName,
       }
@@ -1030,16 +1155,27 @@ const PurchaseTab = forwardRef<PurchaseTabHandle, PurchaseTabProps>(function Pur
             <label className="block text-sm font-medium text-gray-700 mb-1">Select Tax Rates</label>
             <select
               name="taxType"
-              value={formData.taxType || 'HST'}
+              value={formData.taxType || ''}
               onChange={handleChange}
               className="w-48 border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
             >
-              <option value="HST">HST 13%</option>
-              <option value="RST">RST 8%</option>
-              <option value="GST">GST 5%</option>
-              <option value="PST">PST 6%</option>
-              <option value="QST">QST 9.975%</option>
-              <option value="Exempt">Exempt 0%</option>
+              {loadingTaxPresets ? (
+                <option value="">Loading...</option>
+              ) : taxPresets.length ? (
+                taxPresets
+                  .filter((t) => String(t.name || '').trim())
+                  .map((t) => {
+                    const name = String(t.name || '').trim()
+                    const rate = typeof t.rate === 'number' ? t.rate : parseFloat(String(t.rate || '0'))
+                    return (
+                      <option key={t.id} value={name}>
+                        {formatTaxLabel(name, Number.isFinite(rate) ? rate : 0)}
+                      </option>
+                    )
+                  })
+              ) : (
+                <option value="">No tax presets</option>
+              )}
             </select>
           </div>
           <label className="mt-6 flex items-center gap-2">
@@ -1057,7 +1193,7 @@ const PurchaseTab = forwardRef<PurchaseTabHandle, PurchaseTabProps>(function Pur
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">{formData.taxType || 'HST'}</label>
+          <label className="block text-sm font-medium text-gray-700 mb-1">{getSelectedTaxLabel()}</label>
           <div className="flex items-center">
             <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">$</span>
             <input
