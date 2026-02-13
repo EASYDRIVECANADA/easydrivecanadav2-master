@@ -1,11 +1,12 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 import CreditAppTab from './CreditAppTab'
 import CustomerInformationTab from './CustomerInformationTab'
 import HistoryTab from './HistoryTab'
-import PrintModal from './PrintModal'
+import jsPDF from 'jspdf'
+import { renderCreditConsentPdf } from './creditConsentPdf'
 import type { CreditForm, CustomerForm, CustomerRow } from './types'
 import { supabase } from '@/lib/supabaseClient'
 
@@ -28,7 +29,12 @@ export default function AdminCostumerPage() {
   const [activeTab, setActiveTab] = useState<'customer' | 'credit' | 'history'>('customer')
   const [printDropdownOpen, setPrintDropdownOpen] = useState(false)
   const [creditConsent, setCreditConsent] = useState(false)
-  const [printModalOpen, setPrintModalOpen] = useState(false)
+
+  // Print system (PDF preview) - similar to admin/sales/deals/new
+  const [showDocPreview, setShowDocPreview] = useState(false)
+  const [pdfDataUri, setPdfDataUri] = useState<string | null>(null)
+  const [pdfLoading, setPdfLoading] = useState(false)
+  const printMenuRef = useRef<HTMLDivElement>(null)
 
   const getLoggedInAdminDbUserId = async (): Promise<string | null> => {
     try {
@@ -189,6 +195,107 @@ export default function AdminCostumerPage() {
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [printDropdownOpen])
+
+  // Close documents preview modal on ESC
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setShowDocPreview(false)
+    }
+    if (showDocPreview) document.addEventListener('keydown', handler)
+    return () => document.removeEventListener('keydown', handler)
+  }, [showDocPreview])
+
+  const handleDownloadPdf = () => {
+    if (!pdfDataUri) return
+    const byteString = atob(pdfDataUri.split(',')[1])
+    const mimeString = pdfDataUri.split(',')[0].split(':')[1].split(';')[0]
+    const ab = new ArrayBuffer(byteString.length)
+    const ia = new Uint8Array(ab)
+    for (let i = 0; i < byteString.length; i++) ia[i] = byteString.charCodeAt(i)
+    const blob = new Blob([ab], { type: mimeString })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `Credit_Consent_${editingId ?? 'customer'}.pdf`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  }
+
+  const handlePrintCreditConsent = async () => {
+    if (!editingId) return
+    setPrintDropdownOpen(false)
+    setPdfLoading(true)
+    try {
+      const user_id = await getWebhookUserId().catch(() => null)
+      if (!user_id) throw new Error('Missing user')
+
+      const { data: cust } = await supabase
+        .from('edc_customer')
+        .select('*')
+        .eq('id', editingId)
+        .eq('user_id', user_id)
+        .maybeSingle()
+
+      const { data: credit } = await supabase
+        .from('edc_creditapp')
+        .select('*')
+        .eq('customer_id', editingId)
+        .eq('user_id', user_id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+
+      const c: any = cust ?? {}
+      const cr: any = credit ?? {}
+
+      const emp = Array.isArray(cr.employments) ? cr.employments?.[0] : null
+      const inc = Array.isArray(cr.incomes) ? cr.incomes?.[0] : null
+
+      const doc = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'letter' })
+      renderCreditConsentPdf(doc, {
+        dateLabel: new Date().toLocaleDateString(),
+
+        companyName: 'EASYDRIVE CANADA',
+        companyStreet: '4856 Bank St Unit A',
+        companyCityLine: 'Ottawa ON K1X 1G6 CA',
+        companyPhone: '6138798355',
+
+        applicantName: [c.first_name ?? c.firstName ?? '', c.last_name ?? c.lastName ?? ''].filter(Boolean).join(' ').trim(),
+        applicantStreet: c.street_address ?? c.streetAddress ?? '',
+        applicantCityLine: [c.city ?? '', c.province ?? '', c.postal_code ?? c.postalCode ?? '', c.country ?? ''].filter(Boolean).join(' ').trim(),
+        applicantPhone: c.phone ?? '',
+        applicantDob: c.date_of_birth ?? c.dateOfBirth ?? '',
+        applicantGender: cr.gender ?? '',
+
+        rentOwn: cr.residence_ownership ?? cr.residenceOwnership ?? '',
+        marketValue: String(cr.market_value ?? cr.marketValue ?? ''),
+        mortgageAmount: String(cr.mortgage_amount ?? cr.mortgageAmount ?? ''),
+        monthlyPayment: String(cr.monthly_payment ?? cr.monthlyPayment ?? ''),
+
+        employmentType: emp?.employment_type ?? emp?.employmentType ?? '',
+        position: emp?.position ?? '',
+        occupation: emp?.occupation ?? '',
+        yearsEmployed: String(emp?.years_employed ?? emp?.yearsEmployed ?? ''),
+
+        incomeSource: inc?.income_type ?? inc?.incomeType ?? '',
+        monthlyGross: String(inc?.monthly_gross ?? inc?.monthlyGross ?? ''),
+        annualGross: String(inc?.annual_gross ?? inc?.annualGross ?? ''),
+
+        consentText: 'EASYDRIVE CANADA consent to do a background check with %dealership%.',
+        authorizedBy: 'Authorized By: Syed Islam - Owner',
+      })
+
+      const dataUri = doc.output('datauristring')
+      setPdfDataUri(dataUri)
+      setShowDocPreview(true)
+    } catch (e) {
+      console.error('[Print Credit Consent] Error generating PDF:', e)
+    } finally {
+      setPdfLoading(false)
+    }
+  }
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -698,69 +805,60 @@ export default function AdminCostumerPage() {
                 </div>
               </div>
 
-              {/* Print dropdown */}
-              <div className="relative print-dropdown">
-                <button
-                  type="button"
-                  className="h-10 px-5 rounded-md bg-[#118df0] text-white text-sm font-bold hover:bg-[#0d6ebd] flex items-center gap-2 shadow-sm"
-                  onClick={() => setPrintDropdownOpen((o) => !o)}
-                >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
-                  </svg>
-                  Print
-                </button>
-                {printDropdownOpen && (
-                  <div className="absolute right-0 mt-1 w-56 bg-white border border-gray-200 rounded-lg shadow-lg z-10">
-                    <div className="p-3">
-                      <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={creditConsent}
-                          onChange={(e) => setCreditConsent(e.target.checked)}
-                          className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              <div className="flex items-center ml-auto">
+                {/* Print dropdown */}
+                <div className="relative print-dropdown" ref={printMenuRef}>
+                  <div className="inline-flex shadow-sm">
+                    <button
+                      type="button"
+                      className="h-10 px-4 rounded-l-md bg-[#118df0] text-white text-sm font-bold hover:bg-[#0d6ebd] flex items-center gap-2"
+                      onClick={() => {
+                        if (!creditConsent) {
+                          setPrintDropdownOpen(true)
+                          return
+                        }
+                        setPrintDropdownOpen(false)
+                        handlePrintCreditConsent()
+                      }}
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"
                         />
-                        Credit Consent
-                      </label>
-                    </div>
-                    <div className="border-t border-gray-200 px-3 py-2">
-                      <button
-                        type="button"
-                        disabled={!creditConsent}
-                        className={`w-full h-10 px-5 rounded text-sm font-bold flex items-center justify-center gap-2 shadow-sm ${
-                          creditConsent
-                            ? 'bg-[#118df0] text-white hover:bg-[#0d6ebd]'
-                            : 'bg-gray-200 text-gray-400 cursor-not-allowed'
-                        }`}
-                        onClick={() => {
-                          if (creditConsent) {
-                            setPrintDropdownOpen(false)
-                            setPrintModalOpen(true)
-                            // Auto-trigger print after modal loads
-                            setTimeout(() => window.print(), 500)
-                          }
-                        }}
-                      >
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
-                        </svg>
-                        Print
-                      </button>
-                    </div>
+                      </svg>
+                      Print
+                    </button>
+                    <button
+                      type="button"
+                      className="h-10 w-10 rounded-r-md bg-[#118df0] text-white hover:bg-[#0d6ebd] flex items-center justify-center border-l border-white/20"
+                      aria-label="Print options"
+                      onClick={() => setPrintDropdownOpen((o) => !o)}
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                      </svg>
+                    </button>
                   </div>
-                )}
+                  {printDropdownOpen && (
+                    <div className="absolute right-0 mt-1 w-56 bg-white border border-gray-200 rounded-lg shadow-lg z-10">
+                      <div className="p-3">
+                        <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={creditConsent}
+                            onChange={(e) => setCreditConsent(e.target.checked)}
+                            className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                          />
+                          Credit Consent
+                        </label>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
-
-              <button
-                type="button"
-                className="w-10 h-10 rounded-lg hover:bg-gray-100 flex items-center justify-center"
-                onClick={handleBackToList}
-                aria-label="Close"
-              >
-                <svg className="w-5 h-5 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
             </div>
 
             <div className="flex-1 overflow-y-auto bg-white">
@@ -952,7 +1050,28 @@ export default function AdminCostumerPage() {
         </div>
       )}
 
-      <PrintModal open={printModalOpen} onClose={() => setPrintModalOpen(false)} customerId={editingId ?? ''} />
+      {/* Documents Preview Modal (PDF) */}
+      {showDocPreview && pdfDataUri ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setShowDocPreview(false)} />
+          <div className="relative w-full max-w-3xl h-[90vh] rounded-xl bg-white shadow-xl border border-gray-200 flex flex-col overflow-hidden">
+            <div className="h-12 px-4 border-b border-gray-200 flex items-center justify-between">
+              <div className="text-sm font-semibold text-gray-800">Credit Consent</div>
+              <div className="flex items-center gap-2">
+                <button type="button" onClick={handleDownloadPdf} className="h-9 px-3 rounded bg-gray-100 text-gray-700 text-sm font-semibold hover:bg-gray-200">
+                  Download
+                </button>
+                <button type="button" onClick={() => setShowDocPreview(false)} className="h-9 w-9 rounded bg-gray-100 text-gray-700 hover:bg-gray-200 flex items-center justify-center" aria-label="Close">
+                  <span className="text-xl leading-none">×</span>
+                </button>
+              </div>
+            </div>
+            <div className="flex-1 bg-gray-100 p-3">
+              <iframe title="Credit Consent PDF" src={pdfDataUri} className="w-full h-full bg-white rounded" />
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   )
 }
