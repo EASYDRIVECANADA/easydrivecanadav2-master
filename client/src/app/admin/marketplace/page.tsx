@@ -35,6 +35,30 @@ export default function MarketplacePage() {
   const [selected, setSelected] = useState<MarketVehicle | null>(null)
   const [selectedImageIndex, setSelectedImageIndex] = useState(0)
 
+  const getLoggedInAdminDbUserId = async (): Promise<string | null> => {
+    try {
+      if (typeof window === 'undefined') return null
+      const raw = window.localStorage.getItem('edc_admin_session')
+      if (!raw) return null
+      const parsed = JSON.parse(raw) as { email?: string }
+      const email = String(parsed?.email ?? '').trim().toLowerCase()
+      if (!email) return null
+
+      const { data, error } = await supabase
+        .from('edc_account_verifications')
+        .select('id')
+        .eq('email', email)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+
+      if (error) return null
+      return (data as any)?.id ?? null
+    } catch {
+      return null
+    }
+  }
+
   const [make, setMake] = useState('')
   const [collection, setCollection] = useState('')
   const [bodyStyle, setBodyStyle] = useState('')
@@ -103,9 +127,16 @@ export default function MarketplacePage() {
       setLoading(true)
       setError(null)
       try {
+        const scopedUserId = await getLoggedInAdminDbUserId()
+        if (!scopedUserId) {
+          if (!cancelled) setVehicles([])
+          return
+        }
+
         const { data, error } = await supabase
           .from('edc_vehicles')
           .select('*')
+          .eq('user_id', scopedUserId)
           .limit(500)
         if (error) throw error
         if (cancelled) return
