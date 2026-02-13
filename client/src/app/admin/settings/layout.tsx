@@ -14,6 +14,19 @@ export default function AdminSettingsLayout({ children }: { children: ReactNode 
 
     const read = () => {
       try {
+        const raw = window.localStorage.getItem('edc_admin_session')
+        if (raw) {
+          try {
+            const parsed = JSON.parse(raw) as { user_id?: string }
+            const sessionUserId = String(parsed?.user_id ?? '').trim()
+            if (sessionUserId) {
+              setIsVerified(true)
+              return
+            }
+          } catch {
+            // ignore
+          }
+        }
         setIsVerified(window.localStorage.getItem('edc_account_verified') === 'true')
       } catch {
         setIsVerified(false)

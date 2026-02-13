@@ -641,6 +641,19 @@ export default function SettingsPresetsPage() {
 
     const read = () => {
       try {
+        const raw = window.localStorage.getItem('edc_admin_session')
+        if (raw) {
+          try {
+            const parsed = JSON.parse(raw) as { user_id?: string }
+            const sessionUserId = String(parsed?.user_id ?? '').trim()
+            if (sessionUserId) {
+              setIsVerified(true)
+              return
+            }
+          } catch {
+            // ignore
+          }
+        }
         setIsVerified(window.localStorage.getItem('edc_account_verified') === 'true')
       } catch {
         setIsVerified(false)
@@ -719,7 +732,9 @@ export default function SettingsPresetsPage() {
       if (typeof window === 'undefined') return null
       const raw = window.localStorage.getItem('edc_admin_session')
       if (!raw) return null
-      const parsed = JSON.parse(raw) as { email?: string }
+      const parsed = JSON.parse(raw) as { email?: string; user_id?: string }
+      const sessionUserId = String(parsed?.user_id ?? '').trim()
+      if (sessionUserId) return sessionUserId
       const email = String(parsed?.email ?? '').trim().toLowerCase()
       if (!email) return null
 
@@ -739,13 +754,17 @@ export default function SettingsPresetsPage() {
   }
 
   const getWebhookUserId = async () => {
-    const {
-      data: { user },
-      error: userError,
-    } = await supabase.auth.getUser()
-    if (userError) throw userError
     const dbUserId = await getLoggedInAdminDbUserId()
-    return dbUserId ?? user?.id ?? null
+    try {
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser()
+      if (userError) return dbUserId ?? null
+      return dbUserId ?? user?.id ?? null
+    } catch {
+      return dbUserId ?? null
+    }
   }
 
   useEffect(() => {

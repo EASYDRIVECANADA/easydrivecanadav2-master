@@ -9,6 +9,7 @@ import { supabase } from '@/lib/supabaseClient'
 type AdminSession = {
   email?: string
   role?: string
+  user_id?: string
 }
 
 export default function AdminLayout({ children }: { children: ReactNode }) {
@@ -55,7 +56,13 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
         return
       }
       try {
-        setSession(JSON.parse(s) as AdminSession)
+        const parsed = JSON.parse(s) as AdminSession
+        setSession(parsed)
+        const sessionUserId = String(parsed?.user_id ?? '').trim()
+        if (sessionUserId) {
+          setIsVerified(true)
+          return
+        }
       } catch {
         setSession(null)
       }

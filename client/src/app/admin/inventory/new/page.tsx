@@ -191,7 +191,9 @@ export default function NewVehiclePage() {
       if (typeof window === 'undefined') return null
       const raw = window.localStorage.getItem('edc_admin_session')
       if (!raw) return null
-      const parsed = JSON.parse(raw) as { email?: string }
+      const parsed = JSON.parse(raw) as { email?: string; user_id?: string }
+      const sessionUserId = String(parsed?.user_id ?? '').trim()
+      if (sessionUserId) return sessionUserId
       const email = String(parsed?.email ?? '').trim().toLowerCase()
       if (!email) return null
 

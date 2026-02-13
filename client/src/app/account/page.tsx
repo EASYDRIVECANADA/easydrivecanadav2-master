@@ -150,6 +150,47 @@ function AccountPageInner() {
     return true
   }
 
+  const tryUsersTableLogin = async (email: string, password: string) => {
+    const normalizedEmail = email.trim().toLowerCase()
+    if (!normalizedEmail || !password) return false
+
+    try {
+      const res = await fetch('/api/users-login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: normalizedEmail, password }),
+      })
+
+      const json = (await res.json().catch(() => null)) as any
+      if (!res.ok) {
+        const msg = String(json?.error ?? '').trim() || 'Invalid credentials'
+        setError(msg)
+        return null
+      }
+      const session = json?.session
+      const sessionEmail = String(session?.email ?? '').trim().toLowerCase()
+      const sessionRole = String(session?.role ?? '').trim()
+      const sessionUserId = String(session?.user_id ?? '').trim()
+      if (!sessionEmail || !sessionRole) return false
+
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem(
+          'edc_admin_session',
+          JSON.stringify({ email: sessionEmail, role: sessionRole, user_id: sessionUserId || undefined })
+        )
+        try {
+          window.localStorage.setItem('edc_account_verified', 'true')
+        } catch {
+          // ignore
+        }
+        window.dispatchEvent(new Event('edc_admin_session_changed'))
+      }
+      return true
+    } catch {
+      return false
+    }
+  }
+
   const handleUnifiedSignIn = async (e: FormEvent) => {
     e.preventDefault()
     setError('')
@@ -177,6 +218,15 @@ function AccountPageInner() {
         }
         setError('Account created. Please check your email to confirm, then sign in.')
         setCustomerCreateMode(false)
+        return
+      }
+
+      const usersLoginResult = await tryUsersTableLogin(email, passwordOrAccessCode)
+      if (usersLoginResult === true) {
+        router.push('/admin')
+        return
+      }
+      if (usersLoginResult === null) {
         return
       }
 
