@@ -51,8 +51,10 @@ function SalesNewDealPageContent() {
   const [printBillOfSale, setPrintBillOfSale] = useState(true)
   const [printDisclosure, setPrintDisclosure] = useState(false)
   const [showDocPreview, setShowDocPreview] = useState(false)
-  const [pdfDataUri, setPdfDataUri] = useState<string | null>(null)
+  const [pdfBlob, setPdfBlob] = useState<Blob | null>(null)
+  const [pdfObjectUrl, setPdfObjectUrl] = useState<string | null>(null)
   const [pdfLoading, setPdfLoading] = useState(false)
+  const [emailLoading, setEmailLoading] = useState(false)
   const printMenuRef = useRef<HTMLDivElement>(null)
 
   // Track whether auto-save has fired for showroom prefill
@@ -289,6 +291,12 @@ function SalesNewDealPageContent() {
     return () => document.removeEventListener('mousedown', handler)
   }, [showPrintMenu])
 
+  useEffect(() => {
+    return () => {
+      if (pdfObjectUrl) URL.revokeObjectURL(pdfObjectUrl)
+    }
+  }, [pdfObjectUrl])
+
   const handlePrint = async () => {
     if (!printBillOfSale && !printDisclosure) return
     setShowPrintMenu(false)
@@ -456,8 +464,14 @@ function SalesNewDealPageContent() {
         renderBillOfSalePdf(doc, billData, { pageStart: currentPage, totalPages })
       }
 
-      const dataUri = doc.output('datauristring')
-      setPdfDataUri(dataUri)
+      const ab = doc.output('arraybuffer')
+      const blob = new Blob([ab], { type: 'application/pdf' })
+
+      if (pdfObjectUrl) URL.revokeObjectURL(pdfObjectUrl)
+      const nextUrl = URL.createObjectURL(blob)
+
+      setPdfBlob(blob)
+      setPdfObjectUrl(nextUrl)
       setShowDocPreview(true)
     } catch (e) {
       console.error('[Print] Error generating PDF:', e)
@@ -466,15 +480,192 @@ function SalesNewDealPageContent() {
     }
   }
 
+  const handleEmail = async () => {
+    if (emailLoading) return
+    setEmailLoading(true)
+    try {
+      const res = await fetch(`/api/deals/${encodeURIComponent(dealId)}`)
+      const deal = res.ok ? await res.json() : null
+      const c = deal?.customer || {}
+      const toEmail = String(c.email ?? '').trim()
+      if (!toEmail) throw new Error('Missing customer email')
+
+      const vRaw = deal?.vehicles?.[0] || {}
+      const vp = vehiclePrefill?.vehicle || {}
+      const sv = vRaw.selectedVehicle || vRaw
+      const v = {
+        stock_number: sv.selected_stock_number ?? sv.stockNumber ?? sv.stock_number ?? vp.stock_number ?? '',
+        year: sv.selected_year ?? sv.year ?? vp.year ?? '',
+        make: sv.selected_make ?? sv.make ?? vp.make ?? '',
+        model: sv.selected_model ?? sv.model ?? vp.model ?? '',
+        trim: sv.selected_trim ?? sv.trim ?? vp.trim ?? '',
+        vin: sv.selected_vin ?? sv.vin ?? vp.vin ?? '',
+        exterior_color: sv.selected_exterior_color ?? sv.exteriorColor ?? sv.exterior_color ?? vp.exterior_color ?? '',
+        interior_color: sv.selected_interior_color ?? sv.interiorColor ?? sv.interior_color ?? vp.interior_color ?? '',
+        odometer: sv.selected_odometer ?? sv.odometer ?? vp.odometer ?? vp.mileage ?? '',
+        odometer_unit: sv.selected_odometer_unit ?? sv.odometerUnit ?? sv.odometer_unit ?? vp.odometer_unit ?? 'kms',
+        status: sv.selected_status ?? sv.status ?? vp.status ?? 'Used',
+        price: vp.price ?? 0,
+      }
+
+      const w = deal?.worksheet || {}
+      const d = deal?.delivery || {}
+      const disc = deal?.disclosures || {}
+
+      const parseFeeItems = (raw: any): any[] => {
+        if (!raw) return []
+        if (Array.isArray(raw)) return raw
+        if (typeof raw === 'string') {
+          try {
+            const parsed = JSON.parse(raw)
+            return Array.isArray(parsed) ? parsed : []
+          } catch {
+            return []
+          }
+        }
+        return []
+      }
+
+      const getOmvicFromFees = (rawFees: any): number => {
+        const fees = parseFeeItems(rawFees)
+        for (const f of fees) {
+          const name = String(f?.fee_name ?? f?.name ?? f?.label ?? '').toLowerCase()
+          if (!name) continue
+          if (name.includes('omvic')) {
+            const amt = Number(f?.fee_amount ?? f?.amount ?? f?.value ?? 0)
+            return Number.isFinite(amt) ? amt : 0
+          }
+        }
+        return 0
+      }
+
+      const price = Number(w.purchase_price ?? v.price ?? 0)
+      const omvic = Number(w.omvic_fee ?? getOmvicFromFees(w.fees) ?? 0)
+      const discount = Number(w.discount ?? 0)
+      const subtotal1 = price + omvic
+      const tradeValue = Number(w.trade_value ?? 0)
+      const lienPayout = Number(w.lien_payout ?? 0)
+      const netDiff = subtotal1 - discount - tradeValue + lienPayout
+      const taxRate = Number(w.tax_rate ?? 0.13)
+      const hst = netDiff * taxRate
+      const totalTax = hst
+      const licenseFee = Number(w.license_fee ?? 91)
+
+      const sumItems = (raw: any, amtKey: string) => {
+        const items = parseFeeItems(raw)
+        return items.reduce((s: number, i: any) => s + (Number(i?.[amtKey] ?? 0) || 0), 0)
+      }
+      const feesTotal = sumItems(w.fees, 'amount')
+      const accessoriesTotal = sumItems(w.accessories, 'price')
+      const warrantiesTotal = sumItems(w.warranties, 'amount')
+      const insurancesTotal = sumItems(w.insurances, 'amount')
+      const paymentsTotal = sumItems(w.payments, 'amount')
+
+      const subtotal2 = netDiff + totalTax + licenseFee + feesTotal + accessoriesTotal + warrantiesTotal + insurancesTotal + paymentsTotal
+      const deposit = Number(w.deposit ?? 0)
+      const downPayment = Number(w.down_payment ?? 0)
+      const taxInsurance = Number(w.tax_on_insurance ?? 0)
+      const totalDue = subtotal2 - deposit - downPayment + taxInsurance
+
+      const fullName = [c.firstname, c.lastname].filter(Boolean).join(' ') || [c.first_name, c.last_name].filter(Boolean).join(' ') || ''
+
+      const billData: BillOfSaleData = {
+        dealDate: dealDate ? new Date(dealDate + 'T00:00:00').toLocaleDateString('en-CA', { year: 'numeric', month: 'short', day: 'numeric' }) : '',
+        invoiceNumber: String(dealId || ''),
+        fullName,
+        phone: c.phone ?? '',
+        mobile: c.mobile ?? '',
+        email: toEmail,
+        address: c.street_address ?? c.streetaddress ?? '',
+        city: c.city ?? '',
+        province: c.province ?? 'ON',
+        postalCode: c.postal_code ?? c.postalcode ?? '',
+        driversLicense: c.drivers_license ?? c.driverslicense ?? '',
+        insuranceCompany: c.insurance_company ?? c.insurancecompany ?? '',
+        policyNumber: c.policy_number ?? c.policynumber ?? '',
+        policyExpiry: c.policy_expiry ?? c.policyexpiry ?? '',
+        stockNumber: v.stock_number,
+        year: String(v.year),
+        make: v.make,
+        model: v.model,
+        trim: v.trim,
+        colour: v.exterior_color,
+        keyNumber: '',
+        vin: v.vin,
+        odometerStatus: v.status,
+        odometer: v.odometer ? `${Number(v.odometer).toLocaleString()} ${v.odometer_unit || 'kms'}` : '',
+        serviceDate: '',
+        deliveryDate: d.delivery_date ?? '',
+        vehiclePrice: String(price),
+        omvicFee: String(omvic),
+        subtotal1: String(subtotal1),
+        netDifference: String(netDiff),
+        hstOnNetDifference: String(hst),
+        totalTax: String(totalTax),
+        licenseFee: String(licenseFee),
+        feesTotal: String(feesTotal),
+        accessoriesTotal: String(accessoriesTotal),
+        warrantiesTotal: String(warrantiesTotal),
+        insurancesTotal: String(insurancesTotal),
+        paymentsTotal: String(paymentsTotal),
+        subtotal2: String(subtotal2),
+        deposit: String(deposit),
+        downPayment: String(downPayment),
+        taxOnInsurance: String(taxInsurance),
+        totalBalanceDue: String(totalDue),
+        extendedWarranty: 'DECLINED',
+        commentsHtml: disc.disclosures_html ?? '',
+        purchaserName: fullName,
+        salesperson: d.salesperson ?? '',
+        salespersonRegNo: '4782496',
+        acceptorName: d.approved_by ?? 'Syed Islam',
+        acceptorRegNo: '4782496',
+      }
+
+      const doc = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'letter' })
+      renderBillOfSalePdf(doc, billData, { pageStart: 1, totalPages: 3 })
+      const ab = doc.output('arraybuffer')
+      const blob = new Blob([ab], { type: 'application/pdf' })
+
+      const arrayBufferToBase64 = (buffer: ArrayBuffer) => {
+        let binary = ''
+        const bytes = new Uint8Array(buffer)
+        const chunkSize = 0x8000
+        for (let i = 0; i < bytes.length; i += chunkSize) {
+          const chunk = bytes.subarray(i, i + chunkSize)
+          binary += String.fromCharCode.apply(null, chunk as unknown as number[])
+        }
+        return btoa(binary)
+      }
+
+      const fileName = `Bill_of_Sale_${dealId}.pdf`
+      const fileB64 = arrayBufferToBase64(ab)
+
+      const formData = new FormData()
+      formData.append('email', toEmail)
+      formData.append('file', blob, fileName)
+      formData.append('file_b64', fileB64)
+      formData.append('file_name', fileName)
+
+      const sendRes = await fetch('/api/email', {
+        method: 'POST',
+        body: formData,
+      })
+
+      if (!sendRes.ok) {
+        const t = await sendRes.text().catch(() => '')
+        throw new Error(t || `Email webhook failed (${sendRes.status})`)
+      }
+    } catch (e) {
+      console.error('[Email] Error:', e)
+    } finally {
+      setEmailLoading(false)
+    }
+  }
+
   const handleDownloadPdf = () => {
-    if (!pdfDataUri) return
-    const byteString = atob(pdfDataUri.split(',')[1])
-    const mimeString = pdfDataUri.split(',')[0].split(':')[1].split(';')[0]
-    const ab = new ArrayBuffer(byteString.length)
-    const ia = new Uint8Array(ab)
-    for (let i = 0; i < byteString.length; i++) ia[i] = byteString.charCodeAt(i)
-    const blob = new Blob([ab], { type: mimeString })
-    const url = URL.createObjectURL(blob)
+    if (!pdfBlob) return
+    const url = URL.createObjectURL(pdfBlob)
     const a = document.createElement('a')
     a.href = url
     a.download = `Bill_of_Sale_${dealId}.pdf`
@@ -535,9 +726,14 @@ function SalesNewDealPageContent() {
             </div>
             <div className="flex items-end justify-end gap-2">
               <div className="text-xs font-semibold text-gray-600 mr-2">Reports</div>
-              <button type="button" className="h-9 px-3 rounded bg-[#118df0] text-white text-sm font-semibold hover:bg-[#0d6ebd] flex items-center gap-1">
+              <button
+                type="button"
+                onClick={handleEmail}
+                disabled={emailLoading}
+                className="h-9 px-3 rounded bg-[#118df0] text-white text-sm font-semibold hover:bg-[#0d6ebd] flex items-center gap-1 disabled:opacity-50"
+              >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>
-                Email
+                {emailLoading ? 'Sending...' : 'Email'}
               </button>
               <div className="relative" ref={printMenuRef}>
                 <div className="flex">
@@ -690,16 +886,29 @@ function SalesNewDealPageContent() {
       </div>
 
       {/* Documents Preview Modal */}
-      {showDocPreview && pdfDataUri && (
+      {showDocPreview && pdfObjectUrl && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/40" onClick={() => setShowDocPreview(false)} />
+          <div
+            className="absolute inset-0 bg-black/40"
+            onClick={() => {
+              setShowDocPreview(false)
+              setPdfBlob(null)
+              if (pdfObjectUrl) URL.revokeObjectURL(pdfObjectUrl)
+              setPdfObjectUrl(null)
+            }}
+          />
           <div className="relative w-full max-w-3xl h-[90vh] rounded-xl bg-white shadow-xl border border-gray-200 flex flex-col">
             <div className="px-5 py-3 border-b border-gray-200 flex items-center justify-between">
               <div className="text-sm font-semibold text-gray-900">Documents Preview</div>
               <button
                 type="button"
                 className="text-gray-500 hover:text-gray-700 text-lg"
-                onClick={() => setShowDocPreview(false)}
+                onClick={() => {
+                  setShowDocPreview(false)
+                  setPdfBlob(null)
+                  if (pdfObjectUrl) URL.revokeObjectURL(pdfObjectUrl)
+                  setPdfObjectUrl(null)
+                }}
                 aria-label="Close"
               >
                 &times;
@@ -716,7 +925,7 @@ function SalesNewDealPageContent() {
             </div>
             <div className="flex-1 overflow-auto bg-gray-100 p-4">
               <iframe
-                src={pdfDataUri}
+                src={pdfObjectUrl}
                 className="w-full h-full rounded border border-gray-200 bg-white"
                 title="Bill of Sale Preview"
               />

@@ -386,6 +386,46 @@ export default function CustomersTabNew({
 
   }
 
+  const getLoggedInAdminDbUserId = async (): Promise<string | null> => {
+    try {
+      if (typeof window === 'undefined') return null
+      const raw = window.localStorage.getItem('edc_admin_session')
+      if (!raw) return null
+      const parsed = JSON.parse(raw) as { email?: string; user_id?: string }
+      const sessionUserId = String(parsed?.user_id ?? '').trim()
+      if (sessionUserId) return sessionUserId
+      const email = String(parsed?.email ?? '').trim().toLowerCase()
+      if (!email) return null
+
+      const { data, error } = await supabase
+        .from('edc_account_verifications')
+        .select('id')
+        .eq('email', email)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+
+      if (error) return null
+      return (data as any)?.id ?? null
+    } catch {
+      return null
+    }
+  }
+
+  const getWebhookUserId = async () => {
+    const dbUserId = await getLoggedInAdminDbUserId()
+    try {
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser()
+      if (userError) return dbUserId ?? null
+      return dbUserId ?? user?.id ?? null
+    } catch {
+      return dbUserId ?? null
+    }
+  }
+
 
 
   const [saving, setSaving] = useState(false)
@@ -1012,7 +1052,11 @@ export default function CustomersTabNew({
 
       }
 
-      const payload = toNulls(merged)
+      const user_id = await getWebhookUserId().catch(() => null)
+      const payload = toNulls({
+        ...merged,
+        user_id: user_id || null,
+      })
 
 
 
