@@ -470,23 +470,8 @@ export default function DealsPage() {
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/40" onClick={() => !deleting && setDeleteTarget(null)} />
           <div className="relative w-full max-w-md rounded-xl bg-white shadow-xl border border-gray-200">
-            <div className="px-5 py-4 border-b border-gray-200 flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0">
-                <svg className="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-              </div>
-              <div>
-                <div className="text-sm font-semibold text-gray-900">Delete Deal</div>
-                <div className="text-xs text-gray-500">This action cannot be undone</div>
-              </div>
-            </div>
             <div className="px-5 py-5">
-              <div className="text-sm text-gray-700">
-                Are you sure you want to delete deal <span className="font-bold">#{deleteTarget.dealId}</span>
-                {deleteTarget.primaryCustomer ? <> for <span className="font-bold">{deleteTarget.primaryCustomer}</span></> : null}?
-                This will permanently remove all data (Customers, Vehicles, Worksheet, Disclosures, and Delivery) associated with this deal.
-              </div>
+              <div className="text-sm font-semibold text-gray-900">Are you sure delete?</div>
               <div className="mt-5 flex items-center justify-end gap-2">
                 <button
                   type="button"
@@ -494,7 +479,7 @@ export default function DealsPage() {
                   onClick={() => setDeleteTarget(null)}
                   className="h-9 px-4 rounded bg-gray-100 text-gray-700 text-sm font-semibold hover:bg-gray-200 disabled:opacity-50"
                 >
-                  Cancel
+                  No
                 </button>
                 <button
                   type="button"
@@ -502,7 +487,7 @@ export default function DealsPage() {
                   onClick={handleDelete}
                   className="h-9 px-4 rounded bg-red-600 text-white text-sm font-semibold hover:bg-red-700 disabled:opacity-50"
                 >
-                  {deleting ? 'Deleting...' : 'Delete'}
+                  {deleting ? 'Deleting...' : 'Yes'}
                 </button>
               </div>
             </div>

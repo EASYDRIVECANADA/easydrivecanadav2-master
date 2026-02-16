@@ -20,6 +20,8 @@ function SalesNewDealPageContent() {
   const editDealId = searchParams.get('dealId') // present when editing an existing deal
   const vehicleId = searchParams.get('vehicleId') // present when coming from showroom
 
+  const formMode: 'create' | 'edit' = editDealId ? 'edit' : 'create'
+
   // Store initial vehicleId to only affect first load
   const [initialVehicleId] = useState(vehicleId)
   const [activeTab, setActiveTab] = useState<DealTab>(initialVehicleId ? 'vehicles' : 'customers')
@@ -37,7 +39,11 @@ function SalesNewDealPageContent() {
     }
   })
   const [isRetail, setIsRetail] = useState(true)
-  const [dealDate, setDealDate] = useState('2026-02-03')
+  const [dealDate, setDealDate] = useState(() => {
+    const d = new Date()
+    const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000)
+    return local.toISOString().slice(0, 10)
+  })
   const [dealType, setDealType] = useState<'Cash' | 'Finance'>('Cash')
 
   // Prefill data fetched from the database when editing
@@ -816,6 +822,8 @@ function SalesNewDealPageContent() {
               <div style={{ display: activeTab === 'vehicles' ? 'block' : 'none' }}>
                 <VehiclesTab
                   dealId={dealId}
+                  dealMode={isRetail ? 'RTL' : 'WHL'}
+                  dealType={dealType}
                   onSaved={() => setActiveTab('worksheet')}
                   initialData={prefill?.vehicles ?? (autoSavedVehicles ? [{ id: dealId }] : null)}
                   autoSaved={autoSavedVehicles}
@@ -841,6 +849,7 @@ function SalesNewDealPageContent() {
                   dealMode={isRetail ? 'RTL' : 'WHL'}
                   dealType={dealType}
                   dealDate={dealDate}
+                  formMode={formMode}
                   onSaved={() => setActiveTab('disclosures')}
                   autoSaved={autoSavedWorksheet}
                   initialData={prefill?.worksheet ?? (
@@ -860,6 +869,9 @@ function SalesNewDealPageContent() {
               <div style={{ display: activeTab === 'disclosures' ? 'block' : 'none' }}>
                 <DisclosuresTab
                   dealId={dealId}
+                  dealMode={isRetail ? 'RTL' : 'WHL'}
+                  dealType={dealType}
+                  formMode={formMode}
                   onSaved={() => setActiveTab('delivery')}
                   autoSaved={autoSavedDisclosures}
                   initialData={prefill?.disclosures ?? (
@@ -877,6 +889,7 @@ function SalesNewDealPageContent() {
                 <DeliveryTab
                   dealId={dealId}
                   dealMode={isRetail ? 'RTL' : 'WHL'}
+                  formMode={formMode}
                   initialData={prefill?.delivery ?? null}
                 />
               </div>

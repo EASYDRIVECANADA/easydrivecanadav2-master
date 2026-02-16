@@ -3,7 +3,23 @@
 import { useEffect, useRef, useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 
-export default function DisclosuresTab({ dealId, onSaved, initialData, autoSaved }: { dealId?: string; onSaved?: () => void; initialData?: any; autoSaved?: boolean }): JSX.Element {
+export default function DisclosuresTab({
+  dealId,
+  dealMode,
+  dealType,
+  formMode,
+  onSaved,
+  initialData,
+  autoSaved,
+}: {
+  dealId?: string
+  dealMode?: 'RTL' | 'WHL'
+  dealType?: 'Cash' | 'Finance'
+  formMode?: 'create' | 'edit'
+  onSaved?: () => void
+  initialData?: any
+  autoSaved?: boolean
+}): JSX.Element {
   const getLoggedInAdminDbUserId = async (): Promise<string | null> => {
     try {
       if (typeof window === 'undefined') return null
@@ -126,7 +142,11 @@ export default function DisclosuresTab({ dealId, onSaved, initialData, autoSaved
       const userId = await getWebhookUserId().catch(() => null)
 
       const payload = {
+        category: 'deals-disclosures',
         id: dealId || null,
+        dealMode: dealMode ?? null,
+        dealType: dealType ?? null,
+        formMode: formMode ?? null,
         userId: userId || null,
         disclosures_html: html || null,
         conditions: conditions || null,

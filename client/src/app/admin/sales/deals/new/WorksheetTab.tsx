@@ -9,6 +9,7 @@ export default function WorksheetTab({
   dealMode = 'RTL',
   dealType = 'Cash',
   dealDate,
+  formMode,
   onSaved,
   initialData,
   autoSaved,
@@ -17,6 +18,7 @@ export default function WorksheetTab({
   dealMode?: 'RTL' | 'WHL'
   dealType?: 'Cash' | 'Finance'
   dealDate?: string
+  formMode?: 'create' | 'edit'
   onSaved?: () => void
   initialData?: any
   autoSaved?: boolean
@@ -40,7 +42,7 @@ export default function WorksheetTab({
   const [taxPresets, setTaxPresets] = useState<Array<{ id: string; name: string; rate: number; default_tax_rate?: boolean | null }>>([])
   const [taxPresetsLoading, setTaxPresetsLoading] = useState(false)
   const [feePresets, setFeePresets] = useState<Array<{ id: string; name: string; description?: string; fee_amount?: number }>>([])
-  const [accessoryPresets, setAccessoryPresets] = useState<Array<{ id: string; name: string; description?: string; amount?: number }>>([])
+  const [accessoryPresets, setAccessoryPresets] = useState<Array<{ id: string; name: string; description?: string; amount?: number; cost?: number; type?: string; default_tax_rate?: string }>>([])
   const [warrantyPresets, setWarrantyPresets] = useState<Array<{ id: string; name: string; description?: string; price?: number }>>([])
   const [insurancePresets, setInsurancePresets] = useState<Array<{ id: string; name: string; description?: string; price?: number }>>([])
   const [taxOverride, setTaxOverride] = useState(d.tax_override === true || d.tax_override === 'true')
@@ -134,6 +136,10 @@ export default function WorksheetTab({
     if (Array.isArray(d.insurances)) return d.insurances.map((i: any) => ({ id: i.id || `ins_${Date.now()}`, name: i.name || '', desc: i.desc || '', amount: Number(i.amount) || 0 }))
     return []
   })
+  const [feePresetOpen, setFeePresetOpen] = useState(false)
+  const [accessoryPresetOpen, setAccessoryPresetOpen] = useState(false)
+  const [warrantyPresetOpen, setWarrantyPresetOpen] = useState(false)
+  const [insurancePresetOpen, setInsurancePresetOpen] = useState(false)
   const [insuranceDraft, setInsuranceDraft] = useState<{ name: string; desc: string; amount: string } | null>(null)
   const [editingInsuranceId, setEditingInsuranceId] = useState<string | null>(null)
   const [editingInsuranceDraft, setEditingInsuranceDraft] = useState<{ name: string; desc: string; amount: string } | null>(null)
@@ -494,6 +500,34 @@ export default function WorksheetTab({
     [insurances, insuranceSearch]
   )
 
+  const feePresetMatches = useMemo(() => {
+    if (!feePresetOpen) return []
+    const q = feeSearch.trim().toLowerCase()
+    const list = q ? feePresets.filter((p) => `${p.name} ${p.description ?? ''}`.toLowerCase().includes(q)) : feePresets
+    return list.slice(0, 10)
+  }, [feePresets, feeSearch, feePresetOpen])
+
+  const accessoryPresetMatches = useMemo(() => {
+    if (!accessoryPresetOpen) return []
+    const q = accessorySearch.trim().toLowerCase()
+    const list = q ? accessoryPresets.filter((p) => `${p.name} ${p.description ?? ''}`.toLowerCase().includes(q)) : accessoryPresets
+    return list.slice(0, 10)
+  }, [accessoryPresets, accessorySearch, accessoryPresetOpen])
+
+  const warrantyPresetMatches = useMemo(() => {
+    if (!warrantyPresetOpen) return []
+    const q = warrantySearch.trim().toLowerCase()
+    const list = q ? warrantyPresets.filter((p) => `${p.name} ${p.description ?? ''}`.toLowerCase().includes(q)) : warrantyPresets
+    return list.slice(0, 10)
+  }, [warrantyPresets, warrantySearch, warrantyPresetOpen])
+
+  const insurancePresetMatches = useMemo(() => {
+    if (!insurancePresetOpen) return []
+    const q = insuranceSearch.trim().toLowerCase()
+    const list = q ? insurancePresets.filter((p) => `${p.name} ${p.description ?? ''}`.toLowerCase().includes(q)) : insurancePresets
+    return list.slice(0, 10)
+  }, [insurancePresets, insuranceSearch, insurancePresetOpen])
+
   const submitWorksheet = async () => {
     const norm = (v: any) => {
       if (v === undefined || v === null) return null
@@ -507,10 +541,12 @@ export default function WorksheetTab({
     const userId = await getWebhookUserId().catch(() => null)
 
     const payload = {
+      category: 'worksheet',
       dealId: norm(dealId),
       dealMode: norm(dealMode),
       dealType: norm(dealType),
       dealDate: norm(dealDate),
+      formMode: norm(formMode),
       userId: norm(userId),
       // Deal Breakdown fields (stringified numbers to keep consistency)
       purchasePrice: norm(purchasePrice),
@@ -872,75 +908,58 @@ export default function WorksheetTab({
 
   useEffect(() => {
     const loadPresets = async () => {
-      const scopedUserId = await getWebhookUserId().catch(() => null)
-      if (!scopedUserId) return
-      try {
-        const [fees, accs, wars, ins] = await Promise.all([
-          supabase.from('presets_fee').select('id, name, description, fee_amount').eq('user_id', scopedUserId).order('name', { ascending: true }),
-          supabase.from('presets_accessories').select('id, name, description, amount').eq('user_id', scopedUserId).order('name', { ascending: true }),
-          supabase.from('presets_warranty').select('id, name, description, price').eq('user_id', scopedUserId).order('name', { ascending: true }),
-          supabase.from('presets_insurance').select('id, name, description, price').eq('user_id', scopedUserId).order('name', { ascending: true }),
-        ])
-        if (!fees.error && Array.isArray(fees.data)) setFeePresets(fees.data.map((r: any) => ({ id: String(r.id), name: String(r.name ?? ''), description: String(r.description ?? ''), fee_amount: Number(r.fee_amount ?? 0) })).filter((r: any) => r.name))
-        if (!accs.error && Array.isArray(accs.data)) setAccessoryPresets(accs.data.map((r: any) => ({ id: String(r.id), name: String(r.name ?? ''), description: String(r.description ?? ''), amount: Number(r.amount ?? 0) })).filter((r: any) => r.name))
-        if (!wars.error && Array.isArray(wars.data)) setWarrantyPresets(wars.data.map((r: any) => ({ id: String(r.id), name: String(r.name ?? ''), description: String(r.description ?? ''), price: Number(r.price ?? 0) })).filter((r: any) => r.name))
-        if (!ins.error && Array.isArray(ins.data)) setInsurancePresets(ins.data.map((r: any) => ({ id: String(r.id), name: String(r.name ?? ''), description: String(r.description ?? ''), price: Number(r.price ?? 0) })).filter((r: any) => r.name))
-      } catch (e) {
-        console.error('[WorksheetTab] loadPresets error', e)
+      let tries = 0
+      const runOnce = async (): Promise<boolean> => {
+        const scopedUserId = await getWebhookUserId().catch(() => null)
+        if (!scopedUserId) return false
+        try {
+          const [fees, accs, wars, ins] = await Promise.all([
+            supabase.from('presets_fee').select('id, name, description, fee_amount').eq('user_id', scopedUserId).order('name', { ascending: true }),
+            supabase.from('presets_accessories').select('id, name, description, amount, cost, type, default_tax_rate').eq('user_id', scopedUserId).order('name', { ascending: true }),
+            supabase.from('presets_warranty').select('id, name, description, price').eq('user_id', scopedUserId).order('name', { ascending: true }),
+            supabase.from('presets_insurance').select('id, name, description, price').eq('user_id', scopedUserId).order('name', { ascending: true }),
+          ])
+          if (!fees.error && Array.isArray(fees.data)) setFeePresets(fees.data.map((r: any) => ({ id: String(r.id), name: String(r.name ?? ''), description: String(r.description ?? ''), fee_amount: Number(r.fee_amount ?? 0) })).filter((r: any) => r.name))
+          if (!accs.error && Array.isArray(accs.data)) setAccessoryPresets(accs.data.map((r: any) => ({ id: String(r.id), name: String(r.name ?? ''), description: String(r.description ?? ''), amount: Number(r.amount ?? 0), cost: Number(r.cost ?? 0), type: r.type ? String(r.type) : '', default_tax_rate: r.default_tax_rate ? String(r.default_tax_rate) : '' })).filter((r: any) => r.name))
+          if (!wars.error && Array.isArray(wars.data)) setWarrantyPresets(wars.data.map((r: any) => ({ id: String(r.id), name: String(r.name ?? ''), description: String(r.description ?? ''), price: Number(r.price ?? 0) })).filter((r: any) => r.name))
+          if (!ins.error && Array.isArray(ins.data)) setInsurancePresets(ins.data.map((r: any) => ({ id: String(r.id), name: String(r.name ?? ''), description: String(r.description ?? ''), price: Number(r.price ?? 0) })).filter((r: any) => r.name))
+          return true
+        } catch (e) {
+          console.error('[WorksheetTab] loadPresets error', e)
+          return true
+        }
+      }
+
+      while (tries < 6) {
+        const ok = await runOnce()
+        if (ok) break
+        tries += 1
+        await new Promise((r) => setTimeout(r, 600))
       }
     }
     void loadPresets()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  useEffect(() => {
-    if (feePresets.length > 0 && fees.length === 0 && !initialData?.fees) {
-      const defaultFees = feePresets.map((preset) => ({
-        id: `fee_${Date.now()}_${preset.id}`,
-        name: preset.name,
-        desc: preset.description || '',
-        amount: preset.fee_amount || 0,
-      }))
-      setFees(defaultFees)
-    }
-  }, [feePresets, fees.length, initialData?.fees])
+  const addFeeFromPreset = (preset: { id: string; name: string; description?: string; fee_amount?: number }) => {
+    setFees((prev) => [{ id: `fee_${Date.now()}_${preset.id}`, name: preset.name, desc: preset.description || '', amount: Number(preset.fee_amount ?? 0) }, ...prev])
+    setFeeSearch('')
+  }
 
-  useEffect(() => {
-    const hasInitialAccessories = initialData?.accessories && Array.isArray(initialData.accessories) && initialData.accessories.length > 0
-    if (accessoryPresets.length > 0 && accessories.length === 0 && !hasInitialAccessories) {
-      const defaultAccessories = accessoryPresets.map((preset) => ({
-        id: `acc_${Date.now()}_${preset.id}`,
-        name: preset.name,
-        desc: preset.description || '',
-        price: preset.amount || 0,
-      }))
-      setAccessories(defaultAccessories)
-    }
-  }, [accessoryPresets, accessories.length, initialData?.accessories])
+  const addAccessoryFromPreset = (preset: { id: string; name: string; description?: string; amount?: number; cost?: number; type?: string; default_tax_rate?: string }) => {
+    setAccessories((prev) => [{ id: `acc_${Date.now()}_${preset.id}`, name: preset.name, desc: preset.description || '', price: Number(preset.amount ?? 0) }, ...prev])
+    setAccessorySearch('')
+  }
 
-  useEffect(() => {
-    if (warrantyPresets.length > 0 && warranties.length === 0 && !initialData?.warranties) {
-      const defaultWarranties = warrantyPresets.map((preset) => ({
-        id: `war_${Date.now()}_${preset.id}`,
-        name: preset.name,
-        desc: preset.description || '',
-        amount: preset.price || 0,
-      }))
-      setWarranties(defaultWarranties)
-    }
-  }, [warrantyPresets, warranties.length, initialData?.warranties])
+  const addWarrantyFromPreset = (preset: { id: string; name: string; description?: string; price?: number }) => {
+    setWarranties((prev) => [{ id: `war_${Date.now()}_${preset.id}`, name: preset.name, desc: preset.description || '', amount: Number(preset.price ?? 0) }, ...prev])
+    setWarrantySearch('')
+  }
 
-  useEffect(() => {
-    if (insurancePresets.length > 0 && insurances.length === 0 && !initialData?.insurances) {
-      const defaultInsurances = insurancePresets.map((preset) => ({
-        id: `ins_${Date.now()}_${preset.id}`,
-        name: preset.name,
-        desc: preset.description || '',
-        amount: preset.price || 0,
-      }))
-      setInsurances(defaultInsurances)
-    }
-  }, [insurancePresets, insurances.length, initialData?.insurances])
+  const addInsuranceFromPreset = (preset: { id: string; name: string; description?: string; price?: number }) => {
+    setInsurances((prev) => [{ id: `ins_${Date.now()}_${preset.id}`, name: preset.name, desc: preset.description || '', amount: Number(preset.price ?? 0) }, ...prev])
+    setInsuranceSearch('')
+  }
 
   const feesCard = (
     <div className="border border-gray-200 bg-white">
@@ -958,6 +977,8 @@ export default function WorksheetTab({
             className="flex-1 h-10 border border-gray-200 rounded bg-white pl-10 pr-3 text-sm shadow-sm"
             value={feeSearch}
             onChange={(e) => setFeeSearch(e.target.value)}
+            onFocus={() => setFeePresetOpen(true)}
+            onBlur={() => window.setTimeout(() => setFeePresetOpen(false), 120)}
             onKeyDown={(e) => {
               if (e.key === 'Enter') {
                 e.preventDefault()
@@ -978,6 +999,22 @@ export default function WorksheetTab({
               d="M21 21l-4.35-4.35m1.35-5.65a7 7 0 11-14 0 7 7 0 0114 0z"
             />
           </svg>
+          {feePresetMatches.length > 0 ? (
+            <div className="absolute left-0 right-0 top-[44px] z-20 bg-white border border-gray-200 rounded shadow max-h-56 overflow-auto">
+              {feePresetMatches.map((p) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => { addFeeFromPreset(p); setFeePresetOpen(false) }}
+                >
+                  <div className="font-semibold text-gray-800">{p.name}</div>
+                  <div className="text-xs text-gray-500">${fmtMoney(Number(p.fee_amount ?? 0))}</div>
+                </button>
+              ))}
+            </div>
+          ) : null}
           <button
             type="button"
             onClick={addFeeFromSearch}
@@ -1079,7 +1116,11 @@ export default function WorksheetTab({
                     type="button"
                     className="text-red-600 hover:text-red-700 text-lg"
                     title="Delete"
-                    onClick={() => setFees((prev) => prev.filter((x) => x.id !== f.id))}
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setFees((prev) => prev.filter((x) => x.id !== f.id))
+                    }}
                   >
                     🗑
                   </button>
@@ -1189,7 +1230,18 @@ export default function WorksheetTab({
               <div key={p.id} className="grid grid-cols-[40px_140px_140px_1fr_140px_50px] text-xs">
                 <div className="p-2 flex items-center justify-center gap-3">
                   <button type="button" className="text-gray-600 hover:text-gray-800 text-lg" title="Edit" onClick={() => startEditPayment(p)}>✎</button>
-                  <button type="button" className="text-red-600 hover:text-red-700 text-lg" title="Delete" onClick={() => setPayments((prev) => prev.filter((x) => x.id !== p.id))}>🗑</button>
+                  <button
+                    type="button"
+                    className="text-red-600 hover:text-red-700 text-lg"
+                    title="Delete"
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setPayments((prev) => prev.filter((x) => x.id !== p.id))
+                    }}
+                  >
+                    🗑
+                  </button>
                 </div>
                 <div className="p-2">${fmtMoney(p.amount)}</div>
                 <div className="p-2">{p.type}</div>
@@ -1220,6 +1272,8 @@ export default function WorksheetTab({
             className="flex-1 h-10 border border-gray-200 rounded bg-white pl-10 pr-3 text-sm shadow-sm"
             value={accessorySearch}
             onChange={(e) => setAccessorySearch(e.target.value)}
+            onFocus={() => setAccessoryPresetOpen(true)}
+            onBlur={() => window.setTimeout(() => setAccessoryPresetOpen(false), 120)}
             onKeyDown={(e) => {
               if (e.key === 'Enter') {
                 e.preventDefault()
@@ -1230,6 +1284,22 @@ export default function WorksheetTab({
           <svg className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35m1.35-5.65a7 7 0 11-14 0 7 7 0 0114 0z" />
           </svg>
+          {accessoryPresetMatches.length > 0 ? (
+            <div className="absolute left-0 right-0 top-[44px] z-20 bg-white border border-gray-200 rounded shadow max-h-56 overflow-auto">
+              {accessoryPresetMatches.map((p) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => { addAccessoryFromPreset(p); setAccessoryPresetOpen(false) }}
+                >
+                  <div className="font-semibold text-gray-800">{p.name}</div>
+                  <div className="text-xs text-gray-500">${fmtMoney(Number(p.amount ?? 0))}</div>
+                </button>
+              ))}
+            </div>
+          ) : null}
           <button type="button" onClick={addAccessoryFromSearch} className="ml-2 h-10 px-3 rounded bg-[#118df0] text-white text-xs font-semibold hover:bg-[#0d6ebd]">+</button>
         </div>
 
@@ -1265,8 +1335,19 @@ export default function WorksheetTab({
             ) : (
               <div key={a.id} className="grid grid-cols-[40px_1fr_1fr_140px_80px] text-xs">
                 <div className="p-2 flex items-center justify-center gap-3">
-                  <button type="button" className="text-gray-600 hover:text-gray-800 text-lg" title="Edit" onClick={() => startEditAccessory(a)}>✎</button>
-                  <button type="button" className="text-red-600 hover:text-red-700 text-lg" title="Delete" onClick={() => setAccessories((prev) => prev.filter((x) => x.id !== a.id))}>🗑</button>
+                  <button type="button" className="text-gray-600 hover:text-gray-800 text-lg" title="Edit" onMouseDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); startEditAccessory(a) }}>✎</button>
+                  <button
+                    type="button"
+                    className="text-red-600 hover:text-red-700 text-lg"
+                    title="Delete"
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setAccessories((prev) => prev.filter((x) => x.id !== a.id))
+                    }}
+                  >
+                    🗑
+                  </button>
                 </div>
                 <div className="p-2 flex items-center">{a.name}</div>
                 <div className="p-2">{a.desc}</div>
@@ -1298,6 +1379,8 @@ export default function WorksheetTab({
             className="flex-1 h-10 border border-gray-200 rounded bg-white pl-10 pr-3 text-sm shadow-sm"
             value={warrantySearch}
             onChange={(e) => setWarrantySearch(e.target.value)}
+            onFocus={() => setWarrantyPresetOpen(true)}
+            onBlur={() => window.setTimeout(() => setWarrantyPresetOpen(false), 120)}
             onKeyDown={(e) => {
               if (e.key === 'Enter') {
                 e.preventDefault()
@@ -1308,6 +1391,22 @@ export default function WorksheetTab({
           <svg className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35m1.35-5.65a7 7 0 11-14 0 7 7 0 0114 0z" />
           </svg>
+          {warrantyPresetMatches.length > 0 ? (
+            <div className="absolute left-0 right-0 top-[44px] z-20 bg-white border border-gray-200 rounded shadow max-h-56 overflow-auto">
+              {warrantyPresetMatches.map((p) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => { addWarrantyFromPreset(p); setWarrantyPresetOpen(false) }}
+                >
+                  <div className="font-semibold text-gray-800">{p.name}</div>
+                  <div className="text-xs text-gray-500">${fmtMoney(Number(p.price ?? 0))}</div>
+                </button>
+              ))}
+            </div>
+          ) : null}
           <button type="button" onClick={addWarrantyFromSearch} className="ml-2 h-10 px-3 rounded bg-[#118df0] text-white text-xs font-semibold hover:bg-[#0d6ebd]">+</button>
         </div>
 
@@ -1344,7 +1443,18 @@ export default function WorksheetTab({
               <div key={w.id} className="grid grid-cols-[40px_1fr_1fr_140px_80px] text-xs">
                 <div className="p-2 flex items-center justify-center gap-3">
                   <button type="button" className="text-gray-600 hover:text-gray-800 text-lg" title="Edit" onClick={() => startEditWarranty(w)}>✎</button>
-                  <button type="button" className="text-red-600 hover:text-red-700 text-lg" title="Delete" onClick={() => setWarranties((prev) => prev.filter((x) => x.id !== w.id))}>🗑</button>
+                  <button
+                    type="button"
+                    className="text-red-600 hover:text-red-700 text-lg"
+                    title="Delete"
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setWarranties((prev) => prev.filter((x) => x.id !== w.id))
+                    }}
+                  >
+                    🗑
+                  </button>
                 </div>
                 <div className="p-2 flex items-center">{w.name}</div>
                 <div className="p-2">{w.desc}</div>
@@ -1376,6 +1486,8 @@ export default function WorksheetTab({
             className="flex-1 h-10 border border-gray-200 rounded bg-white pl-10 pr-3 text-sm shadow-sm"
             value={insuranceSearch}
             onChange={(e) => setInsuranceSearch(e.target.value)}
+            onFocus={() => setInsurancePresetOpen(true)}
+            onBlur={() => window.setTimeout(() => setInsurancePresetOpen(false), 120)}
             onKeyDown={(e) => {
               if (e.key === 'Enter') {
                 e.preventDefault()
@@ -1386,6 +1498,22 @@ export default function WorksheetTab({
           <svg className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35m1.35-5.65a7 7 0 11-14 0 7 7 0 0114 0z" />
           </svg>
+          {insurancePresetMatches.length > 0 ? (
+            <div className="absolute left-0 right-0 top-[44px] z-20 bg-white border border-gray-200 rounded shadow max-h-56 overflow-auto">
+              {insurancePresetMatches.map((p) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => { addInsuranceFromPreset(p); setInsurancePresetOpen(false) }}
+                >
+                  <div className="font-semibold text-gray-800">{p.name}</div>
+                  <div className="text-xs text-gray-500">${fmtMoney(Number(p.price ?? 0))}</div>
+                </button>
+              ))}
+            </div>
+          ) : null}
           <button type="button" onClick={addInsuranceFromSearch} className="ml-2 h-10 px-3 rounded bg-[#118df0] text-white text-xs font-semibold hover:bg-[#0d6ebd]">+</button>
         </div>
 
@@ -1422,7 +1550,18 @@ export default function WorksheetTab({
               <div key={i.id} className="grid grid-cols-[40px_1fr_1fr_140px_80px] text-xs">
                 <div className="p-2 flex items-center justify-center gap-3">
                   <button type="button" className="text-gray-600 hover:text-gray-800 text-lg" title="Edit" onClick={() => startEditInsurance(i)}>✎</button>
-                  <button type="button" className="text-red-600 hover:text-red-700 text-lg" title="Delete" onClick={() => setInsurances((prev) => prev.filter((x) => x.id !== i.id))}>🗑</button>
+                  <button
+                    type="button"
+                    className="text-red-600 hover:text-red-700 text-lg"
+                    title="Delete"
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setInsurances((prev) => prev.filter((x) => x.id !== i.id))
+                    }}
+                  >
+                    🗑
+                  </button>
                 </div>
                 <div className="p-2 flex items-center">{i.name}</div>
                 <div className="p-2">{i.desc}</div>

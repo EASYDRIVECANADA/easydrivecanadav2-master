@@ -22,7 +22,23 @@ type VehicleRow = {
   created_at?: string | null
 }
 
-export default function VehiclesTab({ dealId, onSaved, initialData, prefillSelected, autoSaved }: { dealId?: string; onSaved?: () => void; initialData?: any; prefillSelected?: any; autoSaved?: boolean }) {
+export default function VehiclesTab({
+  dealId,
+  dealMode,
+  dealType,
+  onSaved,
+  initialData,
+  prefillSelected,
+  autoSaved,
+}: {
+  dealId?: string
+  dealMode?: 'RTL' | 'WHL'
+  dealType?: 'Cash' | 'Finance'
+  onSaved?: () => void
+  initialData?: any
+  prefillSelected?: any
+  autoSaved?: boolean
+}) {
   const [query, setQuery] = useState('')
   const [open, setOpen] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -101,6 +117,21 @@ export default function VehiclesTab({ dealId, onSaved, initialData, prefillSelec
     tradeEquity: '0.00',
   })
 
+  const toMoneyNum = (v: any) => {
+    if (v === null || v === undefined) return 0
+    if (typeof v === 'number') return Number.isFinite(v) ? v : 0
+    const s = String(v).trim()
+    if (!s) return 0
+    const n = parseFloat(s.replace(/,/g, ''))
+    return Number.isNaN(n) ? 0 : n
+  }
+
+  const calcTradeEquity = (actualCashValue: any, tradeValue: any) => {
+    const acv = toMoneyNum(actualCashValue)
+    const tv = toMoneyNum(tradeValue)
+    return (acv - tv).toFixed(2)
+  }
+
   const [addCertAsIs, setAddCertAsIs] = useState(false)
   const [addBrandType, setAddBrandType] = useState<'na' | 'none' | 'rebuilt' | 'salvage' | 'irreparable'>('na')
   const [tradeDisclosuresBrandType, setTradeDisclosuresBrandType] = useState<'na' | 'none' | 'rebuilt' | 'salvage' | 'irreparable'>('na')
@@ -140,10 +171,13 @@ export default function VehiclesTab({ dealId, onSaved, initialData, prefillSelec
         isRin: v.is_rin || false,
         ownerDl: v.owner_dl || '',
         ownerPlate: v.owner_plate || '',
-        tradeValue: v.trade_value ?? '0.00',
-        actualCashValue: v.actual_cash_value ?? '0.00',
-        lienAmount: v.lien_amount ?? '0.00',
-        tradeEquity: v.trade_equity ?? '0.00',
+        tradeValue: v.trade_value ?? v.tradeValue ?? '0.00',
+        actualCashValue: v.actual_cash_value ?? v.actualCashValue ?? '0.00',
+        lienAmount: v.lien_amount ?? v.lienAmount ?? '0.00',
+        tradeEquity:
+          v.trade_equity ??
+          v.tradeEquity ??
+          calcTradeEquity(v.actual_cash_value ?? v.actualCashValue ?? '0.00', v.trade_value ?? v.tradeValue ?? '0.00'),
         rin: v.rin || '',
         selectedVehicle: v.selected_id ? {
           id: v.selected_id,
@@ -152,12 +186,12 @@ export default function VehiclesTab({ dealId, onSaved, initialData, prefillSelec
           model: v.selected_model,
           trim: v.selected_trim,
           vin: v.selected_vin,
-          exterior_color: v.selected_exterior_color,
-          interior_color: v.selected_interior_color,
+          exteriorColor: v.selected_exterior_color,
+          interiorColor: v.selected_interior_color,
           odometer: v.selected_odometer,
-          odometer_unit: v.selected_odometer_unit,
+          odometerUnit: v.selected_odometer_unit,
           status: v.selected_status,
-          stock_number: v.selected_stock_number,
+          stockNumber: v.selected_stock_number,
         } : null,
       }))
     }
@@ -169,6 +203,8 @@ export default function VehiclesTab({ dealId, onSaved, initialData, prefillSelec
   const [saveErrorModalMessage, setSaveErrorModalMessage] = useState<string | null>(null)
   const [hasBeenSaved, setHasBeenSaved] = useState(() => Array.isArray(initialData) && initialData.length > 0)
   const [lastSaveWasUpdate, setLastSaveWasUpdate] = useState(false)
+  const formMode: 'create' | 'edit' = hasBeenSaved || (Array.isArray(initialData) && initialData.length > 0) ? 'edit' : 'create'
+  const [manualSelectedCleared, setManualSelectedCleared] = useState(false)
   const inlineEditorRef = useRef<HTMLDivElement | null>(null)
   const execInline = (cmd: string, value?: string) => {
     const el = inlineEditorRef.current
@@ -249,84 +285,8 @@ export default function VehiclesTab({ dealId, onSaved, initialData, prefillSelec
 
   useEffect(() => {
     try {
-      if (typeof window === 'undefined') return
-      if (Array.isArray(initialData) && initialData.length > 0) return
-
-      const draftKey = 'edc_deal_vehicles_deals_saved_draft'
-      const dealKey = dealId ? `edc_deal_vehicles_deals_saved_${dealId}` : null
-
-      const rawDeal = dealKey ? window.localStorage.getItem(dealKey) : null
-      const rawDraft = window.localStorage.getItem(draftKey)
-
-      const tryParse = (raw: string | null) => {
-        if (!raw) return null
-        try {
-          return JSON.parse(raw)
-        } catch {
-          return null
-        }
-      }
-
-      const applyPrefill = (parsed: any) => {
-        if (Array.isArray(parsed)) {
-          setSavedTrades(parsed)
-          if (parsed.length > 0) setHasBeenSaved(true)
-          const derived = deriveSelectedVehicleRowFromTrade(parsed?.[0])
-          if (derived) {
-            setSelected(derived)
-            setQuery(makeSelectedLabel(derived))
-            const mv = derived.odometer ?? derived.mileage
-            setOdoDraft(mv !== null && mv !== undefined ? String(mv) : '')
-          }
-          return true
-        }
-        if (parsed && typeof parsed === 'object') {
-          if (Array.isArray(parsed.savedTrades)) {
-            setSavedTrades(parsed.savedTrades)
-            if (parsed.savedTrades.length > 0) setHasBeenSaved(true)
-          }
-          if (parsed.selected && typeof parsed.selected === 'object') {
-            setSelected(parsed.selected as VehicleRow)
-            setQuery(makeSelectedLabel(parsed.selected as VehicleRow))
-            const mv = (parsed.selected as any)?.odometer ?? (parsed.selected as any)?.mileage
-            setOdoDraft(mv !== null && mv !== undefined ? String(mv) : '')
-          } else {
-            const derived = deriveSelectedVehicleRowFromTrade(parsed?.savedTrades?.[0])
-            if (derived) {
-              setSelected(derived)
-              setQuery(makeSelectedLabel(derived))
-              const mv = derived.odometer ?? derived.mileage
-              setOdoDraft(mv !== null && mv !== undefined ? String(mv) : '')
-            }
-          }
-          return Array.isArray(parsed.savedTrades) || !!parsed.selected
-        }
-        return false
-      }
-
-      const parsedDeal = tryParse(rawDeal)
-      const parsedDraft = tryParse(rawDraft)
-
-      if (applyPrefill(parsedDeal)) return
-
-      if (applyPrefill(parsedDraft)) {
-        if (dealKey) {
-          try {
-            window.localStorage.setItem(dealKey, JSON.stringify(parsedDraft))
-          } catch {
-            // ignore
-          }
-        }
-      }
-    } catch {
-      // ignore
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dealId])
-
-  useEffect(() => {
-    try {
       if (selected) return
+      if (manualSelectedCleared) return
       const first = (Array.isArray(savedTrades) && savedTrades.length > 0 ? savedTrades[0] : null) ?? (Array.isArray(initialData) && initialData.length > 0 ? initialData[0] : null)
       if (!first) return
       const derived = deriveSelectedVehicleRowFromTrade(first)
@@ -339,7 +299,7 @@ export default function VehiclesTab({ dealId, onSaved, initialData, prefillSelec
       // ignore
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialData, savedTrades, selected])
+  }, [initialData, savedTrades, selected, manualSelectedCleared])
 
   const handleAddSave = async () => {
     try {
@@ -793,6 +753,7 @@ export default function VehiclesTab({ dealId, onSaved, initialData, prefillSelec
 
       const makeSelectedVehiclePayload = (svRaw: any) => {
         const sv = svRaw ?? null
+        if (!sv) return null
         const pick = (...keys: string[]) => {
           for (const k of keys) {
             const v = (sv as any)?.[k]
@@ -819,7 +780,7 @@ export default function VehiclesTab({ dealId, onSaved, initialData, prefillSelec
       }
 
       const trades = (Array.isArray(savedTrades) ? savedTrades : []).map((t) => {
-        const svSnap = t.selectedVehicle ?? makeSelectedVehicleSnapshot() ?? null
+        const svSnap = manualSelectedCleared ? null : (t.selectedVehicle ?? makeSelectedVehicleSnapshot() ?? null)
         const selectedVehicle = makeSelectedVehiclePayload(svSnap)
 
         const disclosures = toNullArray(t.disclosures)
@@ -866,20 +827,20 @@ export default function VehiclesTab({ dealId, onSaved, initialData, prefillSelec
           tradeEquity: toNull(t.tradeEquity),
           ownerRin: toNull(t.rin),
           selectedVehicle,
-          selected_id: selectedVehicle.id,
-          selected_year: selectedVehicle.year,
-          selected_make: selectedVehicle.make,
-          selected_model: selectedVehicle.model,
-          selected_trim: selectedVehicle.trim,
-          selected_vin: selectedVehicle.vin,
-          selected_exterior_color: selectedVehicle.exteriorColor,
-          selected_interior_color: selectedVehicle.interiorColor,
-          selected_odometer: selectedVehicle.odometer,
-          selected_odometer_unit: selectedVehicle.odometerUnit,
-          selected_status: selectedVehicle.status,
-          selected_stock_number: selectedVehicle.stockNumber,
-          created_at: selectedVehicle.createdAt,
-          updated_at: selectedVehicle.updatedAt,
+          selected_id: selectedVehicle?.id ?? null,
+          selected_year: selectedVehicle?.year ?? null,
+          selected_make: selectedVehicle?.make ?? null,
+          selected_model: selectedVehicle?.model ?? null,
+          selected_trim: selectedVehicle?.trim ?? null,
+          selected_vin: selectedVehicle?.vin ?? null,
+          selected_exterior_color: selectedVehicle?.exteriorColor ?? null,
+          selected_interior_color: selectedVehicle?.interiorColor ?? null,
+          selected_odometer: selectedVehicle?.odometer ?? null,
+          selected_odometer_unit: selectedVehicle?.odometerUnit ?? null,
+          selected_status: selectedVehicle?.status ?? null,
+          selected_stock_number: selectedVehicle?.stockNumber ?? null,
+          created_at: selectedVehicle?.createdAt ?? null,
+          updated_at: selectedVehicle?.updatedAt ?? null,
         }
       })
 
@@ -898,6 +859,10 @@ export default function VehiclesTab({ dealId, onSaved, initialData, prefillSelec
             user_id: user_id || null,
             id: dealId || null,
             dealId: dealId || null,
+            category: 'vehicles-deals',
+            dealMode: dealMode ?? null,
+            dealType: dealType ?? null,
+            formMode,
             ...rest,
             selectedVehicle: selectedVehicle ?? null,
           },
@@ -912,6 +877,10 @@ export default function VehiclesTab({ dealId, onSaved, initialData, prefillSelec
           user_id: user_id || null,
           id: dealId || null,
           dealId: dealId || null,
+          category: 'vehicles-deals',
+          dealMode: dealMode ?? null,
+          dealType: dealType ?? null,
+          formMode,
           vin: null,
           year: null,
           make: null,
@@ -947,21 +916,21 @@ export default function VehiclesTab({ dealId, onSaved, initialData, prefillSelec
           lienAmount: null,
           tradeEquity: null,
           ownerRin: null,
-          selectedVehicle: mainSelectedVehicle,
-          selected_id: mainSelectedVehicle.id,
-          selected_year: mainSelectedVehicle.year,
-          selected_make: mainSelectedVehicle.make,
-          selected_model: mainSelectedVehicle.model,
-          selected_trim: mainSelectedVehicle.trim,
-          selected_vin: mainSelectedVehicle.vin,
-          selected_exterior_color: mainSelectedVehicle.exteriorColor,
-          selected_interior_color: mainSelectedVehicle.interiorColor,
-          selected_odometer: mainSelectedVehicle.odometer,
-          selected_odometer_unit: mainSelectedVehicle.odometerUnit,
-          selected_status: mainSelectedVehicle.status,
-          selected_stock_number: mainSelectedVehicle.stockNumber,
-          created_at: mainSelectedVehicle.createdAt,
-          updated_at: mainSelectedVehicle.updatedAt,
+          selectedVehicle: mainSelectedVehicle ?? null,
+          selected_id: mainSelectedVehicle?.id ?? null,
+          selected_year: mainSelectedVehicle?.year ?? null,
+          selected_make: mainSelectedVehicle?.make ?? null,
+          selected_model: mainSelectedVehicle?.model ?? null,
+          selected_trim: mainSelectedVehicle?.trim ?? null,
+          selected_vin: mainSelectedVehicle?.vin ?? null,
+          selected_exterior_color: mainSelectedVehicle?.exteriorColor ?? null,
+          selected_interior_color: mainSelectedVehicle?.interiorColor ?? null,
+          selected_odometer: mainSelectedVehicle?.odometer ?? null,
+          selected_odometer_unit: mainSelectedVehicle?.odometerUnit ?? null,
+          selected_status: mainSelectedVehicle?.status ?? null,
+          selected_stock_number: mainSelectedVehicle?.stockNumber ?? null,
+          created_at: mainSelectedVehicle?.createdAt ?? null,
+          updated_at: mainSelectedVehicle?.updatedAt ?? null,
         },
         webhookUrl,
         executionMode,
@@ -1020,15 +989,7 @@ export default function VehiclesTab({ dealId, onSaved, initialData, prefillSelec
 
   useEffect(() => {
     // Auto-calc Trade Equity = Actual Cash Value - Trade Value
-    const toNum = (v: string) => {
-      if (!v) return 0
-      const n = parseFloat(String(v).replace(/,/g, ''))
-      return isNaN(n) ? 0 : n
-    }
-    const acv = toNum(tradeForm.actualCashValue)
-    const tv = toNum(tradeForm.tradeValue)
-    const eq = acv - tv
-    setTradeForm((p) => ({ ...p, tradeEquity: eq.toFixed(2) }))
+    setTradeForm((p) => ({ ...p, tradeEquity: calcTradeEquity(p.actualCashValue, p.tradeValue) }))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tradeForm.actualCashValue, tradeForm.tradeValue])
 
@@ -1109,6 +1070,7 @@ export default function VehiclesTab({ dealId, onSaved, initialData, prefillSelec
 
   const selectVehicle = (v: VehicleRow) => {
     setSelected(v)
+    setManualSelectedCleared(false)
     const label = [v.year ? String(v.year) : '', v.make ?? '', v.model ?? '', v.trim ?? '']
       .filter(Boolean)
       .join(' ')
@@ -1123,6 +1085,27 @@ export default function VehiclesTab({ dealId, onSaved, initialData, prefillSelec
 
   const clearSelected = () => {
     setSelected(null)
+    setManualSelectedCleared(true)
+    setSavedTrades((prev) =>
+      prev.map((t) => ({
+        ...t,
+        selectedVehicle: null,
+        selected_id: null,
+        selected_year: null,
+        selected_make: null,
+        selected_model: null,
+        selected_trim: null,
+        selected_vin: null,
+        selected_exterior_color: null,
+        selected_interior_color: null,
+        selected_odometer: null,
+        selected_odometer_unit: null,
+        selected_status: null,
+        selected_stock_number: null,
+        created_at: null,
+        updated_at: null,
+      }))
+    )
     setQuery('')
     setResults([])
     setError(null)
@@ -1421,88 +1404,276 @@ export default function VehiclesTab({ dealId, onSaved, initialData, prefillSelec
                 <div key={idx} className="border border-gray-200 rounded p-3 grid grid-cols-12 gap-3 items-center">
                   <div className="col-span-4 flex items-center gap-2">
                     <svg className="w-4 h-4 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.2} d="M9 12h6M9 5h6M9 19h6"/></svg>
-                    <input readOnly className="h-9 w-full border border-gray-200 rounded px-3 text-sm bg-gray-50" value={t.vin || ''} />
+                    <input
+                      className="h-9 w-full border border-gray-200 rounded px-3 text-sm bg-white"
+                      value={t.vin || ''}
+                      onChange={(e) => {
+                        const val = e.target.value
+                        setSavedTrades((prev) => prev.map((it, i) => (i === idx ? { ...it, vin: val } : it)))
+                      }}
+                    />
                   </div>
-                  <input readOnly className="col-span-2 h-9 border border-gray-200 rounded px-3 text-sm bg-gray-50" value={t.year || ''} />
-                  <input readOnly className="col-span-2 h-9 border border-gray-200 rounded px-3 text-sm bg-gray-50" value={t.make || ''} />
-                  <input readOnly className="col-span-4 h-9 border border-gray-200 rounded px-3 text-sm bg-gray-50" value={t.model || ''} />
+                  <input
+                    className="col-span-2 h-9 border border-gray-200 rounded px-3 text-sm bg-white"
+                    value={t.year || ''}
+                    onChange={(e) => {
+                      const val = e.target.value
+                      setSavedTrades((prev) => prev.map((it, i) => (i === idx ? { ...it, year: val } : it)))
+                    }}
+                  />
+                  <input
+                    className="col-span-2 h-9 border border-gray-200 rounded px-3 text-sm bg-white"
+                    value={t.make || ''}
+                    onChange={(e) => {
+                      const val = e.target.value
+                      setSavedTrades((prev) => prev.map((it, i) => (i === idx ? { ...it, make: val } : it)))
+                    }}
+                  />
+                  <input
+                    className="col-span-4 h-9 border border-gray-200 rounded px-3 text-sm bg-white"
+                    value={t.model || ''}
+                    onChange={(e) => {
+                      const val = e.target.value
+                      setSavedTrades((prev) => prev.map((it, i) => (i === idx ? { ...it, model: val } : it)))
+                    }}
+                  />
 
-                  <input readOnly className="col-span-3 h-9 border border-gray-200 rounded px-3 text-sm bg-gray-50" value={t.trim || ''} />
-                  <input readOnly className="col-span-3 h-9 border border-gray-200 rounded px-3 text-sm bg-gray-50" value={t.colour || ''} />
+                  <input
+                    className="col-span-3 h-9 border border-gray-200 rounded px-3 text-sm bg-white"
+                    value={t.trim || ''}
+                    onChange={(e) => {
+                      const val = e.target.value
+                      setSavedTrades((prev) => prev.map((it, i) => (i === idx ? { ...it, trim: val } : it)))
+                    }}
+                  />
+                  <input
+                    className="col-span-3 h-9 border border-gray-200 rounded px-3 text-sm bg-white"
+                    value={t.colour || ''}
+                    onChange={(e) => {
+                      const val = e.target.value
+                      setSavedTrades((prev) => prev.map((it, i) => (i === idx ? { ...it, colour: val } : it)))
+                    }}
+                  />
                   <div className="col-span-3 flex items-stretch border border-gray-200 rounded overflow-hidden">
                     <div className="w-10 flex items-center justify-center bg-gray-100 text-gray-700 border-r border-gray-200">
                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3"/><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 2a10 10 0 100 20 10 10 0 000-20z"/></svg>
                     </div>
-                    <input readOnly className="flex-1 h-9 px-3 text-sm bg-gray-50" value={t.odometer || ''} />
-                    <input readOnly className="w-16 h-9 px-2 text-sm bg-gray-50 border-l border-gray-200" value={t.odometerUnit || ''} />
+                    <input
+                      className="flex-1 h-9 px-3 text-sm bg-white"
+                      value={t.odometer || ''}
+                      onChange={(e) => {
+                        const val = e.target.value
+                        setSavedTrades((prev) => prev.map((it, i) => (i === idx ? { ...it, odometer: val } : it)))
+                      }}
+                    />
+                    <input
+                      className="w-16 h-9 px-2 text-sm bg-white border-l border-gray-200"
+                      value={t.odometerUnit || ''}
+                      onChange={(e) => {
+                        const val = e.target.value
+                        setSavedTrades((prev) => prev.map((it, i) => (i === idx ? { ...it, odometerUnit: val } : it)))
+                      }}
+                    />
                   </div>
 
                   <div className="col-span-3">
                     <div className="text-[11px] text-gray-600">Trade Value</div>
-                    <input readOnly className="h-9 w-full border border-gray-200 rounded px-3 text-sm bg-gray-50" value={t.tradeValue || ''} />
+                    <input
+                      className="h-9 w-full border border-gray-200 rounded px-3 text-sm bg-white"
+                      value={t.tradeValue || ''}
+                      onChange={(e) => {
+                        const val = e.target.value
+                        setSavedTrades((prev) =>
+                          prev.map((it, i) =>
+                            i === idx
+                              ? { ...it, tradeValue: val, tradeEquity: calcTradeEquity(it.actualCashValue, val) }
+                              : it
+                          )
+                        )
+                      }}
+                    />
                   </div>
                   <div className="col-span-3">
                     <div className="text-[11px] text-gray-600">Actual Cash Value</div>
-                    <input readOnly className="h-9 w-full border border-gray-200 rounded px-3 text-sm bg-gray-50" value={t.actualCashValue || ''} />
+                    <input
+                      className="h-9 w-full border border-gray-200 rounded px-3 text-sm bg-white"
+                      value={t.actualCashValue || ''}
+                      onChange={(e) => {
+                        const val = e.target.value
+                        setSavedTrades((prev) =>
+                          prev.map((it, i) =>
+                            i === idx
+                              ? { ...it, actualCashValue: val, tradeEquity: calcTradeEquity(val, it.tradeValue) }
+                              : it
+                          )
+                        )
+                      }}
+                    />
                   </div>
                   <div className="col-span-3">
                     <div className="text-[11px] text-gray-600">Lien Amount</div>
-                    <input readOnly className="h-9 w-full border border-gray-200 rounded px-3 text-sm bg-gray-50" value={t.lienAmount || ''} />
+                    <input
+                      className="h-9 w-full border border-gray-200 rounded px-3 text-sm bg-white"
+                      value={t.lienAmount || ''}
+                      onChange={(e) => {
+                        const val = e.target.value
+                        setSavedTrades((prev) => prev.map((it, i) => (i === idx ? { ...it, lienAmount: val } : it)))
+                      }}
+                    />
                   </div>
                   <div className="col-span-3">
                     <div className="text-[11px] text-gray-600">Trade Equity</div>
-                    <input readOnly className="h-9 w-full border border-gray-200 rounded px-3 text-sm bg-gray-50" value={t.tradeEquity || ''} />
+                    <input
+                      className="h-9 w-full border border-gray-200 rounded px-3 text-sm bg-white"
+                      value={t.tradeEquity || ''}
+                      onChange={(e) => {
+                        const val = e.target.value
+                        setSavedTrades((prev) => prev.map((it, i) => (i === idx ? { ...it, tradeEquity: val } : it)))
+                      }}
+                    />
                   </div>
 
                   <div className="col-span-6">
                     <div className="text-[11px] text-gray-600">Owner Name</div>
-                    <input readOnly className="h-9 w-full border border-gray-200 rounded px-3 text-sm bg-gray-50" value={t.ownerName || ''} />
+                    <input
+                      className="h-9 w-full border border-gray-200 rounded px-3 text-sm bg-white"
+                      value={t.ownerName || ''}
+                      onChange={(e) => {
+                        const val = e.target.value
+                        setSavedTrades((prev) => prev.map((it, i) => (i === idx ? { ...it, ownerName: val } : it)))
+                      }}
+                    />
                   </div>
                   <div className="col-span-3">
                     <div className="text-[11px] text-gray-600">{t.isRin ? 'RIN #' : 'DL #'}</div>
-                    <input readOnly className="h-9 w-full border border-gray-200 rounded px-3 text-sm bg-gray-50" value={(t.isRin ? (t.ownerRin ?? '') : (t.ownerDl ?? ''))} />
+                    <input
+                      className="h-9 w-full border border-gray-200 rounded px-3 text-sm bg-white"
+                      value={(t.isRin ? (t.ownerRin ?? '') : (t.ownerDl ?? ''))}
+                      onChange={(e) => {
+                        const val = e.target.value
+                        setSavedTrades((prev) =>
+                          prev.map((it, i) =>
+                            i === idx
+                              ? t.isRin
+                                ? { ...it, ownerRin: val }
+                                : { ...it, ownerDl: val }
+                              : it
+                          )
+                        )
+                      }}
+                    />
                   </div>
                   <div className="col-span-3">
                     <div className="text-[11px] text-gray-600">Plate #</div>
-                    <input readOnly className="h-9 w-full border border-gray-200 rounded px-3 text-sm bg-gray-50" value={t.ownerPlate || ''} />
+                    <input
+                      className="h-9 w-full border border-gray-200 rounded px-3 text-sm bg-white"
+                      value={t.ownerPlate || ''}
+                      onChange={(e) => {
+                        const val = e.target.value
+                        setSavedTrades((prev) => prev.map((it, i) => (i === idx ? { ...it, ownerPlate: val } : it)))
+                      }}
+                    />
                   </div>
 
                   <div className="col-span-3">
                     <div className="text-[11px] text-gray-600">Phone</div>
-                    <input readOnly className="h-9 w-full border border-gray-200 rounded px-3 text-sm bg-gray-50" value={t.ownerPhone || ''} />
+                    <input
+                      className="h-9 w-full border border-gray-200 rounded px-3 text-sm bg-white"
+                      value={t.ownerPhone || ''}
+                      onChange={(e) => {
+                        const val = e.target.value
+                        setSavedTrades((prev) => prev.map((it, i) => (i === idx ? { ...it, ownerPhone: val } : it)))
+                      }}
+                    />
                   </div>
                   <div className="col-span-3">
                     <div className="text-[11px] text-gray-600">Mobile</div>
-                    <input readOnly className="h-9 w-full border border-gray-200 rounded px-3 text-sm bg-gray-50" value={t.ownerMobile || ''} />
+                    <input
+                      className="h-9 w-full border border-gray-200 rounded px-3 text-sm bg-white"
+                      value={t.ownerMobile || ''}
+                      onChange={(e) => {
+                        const val = e.target.value
+                        setSavedTrades((prev) => prev.map((it, i) => (i === idx ? { ...it, ownerMobile: val } : it)))
+                      }}
+                    />
                   </div>
                   <div className="col-span-6">
                     <div className="text-[11px] text-gray-600">Email</div>
-                    <input readOnly className="h-9 w-full border border-gray-200 rounded px-3 text-sm bg-gray-50" value={t.ownerEmail || ''} />
+                    <input
+                      className="h-9 w-full border border-gray-200 rounded px-3 text-sm bg-white"
+                      value={t.ownerEmail || ''}
+                      onChange={(e) => {
+                        const val = e.target.value
+                        setSavedTrades((prev) => prev.map((it, i) => (i === idx ? { ...it, ownerEmail: val } : it)))
+                      }}
+                    />
                   </div>
 
                   <div className="col-span-6">
                     <div className="text-[11px] text-gray-600">Street Address</div>
-                    <input readOnly className="h-9 w-full border border-gray-200 rounded px-3 text-sm bg-gray-50" value={t.ownerStreet || ''} />
+                    <input
+                      className="h-9 w-full border border-gray-200 rounded px-3 text-sm bg-white"
+                      value={t.ownerStreet || ''}
+                      onChange={(e) => {
+                        const val = e.target.value
+                        setSavedTrades((prev) => prev.map((it, i) => (i === idx ? { ...it, ownerStreet: val } : it)))
+                      }}
+                    />
                   </div>
                   <div className="col-span-3">
                     <div className="text-[11px] text-gray-600">Apt/Suite</div>
-                    <input readOnly className="h-9 w-full border border-gray-200 rounded px-3 text-sm bg-gray-50" value={t.ownerSuite || ''} />
+                    <input
+                      className="h-9 w-full border border-gray-200 rounded px-3 text-sm bg-white"
+                      value={t.ownerSuite || ''}
+                      onChange={(e) => {
+                        const val = e.target.value
+                        setSavedTrades((prev) => prev.map((it, i) => (i === idx ? { ...it, ownerSuite: val } : it)))
+                      }}
+                    />
                   </div>
                   <div className="col-span-3">
                     <div className="text-[11px] text-gray-600">City</div>
-                    <input readOnly className="h-9 w-full border border-gray-200 rounded px-3 text-sm bg-gray-50" value={t.ownerCity || ''} />
+                    <input
+                      className="h-9 w-full border border-gray-200 rounded px-3 text-sm bg-white"
+                      value={t.ownerCity || ''}
+                      onChange={(e) => {
+                        const val = e.target.value
+                        setSavedTrades((prev) => prev.map((it, i) => (i === idx ? { ...it, ownerCity: val } : it)))
+                      }}
+                    />
                   </div>
                   <div className="col-span-3">
                     <div className="text-[11px] text-gray-600">Province</div>
-                    <input readOnly className="h-9 w-full border border-gray-200 rounded px-3 text-sm bg-gray-50" value={t.ownerProvince || ''} />
+                    <input
+                      className="h-9 w-full border border-gray-200 rounded px-3 text-sm bg-white"
+                      value={t.ownerProvince || ''}
+                      onChange={(e) => {
+                        const val = e.target.value
+                        setSavedTrades((prev) => prev.map((it, i) => (i === idx ? { ...it, ownerProvince: val } : it)))
+                      }}
+                    />
                   </div>
                   <div className="col-span-3">
                     <div className="text-[11px] text-gray-600">Postal Code</div>
-                    <input readOnly className="h-9 w-full border border-gray-200 rounded px-3 text-sm bg-gray-50" value={t.ownerPostal || ''} />
+                    <input
+                      className="h-9 w-full border border-gray-200 rounded px-3 text-sm bg-white"
+                      value={t.ownerPostal || ''}
+                      onChange={(e) => {
+                        const val = e.target.value
+                        setSavedTrades((prev) => prev.map((it, i) => (i === idx ? { ...it, ownerPostal: val } : it)))
+                      }}
+                    />
                   </div>
                   <div className="col-span-3">
                     <div className="text-[11px] text-gray-600">Country</div>
-                    <input readOnly className="h-9 w-full border border-gray-200 rounded px-3 text-sm bg-gray-50" value={t.ownerCountry || ''} />
+                    <input
+                      className="h-9 w-full border border-gray-200 rounded px-3 text-sm bg-white"
+                      value={t.ownerCountry || ''}
+                      onChange={(e) => {
+                        const val = e.target.value
+                        setSavedTrades((prev) => prev.map((it, i) => (i === idx ? { ...it, ownerCountry: val } : it)))
+                      }}
+                    />
                   </div>
 
                   <div className="col-span-12 text-[11px] text-[#118df0]">
@@ -1643,6 +1814,9 @@ export default function VehiclesTab({ dealId, onSaved, initialData, prefillSelec
           >
             {savingTrades ? (hasBeenSaved ? 'Updating…' : 'Saving…') : hasBeenSaved ? 'Update' : 'Save'}
           </button>
+          <div className={formMode === 'edit' ? 'h-10 px-3 rounded border border-amber-200 bg-amber-50 text-amber-800 text-xs font-semibold flex items-center' : 'h-10 px-3 rounded border border-emerald-200 bg-emerald-50 text-emerald-800 text-xs font-semibold flex items-center'}>
+            {formMode === 'edit' ? 'Edit' : 'Create'}
+          </div>
         </div>
       </div>
 

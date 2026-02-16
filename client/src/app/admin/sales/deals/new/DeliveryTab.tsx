@@ -4,7 +4,17 @@ import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { useRouter } from 'next/navigation'
 
-export default function DeliveryTab({ dealMode = 'RTL', dealId, initialData }: { dealMode?: 'RTL' | 'WHL'; dealId?: string; initialData?: any }) {
+export default function DeliveryTab({
+  dealMode = 'RTL',
+  dealId,
+  formMode,
+  initialData,
+}: {
+  dealMode?: 'RTL' | 'WHL'
+  dealId?: string
+  formMode?: 'create' | 'edit'
+  initialData?: any
+}) {
   const dd = initialData || {}
   const router = useRouter()
   const [deliveryDate, setDeliveryDate] = useState(dd.delivery_date ?? '')
@@ -29,6 +39,8 @@ export default function DeliveryTab({ dealMode = 'RTL', dealId, initialData }: {
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [showSuccessModal, setShowSuccessModal] = useState(false)
+  const [showSaveErrorModal, setShowSaveErrorModal] = useState(false)
+  const [saveErrorModalMessage, setSaveErrorModalMessage] = useState<string>('Unsuccessful save')
 
   useEffect(() => {
     const loadNames = async () => {
@@ -58,6 +70,46 @@ export default function DeliveryTab({ dealMode = 'RTL', dealId, initialData }: {
 
     void loadNames()
   }, [])
+
+  const getLoggedInAdminDbUserId = async (): Promise<string | null> => {
+    try {
+      if (typeof window === 'undefined') return null
+      const raw = window.localStorage.getItem('edc_admin_session')
+      if (!raw) return null
+      const parsed = JSON.parse(raw) as { email?: string; user_id?: string }
+      const sessionUserId = String(parsed?.user_id ?? '').trim()
+      if (sessionUserId) return sessionUserId
+      const email = String(parsed?.email ?? '').trim().toLowerCase()
+      if (!email) return null
+
+      const { data, error } = await supabase
+        .from('edc_account_verifications')
+        .select('id')
+        .eq('email', email)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+
+      if (error) return null
+      return (data as any)?.id ?? null
+    } catch {
+      return null
+    }
+  }
+
+  const getWebhookUserId = async () => {
+    const dbUserId = await getLoggedInAdminDbUserId()
+    try {
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser()
+      if (userError) return dbUserId ?? null
+      return dbUserId ?? user?.id ?? null
+    } catch {
+      return dbUserId ?? null
+    }
+  }
 
   const toNull = (v: any) => {
     if (v === undefined || v === null) return null
@@ -103,64 +155,51 @@ export default function DeliveryTab({ dealMode = 'RTL', dealId, initialData }: {
   const handleSave = async () => {
     try {
       setSaveError(null)
+      setShowSaveErrorModal(false)
       setSaving(true)
 
-      if (initialData?.id) {
-        // Editing mode — update existing delivery row in Supabase
-        const updateData: Record<string, any> = {
-          deal_mode: toNull(dealMode),
-          delivery_date: toNull(deliveryDate),
-          delivery_time: toNull(deliveryTime),
-          export_outside_ontario: exportedOutsideOntario,
-          exported_party_type: exportedOutsideOntario ? toNull(exportedPartyType) : null,
-          delivery_details: toNull(deliveryDetails),
-          other_notes: toNull(otherNotes),
-          approved_by: toNull(approvedBy),
-          salesperson: toNull(salesperson),
-          tasks: Array.isArray(tasks) ? tasks : [],
-        }
-        const res = await fetch('/api/deals/update', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ table: 'edc_deals_delivery', id: initialData.id, data: updateData }),
-        })
-        const json = await res.json()
-        if (!res.ok || json.error) throw new Error(json.error || `Update failed (${res.status})`)
-      } else {
-        // New deal — create via webhook
-        const payload = {
-          dealId: toNull(dealId),
-          dealMode: toNull(dealMode),
-          deliveryDate: toNull(deliveryDate),
-          deliveryTime: toNull(deliveryTime),
-          exportedOutsideOntario,
-          exportedPartyType: exportedOutsideOntario ? toNull(exportedPartyType) : null,
-          deliveryDetails: toNull(deliveryDetails),
-          otherNotes: toNull(otherNotes),
-          approvedBy: toNull(approvedBy),
-          salesperson: toNull(salesperson),
-          newTaskDraft: {
-            name: toNull(taskName),
-            description: toNull(taskDescription),
-            dueBy: toNull(taskDueBy),
-          },
-          tasks: Array.isArray(tasks) ? tasks : [],
-        }
-        const res = await fetch('/api/delivery', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        })
-        const raw = await res.text().catch(() => '')
-        if (!res.ok) throw new Error(raw || `Save failed (${res.status})`)
-        const ok = raw.trim().toLowerCase() === 'done'
-        if (!ok) throw new Error(raw || 'Webhook did not confirm save. Expected "Done"')
+      const user_id = await getWebhookUserId().catch(() => null)
+
+      const payload = {
+        category: 'delivery',
+        formMode: formMode ?? null,
+        user_id: user_id || null,
+        id: toNull(dealId),
+        dealId: toNull(dealId),
+        dealMode: toNull(dealMode),
+        deliveryDate: toNull(deliveryDate),
+        deliveryTime: toNull(deliveryTime),
+        exportedOutsideOntario: exportedOutsideOntario ?? false,
+        exportedPartyType: exportedOutsideOntario ? toNull(exportedPartyType) : null,
+        deliveryDetails: toNull(deliveryDetails),
+        otherNotes: toNull(otherNotes),
+        approvedBy: toNull(approvedBy),
+        salesperson: toNull(salesperson),
+        newTaskDraft: {
+          name: toNull(taskName),
+          description: toNull(taskDescription),
+          dueBy: toNull(taskDueBy),
+        },
+        tasks: Array.isArray(tasks) ? tasks : [],
       }
 
+      const res = await fetch('/api/delivery', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+      const raw = await res.text().catch(() => '')
+      if (!res.ok) throw new Error(raw || `Save failed (${res.status})`)
+      const ok = raw.trim().toLowerCase() === 'done'
+      if (!ok) throw new Error(raw || 'Webhook did not confirm save. Expected "Done"')
+
       resetDelivery()
-      setShowSuccessModal(true)
+      router.push('/admin/sales/deals')
     } catch (e: any) {
-      setSaveError(e?.message || 'Failed to save delivery')
+      const msg = e?.message || 'Failed to save delivery'
+      setSaveError(msg)
+      setSaveErrorModalMessage(msg)
+      setShowSaveErrorModal(true)
     } finally {
       setSaving(false)
     }
@@ -400,6 +439,37 @@ export default function DeliveryTab({ dealMode = 'RTL', dealId, initialData }: {
       </div>
 
       {saveError ? <div className="mt-4 text-sm text-red-600">{saveError}</div> : null}
+
+      {showSaveErrorModal ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setShowSaveErrorModal(false)} />
+          <div className="relative w-full max-w-md rounded-xl bg-white shadow-xl border border-gray-200">
+            <div className="px-5 py-4 border-b border-gray-200 flex items-center justify-between">
+              <div className="text-sm font-semibold text-gray-900">Save Unsuccessful</div>
+              <button
+                type="button"
+                className="text-gray-500 hover:text-gray-700"
+                onClick={() => setShowSaveErrorModal(false)}
+                aria-label="Close"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="px-5 py-5">
+              <div className="text-sm text-gray-700">{saveErrorModalMessage || 'Unsuccessful save'}</div>
+              <div className="mt-5 flex items-center justify-end">
+                <button
+                  type="button"
+                  className="h-9 px-4 rounded bg-[#118df0] text-white text-sm font-semibold hover:bg-[#0d6ebd]"
+                  onClick={() => setShowSaveErrorModal(false)}
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {showSuccessModal ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
