@@ -99,6 +99,10 @@ export default function DealsPage() {
     router.push('/admin/sales/deals/new')
   }
 
+  const handleOpenSignature = () => {
+    router.push('/admin/sales/deals/signature')
+  }
+
   const handleDelete = async () => {
     if (!deleteTarget) return
     try {
@@ -141,6 +145,16 @@ export default function DealsPage() {
             <h1 className="text-2xl font-bold text-gray-900">Deals</h1>
           </div>
           <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={handleOpenSignature}
+              className="h-10 px-4 rounded-lg bg-gray-100 text-gray-700 text-sm font-semibold hover:bg-gray-200 flex items-center gap-2"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5l5 5v11a2 2 0 01-2 2z" />
+              </svg>
+              Signature
+            </button>
             <button
               type="button"
               onClick={handleCreateNewDeal}

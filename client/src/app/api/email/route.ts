@@ -4,6 +4,8 @@ export async function POST(request: Request) {
   try {
     const incoming = await request.formData()
     const email = String(incoming.get('email') ?? '').trim()
+    const dealId = String(incoming.get('dealId') ?? '').trim()
+    const link = String(incoming.get('link') ?? '').trim()
     const file = incoming.get('file')
     const fileB64 = String(incoming.get('file_b64') ?? '').trim()
     const fileName = String(incoming.get('file_name') ?? '').trim()
@@ -13,6 +15,8 @@ export async function POST(request: Request) {
 
     const form = new FormData()
     form.append('email', email)
+    if (dealId) form.append('dealId', dealId)
+    if (link) form.append('link', link)
     form.append('file', file, fileName || (file as any)?.name || 'Bill_of_Sale.pdf')
     if (fileB64) form.append('file_b64', fileB64)
     if (fileName) form.append('file_name', fileName)

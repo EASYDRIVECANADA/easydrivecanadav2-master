@@ -130,6 +130,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
   }
 
   const isAuthed = !!session
+  const hideSidebar = pathname === '/admin/sales/deals/signature'
 
   const accountFirstName = useMemo(() => {
     const base = (userName || session?.email || '').toString().trim()
@@ -236,7 +237,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
   return (
     <div className="min-h-screen bg-gray-100">
       <div className="flex min-h-screen">
-        {isAuthed ? (
+        {isAuthed && !hideSidebar ? (
           <aside
             className={
               collapsed
@@ -584,7 +585,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
           </aside>
         ) : null}
 
-        <main className={`flex-1 min-w-0 ${isAuthed ? (collapsed ? 'ml-20' : 'ml-56') : ''}`}>
+        <main className={`flex-1 min-w-0 ${isAuthed && !hideSidebar ? (collapsed ? 'ml-20' : 'ml-56') : ''}`}>
           {children}
         </main>
       </div>

@@ -60,6 +60,7 @@ export interface BillOfSaleData {
 
   // Signatures
   purchaserName: string
+  purchaserSignatureB64?: string
   salesperson: string
   salespersonRegNo: string
   acceptorName: string
@@ -476,6 +477,38 @@ export function renderBillOfSalePdf(
   const leftSigX2 = ML + CW * 0.48
   const rightSigX1 = ML + CW * 0.52
   const rightSigX2 = ML + CW - 60
+
+  // Draw purchaser signature image if provided
+  if (data.purchaserSignatureB64) {
+    try {
+      const raw = String(data.purchaserSignatureB64)
+      const cleaned = raw.replace(/\s+/g, '')
+
+      const isDataUrl = cleaned.startsWith('data:')
+      const isJpeg = /data:image\/(jpeg|jpg)/i.test(cleaned)
+      const fmt = isJpeg ? 'JPEG' : 'PNG'
+
+      // Bigger so it's clearly visible in print
+      const sigW = 120
+      const sigH = 34
+      const sigX = leftSigX1
+      const sigY = sigLineY - sigH + 2
+
+      if (isDataUrl) {
+        doc.addImage(cleaned, fmt as any, sigX, sigY, sigW, sigH)
+      } else {
+        // Some jsPDF builds work best with raw base64 (no data: prefix)
+        try {
+          doc.addImage(cleaned, fmt as any, sigX, sigY, sigW, sigH)
+        } catch {
+          const dataUrl = `data:image/${isJpeg ? 'jpeg' : 'png'};base64,${cleaned}`
+          doc.addImage(dataUrl, fmt as any, sigX, sigY, sigW, sigH)
+        }
+      }
+    } catch (err) {
+      console.error('Failed to add purchaser signature to PDF:', err)
+    }
+  }
 
   doc.line(leftSigX1, sigLineY, leftSigX2, sigLineY)
   doc.line(rightSigX1, sigLineY, rightSigX2, sigLineY)

@@ -438,6 +438,7 @@ function SalesNewDealPageContent() {
         extendedWarranty: 'DECLINED',
         commentsHtml: disc.disclosures_html ?? '',
         purchaserName: fullName,
+        purchaserSignatureB64: c.signature ?? undefined,
         salesperson: d.salesperson ?? '',
         salespersonRegNo: '4782496',
         acceptorName: d.approved_by ?? 'Syed Islam',
@@ -622,6 +623,7 @@ function SalesNewDealPageContent() {
         extendedWarranty: 'DECLINED',
         commentsHtml: disc.disclosures_html ?? '',
         purchaserName: fullName,
+        purchaserSignatureB64: c.signature ?? undefined,
         salesperson: d.salesperson ?? '',
         salespersonRegNo: '4782496',
         acceptorName: d.approved_by ?? 'Syed Islam',
@@ -647,8 +649,20 @@ function SalesNewDealPageContent() {
       const fileName = `Bill_of_Sale_${dealId}.pdf`
       const fileB64 = arrayBufferToBase64(ab)
 
+      const signatureLink = (() => {
+        try {
+          if (typeof window === 'undefined') return null
+          const origin = window.location.origin
+          return `${origin}/admin/sales/deals/signature?dealId=${encodeURIComponent(String(dealId || ''))}`
+        } catch {
+          return null
+        }
+      })()
+
       const formData = new FormData()
       formData.append('email', toEmail)
+      formData.append('dealId', String(dealId || ''))
+      if (signatureLink) formData.append('link', signatureLink)
       formData.append('file', blob, fileName)
       formData.append('file_b64', fileB64)
       formData.append('file_name', fileName)
