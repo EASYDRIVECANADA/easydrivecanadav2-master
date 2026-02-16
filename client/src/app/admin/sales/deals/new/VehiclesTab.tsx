@@ -165,6 +165,10 @@ export default function VehiclesTab({ dealId, onSaved, initialData, prefillSelec
   })
   const [openSavedDisclosureIdx, setOpenSavedDisclosureIdx] = useState<number | null>(null)
   const [showSavedModal, setShowSavedModal] = useState(false)
+  const [showSaveErrorModal, setShowSaveErrorModal] = useState(false)
+  const [saveErrorModalMessage, setSaveErrorModalMessage] = useState<string | null>(null)
+  const [hasBeenSaved, setHasBeenSaved] = useState(() => Array.isArray(initialData) && initialData.length > 0)
+  const [lastSaveWasUpdate, setLastSaveWasUpdate] = useState(false)
   const inlineEditorRef = useRef<HTMLDivElement | null>(null)
   const execInline = (cmd: string, value?: string) => {
     const el = inlineEditorRef.current
@@ -198,6 +202,144 @@ export default function VehiclesTab({ dealId, onSaved, initialData, prefillSelec
       createdAt: v.created_at ?? null,
     }
   }
+
+  const deriveSelectedVehicleRowFromTrade = (trade: any): VehicleRow | null => {
+    const sv = trade?.selectedVehicle ?? trade?.selected_vehicle ?? null
+    const id = sv?.id ?? trade?.selected_id ?? null
+    if (!id) return null
+
+    const year = sv?.year ?? trade?.selected_year ?? null
+    const make = sv?.make ?? trade?.selected_make ?? null
+    const model = sv?.model ?? trade?.selected_model ?? null
+    const trim = sv?.trim ?? trade?.selected_trim ?? null
+    const vin = sv?.vin ?? trade?.selected_vin ?? null
+    const exterior_color = sv?.exterior_color ?? sv?.exteriorColor ?? trade?.selected_exterior_color ?? null
+    const interior_color = sv?.interior_color ?? sv?.interiorColor ?? trade?.selected_interior_color ?? null
+    const odometer = sv?.odometer ?? trade?.selected_odometer ?? null
+    const odometer_unit = sv?.odometer_unit ?? sv?.odometerUnit ?? trade?.selected_odometer_unit ?? null
+    const status = sv?.status ?? trade?.selected_status ?? null
+    const stock_number = sv?.stock_number ?? sv?.stockNumber ?? trade?.selected_stock_number ?? null
+    const created_at = sv?.created_at ?? sv?.createdAt ?? trade?.created_at ?? null
+
+    return {
+      id: String(id),
+      year: year ?? null,
+      make: make ?? null,
+      model: model ?? null,
+      trim: trim ?? null,
+      stock_number: stock_number ?? null,
+      vin: vin ?? null,
+      status: status ?? null,
+      exterior_color: exterior_color ?? null,
+      interior_color: interior_color ?? null,
+      mileage: null,
+      odometer: odometer ?? null,
+      odometer_unit: odometer_unit ?? null,
+      created_at: created_at ?? null,
+    }
+  }
+
+  const makeSelectedLabel = (v: VehicleRow | null) => {
+    if (!v) return ''
+    return [v.year ? String(v.year) : '', v.make ?? '', v.model ?? '', v.trim ?? '']
+      .filter(Boolean)
+      .join(' ')
+      .trim()
+  }
+
+  useEffect(() => {
+    try {
+      if (typeof window === 'undefined') return
+      if (Array.isArray(initialData) && initialData.length > 0) return
+
+      const draftKey = 'edc_deal_vehicles_deals_saved_draft'
+      const dealKey = dealId ? `edc_deal_vehicles_deals_saved_${dealId}` : null
+
+      const rawDeal = dealKey ? window.localStorage.getItem(dealKey) : null
+      const rawDraft = window.localStorage.getItem(draftKey)
+
+      const tryParse = (raw: string | null) => {
+        if (!raw) return null
+        try {
+          return JSON.parse(raw)
+        } catch {
+          return null
+        }
+      }
+
+      const applyPrefill = (parsed: any) => {
+        if (Array.isArray(parsed)) {
+          setSavedTrades(parsed)
+          if (parsed.length > 0) setHasBeenSaved(true)
+          const derived = deriveSelectedVehicleRowFromTrade(parsed?.[0])
+          if (derived) {
+            setSelected(derived)
+            setQuery(makeSelectedLabel(derived))
+            const mv = derived.odometer ?? derived.mileage
+            setOdoDraft(mv !== null && mv !== undefined ? String(mv) : '')
+          }
+          return true
+        }
+        if (parsed && typeof parsed === 'object') {
+          if (Array.isArray(parsed.savedTrades)) {
+            setSavedTrades(parsed.savedTrades)
+            if (parsed.savedTrades.length > 0) setHasBeenSaved(true)
+          }
+          if (parsed.selected && typeof parsed.selected === 'object') {
+            setSelected(parsed.selected as VehicleRow)
+            setQuery(makeSelectedLabel(parsed.selected as VehicleRow))
+            const mv = (parsed.selected as any)?.odometer ?? (parsed.selected as any)?.mileage
+            setOdoDraft(mv !== null && mv !== undefined ? String(mv) : '')
+          } else {
+            const derived = deriveSelectedVehicleRowFromTrade(parsed?.savedTrades?.[0])
+            if (derived) {
+              setSelected(derived)
+              setQuery(makeSelectedLabel(derived))
+              const mv = derived.odometer ?? derived.mileage
+              setOdoDraft(mv !== null && mv !== undefined ? String(mv) : '')
+            }
+          }
+          return Array.isArray(parsed.savedTrades) || !!parsed.selected
+        }
+        return false
+      }
+
+      const parsedDeal = tryParse(rawDeal)
+      const parsedDraft = tryParse(rawDraft)
+
+      if (applyPrefill(parsedDeal)) return
+
+      if (applyPrefill(parsedDraft)) {
+        if (dealKey) {
+          try {
+            window.localStorage.setItem(dealKey, JSON.stringify(parsedDraft))
+          } catch {
+            // ignore
+          }
+        }
+      }
+    } catch {
+      // ignore
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dealId])
+
+  useEffect(() => {
+    try {
+      if (selected) return
+      const first = (Array.isArray(savedTrades) && savedTrades.length > 0 ? savedTrades[0] : null) ?? (Array.isArray(initialData) && initialData.length > 0 ? initialData[0] : null)
+      if (!first) return
+      const derived = deriveSelectedVehicleRowFromTrade(first)
+      if (!derived) return
+      setSelected(derived)
+      setQuery(makeSelectedLabel(derived))
+      const mv = derived.odometer ?? derived.mileage
+      setOdoDraft(mv !== null && mv !== undefined ? String(mv) : '')
+    } catch {
+      // ignore
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialData, savedTrades, selected])
 
   const handleAddSave = async () => {
     try {
@@ -355,6 +497,46 @@ export default function VehiclesTab({ dealId, onSaved, initialData, prefillSelec
   const [savingTrades, setSavingTrades] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
 
+  const getLoggedInAdminDbUserId = async (): Promise<string | null> => {
+    try {
+      if (typeof window === 'undefined') return null
+      const raw = window.localStorage.getItem('edc_admin_session')
+      if (!raw) return null
+      const parsed = JSON.parse(raw) as { email?: string; user_id?: string }
+      const sessionUserId = String(parsed?.user_id ?? '').trim()
+      if (sessionUserId) return sessionUserId
+      const email = String(parsed?.email ?? '').trim().toLowerCase()
+      if (!email) return null
+
+      const { data, error } = await supabase
+        .from('edc_account_verifications')
+        .select('id')
+        .eq('email', email)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+
+      if (error) return null
+      return (data as any)?.id ?? null
+    } catch {
+      return null
+    }
+  }
+
+  const getWebhookUserId = async () => {
+    const dbUserId = await getLoggedInAdminDbUserId()
+    try {
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser()
+      if (userError) return dbUserId ?? null
+      return dbUserId ?? user?.id ?? null
+    } catch {
+      return dbUserId ?? null
+    }
+  }
+
   const handleAddDecode = async () => {
     try {
       setAddDecodeError(null)
@@ -365,10 +547,12 @@ export default function VehiclesTab({ dealId, onSaved, initialData, prefillSelec
       }
       setAddDecodeLoading(true)
 
+      const user_id = await getWebhookUserId().catch(() => null)
+
       const res = await fetch('/api/vincode', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ vin: vin.toUpperCase() }),
+        body: JSON.stringify({ vin: vin.toUpperCase(), user_id: user_id || null }),
       })
       if (!res.ok) {
         const errorText = await res.text().catch(() => '')
@@ -429,10 +613,12 @@ export default function VehiclesTab({ dealId, onSaved, initialData, prefillSelec
       }
       setTradeDecodeLoading(true)
 
+      const user_id = await getWebhookUserId().catch(() => null)
+
       const res = await fetch('/api/vincode', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ vin: vin.toUpperCase() }),
+        body: JSON.stringify({ vin: vin.toUpperCase(), user_id: user_id || null }),
       })
       if (!res.ok) {
         const errorText = await res.text().catch(() => '')
@@ -586,117 +772,163 @@ export default function VehiclesTab({ dealId, onSaved, initialData, prefillSelec
     if (savingTrades) return
     try {
       setSaveError(null)
+      setLastSaveWasUpdate(hasBeenSaved)
       setSavingTrades(true)
 
-      if (Array.isArray(initialData) && initialData.length > 0 && !autoSaved) {
-        // Editing mode — update existing vehicle rows in Supabase
-        for (const t of savedTrades) {
-          const sv = t.selectedVehicle ?? makeSelectedVehicleSnapshot() ?? null
-          const updateData: Record<string, any> = {
-            vin: t.vin || null,
-            year: t.year || null,
-            make: t.make || null,
-            model: t.model || null,
-            trim: t.trim || null,
-            colour: t.colour || null,
-            odometer: t.odometer || null,
-            odometer_unit: t.odometerUnit || 'kms',
-            disclosures: Array.isArray(t.disclosures) ? t.disclosures : null,
-            disclosures_notes: t.disclosuresNotes || null,
-            disclosures_editor: t.disclosuresEditor || null,
-            disclosures_search: t.disclosuresSearch || null,
-            disclosures_detail_open: t.disclosuresDetailOpen || false,
-            brand_type: t.brandType || null,
-            is_company: t.isCompany || false,
-            owner_name: t.ownerName || null,
-            owner_company: t.ownerCompany || null,
-            owner_street: t.ownerStreet || null,
-            owner_suite: t.ownerSuite || null,
-            owner_city: t.ownerCity || null,
-            owner_province: t.ownerProvince || null,
-            owner_postal: t.ownerPostal || null,
-            owner_country: t.ownerCountry || null,
-            owner_phone: t.ownerPhone || null,
-            owner_mobile: t.ownerMobile || null,
-            owner_email: t.ownerEmail || null,
-            is_rin: t.isRin || null,
-            owner_dl: t.ownerDl || null,
-            owner_plate: t.ownerPlate || null,
-            trade_value: t.tradeValue ?? 0,
-            actual_cash_value: t.actualCashValue ?? 0,
-            lien_amount: t.lienAmount ?? 0,
-            trade_equity: t.tradeEquity ?? 0,
-            rin: t.rin || null,
-            selected_id: sv?.id ?? null,
-            selected_year: sv?.year ?? null,
-            selected_make: sv?.make ?? null,
-            selected_model: sv?.model ?? null,
-            selected_trim: sv?.trim ?? null,
-            selected_vin: sv?.vin ?? null,
-            selected_exterior_color: sv?.exterior_color ?? null,
-            selected_interior_color: sv?.interior_color ?? null,
-            selected_odometer: sv?.odometer ?? null,
-            selected_odometer_unit: sv?.odometer_unit ?? null,
-            selected_status: sv?.status ?? null,
-            selected_stock_number: sv?.stock_number ?? null,
-          }
-          // Use the first initialData row's id for the update
-          const vehicleId = initialData[0]?.id
-          if (!vehicleId) throw new Error('No vehicle id found for update')
-          const res = await fetch('/api/deals/update', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ table: 'edc_deals_vehicles', id: vehicleId, data: updateData }),
-          })
-          const json = await res.json()
-          if (!res.ok || json.error) throw new Error(json.error || `Update failed (${res.status})`)
+      const user_id = await getWebhookUserId().catch(() => null)
+
+      const toNull = (v: any) => {
+        if (v == null) return null
+        if (typeof v === 'string') {
+          const trimmed = v.trim()
+          return trimmed === '' ? null : trimmed
         }
-      } else {
-        // New deal — insert every saved trade directly into Supabase
-        for (const t of savedTrades) {
-          const sv = t.selectedVehicle ?? makeSelectedVehicleSnapshot() ?? {}
-          const insertData: Record<string, any> = {
-            id: dealId || null,
-            owner_name: t.ownerName || null,
-            owner_company: t.ownerCompany || null,
-            owner_street: t.ownerStreet || null,
-            owner_suite: t.ownerSuite || null,
-            owner_city: t.ownerCity || null,
-            owner_province: t.ownerProvince || null,
-            owner_postal: t.ownerPostal || null,
-            owner_country: t.ownerCountry || null,
-            owner_phone: t.ownerPhone || null,
-            owner_mobile: t.ownerMobile || null,
-            owner_email: t.ownerEmail || null,
-            is_rin: t.isRin || null,
-            owner_dl: t.ownerDl || null,
-            owner_plate: t.ownerPlate || null,
-            trade_value: t.tradeValue ?? 0,
-            actual_cash_value: t.actualCashValue ?? 0,
-            lien_amount: t.lienAmount ?? 0,
-            trade_equity: t.tradeEquity ?? 0,
-            rin: t.rin || null,
-            selected_id: sv?.id ?? null,
-            selected_year: sv?.year ?? null,
-            selected_make: sv?.make ?? null,
-            selected_model: sv?.model ?? null,
-            selected_trim: sv?.trim ?? null,
-            selected_vin: sv?.vin ?? null,
-            selected_exterior_color: sv?.exterior_color ?? null,
-            selected_interior_color: sv?.interior_color ?? null,
-            selected_odometer: sv?.odometer ?? null,
-            selected_odometer_unit: sv?.odometer_unit ?? null,
-            selected_status: sv?.status ?? null,
-            selected_stock_number: sv?.stock_number ?? null,
-          }
-          const res = await fetch('/api/deals/insert', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ table: 'edc_deals_vehicles', data: insertData }),
-          })
-          const json = await res.json()
-          if (!res.ok || json.error) throw new Error(json.error || `Save failed (${res.status})`)
+        return v
+      }
+
+      const toNullArray = (v: any) => {
+        if (!Array.isArray(v)) return null
+        return v
+      }
+
+      const makeSelectedVehiclePayload = (svRaw: any) => {
+        const sv = svRaw ?? null
+        return {
+          id: sv?.id ?? null,
+          year: sv?.year ?? null,
+          make: sv?.make ?? null,
+          model: sv?.model ?? null,
+          trim: sv?.trim ?? null,
+          vin: sv?.vin ?? null,
+          exteriorColor: sv?.exterior_color ?? null,
+          interiorColor: sv?.interior_color ?? null,
+          odometer: sv?.odometer ?? null,
+          odometerUnit: sv?.odometer_unit ?? null,
+          status: sv?.status ?? null,
+          stockNumber: sv?.stock_number ?? null,
+          createdAt: sv?.created_at ?? null,
+          updatedAt: sv?.updated_at ?? null,
         }
+      }
+
+      const trades = (Array.isArray(savedTrades) ? savedTrades : []).map((t) => {
+        const svSnap = t.selectedVehicle ?? makeSelectedVehicleSnapshot() ?? null
+        const selectedVehicle = makeSelectedVehiclePayload(svSnap)
+
+        const disclosures = toNullArray(t.disclosures)
+        const disclosuresNumbers = Array.isArray(t.disclosures)
+          ? t.disclosures
+              .map((v: any, idx: number) => (v === true ? idx : null))
+              .filter((n: number | null) => n != null)
+          : null
+
+        return {
+          vin: toNull(t.vin),
+          year: toNull(t.year),
+          make: toNull(t.make),
+          model: toNull(t.model),
+          odometer: toNull(t.odometer),
+          odometerUnit: toNull(t.odometerUnit) ?? 'kms',
+          trim: toNull(t.trim),
+          colour: toNull(t.colour),
+          disclosures: disclosures,
+          disclosuresNumbers: disclosuresNumbers,
+          disclosuresNotes: toNull(t.disclosuresNotes),
+          brandType: toNull(t.brandType),
+          disclosuresEditor: toNull(t.disclosuresEditor),
+          disclosuresSearch: toNull(t.disclosuresSearch),
+          disclosuresDetailOpen: t.disclosuresDetailOpen ?? null,
+          isCompany: t.isCompany ?? null,
+          ownerName: toNull(t.ownerName),
+          ownerCompany: toNull(t.ownerCompany),
+          ownerStreet: toNull(t.ownerStreet),
+          ownerSuite: toNull(t.ownerSuite),
+          ownerCity: toNull(t.ownerCity),
+          ownerProvince: toNull(t.ownerProvince),
+          ownerPostal: toNull(t.ownerPostal),
+          ownerCountry: toNull(t.ownerCountry),
+          ownerPhone: toNull(t.ownerPhone),
+          ownerMobile: toNull(t.ownerMobile),
+          ownerEmail: toNull(t.ownerEmail),
+          isRin: t.isRin ?? null,
+          ownerDl: toNull(t.ownerDl),
+          ownerPlate: toNull(t.ownerPlate),
+          tradeValue: toNull(t.tradeValue),
+          actualCashValue: toNull(t.actualCashValue),
+          lienAmount: toNull(t.lienAmount),
+          tradeEquity: toNull(t.tradeEquity),
+          ownerRin: toNull(t.rin),
+          selectedVehicle,
+          selected_id: selectedVehicle.id,
+          selected_year: selectedVehicle.year,
+          selected_make: selectedVehicle.make,
+          selected_model: selectedVehicle.model,
+          selected_trim: selectedVehicle.trim,
+          selected_vin: selectedVehicle.vin,
+          selected_exterior_color: selectedVehicle.exteriorColor,
+          selected_interior_color: selectedVehicle.interiorColor,
+          selected_odometer: selectedVehicle.odometer,
+          selected_odometer_unit: selectedVehicle.odometerUnit,
+          selected_status: selectedVehicle.status,
+          selected_stock_number: selectedVehicle.stockNumber,
+          created_at: selectedVehicle.createdAt,
+          updated_at: selectedVehicle.updatedAt,
+        }
+      })
+
+      const webhookUrl = 'https://primary-production-6722.up.railway.app/webhook/vehicles-deals'
+      const executionMode = process.env.NODE_ENV === 'development' ? 'development' : 'production'
+
+      const envelopes = trades.map((t) => {
+        const { selectedVehicle, ...rest } = t as any
+        return {
+          headers: {},
+          params: {},
+          query: {},
+          body: {
+            user_id: user_id || null,
+            dealId: dealId || null,
+            ...rest,
+            selectedVehicle: selectedVehicle ?? null,
+          },
+          webhookUrl,
+          executionMode,
+        }
+      })
+
+      const res = await fetch('/api/vehicles-deals', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(envelopes),
+      })
+
+      const text = await res.text().catch(() => '')
+      let json: any = null
+      try {
+        json = text ? JSON.parse(text) : null
+      } catch {
+        json = null
+      }
+
+      if (!res.ok || (json && json.error)) {
+        throw new Error((json && (json.error || json.message)) || text || `Save failed (${res.status})`)
+      }
+
+      setHasBeenSaved(true)
+
+      try {
+        if (typeof window !== 'undefined') {
+          const draftKey = 'edc_deal_vehicles_deals_saved_draft'
+          const dealKey = dealId ? `edc_deal_vehicles_deals_saved_${dealId}` : null
+          const payloadToStore = {
+            savedTrades,
+            selected,
+          }
+          window.localStorage.setItem(draftKey, JSON.stringify(payloadToStore))
+          if (dealKey) window.localStorage.setItem(dealKey, JSON.stringify(payloadToStore))
+        }
+      } catch {
+        // ignore
       }
       console.log('[Save Trades] All trades saved: Done')
       setShowSavedModal(true)
@@ -704,19 +936,12 @@ export default function VehiclesTab({ dealId, onSaved, initialData, prefillSelec
         setShowSavedModal(false)
         onSaved?.()
       }, 900)
-      // Reset UI after successful save of all trades
-      setSavedTrades([])
       setOpenSavedDisclosureIdx(null)
-      // Clear the selected inventory vehicle as well
-      clearSelected()
-      // Reset disclosure helper controls
-      setTradeDisclosuresBrandType('na')
-      setTradeDisclosuresEditor('')
-      setTradeDisclosuresSearch('')
-      setTradeDisclosuresDetail(false)
     } catch (e: any) {
       console.error('[Save Trades] Error:', e)
       setSaveError(e?.message || 'Failed to save trades')
+      setSaveErrorModalMessage(e?.message || 'Unsuccessful save')
+      setShowSaveErrorModal(true)
     } finally {
       setSavingTrades(false)
     }
@@ -851,8 +1076,8 @@ export default function VehiclesTab({ dealId, onSaved, initialData, prefillSelec
       {showSavedModal ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
           <div className="w-[92vw] max-w-md rounded-lg bg-white shadow-xl border border-gray-100 p-5">
-            <div className="text-base font-semibold text-gray-900">Vehicle saved</div>
-            <div className="mt-1 text-sm text-gray-600">Vehicle information has been saved successfully.</div>
+            <div className="text-base font-semibold text-gray-900">{lastSaveWasUpdate ? 'Vehicle updated' : 'Vehicle saved'}</div>
+            <div className="mt-1 text-sm text-gray-600">Vehicle information has been {lastSaveWasUpdate ? 'updated' : 'saved'} successfully.</div>
             <div className="mt-4 flex justify-end">
               <button
                 type="button"
@@ -863,6 +1088,25 @@ export default function VehiclesTab({ dealId, onSaved, initialData, prefillSelec
                 className="h-9 px-4 rounded bg-[#118df0] text-white text-sm font-semibold hover:bg-[#0d6ebd]"
               >
                 Continue
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+      {showSaveErrorModal ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="w-[92vw] max-w-md rounded-lg bg-white shadow-xl border border-gray-100 p-5">
+            <div className="text-base font-semibold text-gray-900">Unsuccessful save</div>
+            <div className="mt-1 text-sm text-gray-600">{saveErrorModalMessage || 'Unsuccessful save'}</div>
+            <div className="mt-4 flex justify-end">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowSaveErrorModal(false)
+                }}
+                className="h-9 px-4 rounded bg-[#118df0] text-white text-sm font-semibold hover:bg-[#0d6ebd]"
+              >
+                Close
               </button>
             </div>
           </div>
@@ -1326,7 +1570,7 @@ export default function VehiclesTab({ dealId, onSaved, initialData, prefillSelec
             disabled={savingTrades}
             className="h-10 px-6 rounded bg-[#118df0] text-white text-sm font-semibold hover:bg-[#0d6ebd] disabled:opacity-60 disabled:cursor-not-allowed"
           >
-            {savingTrades ? 'Saving…' : 'Save'}
+            {savingTrades ? (hasBeenSaved ? 'Updating…' : 'Saving…') : hasBeenSaved ? 'Update' : 'Save'}
           </button>
         </div>
       </div>
