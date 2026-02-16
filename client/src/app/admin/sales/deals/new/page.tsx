@@ -652,8 +652,8 @@ function SalesNewDealPageContent() {
       const signatureLink = (() => {
         try {
           if (typeof window === 'undefined') return null
-          const origin = window.location.origin
-          return `${origin}/admin/sales/deals/signature?dealId=${encodeURIComponent(String(dealId || ''))}`
+          const appOrigin = (process.env.NEXT_PUBLIC_APP_ORIGIN || 'https://easydrivecanada.com').replace(/\/+$/, '')
+          return `${appOrigin}/admin/sales/deals/signature?dealId=${encodeURIComponent(String(dealId || ''))}`
         } catch {
           return null
         }
