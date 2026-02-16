@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 
+import { supabase } from '@/lib/supabaseClient'
+
 export default function WorksheetTab({
   dealId,
   dealMode = 'RTL',
@@ -26,26 +28,21 @@ export default function WorksheetTab({
   const [showSavedModal, setShowSavedModal] = useState(false)
   const [purchasePrice, setPurchasePrice] = useState(d.purchase_price ?? '0')
   const [discount, setDiscount] = useState(d.discount ?? '0')
-  type TaxCode = 'HST' | 'RST' | 'GST' | 'PST' | 'EXEMPT' | 'QST'
-  const [taxCode, setTaxCode] = useState<TaxCode>((d.tax_code as TaxCode) || 'HST')
-  const [taxMenuOpen, setTaxMenuOpen] = useState(false)
-  const taxRate = useMemo(() => {
-    switch (taxCode) {
-      case 'HST':
-        return 0.13
-      case 'RST':
-        return 0.08
-      case 'GST':
-        return 0.05
-      case 'PST':
-        return 0.06
-      case 'QST':
-        return 0.09975
-      case 'EXEMPT':
-      default:
-        return 0
+  const [taxCode, setTaxCode] = useState<string>(d.tax_code ?? 'HST')
+  const [taxRate, setTaxRate] = useState<number>(() => {
+    const fromRow = Number(d.tax_rate)
+    if (Number.isFinite(fromRow) && fromRow >= 0) {
+      return fromRow > 1 ? fromRow : fromRow * 100
     }
-  }, [taxCode])
+    return 0
+  })
+  const [taxMenuOpen, setTaxMenuOpen] = useState(false)
+  const [taxPresets, setTaxPresets] = useState<Array<{ id: string; name: string; rate: number; default_tax_rate?: boolean | null }>>([])
+  const [taxPresetsLoading, setTaxPresetsLoading] = useState(false)
+  const [feePresets, setFeePresets] = useState<Array<{ id: string; name: string; description?: string; fee_amount?: number }>>([])
+  const [accessoryPresets, setAccessoryPresets] = useState<Array<{ id: string; name: string; description?: string; amount?: number }>>([])
+  const [warrantyPresets, setWarrantyPresets] = useState<Array<{ id: string; name: string; description?: string; price?: number }>>([])
+  const [insurancePresets, setInsurancePresets] = useState<Array<{ id: string; name: string; description?: string; price?: number }>>([])
   const [taxOverride, setTaxOverride] = useState(d.tax_override === true || d.tax_override === 'true')
   const [taxManual, setTaxManual] = useState(d.tax_manual ?? '0')
   const [licenseFee, setLicenseFee] = useState(d.license_fee ?? '')
@@ -187,7 +184,9 @@ export default function WorksheetTab({
     const nd = initialData || {}
     setPurchasePrice(nd.purchase_price ?? '0')
     setDiscount(nd.discount ?? '0')
-    setTaxCode((nd.tax_code as any) || 'HST')
+    setTaxCode(nd.tax_code ?? 'HST')
+    const rowRate = Number(nd.tax_rate)
+    if (Number.isFinite(rowRate) && rowRate >= 0) setTaxRate(rowRate > 1 ? rowRate : rowRate * 100)
     setTaxOverride(nd.tax_override === true || nd.tax_override === 'true')
     setTaxManual(nd.tax_manual ?? '0')
     setLicenseFee(nd.license_fee ?? '')
@@ -249,6 +248,7 @@ export default function WorksheetTab({
     setPurchasePrice('0')
     setDiscount('0')
     setTaxCode('HST')
+    setTaxRate(0)
     setTaxMenuOpen(false)
     setTaxOverride(false)
     setTaxManual('0')
@@ -389,7 +389,7 @@ export default function WorksheetTab({
 
   const tradeEquity = useMemo(() => parseMoney(actualCashValue) - parseMoney(tradeValue), [actualCashValue, tradeValue])
 
-  const computedTax = useMemo(() => netDifference * taxRate, [netDifference, taxRate])
+  const computedTax = useMemo(() => netDifference * (taxRate / 100), [netDifference, taxRate])
   const totalTax = taxOverride ? parseMoney(taxManual) : computedTax
 
   const totalBalanceDue = useMemo(
@@ -504,11 +504,14 @@ export default function WorksheetTab({
       return v
     }
 
+    const userId = await getWebhookUserId().catch(() => null)
+
     const payload = {
       dealId: norm(dealId),
       dealMode: norm(dealMode),
       dealType: norm(dealType),
       dealDate: norm(dealDate),
+      userId: norm(userId),
       // Deal Breakdown fields (stringified numbers to keep consistency)
       purchasePrice: norm(purchasePrice),
       discount: norm(discount),
@@ -517,7 +520,7 @@ export default function WorksheetTab({
       actualCashValue: norm(actualCashValue),
       netDifference: norm(String(netDifference ?? 0)),
       taxCode: norm(taxCode),
-      taxRate: norm(String(taxRate ?? 0)),
+      taxRate: norm(String((taxRate ?? 0) / 100)),
       taxOverride: norm(taxOverride),
       taxManual: norm(taxManual),
       totalTax: norm(String(totalTax ?? 0)),
@@ -679,101 +682,23 @@ export default function WorksheetTab({
       setWorksheetSaveError(null)
       setWorksheetSaving(true)
 
-      if (initialData?.id) {
-        // Editing mode — update existing worksheet row in Supabase
-        const updateData: Record<string, any> = {
-          deal_type: payload.dealType ?? null,
-          deal_date: payload.dealDate ?? null,
-          deal_mode: payload.dealMode ?? null,
-          purchase_price: payload.purchasePrice ?? null,
-          discount: payload.discount ?? null,
-          subtotal: payload.subtotal ?? null,
-          trade_value: payload.tradeValue ?? null,
-          actual_cash_value: payload.actualCashValue ?? null,
-          net_difference: payload.netDifference ?? null,
-          tax_code: payload.taxCode ?? null,
-          tax_rate: payload.taxRate ?? null,
-          tax_override: payload.taxOverride ?? false,
-          tax_manual: payload.taxManual ?? null,
-          total_tax: payload.totalTax ?? null,
-          lien_payout: payload.lienPayout ?? null,
-          trade_equity: payload.tradeEquity ?? null,
-          license_fee: payload.licenseFee ?? null,
-          new_plates: payload.newPlates ?? null,
-          renewal_only: payload.renewalOnly ?? false,
-          total_balance_due: payload.totalBalanceDue ?? null,
-          financed_amount: payload.financing?.financedAmount ?? null,
-          finance_override: payload.financing?.financeOverride ?? false,
-          finance_rate: payload.financing?.financeRate ?? null,
-          finance_term_months: payload.financing?.financeTermMonths ?? null,
-          payment_type: payload.financing?.paymentType ?? null,
-          finance_interest: payload.financing?.financeInterest ?? null,
-          payment: payload.financing?.payment ?? null,
-          first_payment_date: payload.financing?.firstPaymentDate ?? null,
-          lien_holder: payload.financing?.lienHolder ?? null,
-          finance_rate_type: payload.financing?.financeRateType ?? null,
-          finance_commission: payload.financing?.financeCommission ?? null,
-          fees: payload.fees ?? [],
-          accessories: payload.accessories ?? [],
-          warranties: payload.warranties ?? [],
-          insurances: payload.insurances ?? [],
-          payments: payload.payments ?? [],
-        }
-        const res = await fetch('/api/deals/update', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ table: 'edc_deals_worksheet', id: initialData.id, data: updateData }),
-        })
-        const json = await res.json()
-        if (!res.ok || json.error) throw new Error(json.error || `Update failed (${res.status})`)
-      } else {
-        // New deal — insert directly into Supabase
-        const insertData: Record<string, any> = {
-          id: dealId || null,
-          deal_type: payload.dealType ?? null,
-          deal_date: payload.dealDate ?? null,
-          deal_mode: payload.dealMode ?? null,
-          purchase_price: payload.purchasePrice ?? null,
-          discount: payload.discount ?? null,
-          subtotal: payload.subtotal ?? null,
-          trade_value: payload.tradeValue ?? null,
-          actual_cash_value: payload.actualCashValue ?? null,
-          net_difference: payload.netDifference ?? null,
-          tax_code: payload.taxCode ?? null,
-          tax_rate: payload.taxRate ?? null,
-          tax_override: payload.taxOverride ?? false,
-          tax_manual: payload.taxManual ?? null,
-          total_tax: payload.totalTax ?? null,
-          lien_payout: payload.lienPayout ?? null,
-          trade_equity: payload.tradeEquity ?? null,
-          license_fee: payload.licenseFee ?? null,
-          new_plates: payload.newPlates ?? null,
-          renewal_only: payload.renewalOnly ?? false,
-          total_balance_due: payload.totalBalanceDue ?? null,
-          financed_amount: payload.financing?.financedAmount ?? null,
-          finance_override: payload.financing?.financeOverride ?? false,
-          finance_rate: payload.financing?.financeRate ?? null,
-          finance_term_months: payload.financing?.financeTermMonths ?? null,
-          payment_type: payload.financing?.paymentType ?? null,
-          finance_interest: payload.financing?.financeInterest ?? null,
-          payment: payload.financing?.payment ?? null,
-          first_payment_date: payload.financing?.firstPaymentDate ?? null,
-          lien_holder: payload.financing?.lienHolder ?? null,
-          finance_rate_type: payload.financing?.financeRateType ?? null,
-          finance_commission: payload.financing?.financeCommission ?? null,
-          fees: payload.fees ?? [],
-          accessories: payload.accessories ?? [],
-          warranties: payload.warranties ?? [],
-          insurances: payload.insurances ?? [],
-          payments: payload.payments ?? [],
-        }
-        const res = await fetch('/api/deals/insert', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ table: 'edc_deals_worksheet', data: insertData }),
-        })
-        const json = await res.json()
-        if (!res.ok || json.error) throw new Error(json.error || `Save failed (${res.status})`)
+      // Send complete payload to webhook - n8n will handle database operations
+      const res = await fetch('/api/worksheet', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+
+      const text = await res.text().catch(() => '')
+      let json: any = null
+      try {
+        json = text ? JSON.parse(text) : null
+      } catch {
+        json = null
+      }
+
+      if (!res.ok || (json && json.error)) {
+        throw new Error((json && (json.error || json.message)) || text || `Save failed (${res.status})`)
       }
 
       setShowSavedModal(true)
@@ -868,6 +793,154 @@ export default function WorksheetTab({
   useEffect(() => {
     if (!taxOverride) setTaxManual(fmtMoney(computedTax))
   }, [computedTax, taxOverride])
+
+  const getLoggedInAdminDbUserId = async (): Promise<string | null> => {
+    try {
+      if (typeof window === 'undefined') return null
+      const raw = window.localStorage.getItem('edc_admin_session')
+      if (!raw) return null
+      const parsed = JSON.parse(raw) as { email?: string; user_id?: string }
+      const sessionUserId = String(parsed?.user_id ?? '').trim()
+      if (sessionUserId) return sessionUserId
+      const email = String(parsed?.email ?? '').trim().toLowerCase()
+      if (!email) return null
+      const { data, error } = await supabase.from('edc_account_verifications').select('id').eq('email', email).order('created_at', { ascending: false }).limit(1).maybeSingle()
+      if (error) return null
+      return (data as any)?.id ?? null
+    } catch {
+      return null
+    }
+  }
+
+  const getWebhookUserId = async () => {
+    const dbUserId = await getLoggedInAdminDbUserId()
+    try {
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
+      if (userError) return dbUserId ?? null
+      return dbUserId ?? user?.id ?? null
+    } catch {
+      return dbUserId ?? null
+    }
+  }
+
+  useEffect(() => {
+    const loadTaxPresets = async () => {
+      try {
+        setTaxPresetsLoading(true)
+        const scopedUserId = await getWebhookUserId().catch(() => null)
+        if (!scopedUserId) {
+          setTaxPresets([])
+          setTaxCode('HST')
+          setTaxRate(0)
+          return
+        }
+        const { data, error } = await supabase.from('presets_tax').select('id, name, rate, default_tax_rate').eq('user_id', scopedUserId).order('name', { ascending: true })
+        if (error) throw error
+        const rows = Array.isArray(data) ? data : []
+        const mapped = rows.map((r: any) => ({
+          id: String(r.id),
+          name: String(r.name ?? ''),
+          rate: (() => {
+            const raw = Number(r.rate ?? 0)
+            if (!Number.isFinite(raw) || raw < 0) return 0
+            return raw > 1 ? raw : raw * 100
+          })(),
+          default_tax_rate: r.default_tax_rate ?? null,
+        })).filter((r: any) => r.name)
+        setTaxPresets(mapped)
+        const matchByName = mapped.find((p) => String(p.name).toLowerCase() === String(taxCode).toLowerCase())
+        const matchByRate = mapped.find((p) => Number.isFinite(p.rate) && Math.abs(p.rate - taxRate) < 0.000001)
+        const def = mapped.find((p) => p.default_tax_rate === true) || null
+        const best = matchByName || matchByRate || def
+        if (best) {
+          setTaxCode(best.name)
+          if (Number.isFinite(best.rate) && best.rate >= 0) setTaxRate(best.rate)
+        } else if (mapped.length === 0) {
+          setTaxCode('HST')
+          setTaxRate(0)
+        }
+      } catch (e) {
+        console.error('[WorksheetTab] loadTaxPresets error', e)
+        setTaxPresets([])
+      } finally {
+        setTaxPresetsLoading(false)
+      }
+    }
+    void loadTaxPresets()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  useEffect(() => {
+    const loadPresets = async () => {
+      const scopedUserId = await getWebhookUserId().catch(() => null)
+      if (!scopedUserId) return
+      try {
+        const [fees, accs, wars, ins] = await Promise.all([
+          supabase.from('presets_fee').select('id, name, description, fee_amount').eq('user_id', scopedUserId).order('name', { ascending: true }),
+          supabase.from('presets_accessories').select('id, name, description, amount').eq('user_id', scopedUserId).order('name', { ascending: true }),
+          supabase.from('presets_warranty').select('id, name, description, price').eq('user_id', scopedUserId).order('name', { ascending: true }),
+          supabase.from('presets_insurance').select('id, name, description, price').eq('user_id', scopedUserId).order('name', { ascending: true }),
+        ])
+        if (!fees.error && Array.isArray(fees.data)) setFeePresets(fees.data.map((r: any) => ({ id: String(r.id), name: String(r.name ?? ''), description: String(r.description ?? ''), fee_amount: Number(r.fee_amount ?? 0) })).filter((r: any) => r.name))
+        if (!accs.error && Array.isArray(accs.data)) setAccessoryPresets(accs.data.map((r: any) => ({ id: String(r.id), name: String(r.name ?? ''), description: String(r.description ?? ''), amount: Number(r.amount ?? 0) })).filter((r: any) => r.name))
+        if (!wars.error && Array.isArray(wars.data)) setWarrantyPresets(wars.data.map((r: any) => ({ id: String(r.id), name: String(r.name ?? ''), description: String(r.description ?? ''), price: Number(r.price ?? 0) })).filter((r: any) => r.name))
+        if (!ins.error && Array.isArray(ins.data)) setInsurancePresets(ins.data.map((r: any) => ({ id: String(r.id), name: String(r.name ?? ''), description: String(r.description ?? ''), price: Number(r.price ?? 0) })).filter((r: any) => r.name))
+      } catch (e) {
+        console.error('[WorksheetTab] loadPresets error', e)
+      }
+    }
+    void loadPresets()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  useEffect(() => {
+    if (feePresets.length > 0 && fees.length === 0 && !initialData?.fees) {
+      const defaultFees = feePresets.map((preset) => ({
+        id: `fee_${Date.now()}_${preset.id}`,
+        name: preset.name,
+        desc: preset.description || '',
+        amount: preset.fee_amount || 0,
+      }))
+      setFees(defaultFees)
+    }
+  }, [feePresets, fees.length, initialData?.fees])
+
+  useEffect(() => {
+    const hasInitialAccessories = initialData?.accessories && Array.isArray(initialData.accessories) && initialData.accessories.length > 0
+    if (accessoryPresets.length > 0 && accessories.length === 0 && !hasInitialAccessories) {
+      const defaultAccessories = accessoryPresets.map((preset) => ({
+        id: `acc_${Date.now()}_${preset.id}`,
+        name: preset.name,
+        desc: preset.description || '',
+        price: preset.amount || 0,
+      }))
+      setAccessories(defaultAccessories)
+    }
+  }, [accessoryPresets, accessories.length, initialData?.accessories])
+
+  useEffect(() => {
+    if (warrantyPresets.length > 0 && warranties.length === 0 && !initialData?.warranties) {
+      const defaultWarranties = warrantyPresets.map((preset) => ({
+        id: `war_${Date.now()}_${preset.id}`,
+        name: preset.name,
+        desc: preset.description || '',
+        amount: preset.price || 0,
+      }))
+      setWarranties(defaultWarranties)
+    }
+  }, [warrantyPresets, warranties.length, initialData?.warranties])
+
+  useEffect(() => {
+    if (insurancePresets.length > 0 && insurances.length === 0 && !initialData?.insurances) {
+      const defaultInsurances = insurancePresets.map((preset) => ({
+        id: `ins_${Date.now()}_${preset.id}`,
+        name: preset.name,
+        desc: preset.description || '',
+        amount: preset.price || 0,
+      }))
+      setInsurances(defaultInsurances)
+    }
+  }, [insurancePresets, insurances.length, initialData?.insurances])
 
   const feesCard = (
     <div className="border border-gray-200 bg-white">
@@ -1472,31 +1545,27 @@ export default function WorksheetTab({
                   onClick={() => setTaxMenuOpen((v) => !v)}
                   className="h-9 px-3 border border-gray-200 rounded bg-white text-sm"
                 >
-                  {taxCode} {(taxRate * 100).toFixed(2)}%
+                  {taxCode} {taxRate.toFixed(2)}%
                 </button>
-                <div className="text-xs text-gray-600">Rate: {(taxRate * 100).toFixed(2)}%</div>
+                <div className="text-xs text-gray-600">Rate: {taxRate.toFixed(2)}%</div>
               </div>
               {taxMenuOpen ? (
                 <div className="absolute z-10 mt-2 w-44 rounded border border-gray-200 bg-white shadow">
-                  {([
-                    { code: 'HST' as TaxCode, label: 'HST 13 %' },
-                    { code: 'RST' as TaxCode, label: 'RST 8 %' },
-                    { code: 'GST' as TaxCode, label: 'GST 5 %' },
-                    { code: 'PST' as TaxCode, label: 'PST 6 %' },
-                    { code: 'EXEMPT' as TaxCode, label: 'Exempt 0 %' },
-                    { code: 'QST' as TaxCode, label: 'QST 9.975 %' },
-                  ]).map((opt) => (
-                    <label key={opt.code} className="flex items-center gap-2 px-3 py-2 text-sm hover:bg-gray-50 cursor-pointer">
+                  {taxPresetsLoading ? <div className="px-3 py-2 text-xs text-gray-500">Loading…</div> : null}
+                  {!taxPresetsLoading && taxPresets.length === 0 ? <div className="px-3 py-2 text-xs text-gray-500">No tax presets</div> : null}
+                  {taxPresets.map((opt) => (
+                    <label key={opt.id} className="flex items-center gap-2 px-3 py-2 text-sm hover:bg-gray-50 cursor-pointer">
                       <input
                         type="radio"
                         name="tax-code"
-                        checked={taxCode === opt.code}
+                        checked={String(taxCode).toLowerCase() === String(opt.name).toLowerCase()}
                         onChange={() => {
-                          setTaxCode(opt.code)
+                          setTaxCode(opt.name)
+                          if (Number.isFinite(opt.rate) && opt.rate >= 0) setTaxRate(opt.rate)
                           setTaxMenuOpen(false)
                         }}
                       />
-                      <span>{opt.label}</span>
+                      <span>{opt.name} {Number(opt.rate || 0).toFixed(2)}%</span>
                     </label>
                   ))}
                   <div className="p-2">
@@ -1512,7 +1581,7 @@ export default function WorksheetTab({
               <div>
                 <div className="text-xs text-gray-700 mb-1">Tax Rate</div>
                 <div className="flex items-stretch border border-gray-200 rounded bg-gray-100 overflow-hidden w-60">
-                  <input className="flex-1 h-10 px-3 text-sm outline-none bg-gray-100" value={`${(taxRate * 100).toFixed(2)}%`} readOnly />
+                  <input className="flex-1 h-10 px-3 text-sm outline-none bg-gray-100" value={`${taxRate.toFixed(2)}%`} readOnly />
                 </div>
               </div>
               <label className="flex items-center gap-2 text-xs text-gray-700 mt-5">
@@ -1755,12 +1824,19 @@ export default function WorksheetTab({
                   </button>
                   {feeTaxMenuOpen ? (
                     <div className="absolute mt-2 w-56 bg-white border border-gray-200 rounded shadow p-2 z-10">
-                      {['HST 13 %','RST 8 %','GST 5 %','PST 6 %','QST 9.975 %','Exempt 0 %','Default Tax 0 %'].map((code) => (
-                        <label key={code} className="flex items-center gap-2 py-1 text-sm">
-                          <input type="checkbox" checked={!!feeTaxSelected[code]} onChange={(e) => setFeeTaxSelected((prev) => ({ ...prev, [code]: e.target.checked }))} />
-                          {code}
-                        </label>
-                      ))}
+                      {taxPresets.length === 0 ? (
+                        <div className="py-1 text-xs text-gray-500">No tax presets</div>
+                      ) : (
+                        taxPresets.map((preset) => {
+                          const label = `${preset.name} ${preset.rate.toFixed(2)} %`
+                          return (
+                            <label key={preset.id} className="flex items-center gap-2 py-1 text-sm">
+                              <input type="checkbox" checked={!!feeTaxSelected[label]} onChange={(e) => setFeeTaxSelected((prev) => ({ ...prev, [label]: e.target.checked }))} />
+                              {label}
+                            </label>
+                          )
+                        })
+                      )}
                       <div className="pt-2">
                         <button type="button" className="w-full h-8 bg-[#118df0] text-white text-xs rounded" onClick={() => setFeeTaxMenuOpen(false)}>Close</button>
                       </div>
@@ -1841,12 +1917,19 @@ export default function WorksheetTab({
                   <button type="button" onClick={() => setWarTaxMenuOpen((v) => !v)}>{Object.keys(warTaxSelected).filter((k) => warTaxSelected[k]).join(', ') || 'HST 13 %'} ▾</button>
                   {warTaxMenuOpen ? (
                     <div className="absolute mt-2 w-56 bg-white border border-gray-200 rounded shadow p-2 z-10">
-                      {['HST 13 %','RST 8 %','GST 5 %','PST 6 %','QST 9.975 %','Exempt 0 %','Default Tax 0 %'].map((code) => (
-                        <label key={code} className="flex items-center gap-2 py-1 text-sm">
-                          <input type="checkbox" checked={!!warTaxSelected[code]} onChange={(e) => setWarTaxSelected((prev) => ({ ...prev, [code]: e.target.checked }))} />
-                          {code}
-                        </label>
-                      ))}
+                      {taxPresets.length === 0 ? (
+                        <div className="py-1 text-xs text-gray-500">No tax presets</div>
+                      ) : (
+                        taxPresets.map((preset) => {
+                          const label = `${preset.name} ${preset.rate.toFixed(2)} %`
+                          return (
+                            <label key={preset.id} className="flex items-center gap-2 py-1 text-sm">
+                              <input type="checkbox" checked={!!warTaxSelected[label]} onChange={(e) => setWarTaxSelected((prev) => ({ ...prev, [label]: e.target.checked }))} />
+                              {label}
+                            </label>
+                          )
+                        })
+                      )}
                       <div className="pt-2"><button type="button" className="w-full h-8 bg-[#118df0] text-white text-xs rounded" onClick={() => setWarTaxMenuOpen(false)}>Close</button></div>
                     </div>
                   ) : null}
@@ -1927,12 +2010,19 @@ export default function WorksheetTab({
                   <button type="button" onClick={() => setInsTaxMenuOpen((v) => !v)}>{Object.keys(insTaxSelected).filter((k) => insTaxSelected[k]).join(', ') || 'HST 13 %'} ▾</button>
                   {insTaxMenuOpen ? (
                     <div className="absolute mt-2 w-56 bg-white border border-gray-200 rounded shadow p-2 z-10">
-                      {['HST 13 %','RST 8 %','GST 5 %','PST 6 %','QST 9.975 %','Exempt 0 %','Default Tax 0 %'].map((code) => (
-                        <label key={code} className="flex items-center gap-2 py-1 text-sm">
-                          <input type="checkbox" checked={!!insTaxSelected[code]} onChange={(e) => setInsTaxSelected((prev) => ({ ...prev, [code]: e.target.checked }))} />
-                          {code}
-                        </label>
-                      ))}
+                      {taxPresets.length === 0 ? (
+                        <div className="py-1 text-xs text-gray-500">No tax presets</div>
+                      ) : (
+                        taxPresets.map((preset) => {
+                          const label = `${preset.name} ${preset.rate.toFixed(2)} %`
+                          return (
+                            <label key={preset.id} className="flex items-center gap-2 py-1 text-sm">
+                              <input type="checkbox" checked={!!insTaxSelected[label]} onChange={(e) => setInsTaxSelected((prev) => ({ ...prev, [label]: e.target.checked }))} />
+                              {label}
+                            </label>
+                          )
+                        })
+                      )}
                       <div className="pt-2"><button type="button" className="w-full h-8 bg-[#118df0] text-white text-xs rounded" onClick={() => setInsTaxMenuOpen(false)}>Close</button></div>
                     </div>
                   ) : null}
@@ -1996,12 +2086,19 @@ export default function WorksheetTab({
                   <button type="button" onClick={() => setAccTaxMenuOpen((v) => !v)}> {Object.keys(accTaxSelected).filter((k) => accTaxSelected[k]).join(', ') || 'HST 13 %'} ▾</button>
                   {accTaxMenuOpen ? (
                     <div className="absolute mt-2 w-56 bg-white border border-gray-200 rounded shadow p-2 z-10">
-                      {['HST 13 %','RST 8 %','GST 5 %','PST 6 %','QST 9.975 %','Exempt 0 %','Default Tax 0 %'].map((code) => (
-                        <label key={code} className="flex items-center gap-2 py-1 text-sm">
-                          <input type="checkbox" checked={!!accTaxSelected[code]} onChange={(e) => setAccTaxSelected((prev) => ({ ...prev, [code]: e.target.checked }))} />
-                          {code}
-                        </label>
-                      ))}
+                      {taxPresets.length === 0 ? (
+                        <div className="py-1 text-xs text-gray-500">No tax presets</div>
+                      ) : (
+                        taxPresets.map((preset) => {
+                          const label = `${preset.name} ${preset.rate.toFixed(2)} %`
+                          return (
+                            <label key={preset.id} className="flex items-center gap-2 py-1 text-sm">
+                              <input type="checkbox" checked={!!accTaxSelected[label]} onChange={(e) => setAccTaxSelected((prev) => ({ ...prev, [label]: e.target.checked }))} />
+                              {label}
+                            </label>
+                          )
+                        })
+                      )}
                       <div className="pt-2">
                         <button type="button" className="w-full h-8 bg-[#118df0] text-white text-xs rounded" onClick={() => setAccTaxMenuOpen(false)}>Close</button>
                       </div>

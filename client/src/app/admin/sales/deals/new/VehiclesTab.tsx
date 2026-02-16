@@ -793,21 +793,28 @@ export default function VehiclesTab({ dealId, onSaved, initialData, prefillSelec
 
       const makeSelectedVehiclePayload = (svRaw: any) => {
         const sv = svRaw ?? null
+        const pick = (...keys: string[]) => {
+          for (const k of keys) {
+            const v = (sv as any)?.[k]
+            if (v !== undefined) return v
+          }
+          return null
+        }
         return {
-          id: sv?.id ?? null,
-          year: sv?.year ?? null,
-          make: sv?.make ?? null,
-          model: sv?.model ?? null,
-          trim: sv?.trim ?? null,
-          vin: sv?.vin ?? null,
-          exteriorColor: sv?.exterior_color ?? null,
-          interiorColor: sv?.interior_color ?? null,
-          odometer: sv?.odometer ?? null,
-          odometerUnit: sv?.odometer_unit ?? null,
-          status: sv?.status ?? null,
-          stockNumber: sv?.stock_number ?? null,
-          createdAt: sv?.created_at ?? null,
-          updatedAt: sv?.updated_at ?? null,
+          id: pick('id'),
+          year: pick('year'),
+          make: pick('make'),
+          model: pick('model'),
+          trim: pick('trim'),
+          vin: pick('vin'),
+          exteriorColor: pick('exterior_color', 'exteriorColor'),
+          interiorColor: pick('interior_color', 'interiorColor'),
+          odometer: pick('odometer'),
+          odometerUnit: pick('odometer_unit', 'odometerUnit'),
+          status: pick('status'),
+          stockNumber: pick('stock_number', 'stockNumber'),
+          createdAt: pick('created_at', 'createdAt'),
+          updatedAt: pick('updated_at', 'updatedAt'),
         }
       }
 
@@ -879,7 +886,9 @@ export default function VehiclesTab({ dealId, onSaved, initialData, prefillSelec
       const webhookUrl = 'https://primary-production-6722.up.railway.app/webhook/vehicles-deals'
       const executionMode = process.env.NODE_ENV === 'development' ? 'development' : 'production'
 
-      const envelopes = trades.map((t) => {
+      const mainSelectedVehicle = makeSelectedVehiclePayload(selected)
+
+      const envelopes = trades.length > 0 ? trades.map((t) => {
         const { selectedVehicle, ...rest } = t as any
         return {
           headers: {},
@@ -887,6 +896,7 @@ export default function VehiclesTab({ dealId, onSaved, initialData, prefillSelec
           query: {},
           body: {
             user_id: user_id || null,
+            id: dealId || null,
             dealId: dealId || null,
             ...rest,
             selectedVehicle: selectedVehicle ?? null,
@@ -894,7 +904,68 @@ export default function VehiclesTab({ dealId, onSaved, initialData, prefillSelec
           webhookUrl,
           executionMode,
         }
-      })
+      }) : [{
+        headers: {},
+        params: {},
+        query: {},
+        body: {
+          user_id: user_id || null,
+          id: dealId || null,
+          dealId: dealId || null,
+          vin: null,
+          year: null,
+          make: null,
+          model: null,
+          odometer: null,
+          odometerUnit: null,
+          trim: null,
+          colour: null,
+          disclosures: null,
+          disclosuresNumbers: null,
+          disclosuresNotes: null,
+          brandType: null,
+          disclosuresEditor: null,
+          disclosuresSearch: null,
+          disclosuresDetailOpen: null,
+          isCompany: null,
+          ownerName: null,
+          ownerCompany: null,
+          ownerStreet: null,
+          ownerSuite: null,
+          ownerCity: null,
+          ownerProvince: null,
+          ownerPostal: null,
+          ownerCountry: null,
+          ownerPhone: null,
+          ownerMobile: null,
+          ownerEmail: null,
+          isRin: null,
+          ownerDl: null,
+          ownerPlate: null,
+          tradeValue: null,
+          actualCashValue: null,
+          lienAmount: null,
+          tradeEquity: null,
+          ownerRin: null,
+          selectedVehicle: mainSelectedVehicle,
+          selected_id: mainSelectedVehicle.id,
+          selected_year: mainSelectedVehicle.year,
+          selected_make: mainSelectedVehicle.make,
+          selected_model: mainSelectedVehicle.model,
+          selected_trim: mainSelectedVehicle.trim,
+          selected_vin: mainSelectedVehicle.vin,
+          selected_exterior_color: mainSelectedVehicle.exteriorColor,
+          selected_interior_color: mainSelectedVehicle.interiorColor,
+          selected_odometer: mainSelectedVehicle.odometer,
+          selected_odometer_unit: mainSelectedVehicle.odometerUnit,
+          selected_status: mainSelectedVehicle.status,
+          selected_stock_number: mainSelectedVehicle.stockNumber,
+          created_at: mainSelectedVehicle.createdAt,
+          updated_at: mainSelectedVehicle.updatedAt,
+        },
+        webhookUrl,
+        executionMode,
+      }]
 
       const res = await fetch('/api/vehicles-deals', {
         method: 'POST',

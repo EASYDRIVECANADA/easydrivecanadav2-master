@@ -1,0 +1,159 @@
+This patch adds:
+1. Default tax rate to 0 when no presets exist
+2. Tax presets loading from presets_tax filtered by user_id
+3. Fee/Accessory/Warranty/Insurance presets loading (filtered by user_id)
+4. Tax rate stored as percent (13) in UI, decimal (0.13) in DB
+
+Apply manually to WorksheetTab.tsx:
+
+1. Add import at top:
+   import { supabase } from '@/lib/supabaseClient'
+
+2. Replace taxCode/taxRate state (lines 29-48):
+   const [taxCode, setTaxCode] = useState<string>(d.tax_code ?? 'HST')
+   const [taxRate, setTaxRate] = useState<number>(() => {
+     const fromRow = Number(d.tax_rate)
+     if (Number.isFinite(fromRow) && fromRow >= 0) {
+       return fromRow > 1 ? fromRow : fromRow * 100
+     }
+     return 0
+   })
+   const [taxMenuOpen, setTaxMenuOpen] = useState(false)
+   const [taxPresets, setTaxPresets] = useState<Array<{ id: string; name: string; rate: number; default_tax_rate?: boolean | null }>>([])
+   const [taxPresetsLoading, setTaxPresetsLoading] = useState(false)
+   const [feePresets, setFeePresets] = useState<Array<{ id: string; name: string; description?: string; fee_amount?: number }>>([])
+   const [accessoryPresets, setAccessoryPresets] = useState<Array<{ id: string; name: string; description?: string; amount?: number }>>([])
+   const [warrantyPresets, setWarrantyPresets] = useState<Array<{ id: string; name: string; description?: string; price?: number }>>([])
+   const [insurancePresets, setInsurancePresets] = useState<Array<{ id: string; name: string; description?: string; price?: number }>>([])
+
+3. Update computedTax calculation (line 392):
+   const computedTax = useMemo(() => netDifference * (taxRate / 100), [netDifference, taxRate])
+
+4. Update tax_rate save payload (line 520):
+   taxRate: norm(String((taxRate ?? 0) / 100)),
+
+5. Add after line 870 (after useEffect for taxManual):
+   
+   const getLoggedInAdminDbUserId = async (): Promise<string | null> => {
+     try {
+       if (typeof window === 'undefined') return null
+       const raw = window.localStorage.getItem('edc_admin_session')
+       if (!raw) return null
+       const parsed = JSON.parse(raw) as { email?: string; user_id?: string }
+       const sessionUserId = String(parsed?.user_id ?? '').trim()
+       if (sessionUserId) return sessionUserId
+       const email = String(parsed?.email ?? '').trim().toLowerCase()
+       if (!email) return null
+       const { data, error } = await supabase.from('edc_account_verifications').select('id').eq('email', email).order('created_at', { ascending: false }).limit(1).maybeSingle()
+       if (error) return null
+       return (data as any)?.id ?? null
+     } catch {
+       return null
+     }
+   }
+
+   const getWebhookUserId = async () => {
+     const dbUserId = await getLoggedInAdminDbUserId()
+     try {
+       const { data: { user }, error: userError } = await supabase.auth.getUser()
+       if (userError) return dbUserId ?? null
+       return dbUserId ?? user?.id ?? null
+     } catch {
+       return dbUserId ?? null
+     }
+   }
+
+   useEffect(() => {
+     const loadTaxPresets = async () => {
+       try {
+         setTaxPresetsLoading(true)
+         const scopedUserId = await getWebhookUserId().catch(() => null)
+         if (!scopedUserId) {
+           setTaxPresets([])
+           setTaxCode('HST')
+           setTaxRate(0)
+           return
+         }
+         const { data, error } = await supabase.from('presets_tax').select('id, name, rate, default_tax_rate').eq('user_id', scopedUserId).order('name', { ascending: true })
+         if (error) throw error
+         const rows = Array.isArray(data) ? data : []
+         const mapped = rows.map((r: any) => ({
+           id: String(r.id),
+           name: String(r.name ?? ''),
+           rate: (() => {
+             const raw = Number(r.rate ?? 0)
+             if (!Number.isFinite(raw) || raw < 0) return 0
+             return raw > 1 ? raw : raw * 100
+           })(),
+           default_tax_rate: r.default_tax_rate ?? null,
+         })).filter((r: any) => r.name)
+         setTaxPresets(mapped)
+         const matchByName = mapped.find((p) => String(p.name).toLowerCase() === String(taxCode).toLowerCase())
+         const matchByRate = mapped.find((p) => Number.isFinite(p.rate) && Math.abs(p.rate - taxRate) < 0.000001)
+         const def = mapped.find((p) => p.default_tax_rate === true) || null
+         const best = matchByName || matchByRate || def
+         if (best) {
+           setTaxCode(best.name)
+           if (Number.isFinite(best.rate) && best.rate >= 0) setTaxRate(best.rate)
+         } else if (mapped.length === 0) {
+           setTaxCode('HST')
+           setTaxRate(0)
+         }
+       } catch (e) {
+         console.error('[WorksheetTab] loadTaxPresets error', e)
+         setTaxPresets([])
+       } finally {
+         setTaxPresetsLoading(false)
+       }
+     }
+     void loadTaxPresets()
+   }, [])
+
+   useEffect(() => {
+     const loadPresets = async () => {
+       const scopedUserId = await getWebhookUserId().catch(() => null)
+       if (!scopedUserId) return
+       try {
+         const [fees, accs, wars, ins] = await Promise.all([
+           supabase.from('presets_fee').select('id, name, description, fee_amount').eq('user_id', scopedUserId).order('name', { ascending: true }),
+           supabase.from('presets_accessories').select('id, name, description, amount').eq('user_id', scopedUserId).order('name', { ascending: true }),
+           supabase.from('presets_warranty').select('id, name, description, price').eq('user_id', scopedUserId).order('name', { ascending: true }),
+           supabase.from('presets_insurance').select('id, name, description, price').eq('user_id', scopedUserId).order('name', { ascending: true }),
+         ])
+         if (!fees.error && Array.isArray(fees.data)) setFeePresets(fees.data.map((r: any) => ({ id: String(r.id), name: String(r.name ?? ''), description: String(r.description ?? ''), fee_amount: Number(r.fee_amount ?? 0) })).filter((r: any) => r.name))
+         if (!accs.error && Array.isArray(accs.data)) setAccessoryPresets(accs.data.map((r: any) => ({ id: String(r.id), name: String(r.name ?? ''), description: String(r.description ?? ''), amount: Number(r.amount ?? 0) })).filter((r: any) => r.name))
+         if (!wars.error && Array.isArray(wars.data)) setWarrantyPresets(wars.data.map((r: any) => ({ id: String(r.id), name: String(r.name ?? ''), description: String(r.description ?? ''), price: Number(r.price ?? 0) })).filter((r: any) => r.name))
+         if (!ins.error && Array.isArray(ins.data)) setInsurancePresets(ins.data.map((r: any) => ({ id: String(r.id), name: String(r.name ?? ''), description: String(r.description ?? ''), price: Number(r.price ?? 0) })).filter((r: any) => r.name))
+       } catch (e) {
+         console.error('[WorksheetTab] loadPresets error', e)
+       }
+     }
+     void loadPresets()
+   }, [])
+
+6. Update tax dropdown UI (lines 1472-1502):
+   Replace hardcoded tax options with:
+   
+   {taxCode} {taxRate.toFixed(2)}%
+   
+   Rate: {taxRate.toFixed(2)}%
+   
+   {taxPresetsLoading ? <div className="px-3 py-2 text-xs text-gray-500">Loading…</div> : null}
+   {!taxPresetsLoading && taxPresets.length === 0 ? <div className="px-3 py-2 text-xs text-gray-500">No tax presets</div> : null}
+   {taxPresets.map((opt) => (
+     <label key={opt.id} className="flex items-center gap-2 px-3 py-2 text-sm hover:bg-gray-50 cursor-pointer">
+       <input type="radio" name="tax-code" checked={String(taxCode).toLowerCase() === String(opt.name).toLowerCase()} onChange={() => { setTaxCode(opt.name); if (Number.isFinite(opt.rate) && opt.rate >= 0) setTaxRate(opt.rate); setTaxMenuOpen(false) }} />
+       <span>{opt.name} {Number(opt.rate || 0).toFixed(2)}%</span>
+     </label>
+   ))}
+
+7. Update Tax Rate display (line 1514):
+   value={`${taxRate.toFixed(2)}%`}
+
+8. Update resetWorksheet (lines 251-252):
+   setTaxCode('HST')
+   setTaxRate(0)
+
+9. Update initialData tax_rate loading (line 190 and 207):
+   const rowRate = Number(nd.tax_rate)
+   if (Number.isFinite(rowRate) && rowRate >= 0) setTaxRate(rowRate > 1 ? rowRate : rowRate * 100)
