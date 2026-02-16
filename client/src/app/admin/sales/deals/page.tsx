@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { supabase } from '@/lib/supabaseClient'
 
 type DealRow = {
   dealId: string
@@ -39,15 +40,50 @@ export default function DealsPage() {
   const [deleteTarget, setDeleteTarget] = useState<DealRow | null>(null)
   const [deleting, setDeleting] = useState(false)
 
+  const getLoggedInUserId = useCallback(async (): Promise<string | null> => {
+    try {
+      if (typeof window === 'undefined') return null
+      const raw = window.localStorage.getItem('edc_admin_session')
+      if (!raw) return null
+      const parsed = JSON.parse(raw) as { email?: string; user_id?: string }
+      const sessionUserId = String(parsed?.user_id ?? '').trim()
+      if (sessionUserId) return sessionUserId
+
+      const email = String(parsed?.email ?? '').trim().toLowerCase()
+      if (!email) return null
+
+      const { data, error } = await supabase
+        .from('edc_account_verifications')
+        .select('id')
+        .eq('email', email)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+
+      if (error) return null
+      return (data as any)?.id ?? null
+    } catch {
+      return null
+    }
+  }, [])
+
   const fetchDeals = useCallback(async () => {
     try {
       setLoading(true)
       setFetchError(null)
+
+      const scopedUserId = await getLoggedInUserId()
+      if (!scopedUserId) {
+        setRows([])
+        return
+      }
+
       const res = await fetch('/api/deals')
       if (!res.ok) throw new Error(`Failed to fetch deals (${res.status})`)
       const json = await res.json()
       if (json.error) throw new Error(json.error)
-      const deals: DealRow[] = (json.deals || []).map((d: any) => ({
+
+      const dealsAll: DealRow[] = (json.deals || []).map((d: any) => ({
         dealId: d.dealId || '',
         primaryCustomer: d.primaryCustomer || '',
         vehicle: d.vehicle || '',
@@ -63,13 +99,19 @@ export default function DealsPage() {
         disclosures: d.disclosures || null,
         delivery: d.delivery || null,
       }))
+
+      const deals = dealsAll.filter((r) => {
+        const uid = String(r.customer?.user_id ?? '').trim()
+        return uid && uid === scopedUserId
+      })
+
       setRows(deals)
     } catch (e: any) {
       setFetchError(e?.message || 'Failed to load deals')
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [getLoggedInUserId])
 
   useEffect(() => {
     fetchDeals()
