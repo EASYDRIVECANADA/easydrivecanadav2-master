@@ -1,13 +1,13 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import jsPDF from 'jspdf'
 import NextImage from 'next/image'
 
 import { renderBillOfSalePdf, type BillOfSaleData } from '../new/billOfSalePdf'
 
-export default function DealsSignaturePage() {
+function DealsSignaturePageInner() {
   const searchParams = useSearchParams()
   const dealId = searchParams.get('dealId')
 
@@ -587,17 +587,18 @@ export default function DealsSignaturePage() {
             </div>
             <div className="mt-2 text-sm text-white/70 break-words whitespace-pre-wrap">{saveMessage}</div>
             <div className="mt-4 flex justify-end">
-              <button
-                type="button"
-                onClick={() => setSaveModalOpen(false)}
-                className="h-10 px-4 rounded-lg bg-white/10 text-white text-sm font-semibold hover:bg-white/15 border border-white/10"
-              >
-                Close
-              </button>
             </div>
           </div>
         </div>
       )}
     </div>
+  )
+}
+
+export default function DealsSignaturePage() {
+  return (
+    <Suspense fallback={null}>
+      <DealsSignaturePageInner />
+    </Suspense>
   )
 }

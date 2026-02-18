@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
 
@@ -24,7 +24,7 @@ type NewVendorFormState = {
   email: string
 }
 
-export default function AdminVendorsNewPage() {
+function AdminVendorsNewPageInner() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const vendorId = String(searchParams?.get('id') ?? '').trim() || null
@@ -328,6 +328,14 @@ export default function AdminVendorsNewPage() {
         </div>
       ) : null}
     </div>
+  )
+}
+
+export default function AdminVendorsNewPage() {
+  return (
+    <Suspense fallback={null}>
+      <AdminVendorsNewPageInner />
+    </Suspense>
   )
 }
 
