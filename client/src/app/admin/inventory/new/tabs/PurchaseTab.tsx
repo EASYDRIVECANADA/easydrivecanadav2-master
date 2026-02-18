@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef, forwardRef, useImperativeHandle } from 'react'
+import { useCallback, useState, useEffect, useRef, forwardRef, useImperativeHandle } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 
 // Supported tax rates for purchase calculations
@@ -116,6 +116,7 @@ const PurchaseTab = forwardRef<PurchaseTabHandle, PurchaseTabProps>(function Pur
   const [vendorResults, setVendorResults] = useState<VendorRow[]>([])
   const [vendorLoading, setVendorLoading] = useState(false)
   const [showVendorDropdown, setShowVendorDropdown] = useState(false)
+  const [scopedUserId, setScopedUserId] = useState<string | null>(null)
   const [showNewVendorModal, setShowNewVendorModal] = useState(false)
   const [savingNewVendor, setSavingNewVendor] = useState(false)
   const [newVendorForm, setNewVendorForm] = useState({
@@ -141,6 +142,40 @@ const PurchaseTab = forwardRef<PurchaseTabHandle, PurchaseTabProps>(function Pur
   const [publicIdType, setPublicIdType] = useState<'dl' | 'rin'>('dl')
   const driverLicenseRef = useRef<HTMLInputElement | null>(null)
   const rinRef = useRef<HTMLInputElement | null>(null)
+
+  const getLoggedInAdminDbUserId = useCallback(async (): Promise<string | null> => {
+    try {
+      if (typeof window === 'undefined') return null
+      const raw = window.localStorage.getItem('edc_admin_session')
+      if (!raw) return null
+      const parsed = JSON.parse(raw) as { email?: string; user_id?: string }
+      const sessionUserId = String(parsed?.user_id ?? '').trim()
+      if (sessionUserId) return sessionUserId
+      const email = String(parsed?.email ?? '').trim().toLowerCase()
+      if (!email) return null
+
+      const { data, error } = await supabase
+        .from('edc_account_verifications')
+        .select('id')
+        .eq('email', email)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+
+      if (error) return null
+      return (data as any)?.id ?? null
+    } catch {
+      return null
+    }
+  }, [])
+
+  useEffect(() => {
+    const load = async () => {
+      const id = await getLoggedInAdminDbUserId()
+      setScopedUserId(id)
+    }
+    void load()
+  }, [getLoggedInAdminDbUserId])
 
   useImperativeHandle(ref, () => ({
     save: handleSave,
@@ -256,6 +291,13 @@ const PurchaseTab = forwardRef<PurchaseTabHandle, PurchaseTabProps>(function Pur
       return
     }
 
+    if (!scopedUserId) {
+      setVendorResults([])
+      setVendorLoading(false)
+      setShowVendorDropdown(false)
+      return
+    }
+
     setVendorLoading(true)
     setShowVendorDropdown(true)
     const id = setTimeout(async () => {
@@ -268,6 +310,7 @@ const PurchaseTab = forwardRef<PurchaseTabHandle, PurchaseTabProps>(function Pur
           .select(
             'id, company_name, vendor_name, contact_first_name, contact_last_name, street_address, suite_apt, city, province, postal_code, country, rin, salesperson_registration, company_mvda, tax_number, phone, mobile, email, fax'
           )
+          .eq('user_id', scopedUserId)
           .or(
             [
               `company_name.ilike.${like}`,
@@ -292,7 +335,7 @@ const PurchaseTab = forwardRef<PurchaseTabHandle, PurchaseTabProps>(function Pur
     }, 250)
 
     return () => clearTimeout(id)
-  }, [vendorSearch, onError])
+  }, [vendorSearch, onError, scopedUserId])
 
   const applyVendorToPurchase = (v: VendorRow) => {
     const company = (v.company_name || '').trim()
