@@ -362,68 +362,98 @@ export default function AdminInventoryPage() {
 
       if (error) throw error
 
-      // Debug: Inspect a few rows to verify fields coming from Supabase
-      if (process.env.NODE_ENV !== 'production') {
-        try {
-          // Log first three rows and selected fields
-          // eslint-disable-next-line no-console
-          console.log('edc_vehicles sample:', (data || []).slice(0, 3).map((r: any) => ({
-            id: r.id,
-            trim: r.trim,
-            body_style: r.body_style,
-            drivetrain: r.drivetrain,
-            transmission: r.transmission,
-            exterior_color: r.exterior_color,
-            city: r.city,
-            province: r.province,
-          })))
-        } catch {}
+      const vehiclesRaw = Array.isArray(data) ? data : []
+
+      const stockNumbers = vehiclesRaw
+        .map((v: any) => String(v?.stock_number ?? '').trim())
+        .filter(Boolean)
+
+      const acvByStock = new Map<string, number>()
+      if (stockNumbers.length > 0) {
+        const { data: purchaseRows, error: purchaseErr } = await supabase
+          .from('edc_purchase')
+          .select('stock_number, actual_cash_value, updated_at, created_at')
+          .in('stock_number', stockNumbers)
+
+        if (!purchaseErr && Array.isArray(purchaseRows)) {
+          const bestByStock = new Map<string, { acv: number; ts: number }>()
+          for (const r of purchaseRows as any[]) {
+            const stock = String(r?.stock_number ?? '').trim()
+            if (!stock) continue
+            const acv = Number(r?.actual_cash_value ?? 0)
+            const dateRaw = String(r?.updated_at ?? r?.created_at ?? '')
+            const ts = dateRaw ? Date.parse(dateRaw) : 0
+            const prev = bestByStock.get(stock)
+            if (!prev || ts >= prev.ts) {
+              bestByStock.set(stock, { acv: Number.isFinite(acv) ? acv : 0, ts })
+            }
+          }
+          bestByStock.forEach((info, stock) => {
+            acvByStock.set(stock, info.acv)
+          })
+        }
       }
 
-      const safe = (s: any) => typeof s === 'string' ? s.trim() : s
-      const mapped: Vehicle[] = (data || []).map((v: any) => ({
-        id: v.id,
-        make: safe(v.make),
-        model: safe(v.model),
-        year: v.year,
-        trim: safe(v.trim) || undefined,
-        stockNumber: safe(v.stock_number) || '',
-        price: v.price,
-        salePrice: (v as any).saleprice ?? (v as any).sale_price ?? undefined,
-        mileage: v.mileage,
-        status: safe(v.status),
-        inventoryType: safe(v.inventory_type) || safe((v as any).vehicle_type),
-        images: normalizeImages(v.images),
-        keyNumber: safe(v.key_number) || undefined,
-        vin: safe(v.vin) || undefined,
-        createdAt: v.created_at,
-        updatedAt: v.updated_at || undefined,
-        series: safe(v.series) || undefined,
-        equipment: safe(v.equipment) || undefined,
-        fuelType: safe(v.fuel_type) || undefined,
-        transmission: safe(v.transmission) || safe((v as any).gearbox) || undefined,
-        bodyStyle: safe(v.body_style) || safe((v as any).vehicle_type) || undefined,
-        drivetrain: safe(v.drivetrain) || safe((v as any).drive) || undefined,
-        city: safe(v.city) || undefined,
-        province: safe(v.province) || undefined,
-        exteriorColor: safe(v.exterior_color) || safe((v as any).colour) || safe((v as any).color) || undefined,
-        interiorColor: safe(v.interior_color) || undefined,
-        description: safe(v.description) || undefined,
-        features: Array.isArray(v.features) ? v.features : undefined,
-        costsData: parseCostsData((v as any).costs_data),
-        purchaseData: parsePurchaseData((v as any).purchase_data),
-        cylinders: safe((v as any).cylinders) || undefined,
-        odometer: typeof (v as any).odometer === 'number' ? (v as any).odometer : Number((v as any).odometer) || undefined,
-        odometerUnit: safe((v as any).odometer_unit) || undefined,
-        condition: safe((v as any).condition) || undefined,
-        certified: safe((v as any).certified) || undefined,
-        raw: v,
-      }))
+      const mapped = vehiclesRaw.map((v: any) => {
+        const safe = (x: any) => (x === null || x === undefined ? '' : String(x))
+        const stockNumber = safe(v.stock_number)
 
-      // Ensure final ordering by numeric stock number desc (recent on top)
-      const toNum = (s: string) => {
-        const n = parseInt((s || '').replace(/[^0-9]/g, ''), 10)
-        return Number.isFinite(n) ? n : -Infinity
+        const purchaseDataParsed = parsePurchaseData((v as any).purchase_data)
+        const acvFromPurchaseTable = acvByStock.get(stockNumber)
+        const purchaseData = {
+          ...(purchaseDataParsed && typeof purchaseDataParsed === 'object' ? purchaseDataParsed : {}),
+          ...(typeof acvFromPurchaseTable === 'number'
+            ? { actual_cash_value: acvFromPurchaseTable, actualCashValue: acvFromPurchaseTable }
+            : {}),
+        }
+
+        return {
+          id: v.id,
+          make: safe(v.make),
+          model: safe(v.model),
+          year: Number(v.year) || new Date().getFullYear(),
+          trim: safe(v.trim) || undefined,
+          stockNumber,
+          price: Number(v.price) || 0,
+          salePrice: (v as any).sale_price,
+          mileage: Number(v.mileage) || 0,
+          status: normalizeStatus(v.status),
+          inventoryType: safe(v.inventory_type),
+          images: normalizeImages(v.images),
+          photos: Array.isArray((v as any).photos) ? (v as any).photos : undefined,
+          keyNumber: safe((v as any).key_number) || undefined,
+          vin: safe((v as any).vin) || undefined,
+          createdAt: safe((v as any).created_at),
+          updatedAt: safe((v as any).updated_at) || undefined,
+          series: safe((v as any).series) || undefined,
+          equipment: safe((v as any).equipment) || undefined,
+          fuelType: safe((v as any).fuel_type) || undefined,
+          transmission: safe((v as any).transmission) || undefined,
+          bodyStyle: safe((v as any).body_style) || undefined,
+          drivetrain: safe((v as any).drivetrain) || undefined,
+          city: safe((v as any).city) || undefined,
+          province: safe((v as any).province) || undefined,
+          exteriorColor: safe((v as any).exterior_color) || undefined,
+          interiorColor: safe((v as any).interior_color) || undefined,
+          description: safe((v as any).description) || undefined,
+          features: Array.isArray((v as any).features) ? (v as any).features : undefined,
+          costsData: parseCostsData((v as any).costs_data),
+          purchaseData,
+          cylinders: safe((v as any).cylinders) || undefined,
+          odometer:
+            typeof (v as any).odometer === 'number'
+              ? (v as any).odometer
+              : Number((v as any).odometer) || undefined,
+          odometerUnit: safe((v as any).odometer_unit) || undefined,
+          condition: safe((v as any).condition) || undefined,
+          certified: safe((v as any).certified) || undefined,
+          raw: v,
+        } as Vehicle
+      })
+
+      const toNum = (s: any) => {
+        const n = Number(String(s ?? '').replace(/[^0-9.]/g, ''))
+        return Number.isFinite(n) ? n : 0
       }
       const sorted = [...mapped].sort((a, b) => toNum(b.stockNumber) - toNum(a.stockNumber))
 
