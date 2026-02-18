@@ -21,6 +21,9 @@ export default function ImagesTab({ vehicleId, images, onImagesUpdate }: ImagesT
   const [dragOver, setDragOver] = useState(false)
   const [errorMsg, setErrorMsg] = useState<string>('')
   const [pendingImages, setPendingImages] = useState<PendingImage[]>([])
+  const [generating, setGenerating] = useState(false)
+
+  const busy = generating || uploading
 
   const arrayBufferToBase64 = (buffer: ArrayBuffer) => {
     let binary = ''
@@ -171,15 +174,21 @@ export default function ImagesTab({ vehicleId, images, onImagesUpdate }: ImagesT
     setDeleting(imageUrl)
     setErrorMsg('')
     try {
-      const res = await fetch('/api/image', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'delete', vehicleId, imageUrl }),
-      })
+      const { data, error } = await supabase
+        .from('edc_vehicles')
+        .select('images')
+        .eq('id', vehicleId)
+        .maybeSingle()
+      if (error) throw error
 
-      const text = await res.text().catch(() => '')
-      if (!res.ok) throw new Error(text || `Webhook responded with ${res.status}`)
-      if (!String(text).toLowerCase().includes('done')) throw new Error(text || 'Webhook did not return done')
+      const current = normalizeImages((data as any)?.images)
+      const next = current.filter((img) => img !== imageUrl)
+
+      const { error: upErr } = await supabase
+        .from('edc_vehicles')
+        .update({ images: next })
+        .eq('id', vehicleId)
+      if (upErr) throw upErr
 
       await refreshImagesFromDb()
     } catch (error) {
@@ -206,9 +215,109 @@ export default function ImagesTab({ vehicleId, images, onImagesUpdate }: ImagesT
     setDragOver(false)
   }
 
+  const handleGenerateImage = async () => {
+    if (generating) return
+    setGenerating(true)
+    setErrorMsg('')
+    try {
+      const { data, error } = await supabase.from('edc_vehicles').select('*').eq('id', vehicleId).maybeSingle()
+      if (error) throw error
+
+      const res = await fetch('/api/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ vehicleId, vehicle: data ?? null }),
+      })
+
+      const text = await res.text().catch(() => '')
+      if (!res.ok) throw new Error(text || `Webhook responded with ${res.status}`)
+
+      setGenerating(false)
+      await refreshImagesFromDb()
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error)
+      setErrorMsg(msg || 'Error generating image')
+      console.error('Error generating image:', error)
+    } finally {
+      setGenerating(false)
+    }
+  }
+
   return (
     <div className="bg-white rounded-xl shadow p-6">
       <h2 className="text-lg font-semibold text-gray-900 mb-4">Vehicle Images</h2>
+
+      <style jsx>{`
+        @keyframes edc-spin {
+          from {
+            transform: rotate(0deg);
+          }
+          to {
+            transform: rotate(360deg);
+          }
+        }
+        @keyframes edc-pulse {
+          0%,
+          100% {
+            transform: translate(-50%, -50%) scale(1);
+            filter: drop-shadow(0 0 0 rgba(17, 141, 240, 0));
+          }
+          50% {
+            transform: translate(-50%, -50%) scale(1.08);
+            filter: drop-shadow(0 0 14px rgba(17, 141, 240, 0.65));
+          }
+        }
+        @keyframes edc-dots {
+          0% {
+            content: '';
+          }
+          33% {
+            content: '.';
+          }
+          66% {
+            content: '..';
+          }
+          100% {
+            content: '...';
+          }
+        }
+        .edc-ring {
+          animation: edc-spin 0.9s linear infinite;
+          border-radius: 9999px;
+          background: conic-gradient(
+            from 0deg,
+            rgba(17, 141, 240, 0) 0deg,
+            rgba(17, 141, 240, 0.95) 70deg,
+            rgba(17, 141, 240, 0.25) 170deg,
+            rgba(17, 141, 240, 0) 360deg
+          );
+          -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 6px), #000 calc(100% - 6px));
+          mask: radial-gradient(farthest-side, transparent calc(100% - 6px), #000 calc(100% - 6px));
+        }
+        .edc-center {
+          animation: edc-pulse 1.2s ease-in-out infinite;
+        }
+        .edc-text {
+          letter-spacing: 0.2px;
+        }
+        .edc-text::after {
+          content: '';
+          display: inline-block;
+          width: 1.2em;
+          text-align: left;
+          animation: edc-dots 1.2s steps(1, end) infinite;
+        }
+      `}</style>
+
+      {busy && (
+        <div className="fixed inset-0 z-[70] grid place-items-center bg-black/60">
+          <div className="flex flex-col items-center justify-center gap-4">
+            <div className="text-white text-base font-semibold edc-text">
+              {generating ? 'Generating image' : 'Uploading images'}
+            </div>
+          </div>
+        </div>
+      )}
 
       {errorMsg && (
         <div className="mb-4 bg-red-50 border border-red-200 text-red-700 rounded-lg p-3 text-sm">
@@ -240,12 +349,26 @@ export default function ImagesTab({ vehicleId, images, onImagesUpdate }: ImagesT
           className="hidden"
           id="image-upload"
         />
-        <label
-          htmlFor="image-upload"
-          className="inline-block bg-[#118df0] text-white px-6 py-2 rounded-lg font-medium hover:bg-[#0d6ebd] transition-colors cursor-pointer"
-        >
-          Select Images
-        </label>
+        <div className="relative mt-1 flex flex-col items-center justify-center">
+          <div className="flex items-center justify-center gap-3">
+            <label
+              htmlFor="image-upload"
+              className="inline-block bg-[#118df0] text-white px-6 py-2 rounded-lg font-medium hover:bg-[#0d6ebd] transition-colors cursor-pointer"
+            >
+              Select Images
+            </label>
+            <button
+              type="button"
+              onClick={handleGenerateImage}
+              disabled={generating}
+              className="inline-block bg-[#118df0] text-white px-6 py-2 rounded-lg font-medium hover:bg-[#0d6ebd] transition-colors disabled:opacity-50"
+            >
+              {generating ? 'Generating...' : 'Generate Image'}
+            </button>
+          </div>
+
+          {null}
+        </div>
       </div>
 
       {pendingImages.length > 0 && (
