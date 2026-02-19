@@ -81,6 +81,14 @@ export async function GET() {
       }
 
       const delivery = deliveryByDeal[did] || null
+      const worksheet = worksheetByDeal[did] || null
+
+      const state = String(
+        c.deal_state ?? c.dealState ?? c.dealstate ?? c.state ??
+        worksheet?.deal_state ?? worksheet?.dealState ?? worksheet?.dealstate ??
+        delivery?.deal_state ?? delivery?.dealState ?? delivery?.dealstate ??
+        ''
+      ).trim()
 
       return {
         dealId: did,
@@ -88,11 +96,11 @@ export async function GET() {
         primaryCustomer: [c.firstname, c.lastname].filter(Boolean).join(' ') || c.displayname || c.legalname || '',
         vehicle: vehicleLabel,
         type: c.dealtype || '',
-        state: '',
+        state,
         dealDate: c.dealdate || '',
         primarySalesperson: delivery?.salesperson || '',
         vehicles: vList,
-        worksheet: worksheetByDeal[did] || null,
+        worksheet,
         disclosures: disclosureByDeal[did] || null,
         delivery,
       }

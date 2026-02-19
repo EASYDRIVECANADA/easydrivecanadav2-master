@@ -63,8 +63,15 @@ export default function WorksheetTab({
   const [financeCommission, setFinanceCommission] = useState(d.finance_commission ?? '')
   const [commissionOpen, setCommissionOpen] = useState(false)
   const [feeSearch, setFeeSearch] = useState('')
-  const [fees, setFees] = useState<Array<{ id: string; name: string; desc?: string; amount: number }>>(() => {
-    if (Array.isArray(d.fees)) return d.fees.map((f: any) => ({ id: f.id || `fee_${Date.now()}`, name: f.name || '', desc: f.desc || '', amount: Number(f.amount) || 0 }))
+  const [fees, setFees] = useState<Array<{ id: string; name: string; desc?: string; amount: number; cost?: number }>>(() => {
+    if (Array.isArray(d.fees))
+      return d.fees.map((f: any) => ({
+        id: f.id || `fee_${Date.now()}`,
+        name: f.name || '',
+        desc: f.desc || '',
+        amount: Number(f.amount) || 0,
+        cost: Number(f.cost) || 0,
+      }))
     return []
   })
   const [feeDraft, setFeeDraft] = useState<{ name: string; desc: string; amount: string } | null>(null)
@@ -96,8 +103,16 @@ export default function WorksheetTab({
   const [editingPaymentId, setEditingPaymentId] = useState<string | null>(null)
   const [editingPaymentDraft, setEditingPaymentDraft] = useState<{ amount: string; type: string; desc: string } | null>(null)
   const [accessorySearch, setAccessorySearch] = useState('')
-  const [accessories, setAccessories] = useState<Array<{ id: string; name: string; desc?: string; price: number }>>(() => {
-    if (Array.isArray(d.accessories)) return d.accessories.map((a: any) => ({ id: a.id || `acc_${Date.now()}`, name: a.name || '', desc: a.desc || '', price: Number(a.price) || 0 }))
+  const [accessories, setAccessories] = useState<Array<{ id: string; name: string; desc?: string; price: number; cost?: number; vehicleType?: string }>>(() => {
+    if (Array.isArray(d.accessories))
+      return d.accessories.map((a: any) => ({
+        id: a.id || `acc_${Date.now()}`,
+        name: a.name || '',
+        desc: a.desc || '',
+        price: Number(a.price) || 0,
+        cost: Number(a.cost) || 0,
+        vehicleType: a.vehicleType || a.vehicle_type || '',
+      }))
     return []
   })
   const [accessoryDraft, setAccessoryDraft] = useState<{ name: string; desc: string; price: string } | null>(null)
@@ -113,8 +128,20 @@ export default function WorksheetTab({
   const [accTaxValues, setAccTaxValues] = useState<Record<string, string>>({})
   const accDetailsItem = useMemo(() => accessories.find((x) => x.id === accDetailsForId) || null, [accessories, accDetailsForId])
   const [warrantySearch, setWarrantySearch] = useState('')
-  const [warranties, setWarranties] = useState<Array<{ id: string; name: string; desc?: string; amount: number }>>(() => {
-    if (Array.isArray(d.warranties)) return d.warranties.map((w: any) => ({ id: w.id || `war_${Date.now()}`, name: w.name || '', desc: w.desc || '', amount: Number(w.amount) || 0 }))
+  const [warranties, setWarranties] = useState<
+    Array<{ id: string; name: string; desc?: string; amount: number; cost?: number; duration?: string; distance?: string; isDealerGuaranty?: boolean }>
+  >(() => {
+    if (Array.isArray(d.warranties))
+      return d.warranties.map((w: any) => ({
+        id: w.id || `war_${Date.now()}`,
+        name: w.name || '',
+        desc: w.desc || '',
+        amount: Number(w.amount) || 0,
+        cost: Number(w.cost) || 0,
+        duration: w.duration || '',
+        distance: w.distance || '',
+        isDealerGuaranty: w.isDealerGuaranty === true || w.is_dealer_guaranty === true,
+      }))
     return []
   })
   const [warrantyDraft, setWarrantyDraft] = useState<{ name: string; desc: string; amount: string } | null>(null)
@@ -122,6 +149,7 @@ export default function WorksheetTab({
   const [editingWarrantyDraft, setEditingWarrantyDraft] = useState<{ name: string; desc: string; amount: string } | null>(null)
   const [warDetailsOpen, setWarDetailsOpen] = useState(false)
   const [warDetailsForId, setWarDetailsForId] = useState<string | null>(null)
+  const [warCost, setWarCost] = useState('0')
   const [warDuration, setWarDuration] = useState('')
   const [warDistance, setWarDistance] = useState('')
   const [warDealerGuaranty, setWarDealerGuaranty] = useState(false)
@@ -132,8 +160,20 @@ export default function WorksheetTab({
   const [warTaxValues, setWarTaxValues] = useState<Record<string, string>>({})
   const warDetailsItem = useMemo(() => warranties.find((x) => x.id === warDetailsForId) || null, [warranties, warDetailsForId])
   const [insuranceSearch, setInsuranceSearch] = useState('')
-  const [insurances, setInsurances] = useState<Array<{ id: string; name: string; desc?: string; amount: number }>>(() => {
-    if (Array.isArray(d.insurances)) return d.insurances.map((i: any) => ({ id: i.id || `ins_${Date.now()}`, name: i.name || '', desc: i.desc || '', amount: Number(i.amount) || 0 }))
+  const [insurances, setInsurances] = useState<
+    Array<{ id: string; name: string; desc?: string; amount: number; cost?: number; deductible?: string; duration?: string; type?: string }>
+  >(() => {
+    if (Array.isArray(d.insurances))
+      return d.insurances.map((i: any) => ({
+        id: i.id || `ins_${Date.now()}`,
+        name: i.name || '',
+        desc: i.desc || '',
+        amount: Number(i.amount) || 0,
+        cost: Number(i.cost) || 0,
+        deductible: String(i.deductible ?? i.insurance_deductible ?? '0'),
+        duration: String(i.duration ?? i.insurance_duration ?? ''),
+        type: String(i.type ?? i.insurance_type ?? ''),
+      }))
     return []
   })
   const [feePresetOpen, setFeePresetOpen] = useState(false)
@@ -145,6 +185,7 @@ export default function WorksheetTab({
   const [editingInsuranceDraft, setEditingInsuranceDraft] = useState<{ name: string; desc: string; amount: string } | null>(null)
   const [insDetailsOpen, setInsDetailsOpen] = useState(false)
   const [insDetailsForId, setInsDetailsForId] = useState<string | null>(null)
+  const [insCost, setInsCost] = useState('0')
   const [insDeductible, setInsDeductible] = useState('0')
   const [insDuration, setInsDuration] = useState('')
   const [insType, setInsType] = useState('')
@@ -154,6 +195,49 @@ export default function WorksheetTab({
   const [insShowTaxDetails, setInsShowTaxDetails] = useState(false)
   const [insTaxValues, setInsTaxValues] = useState<Record<string, string>>({})
   const insDetailsItem = useMemo(() => insurances.find((x) => x.id === insDetailsForId) || null, [insurances, insDetailsForId])
+
+  const closeAllDetails = () => {
+    setFeeDetailsOpen(false)
+    setAccDetailsOpen(false)
+    setWarDetailsOpen(false)
+    setInsDetailsOpen(false)
+  }
+
+  const openFeeDetails = (id: string) => {
+    closeAllDetails()
+    setFeeDetailsForId(id)
+    setFeeDetailsOpen(true)
+  }
+
+  const openAccDetails = (id: string) => {
+    closeAllDetails()
+    const item = accessories.find((x) => x.id === id)
+    setAccVehicleType(String((item as any)?.vehicleType ?? ''))
+    setAccDetailsForId(id)
+    setAccDetailsOpen(true)
+  }
+
+  const openWarDetails = (id: string) => {
+    closeAllDetails()
+    const item = warranties.find((x) => x.id === id)
+    setWarCost(String(Number((item as any)?.cost ?? 0) || 0))
+    setWarDuration(String((item as any)?.duration ?? ''))
+    setWarDistance(String((item as any)?.distance ?? ''))
+    setWarDealerGuaranty(Boolean((item as any)?.isDealerGuaranty ?? false))
+    setWarDetailsForId(id)
+    setWarDetailsOpen(true)
+  }
+
+  const openInsDetails = (id: string) => {
+    closeAllDetails()
+    const item = insurances.find((x) => x.id === id)
+    setInsCost(String(Number((item as any)?.cost ?? 0) || 0))
+    setInsDeductible(String((item as any)?.deductible ?? '0'))
+    setInsDuration(String((item as any)?.duration ?? ''))
+    setInsType(String((item as any)?.type ?? ''))
+    setInsDetailsForId(id)
+    setInsDetailsOpen(true)
+  }
 
   useEffect(() => {
     if (!initialData) return
@@ -454,7 +538,7 @@ export default function WorksheetTab({
     if (!feeDraft) return
     const id = `fee_${Date.now()}`
     const amountNum = parseMoney(feeDraft.amount)
-    setFees((prev) => [{ id, name: feeDraft.name || 'New Fee', desc: feeDraft.desc, amount: amountNum }, ...prev])
+    setFees((prev) => [{ id, name: feeDraft.name || 'New Fee', desc: feeDraft.desc, amount: amountNum, cost: 0 }, ...prev])
     setFeeDraft(null)
   }
 
@@ -583,10 +667,41 @@ export default function WorksheetTab({
       },
 
       // Arrays for all line items (empty arrays if none)
-      fees: (fees || []).map((f) => ({ id: norm(f.id), name: norm(f.name), desc: norm(f.desc), amount: norm(String(f.amount ?? 0)) })),
-      accessories: (accessories || []).map((a) => ({ id: norm(a.id), name: norm(a.name), desc: norm(a.desc), price: norm(String(a.price ?? 0)) })),
-      warranties: (warranties || []).map((w) => ({ id: norm(w.id), name: norm(w.name), desc: norm(w.desc), amount: norm(String(w.amount ?? 0)) })),
-      insurances: (insurances || []).map((i) => ({ id: norm(i.id), name: norm(i.name), desc: norm(i.desc), amount: norm(String(i.amount ?? 0)) })),
+      fees: (fees || []).map((f) => ({
+        id: norm(f.id),
+        name: norm(f.name),
+        desc: norm(f.desc),
+        cost: norm(String((f as any).cost ?? 0)),
+        amount: norm(String(f.amount ?? 0)),
+      })),
+      accessories: (accessories || []).map((a) => ({
+        id: norm(a.id),
+        name: norm(a.name),
+        desc: norm(a.desc),
+        cost: norm(String((a as any).cost ?? 0)),
+        vehicleType: norm(String((a as any).vehicleType ?? '')),
+        price: norm(String(a.price ?? 0)),
+      })),
+      warranties: (warranties || []).map((w) => ({
+        id: norm(w.id),
+        name: norm(w.name),
+        desc: norm(w.desc),
+        cost: norm(String((w as any).cost ?? 0)),
+        duration: norm(String((w as any).duration ?? '')),
+        distance: norm(String((w as any).distance ?? '')),
+        isDealerGuaranty: norm((w as any).isDealerGuaranty ?? false),
+        amount: norm(String(w.amount ?? 0)),
+      })),
+      insurances: (insurances || []).map((i) => ({
+        id: norm(i.id),
+        name: norm(i.name),
+        desc: norm(i.desc),
+        cost: norm(String((i as any).cost ?? 0)),
+        deductible: norm(String((i as any).deductible ?? '0')),
+        duration: norm(String((i as any).duration ?? '')),
+        type: norm(String((i as any).type ?? '')),
+        amount: norm(String(i.amount ?? 0)),
+      })),
       payments: (payments || []).map((p) => ({ id: norm(p.id), amount: norm(String(p.amount ?? 0)), type: norm(p.type), desc: norm(p.desc), category: norm(p.category) })),
 
       sections: (cardsOrder || []).map((k) => {
@@ -595,7 +710,13 @@ export default function WorksheetTab({
             key: 'fees',
             label: 'Fees',
             total: norm(String(feesTotal ?? 0)),
-            rows: (fees || []).map((f) => ({ id: norm(f.id), name: norm(f.name), desc: norm(f.desc), amount: norm(String(f.amount ?? 0)) })),
+            rows: (fees || []).map((f) => ({
+              id: norm(f.id),
+              name: norm(f.name),
+              desc: norm(f.desc),
+              cost: norm(String((f as any).cost ?? 0)),
+              amount: norm(String(f.amount ?? 0)),
+            })),
           }
         }
         if (k === 'accessories') {
@@ -603,7 +724,14 @@ export default function WorksheetTab({
             key: 'accessories',
             label: 'Accessories',
             total: norm(String(accessoriesTotal ?? 0)),
-            rows: (accessories || []).map((a) => ({ id: norm(a.id), name: norm(a.name), desc: norm(a.desc), price: norm(String(a.price ?? 0)) })),
+            rows: (accessories || []).map((a) => ({
+              id: norm(a.id),
+              name: norm(a.name),
+              desc: norm(a.desc),
+              cost: norm(String((a as any).cost ?? 0)),
+              vehicleType: norm(String((a as any).vehicleType ?? '')),
+              price: norm(String(a.price ?? 0)),
+            })),
           }
         }
         if (k === 'warranties') {
@@ -611,7 +739,16 @@ export default function WorksheetTab({
             key: 'warranties',
             label: 'Warranties',
             total: norm(String(warrantiesTotal ?? 0)),
-            rows: (warranties || []).map((w) => ({ id: norm(w.id), name: norm(w.name), desc: norm(w.desc), amount: norm(String(w.amount ?? 0)) })),
+            rows: (warranties || []).map((w) => ({
+              id: norm(w.id),
+              name: norm(w.name),
+              desc: norm(w.desc),
+              cost: norm(String((w as any).cost ?? 0)),
+              duration: norm(String((w as any).duration ?? '')),
+              distance: norm(String((w as any).distance ?? '')),
+              isDealerGuaranty: norm((w as any).isDealerGuaranty ?? false),
+              amount: norm(String(w.amount ?? 0)),
+            })),
           }
         }
         if (k === 'insurances') {
@@ -619,7 +756,16 @@ export default function WorksheetTab({
             key: 'insurances',
             label: 'Insurances',
             total: norm(String(insurancesTotal ?? 0)),
-            rows: (insurances || []).map((i) => ({ id: norm(i.id), name: norm(i.name), desc: norm(i.desc), amount: norm(String(i.amount ?? 0)) })),
+            rows: (insurances || []).map((i) => ({
+              id: norm(i.id),
+              name: norm(i.name),
+              desc: norm(i.desc),
+              cost: norm(String((i as any).cost ?? 0)),
+              deductible: norm(String((i as any).deductible ?? '0')),
+              duration: norm(String((i as any).duration ?? '')),
+              type: norm(String((i as any).type ?? '')),
+              amount: norm(String(i.amount ?? 0)),
+            })),
           }
         }
         return {
@@ -942,12 +1088,22 @@ export default function WorksheetTab({
   }, [])
 
   const addFeeFromPreset = (preset: { id: string; name: string; description?: string; fee_amount?: number }) => {
-    setFees((prev) => [{ id: `fee_${Date.now()}_${preset.id}`, name: preset.name, desc: preset.description || '', amount: Number(preset.fee_amount ?? 0) }, ...prev])
+    setFees((prev) => [{ id: `fee_${Date.now()}_${preset.id}`, name: preset.name, desc: preset.description || '', amount: Number(preset.fee_amount ?? 0), cost: 0 }, ...prev])
     setFeeSearch('')
   }
 
   const addAccessoryFromPreset = (preset: { id: string; name: string; description?: string; amount?: number; cost?: number; type?: string; default_tax_rate?: string }) => {
-    setAccessories((prev) => [{ id: `acc_${Date.now()}_${preset.id}`, name: preset.name, desc: preset.description || '', price: Number(preset.amount ?? 0) }, ...prev])
+    setAccessories((prev) => [
+      {
+        id: `acc_${Date.now()}_${preset.id}`,
+        name: preset.name,
+        desc: preset.description || '',
+        price: Number(preset.amount ?? 0),
+        cost: Number(preset.cost ?? 0),
+        vehicleType: '',
+      },
+      ...prev,
+    ])
     setAccessorySearch('')
   }
 
@@ -1132,7 +1288,7 @@ export default function WorksheetTab({
                   <button
                     type="button"
                     className="px-2 text-gray-600 hover:text-gray-800"
-                    onClick={() => { setFeeDetailsForId(f.id); setFeeDetailsOpen(true) }}
+                    onClick={() => openFeeDetails(f.id)}
                     title="More"
                   >
                     ...
@@ -1353,7 +1509,7 @@ export default function WorksheetTab({
                 <div className="p-2">{a.desc}</div>
                 <div className="p-2">${fmtMoney(Number(a.price || 0))}</div>
                 <div className="p-2 text-center">
-                  <button type="button" className="px-2 text-gray-600 hover:text-gray-800" onClick={() => { setAccDetailsForId(a.id); setAccDetailsOpen(true) }} title="More">...</button>
+                  <button type="button" className="px-2 text-gray-600 hover:text-gray-800" onClick={() => openAccDetails(a.id)} title="More">...</button>
                 </div>
               </div>
             )
@@ -1460,7 +1616,7 @@ export default function WorksheetTab({
                 <div className="p-2">{w.desc}</div>
                 <div className="p-2">${fmtMoney(Number(w.amount || 0))}</div>
                 <div className="p-2 text-center">
-                  <button type="button" className="px-2 text-gray-600 hover:text-gray-800" onClick={() => { setWarDetailsForId(w.id); setWarDetailsOpen(true) }} title="More">...</button>
+                  <button type="button" className="px-2 text-gray-600 hover:text-gray-800" onClick={() => openWarDetails(w.id)} title="More">...</button>
                 </div>
               </div>
             )
@@ -1567,7 +1723,7 @@ export default function WorksheetTab({
                 <div className="p-2">{i.desc}</div>
                 <div className="p-2">${fmtMoney(Number(i.amount || 0))}</div>
                 <div className="p-2 text-center">
-                  <button type="button" className="px-2 text-gray-600 hover:text-gray-800" onClick={() => { setInsDetailsForId(i.id); setInsDetailsOpen(true) }} title="More">...</button>
+                  <button type="button" className="px-2 text-gray-600 hover:text-gray-800" onClick={() => openInsDetails(i.id)} title="More">...</button>
                 </div>
               </div>
             )
@@ -1949,13 +2105,28 @@ export default function WorksheetTab({
 
       {feeDetailsOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div className="absolute inset-0 bg-black/30" onClick={() => setFeeDetailsOpen(false)} />
+          <div className="absolute inset-0 bg-black/30" onClick={closeAllDetails} />
           <div className="relative w-[820px] max-w-[95vw] bg-white border border-gray-200 shadow-lg">
             <div className="h-10 px-4 border-b border-gray-200 flex items-center justify-between">
               <div className="text-sm font-semibold text-gray-700">Fee Details</div>
-              <button className="text-gray-500 hover:text-gray-700" onClick={() => setFeeDetailsOpen(false)}>✕</button>
+              <button className="text-gray-500 hover:text-gray-700" onClick={closeAllDetails}>✕</button>
             </div>
             <div className="p-4 space-y-4">
+              <div className="max-w-xl">
+                <div className="text-xs text-gray-700 mb-1">Fee Cost:</div>
+                <div className="flex items-stretch border border-gray-200 rounded bg-white overflow-hidden">
+                  <div className="w-10 flex items-center justify-center bg-gray-100 text-gray-600 border-r border-gray-200">$</div>
+                  <input
+                    className="flex-1 h-10 px-3 text-sm outline-none"
+                    value={String((feeDetailsFee as any)?.cost ?? 0)}
+                    onChange={(e) => {
+                      const v = e.target.value.replace(/[^0-9.]/g, '')
+                      setFees((prev) => prev.map((x) => (x.id === feeDetailsForId ? { ...x, cost: Number(v || 0) } : x)))
+                    }}
+                  />
+                </div>
+              </div>
+
               <div className="flex items-center justify-between">
                 <div className="text-[#118df0] text-sm font-semibold cursor-pointer relative">
                   <button type="button" onClick={() => setFeeTaxMenuOpen((v) => !v)}>
@@ -2015,7 +2186,7 @@ export default function WorksheetTab({
               <div className="text-sm text-gray-700">QuickBooks Product/Service</div>
 
               <div className="flex justify-end pt-2">
-                <button type="button" className="h-9 px-4 rounded bg-[#118df0] text-white text-sm font-semibold hover:bg-[#0d6ebd]" onClick={() => setFeeDetailsOpen(false)}>
+                <button type="button" className="h-9 px-4 rounded bg-[#118df0] text-white text-sm font-semibold hover:bg-[#0d6ebd]" onClick={closeAllDetails}>
                   Close
                 </button>
               </div>
@@ -2026,25 +2197,68 @@ export default function WorksheetTab({
 
       {warDetailsOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div className="absolute inset-0 bg-black/30" onClick={() => setWarDetailsOpen(false)} />
+          <div className="absolute inset-0 bg-black/30" onClick={closeAllDetails} />
           <div className="relative w-[900px] max-w-[95vw] bg-white border border-gray-200 shadow-lg">
             <div className="h-10 px-4 border-b border-gray-200 flex items-center justify-between">
               <div className="text-sm font-semibold text-gray-700">Warranty Details</div>
-              <button className="text-gray-500 hover:text-gray-700" onClick={() => setWarDetailsOpen(false)}>✕</button>
+              <button className="text-gray-500 hover:text-gray-700" onClick={closeAllDetails}>✕</button>
             </div>
             <div className="p-4 space-y-4">
-              <div>
-                <div className="text-xs text-gray-700 mb-1">Duration</div>
-                <input className="h-10 border border-gray-200 rounded w-full px-3 max-w-xl" value={warDuration} onChange={(e) => setWarDuration(e.target.value)} />
+              <div className="grid grid-cols-3 gap-6 max-w-5xl">
+                <div>
+                  <div className="text-xs text-gray-700 mb-1">Cost</div>
+                  <div className="flex items-stretch border border-gray-200 rounded bg-white overflow-hidden">
+                    <div className="w-10 flex items-center justify-center bg-gray-100 text-gray-600 border-r border-gray-200">$</div>
+                    <input
+                      className="flex-1 h-10 px-3 text-sm outline-none"
+                      value={warCost}
+                      onChange={(e) => {
+                        const v = e.target.value.replace(/[^0-9.]/g, '')
+                        setWarCost(v)
+                        setWarranties((prev) => prev.map((x) => (x.id === warDetailsForId ? { ...x, cost: Number(v || 0) } : x)))
+                      }}
+                    />
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xs text-gray-700 mb-1">Duration</div>
+                  <input
+                    className="h-10 border border-gray-200 rounded w-full px-3"
+                    value={warDuration}
+                    onChange={(e) => {
+                      setWarDuration(e.target.value)
+                      setWarranties((prev) => prev.map((x) => (x.id === warDetailsForId ? { ...x, duration: e.target.value } : x)))
+                    }}
+                  />
+                </div>
+                <div>
+                  <div className="text-xs text-gray-700 mb-1">Distance</div>
+                  <input
+                    className="h-10 border border-gray-200 rounded w-full px-3"
+                    value={warDistance}
+                    onChange={(e) => {
+                      setWarDistance(e.target.value)
+                      setWarranties((prev) => prev.map((x) => (x.id === warDetailsForId ? { ...x, distance: e.target.value } : x)))
+                    }}
+                  />
+                </div>
               </div>
+
               <div>
-                <div className="text-xs text-gray-700 mb-1">Distance</div>
-                <input className="h-10 border border-gray-200 rounded w-full px-3 max-w-xl" value={warDistance} onChange={(e) => setWarDistance(e.target.value)} />
               </div>
+
               <div className="flex items-center gap-3">
                 <div className="text-xs text-gray-700">Is Dealer Guaranty</div>
                 <label className="inline-flex items-center cursor-pointer">
-                  <input type="checkbox" className="sr-only peer" checked={warDealerGuaranty} onChange={(e) => setWarDealerGuaranty(e.target.checked)} />
+                  <input
+                    type="checkbox"
+                    className="sr-only peer"
+                    checked={warDealerGuaranty}
+                    onChange={(e) => {
+                      setWarDealerGuaranty(e.target.checked)
+                      setWarranties((prev) => prev.map((x) => (x.id === warDetailsForId ? { ...x, isDealerGuaranty: e.target.checked } : x)))
+                    }}
+                  />
                   <div className="w-10 h-5 bg-gray-200 rounded-full peer-checked:bg-[#118df0] relative">
                     <div className="absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full transition peer-checked:translate-x-5" />
                   </div>
@@ -2101,7 +2315,7 @@ export default function WorksheetTab({
               <div className="text-sm text-gray-700">QuickBooks Product/Service</div>
 
               <div className="flex justify-end pt-2">
-                <button type="button" className="h-9 px-4 rounded bg-[#118df0] text-white text-sm font-semibold hover:bg-[#0d6ebd]" onClick={() => setWarDetailsOpen(false)}>Close</button>
+                <button type="button" className="h-9 px-4 rounded bg-[#118df0] text-white text-sm font-semibold hover:bg-[#0d6ebd]" onClick={closeAllDetails}>Close</button>
               </div>
             </div>
           </div>
@@ -2110,11 +2324,11 @@ export default function WorksheetTab({
 
       {insDetailsOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div className="absolute inset-0 bg-black/30" onClick={() => setInsDetailsOpen(false)} />
+          <div className="absolute inset-0 bg-black/30" onClick={closeAllDetails} />
           <div className="relative w-[900px] max-w-[95vw] bg-white border border-gray-200 shadow-lg">
             <div className="h-10 px-4 border-b border-gray-200 flex items-center justify-between">
               <div className="text-sm font-semibold text-gray-700">Insurance Details</div>
-              <button className="text-gray-500 hover:text-gray-700" onClick={() => setInsDetailsOpen(false)}>✕</button>
+              <button className="text-gray-500 hover:text-gray-700" onClick={closeAllDetails}>✕</button>
             </div>
             <div className="p-4 space-y-4">
               <div className="grid grid-cols-2 gap-6 max-w-3xl">
@@ -2122,12 +2336,42 @@ export default function WorksheetTab({
                   <div className="text-xs text-gray-700 mb-1">Insurance Deductible</div>
                   <div className="flex items-stretch border border-gray-200 rounded bg-white overflow-hidden">
                     <div className="w-10 flex items-center justify-center bg-gray-100 text-gray-600 border-r border-gray-200">$</div>
-                    <input className="flex-1 h-10 px-3 text-sm outline-none" value={insDeductible} onChange={(e) => setInsDeductible(e.target.value.replace(/[^0-9.]/g, ''))} />
+                    <input
+                      className="flex-1 h-10 px-3 text-sm outline-none"
+                      value={insDeductible}
+                      onChange={(e) => {
+                        const v = e.target.value.replace(/[^0-9.]/g, '')
+                        setInsDeductible(v)
+                        setInsurances((prev) => prev.map((x) => (x.id === insDetailsForId ? { ...x, deductible: v } : x)))
+                      }}
+                    />
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xs text-gray-700 mb-1">Insurance Cost</div>
+                  <div className="flex items-stretch border border-gray-200 rounded bg-white overflow-hidden">
+                    <div className="w-10 flex items-center justify-center bg-gray-100 text-gray-600 border-r border-gray-200">$</div>
+                    <input
+                      className="flex-1 h-10 px-3 text-sm outline-none"
+                      value={insCost}
+                      onChange={(e) => {
+                        const v = e.target.value.replace(/[^0-9.]/g, '')
+                        setInsCost(v)
+                        setInsurances((prev) => prev.map((x) => (x.id === insDetailsForId ? { ...x, cost: Number(v || 0) } : x)))
+                      }}
+                    />
                   </div>
                 </div>
                 <div>
                   <div className="text-xs text-gray-700 mb-1">Type</div>
-                  <select className="h-10 border border-gray-200 rounded w-full px-2" value={insType} onChange={(e) => setInsType(e.target.value)}>
+                  <select
+                    className="h-10 border border-gray-200 rounded w-full px-2"
+                    value={insType}
+                    onChange={(e) => {
+                      setInsType(e.target.value)
+                      setInsurances((prev) => prev.map((x) => (x.id === insDetailsForId ? { ...x, type: e.target.value } : x)))
+                    }}
+                  >
                     <option value="">Select...</option>
                     <option value="Life">Life</option>
                     <option value="Disability">Disability</option>
@@ -2140,7 +2384,14 @@ export default function WorksheetTab({
                 </div>
                 <div>
                   <div className="text-xs text-gray-700 mb-1">Insurance Duration</div>
-                  <input className="h-10 border border-gray-200 rounded w-full px-3" value={insDuration} onChange={(e) => setInsDuration(e.target.value)} />
+                  <input
+                    className="h-10 border border-gray-200 rounded w-full px-3"
+                    value={insDuration}
+                    onChange={(e) => {
+                      setInsDuration(e.target.value)
+                      setInsurances((prev) => prev.map((x) => (x.id === insDetailsForId ? { ...x, duration: e.target.value } : x)))
+                    }}
+                  />
                 </div>
               </div>
 
@@ -2194,7 +2445,7 @@ export default function WorksheetTab({
               <div className="text-sm text-gray-700">QuickBooks Product/Service</div>
 
               <div className="flex justify-end pt-2">
-                <button type="button" className="h-9 px-4 rounded bg-[#118df0] text-white text-sm font-semibold hover:bg-[#0d6ebd]" onClick={() => setInsDetailsOpen(false)}>Close</button>
+                <button type="button" className="h-9 px-4 rounded bg-[#118df0] text-white text-sm font-semibold hover:bg-[#0d6ebd]" onClick={closeAllDetails}>Close</button>
               </div>
             </div>
           </div>
@@ -2203,21 +2454,43 @@ export default function WorksheetTab({
 
       {accDetailsOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div className="absolute inset-0 bg-black/30" onClick={() => setAccDetailsOpen(false)} />
+          <div className="absolute inset-0 bg-black/30" onClick={closeAllDetails} />
           <div className="relative w-[820px] max-w-[95vw] bg-white border border-gray-200 shadow-lg">
             <div className="h-10 px-4 border-b border-gray-200 flex items-center justify-between">
               <div className="text-sm font-semibold text-gray-700">Accessory Details</div>
-              <button className="text-gray-500 hover:text-gray-700" onClick={() => setAccDetailsOpen(false)}>✕</button>
+              <button className="text-gray-500 hover:text-gray-700" onClick={closeAllDetails}>✕</button>
             </div>
             <div className="p-4 space-y-4">
               <div>
                 <div className="text-xs text-gray-700 mb-1">Vehicle Type</div>
-                <select className="h-10 border border-gray-200 rounded w-60 px-2" value={accVehicleType} onChange={(e) => setAccVehicleType(e.target.value)}>
+                <select
+                  className="h-10 border border-gray-200 rounded w-60 px-2"
+                  value={accVehicleType}
+                  onChange={(e) => {
+                    setAccVehicleType(e.target.value)
+                    setAccessories((prev) => prev.map((x) => (x.id === accDetailsForId ? { ...x, vehicleType: e.target.value } : x)))
+                  }}
+                >
                   <option value="">Select...</option>
                   <option value="Car">Car</option>
                   <option value="Truck">Truck</option>
                   <option value="SUV">SUV</option>
                 </select>
+              </div>
+
+              <div className="max-w-xl">
+                <div className="text-xs text-gray-700 mb-1">Accessory Cost</div>
+                <div className="flex items-stretch border border-gray-200 rounded bg-white overflow-hidden w-60">
+                  <div className="w-10 flex items-center justify-center bg-gray-100 text-gray-600 border-r border-gray-200">$</div>
+                  <input
+                    className="flex-1 h-10 px-3 text-sm outline-none"
+                    value={String((accDetailsItem as any)?.cost ?? 0)}
+                    onChange={(e) => {
+                      const v = e.target.value.replace(/[^0-9.]/g, '')
+                      setAccessories((prev) => prev.map((x) => (x.id === accDetailsForId ? { ...x, cost: Number(v || 0) } : x)))
+                    }}
+                  />
+                </div>
               </div>
 
               <div className="flex items-center justify-between">
@@ -2277,7 +2550,7 @@ export default function WorksheetTab({
               <div className="text-sm text-gray-700">QuickBooks Product/Service</div>
 
               <div className="flex justify-end pt-2">
-                <button type="button" className="h-9 px-4 rounded bg-[#118df0] text-white text-sm font-semibold hover:bg-[#0d6ebd]" onClick={() => setAccDetailsOpen(false)}>
+                <button type="button" className="h-9 px-4 rounded bg-[#118df0] text-white text-sm font-semibold hover:bg-[#0d6ebd]" onClick={closeAllDetails}>
                   Close
                 </button>
               </div>
