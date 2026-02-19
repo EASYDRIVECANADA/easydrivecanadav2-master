@@ -606,6 +606,95 @@ export default function AdminInventoryPage() {
     })
   }
 
+  const handleExportSelected = () => {
+    const selected = vehicles.filter((v) => selectedIds.has(v.id))
+    if (selected.length === 0) return
+
+    const esc = (val: any) => {
+      const s = String(val ?? '')
+      if (s.includes('"') || s.includes(',') || s.includes('\n') || s.includes('\r')) return `"${s.replace(/"/g, '""')}"`
+      return s
+    }
+
+    const header = [
+      'description',
+      'trim',
+      'vehicle type',
+      'drive',
+      'transmission',
+      'cylinders',
+      'colour',
+      'odometer',
+      'actual cash value',
+      'List price',
+      'salePrice',
+      'dii',
+      'stock #',
+      'key #',
+      'cert/as-is',
+      'status',
+      'other',
+    ]
+
+    const rows = selected.map((v) => {
+      const acv = (v.purchaseData as any)?.actualCashValue ?? (v.purchaseData as any)?.actual_cash_value ?? 0
+      const odo = typeof v.odometer === 'number' ? v.odometer : ''
+      const desc = `${v.year} ${v.make} ${v.model}`.replace(/\s+/g, ' ').trim()
+      return [
+        desc,
+        v.trim ?? '',
+        v.bodyStyle ?? '',
+        v.drivetrain ?? '',
+        v.transmission ?? '',
+        v.cylinders ?? '',
+        v.exteriorColor ?? '',
+        odo,
+        acv,
+        v.price,
+        (v as any).salePrice ?? (v as any).sale_price ?? (v as any).raw?.sale_price ?? (v as any).raw?.salePrice ?? '',
+        (v as any).raw?.dii ?? '',
+        v.stockNumber,
+        v.keyNumber ?? '',
+        (v as any).certified ?? '',
+        v.status,
+        (v as any).raw?.other ?? (v as any).raw?.notes ?? '',
+      ].map(esc)
+    })
+
+    const csv = [header.map(esc).join(','), ...rows.map((r) => r.join(','))].join('\r\n')
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `inventory_export_${new Date().toISOString().slice(0, 10)}.csv`
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    URL.revokeObjectURL(url)
+  }
+
+  const handleDeleteSelected = () => {
+    if (selectedIds.size === 0) return
+    const selected = vehicles.filter((v) => selectedIds.has(v.id))
+    if (selected.length === 0) return
+
+    openConfirm(
+      'Confirm delete',
+      `Delete ${selected.length} selected vehicle(s) and all related records?`,
+      async () => {
+        setModalBusy(true)
+        try {
+          for (const v of selected) {
+            await performDelete(v)
+          }
+          closeModal()
+        } finally {
+          setModalBusy(false)
+        }
+      }
+    )
+  }
+
   const closeModal = () => {
     if (modalBusy) return
     setModalOpen(false)
@@ -938,6 +1027,32 @@ export default function AdminInventoryPage() {
             </div>
           </div>
         </div>
+
+        {selectedIds.size > 0 && (
+          <div className="bg-white rounded-xl shadow p-3 mb-6">
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <div className="text-sm font-semibold text-gray-700">
+                {selectedIds.size} selected
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleDeleteSelected}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold text-white bg-red-600 hover:bg-red-700"
+                >
+                  Delete
+                </button>
+                <button
+                  type="button"
+                  onClick={handleExportSelected}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold text-white bg-[#118df0] hover:bg-[#0d6ebd]"
+                >
+                  Export
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {loading ? (
           <div className="bg-white rounded-xl shadow p-8 text-center">
