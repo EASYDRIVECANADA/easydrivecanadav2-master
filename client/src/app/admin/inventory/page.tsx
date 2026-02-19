@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabaseClient'
+import * as XLSX from 'xlsx-js-style'
 
 interface Vehicle {
   id: string
@@ -610,12 +611,6 @@ export default function AdminInventoryPage() {
     const selected = vehicles.filter((v) => selectedIds.has(v.id))
     if (selected.length === 0) return
 
-    const esc = (val: any) => {
-      const s = String(val ?? '')
-      if (s.includes('"') || s.includes(',') || s.includes('\n') || s.includes('\r')) return `"${s.replace(/"/g, '""')}"`
-      return s
-    }
-
     const header = [
       'description',
       'trim',
@@ -636,11 +631,12 @@ export default function AdminInventoryPage() {
       'other',
     ]
 
-    const rows = selected.map((v) => {
+    const aoa: any[][] = [header]
+    selected.forEach((v) => {
       const acv = (v.purchaseData as any)?.actualCashValue ?? (v.purchaseData as any)?.actual_cash_value ?? 0
       const odo = typeof v.odometer === 'number' ? v.odometer : ''
       const desc = `${v.year} ${v.make} ${v.model}`.replace(/\s+/g, ' ').trim()
-      return [
+      aoa.push([
         desc,
         v.trim ?? '',
         v.bodyStyle ?? '',
@@ -658,19 +654,41 @@ export default function AdminInventoryPage() {
         (v as any).certified ?? '',
         v.status,
         (v as any).raw?.other ?? (v as any).raw?.notes ?? '',
-      ].map(esc)
+      ])
     })
 
-    const csv = [header.map(esc).join(','), ...rows.map((r) => r.join(','))].join('\r\n')
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `inventory_export_${new Date().toISOString().slice(0, 10)}.csv`
-    document.body.appendChild(a)
-    a.click()
-    a.remove()
-    URL.revokeObjectURL(url)
+    const ws = XLSX.utils.aoa_to_sheet(aoa)
+
+    const range = XLSX.utils.decode_range(ws['!ref'] || 'A1:A1')
+    for (let C = range.s.c; C <= range.e.c; C++) {
+      const addr = XLSX.utils.encode_cell({ r: 0, c: C })
+      const cell = ws[addr]
+      if (cell) {
+        ;(cell as any).s = {
+          font: { bold: true, sz: 14, color: { rgb: 'FF000000' } },
+          alignment: { vertical: 'center', horizontal: 'center', wrapText: true },
+        }
+      }
+    }
+
+    const colWidths = header.map((_, colIdx) => {
+      let maxLen = 0
+      for (let r = 0; r < aoa.length; r++) {
+        const val = aoa[r]?.[colIdx]
+        const str = val === null || val === undefined ? '' : String(val)
+        maxLen = Math.max(maxLen, str.length)
+      }
+      return { wch: Math.min(Math.max(maxLen + 2, 10), 60) }
+    })
+    ws['!cols'] = colWidths
+
+    ws['!freeze'] = { xSplit: 0, ySplit: 1 }
+
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, 'Inventory')
+
+    const fileName = `inventory_export_${new Date().toISOString().slice(0, 10)}.xlsx`
+    XLSX.writeFile(wb, fileName)
   }
 
   const handleDeleteSelected = () => {
@@ -1157,28 +1175,6 @@ export default function AdminInventoryPage() {
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                           </svg>
                         </Link>
-
-                        <button
-                          type="button"
-                          className="p-1.5 text-red-600 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-50"
-                          title="Delete vehicle"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            void handleDelete(vehicle)
-                          }}
-                          disabled={deleting === vehicle.id}
-                        >
-                          {deleting === vehicle.id ? (
-                            <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
-                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                            </svg>
-                          ) : (
-                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                            </svg>
-                          )}
-                        </button>
                       </div>
                     </td>
                     <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-900">
@@ -1319,23 +1315,6 @@ export default function AdminInventoryPage() {
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                     </svg>
                     Edit
-                  </button>
-                  <button
-                    onClick={() => handleDelete(vehicle)}
-                    disabled={deleting === vehicle.id}
-                    className="flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-medium text-red-600 hover:bg-red-50 active:bg-red-100 transition-colors disabled:opacity-50"
-                  >
-                    {deleting === vehicle.id ? (
-                      <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                      </svg>
-                    ) : (
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                      </svg>
-                    )}
-                    Delete
                   </button>
                 </div>
               </div>
