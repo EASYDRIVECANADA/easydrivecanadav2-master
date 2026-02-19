@@ -63,6 +63,34 @@ export default function CustomerShowroomPage() {
 
         const vehicles = Array.isArray(json.vehicles) ? json.vehicles : []
         const mapped: ShowroomVehicle[] = vehicles.map((v: any) => {
+          const toNumber = (val: any) => {
+            if (val === null || val === undefined) return 0
+            if (typeof val === 'number') return Number.isFinite(val) ? val : 0
+            const s = String(val).trim()
+            if (!s) return 0
+            const cleaned = s.replace(/[^0-9.-]/g, '')
+            const n = cleaned ? Number(cleaned) : NaN
+            return Number.isFinite(n) ? n : 0
+          }
+
+          const pickNumber = (...vals: any[]) => {
+            let firstDefined = 0
+            let hasDefined = false
+
+            for (const val of vals) {
+              if (val === null || val === undefined) continue
+              if (typeof val === 'string' && val.trim() === '') continue
+              const num = toNumber(val)
+              if (!hasDefined) {
+                firstDefined = num
+                hasDefined = true
+              }
+              if (num > 0) return num
+            }
+
+            return hasDefined ? firstDefined : 0
+          }
+
           const year = v.year ? String(v.year) : ''
           const make = v.make || ''
           const model = v.model || ''
@@ -73,16 +101,21 @@ export default function CustomerShowroomPage() {
           const trans = (v.transmission || '').toString().trim()
           const cyl = (v.cylinders || v.cyl || '').toString().trim()
           const colour = (v.exterior_color || v.colour || '').toString().trim()
-          const odo = Number(v.odometer ?? v.mileage ?? 0) || 0
+          const odo = pickNumber(v.odometer, v.odometerKm, v.mileage, 0)
           const odoUnit = (v.odometer_unit || 'km').toString().trim()
-          const price = Number(
-            v.saleprice ??
-            v.sale_price ??
-            v.list_price ??
-            v.listprice ??
-            v.price ??
+          const price = pickNumber(
+            v.price,
+            v.list_price,
+            v.listPrice,
+            v.listprice,
+            v.sale_price,
+            v.salePrice,
+            v.saleprice,
+            v.msrp,
+            v.advertised_price,
+            v.advertisedPrice,
             0
-          ) || 0
+          )
           const rawStatus = (v.status || '').toString().toLowerCase()
           const normalizedStatus: ShowroomVehicle['status'] = rawStatus.includes('pending')
             ? 'Deal Pending'
@@ -136,7 +169,7 @@ export default function CustomerShowroomPage() {
             status: normalizedStatus,
             images: imgsNormalized,
             vin: (v.vin || '').toString().trim() || undefined,
-            stock: (v.stock_number || '').toString().trim() || undefined,
+            stock: (v.stock_number ?? v.stockNumber ?? '').toString().trim() || undefined,
             features: feats,
           }
         })
