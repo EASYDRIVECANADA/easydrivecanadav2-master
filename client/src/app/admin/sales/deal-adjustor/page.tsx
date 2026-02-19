@@ -419,6 +419,7 @@ export default function DealAdjustorPage() {
     const toOk = Number.isFinite(toTs)
 
     return rows.filter((r) => {
+      if (String(r.status || '').toLowerCase() === 'closed') return false
       if (fromOk || toOk) {
         const rt = Date.parse(r.dealDateRaw)
         if (Number.isFinite(rt)) {

@@ -1,16 +1,244 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
 type Row = {
   [key: string]: string | number
 }
 
 export default function SalesReportPage() {
-  const [from, setFrom] = useState('2026-01-01')
-  const [to, setTo] = useState('2026-01-31')
+  const [from, setFrom] = useState('')
+  const [to, setTo] = useState('')
   const [query, setQuery] = useState('')
   const [perPage, setPerPage] = useState('500')
+  const [rows, setRows] = useState<Row[]>([])
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const formatMMDDYYYY = (raw: any) => {
+    const s = String(raw ?? '').trim()
+    if (!s) return ''
+    const d = new Date(s)
+    if (Number.isNaN(d.getTime())) return s
+    const mm = String(d.getMonth() + 1).padStart(2, '0')
+    const dd = String(d.getDate()).padStart(2, '0')
+    const yyyy = String(d.getFullYear())
+    return `${mm}/${dd}/${yyyy}`
+  }
+
+  const toISODate = (raw: any) => {
+    const s = String(raw ?? '').trim()
+    if (!s) return ''
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s
+    const d = new Date(s)
+    if (Number.isNaN(d.getTime())) return ''
+    return d.toISOString().slice(0, 10)
+  }
+
+  const parseArray = (raw: any): any[] => {
+    if (!raw) return []
+    if (Array.isArray(raw)) return raw
+    if (typeof raw === 'string') {
+      try {
+        const parsed = JSON.parse(raw)
+        return Array.isArray(parsed) ? parsed : []
+      } catch {
+        return []
+      }
+    }
+    return []
+  }
+
+  const sumField = (raw: any, keys: string[]) => {
+    const arr = parseArray(raw)
+    return arr.reduce((s: number, i: any) => {
+      for (const k of keys) {
+        const v = Number(i?.[k] ?? 0)
+        if (Number.isFinite(v) && v !== 0) return s + v
+      }
+      return s
+    }, 0)
+  }
+
+  const getOmvicFromFees = (rawFees: any): number => {
+    const fees = parseArray(rawFees)
+    for (const f of fees) {
+      const name = String(f?.fee_name ?? f?.name ?? f?.label ?? '').toLowerCase()
+      if (!name) continue
+      if (name.includes('omvic')) {
+        const amt = Number(f?.fee_amount ?? f?.amount ?? f?.value ?? 0)
+        return Number.isFinite(amt) ? amt : 0
+      }
+    }
+    return 0
+  }
+
+  useEffect(() => {
+    const run = async () => {
+      try {
+        setLoading(true)
+        setError(null)
+
+        const res = await fetch('/api/deals', { cache: 'no-store' })
+        if (!res.ok) throw new Error(`Failed to fetch deals (${res.status})`)
+        const json = await res.json()
+        if (json?.error) throw new Error(json.error)
+
+        const dealsAll: any[] = Array.isArray(json?.deals) ? json.deals : []
+
+        const mapped: Row[] = dealsAll
+          .filter((d: any) => {
+            const customer = d?.customer ?? {}
+            const worksheet = d?.worksheet ?? {}
+            const delivery = d?.delivery ?? {}
+
+            const stateRaw = String(
+              customer?.deal_state ??
+                customer?.dealState ??
+                customer?.dealstate ??
+                customer?.state ??
+                worksheet?.deal_state ??
+                worksheet?.dealState ??
+                worksheet?.dealstate ??
+                delivery?.deal_state ??
+                delivery?.dealState ??
+                delivery?.dealstate ??
+                d?.state ??
+                ''
+            ).trim()
+            return stateRaw.toLowerCase() === 'closed'
+          })
+          .map((d: any) => {
+            const customer = d?.customer ?? {}
+            const worksheet = d?.worksheet ?? {}
+            const delivery = d?.delivery ?? {}
+            const vehicles = Array.isArray(d?.vehicles) ? d.vehicles : []
+            const v0 = vehicles[0] ?? {}
+
+            const dealDateRaw = customer?.dealdate ?? worksheet?.deal_date ?? d?.dealDate ?? ''
+            const closeDateRaw = worksheet?.close_date ?? d?.closeDate ?? ''
+
+            const firstName = String(customer?.firstname ?? customer?.first_name ?? '').trim()
+            const lastName = String(customer?.lastname ?? customer?.last_name ?? '').trim()
+
+            const year = v0?.selected_year ?? v0?.year ?? ''
+            const make = v0?.selected_make ?? v0?.make ?? ''
+            const model = v0?.selected_model ?? v0?.model ?? ''
+
+            const addressParts = [customer?.address ?? customer?.street ?? '', customer?.city ?? '', customer?.province ?? customer?.state ?? '']
+              .map((x: any) => String(x ?? '').trim())
+              .filter(Boolean)
+            const address = addressParts.join(', ')
+
+            const bankCommission =
+              Number(worksheet?.bank_commission ?? worksheet?.bankCommission ?? customer?.bank_commission ?? customer?.bankCommission ?? 0) || 0
+
+            const lender = String(worksheet?.lender_or_bank ?? worksheet?.lender ?? worksheet?.bank ?? '').trim()
+
+            const taxRate = Number(worksheet?.tax_rate ?? worksheet?.taxRate ?? 0.13) || 0
+
+            const feesRetail = sumField(worksheet?.fees, ['amount', 'price', 'fee_amount'])
+            const feesCost = sumField(worksheet?.fees, ['cost'])
+            const feesProfit = feesRetail - feesCost
+            const feesTax = feesRetail * taxRate
+
+            const accRetail = sumField(worksheet?.accessories, ['price', 'amount'])
+            const accCost = sumField(worksheet?.accessories, ['cost'])
+            const accProfit = accRetail - accCost
+            const accTax = accRetail * taxRate
+
+            const warrRetail = sumField(worksheet?.warranties, ['amount', 'price'])
+            const warrCost = sumField(worksheet?.warranties, ['cost'])
+            const warrProfit = warrRetail - warrCost
+            const warrTax = warrRetail * taxRate
+
+            const insRetail = sumField(worksheet?.insurances, ['amount', 'price'])
+            const insCost = sumField(worksheet?.insurances, ['cost'])
+            const insProfit = insRetail - insCost
+            const insTax = insRetail * taxRate
+
+            const purchasePrice = Number(v0?.purchase_price ?? v0?.purchasePrice ?? (v0 as any)?.raw?.purchase_price ?? 0) || 0
+            const vehicleSellingPrice = Number(worksheet?.purchase_price ?? worksheet?.selling_price ?? worksheet?.vehicle_price ?? v0?.selected_price ?? v0?.price ?? 0) || 0
+            const discount = Number(worksheet?.discount ?? 0) || 0
+            const vehicleProfit = (vehicleSellingPrice - discount) - purchasePrice
+            const totalProfit = vehicleProfit + feesProfit + accProfit + warrProfit + insProfit + bankCommission
+
+            const omvic = Number(worksheet?.omvic_fee ?? getOmvicFromFees(worksheet?.fees) ?? 0)
+            const subtotal1 = vehicleSellingPrice + omvic
+            const tradeValue = Number(worksheet?.trade_value ?? worksheet?.tradeValue ?? 0)
+            const lienPayout = Number(worksheet?.lien_payout ?? worksheet?.lienPayout ?? 0)
+            const netDiff = subtotal1 - discount - tradeValue + lienPayout
+            const hst = netDiff * taxRate
+            const licenseFee = Number(worksheet?.license_fee ?? worksheet?.licensing_fee ?? worksheet?.licensingFee ?? worksheet?.licenseFee ?? 91)
+            const paymentsTotal = sumField(worksheet?.payments, ['amount'])
+            const subtotal2 = netDiff + hst + licenseFee + feesRetail + accRetail + warrRetail + insRetail + paymentsTotal
+
+            return {
+              deal_date: formatMMDDYYYY(dealDateRaw) || 'N/A',
+              close_date: formatMMDDYYYY(closeDateRaw) || 'N/A',
+              legal_dealername: String(customer?.legal_dealername ?? customer?.legalDealerName ?? 'EASYDRIVE CANADA'),
+              first_name: firstName,
+              last_name: lastName,
+              address,
+              lender_or_bank: lender || 'N/A',
+              year: String(year ?? ''),
+              make: String(make ?? ''),
+              model: String(model ?? ''),
+              new_used: String(v0?.new_used ?? v0?.newUsed ?? ''),
+              disclosures: String(d?.disclosures?.disclosures_body ?? d?.disclosures?.disclosuresBody ?? ''),
+              cert_as_is: String(v0?.cert_as_is ?? v0?.certified ?? ''),
+              dii: String(v0?.dii ?? ''),
+              customer_source: String(customer?.customer_source ?? customer?.source ?? ''),
+              purchase_price: purchasePrice ? purchasePrice.toFixed(2) : '',
+              vehicle_purchase_price: vehicleSellingPrice ? vehicleSellingPrice.toFixed(2) : '',
+              costs: (feesCost + accCost + warrCost + insCost).toFixed(2),
+              tax_on_costs: (feesTax + accTax + warrTax + insTax).toFixed(2),
+              all_in: subtotal2.toFixed(2),
+              discount: discount ? discount.toFixed(2) : '',
+              trade_equity: String(worksheet?.trade_equity ?? worksheet?.tradeEquity ?? ''),
+              vehicle_profit: vehicleProfit.toFixed(2),
+              sales_person: String(delivery?.salesperson ?? d?.primarySalesperson ?? ''),
+              approved_by: String(worksheet?.approved_by ?? worksheet?.approvedBy ?? ''),
+              deal_type: String(d?.type ?? customer?.dealtype ?? worksheet?.deal_type ?? ''),
+              deal_state: 'Closed',
+              bank_commission: bankCommission ? bankCommission.toFixed(2) : '0',
+              warr_retail: warrRetail ? warrRetail.toFixed(2) : '',
+              warr_cost: warrCost ? warrCost.toFixed(2) : '',
+              warr_profit: warrProfit ? warrProfit.toFixed(2) : '',
+              warr_tot_tax: warrTax ? warrTax.toFixed(2) : '',
+              ins_retail: insRetail ? insRetail.toFixed(2) : '',
+              ins_cost: insCost ? insCost.toFixed(2) : '',
+              ins_profit: insProfit ? insProfit.toFixed(2) : '',
+              ins_tot_tax: insTax ? insTax.toFixed(2) : '',
+              acc_retail: accRetail ? accRetail.toFixed(2) : '',
+              acc_cost: accCost ? accCost.toFixed(2) : '',
+              acc_profit: accProfit ? accProfit.toFixed(2) : '',
+              acc_tot_tax: accTax ? accTax.toFixed(2) : '',
+              fees_retail: feesRetail ? feesRetail.toFixed(2) : '',
+              fees_cost: feesCost ? feesCost.toFixed(2) : '',
+              fees_profit: feesProfit ? feesProfit.toFixed(2) : '',
+              fees_tot_tax: feesTax ? feesTax.toFixed(2) : '',
+              subtotal: subtotal2.toFixed(2),
+              total_profit: totalProfit.toFixed(2),
+              total_tax_after_market: (feesTax + accTax + warrTax + insTax).toFixed(2),
+              licensing_fee: String(worksheet?.licensing_fee ?? worksheet?.licensingFee ?? ''),
+              hst_13: hst.toFixed(2),
+              total_tax: hst.toFixed(2),
+              __deal_date_iso: toISODate(dealDateRaw),
+            }
+          })
+
+        setRows(mapped)
+      } catch (e: any) {
+        setError(e?.message || 'Failed to load sales report')
+        setRows([])
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    void run()
+  }, [])
 
   const columns = useMemo(
     () => [
@@ -68,134 +296,40 @@ export default function SalesReportPage() {
     []
   )
 
-  const rows = useMemo<Row[]>(
-    () => [
-      {
-        deal_date: '01/14/2026',
-        close_date: 'N/A',
-        legal_dealername: 'EASYDRIVE CANADA',
-        first_name: 'Ben',
-        last_name: 'Lefebvre',
-        address: 'Toronto, ON',
-        lender_or_bank: 'N/A',
-        year: '2017',
-        make: 'Volkswagen',
-        model: 'Jetta',
-        new_used: 'Used',
-        disclosures: '',
-        cert_as_is: 'As-Is',
-        dii: '',
-        customer_source: 'Walk-in',
-        purchase_price: '5800',
-        vehicle_purchase_price: '9995',
-        costs: '22',
-        tax_on_costs: '0',
-        all_in: '10017',
-        discount: '0',
-        trade_equity: '0',
-        vehicle_profit: '1200',
-        sales_person: 'Syed Islam',
-        approved_by: 'Admin',
-        deal_type: 'Cash',
-        deal_state: 'Open',
-        bank_commission: '0',
-        warr_retail: '0',
-        warr_cost: '0',
-        warr_profit: '0',
-        warr_tot_tax: '0',
-        ins_retail: '0',
-        ins_cost: '0',
-        ins_profit: '0',
-        ins_tot_tax: '0',
-        acc_retail: '0',
-        acc_cost: '0',
-        acc_profit: '0',
-        acc_tot_tax: '0',
-        fees_retail: '22',
-        fees_cost: '22',
-        fees_profit: '0',
-        fees_tot_tax: '0',
-        subtotal: '10017',
-        total_profit: '1200',
-        total_tax_after_market: '0',
-        licensing_fee: '91',
-        hst_13: '652.21',
-        total_tax: '652.21',
-      },
-      {
-        deal_date: '01/10/2026',
-        close_date: 'N/A',
-        legal_dealername: 'EASYDRIVE CANADA',
-        first_name: 'Esmeil',
-        last_name: 'Ahmed',
-        address: 'Mississauga, ON',
-        lender_or_bank: 'N/A',
-        year: '2017',
-        make: 'Kia',
-        model: 'Sorento',
-        new_used: 'Used',
-        disclosures: '',
-        cert_as_is: 'As-Is',
-        dii: '',
-        customer_source: 'Online',
-        purchase_price: '7200',
-        vehicle_purchase_price: '10995',
-        costs: '22',
-        tax_on_costs: '0',
-        all_in: '11017',
-        discount: '0',
-        trade_equity: '0',
-        vehicle_profit: '950',
-        sales_person: 'Syed Islam',
-        approved_by: 'Admin',
-        deal_type: 'Cash',
-        deal_state: 'Open',
-        bank_commission: '0',
-        warr_retail: '0',
-        warr_cost: '0',
-        warr_profit: '0',
-        warr_tot_tax: '0',
-        ins_retail: '0',
-        ins_cost: '0',
-        ins_profit: '0',
-        ins_tot_tax: '0',
-        acc_retail: '0',
-        acc_cost: '0',
-        acc_profit: '0',
-        acc_tot_tax: '0',
-        fees_retail: '22',
-        fees_cost: '22',
-        fees_profit: '0',
-        fees_tot_tax: '0',
-        subtotal: '11017',
-        total_profit: '950',
-        total_tax_after_market: '0',
-        licensing_fee: '91',
-        hst_13: '652.21',
-        total_tax: '652.21',
-      },
-    ],
-    []
-  )
-
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
-    return rows.filter((r) => {
+    const fromIso = toISODate(from)
+    const toIso = toISODate(to)
+
+    const byDate = rows.filter((r) => {
+      const iso = String((r as any)?.__deal_date_iso ?? '').trim()
+      if (!iso) return true
+      if (fromIso && iso < fromIso) return false
+      if (toIso && iso > toIso) return false
+      return true
+    })
+
+    const byQuery = byDate.filter((r) => {
       if (!q) return true
       const haystack = Object.values(r)
         .map((v) => String(v).toLowerCase())
         .join(' ')
       return haystack.includes(q)
     })
-  }, [query, rows])
+
+    const limit = Math.max(1, Number(perPage) || 500)
+    return byQuery.slice(0, limit)
+  }, [from, perPage, query, rows, to])
 
   return (
     <div className="w-full">
       <div className="bg-white shadow">
         <div className="w-full px-4 sm:px-6 lg:px-8 py-4 flex items-start justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Default Report ({from.replaceAll('-', '/')} - {to.replaceAll('-', '/')})</h1>
-            <p className="text-sm text-gray-500">Mock data only (UI design)</p>
+            <h1 className="text-2xl font-bold text-gray-900">
+              Default Report ({from ? from.replaceAll('-', '/') : 'All'} - {to ? to.replaceAll('-', '/') : 'All'})
+            </h1>
+            <p className="text-sm text-gray-500">Closed deals only</p>
           </div>
 
           <div className="flex items-center gap-3">
@@ -219,6 +353,21 @@ export default function SalesReportPage() {
       <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
         <div className="bg-white rounded-xl shadow p-4">
           <div className="flex flex-col lg:flex-row lg:items-center gap-3">
+            <div className="flex items-center gap-2">
+              <input
+                type="date"
+                value={from}
+                onChange={(e) => setFrom(e.target.value)}
+                className="h-10 border border-gray-200 rounded-lg px-3 text-sm"
+              />
+              <div className="text-sm text-gray-400">to</div>
+              <input
+                type="date"
+                value={to}
+                onChange={(e) => setTo(e.target.value)}
+                className="h-10 border border-gray-200 rounded-lg px-3 text-sm"
+              />
+            </div>
             <div className="flex-1">
               <div className="relative">
                 <input
@@ -246,6 +395,18 @@ export default function SalesReportPage() {
           <div className="mt-2 text-xs text-gray-500">Total Sales: <span className="font-semibold">{filtered.length}</span></div>
         </div>
 
+        {error ? (
+          <div className="mt-4 bg-white rounded-xl shadow p-4">
+            <div className="text-sm text-red-600">{error}</div>
+          </div>
+        ) : null}
+
+        {loading ? (
+          <div className="mt-4 bg-white rounded-xl shadow p-4">
+            <div className="text-sm text-gray-600">Loading...</div>
+          </div>
+        ) : null}
+
         <div className="bg-white rounded-xl shadow mt-4 overflow-hidden">
           <div className="overflow-x-auto">
             <table className="min-w-max w-full">
@@ -266,7 +427,7 @@ export default function SalesReportPage() {
                   <tr key={idx} className="hover:bg-gray-50">
                     {columns.map((c) => (
                       <td key={c.key} className="px-4 py-3 text-sm text-gray-700 whitespace-nowrap">
-                        {r[c.key] ?? ''}
+                        {c.key.startsWith('__') ? '' : (r[c.key] ?? '')}
                       </td>
                     ))}
                   </tr>
