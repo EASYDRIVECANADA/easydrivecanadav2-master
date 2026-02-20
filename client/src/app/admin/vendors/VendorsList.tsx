@@ -145,19 +145,19 @@ export default function VendorsList({ compact }: { compact?: boolean }) {
 
   return (
     <div className={compact ? 'w-full' : 'w-full px-4 sm:px-6 lg:px-8 py-6'}>
-      <div className={compact ? 'bg-white rounded-xl shadow p-4' : 'bg-white rounded-xl shadow p-6'}>
+      <div className={compact ? 'edc-card p-4' : 'edc-card p-6'}>
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search"
-              className="h-9 w-72 max-w-full rounded border border-gray-200 px-3 text-sm outline-none focus:ring-2 focus:ring-[#118df0]/40"
+              className="edc-input h-9 w-72 max-w-full"
             />
             <button
               type="button"
               onClick={openAdd}
-              className="inline-flex h-9 w-9 items-center justify-center rounded border border-green-200 bg-green-50 text-green-700 hover:bg-green-100"
+              className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200/60 bg-white text-navy-900 hover:bg-slate-50 transition-colors"
               title="Add Vendor"
               aria-label="Add Vendor"
             >
@@ -171,7 +171,7 @@ export default function VendorsList({ compact }: { compact?: boolean }) {
             <select
               value={pageSize}
               onChange={(e) => setPageSize(Number(e.target.value) || 10)}
-              className="h-9 rounded border border-gray-200 bg-white px-2 text-sm outline-none"
+              className="h-9 rounded-lg border border-slate-200/60 bg-white px-2 text-sm outline-none"
               aria-label="Rows per page"
               title="Rows per page"
             >
@@ -185,9 +185,9 @@ export default function VendorsList({ compact }: { compact?: boolean }) {
 
         {error ? <div className="mt-3 text-sm text-red-600">{error}</div> : null}
 
-        <div className="mt-4 overflow-hidden rounded border border-gray-200">
+        <div className="mt-4 overflow-hidden rounded-lg border border-slate-200/60">
           <table className="w-full table-auto text-sm">
-            <thead className="bg-gray-50 text-gray-700">
+            <thead className="bg-slate-50 text-slate-600">
               <tr>
                 <th className="w-10 px-3 py-3 text-left font-semibold"></th>
                 <th className="w-10 px-2 py-3 text-left font-semibold"></th>
@@ -197,23 +197,23 @@ export default function VendorsList({ compact }: { compact?: boolean }) {
                 <th className="w-72 px-3 py-3 text-left font-semibold">EMAIL</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-100">
+            <tbody className="divide-y divide-slate-100">
               {loading ? (
                 <tr>
-                  <td className="px-4 py-4 text-gray-600" colSpan={6}>Loading…</td>
+                  <td className="px-4 py-4 text-slate-400" colSpan={6}>Loading…</td>
                 </tr>
               ) : paged.length === 0 ? (
                 <tr>
-                  <td className="px-4 py-4 text-gray-600" colSpan={6}>No records found.</td>
+                  <td className="px-4 py-4 text-slate-400" colSpan={6}>No records found.</td>
                 </tr>
               ) : (
                 paged.map((r) => (
-                  <tr key={r.id} className="hover:bg-gray-50">
+                  <tr key={r.id} className="hover:bg-slate-50 transition-colors">
                     <td className="px-3 py-2">
                       <button
                         type="button"
                         onClick={() => openEdit(r)}
-                        className="text-gray-500 hover:text-gray-800"
+                        className="text-slate-400 hover:text-slate-700 transition-colors"
                         title="Edit"
                         aria-label="Edit"
                       >
@@ -226,7 +226,7 @@ export default function VendorsList({ compact }: { compact?: boolean }) {
                       <button
                         type="button"
                         onClick={() => confirmDelete(r)}
-                        className="text-red-500 hover:text-red-700"
+                        className="text-red-400 hover:text-red-600 transition-colors"
                         title="Delete"
                         aria-label="Delete"
                       >
@@ -238,8 +238,8 @@ export default function VendorsList({ compact }: { compact?: boolean }) {
                       </button>
                     </td>
                     <td className="px-3 py-2">{r.vendor_name || ''}</td>
-                    <td className="px-3 py-2 text-[#118df0]">{r.phone || ''}</td>
-                    <td className="px-3 py-2 text-[#118df0]">{r.mobile || ''}</td>
+                    <td className="px-3 py-2 text-slate-900">{r.phone || ''}</td>
+                    <td className="px-3 py-2 text-slate-900">{r.mobile || ''}</td>
                     <td className="px-3 py-2">{r.email || ''}</td>
                   </tr>
                 ))
@@ -248,7 +248,7 @@ export default function VendorsList({ compact }: { compact?: boolean }) {
           </table>
         </div>
 
-        <div className="mt-3 flex items-center justify-between text-xs text-gray-600">
+        <div className="mt-3 flex items-center justify-between text-xs text-slate-500">
           <div>
             {filtered.length > 0 ? `Page ${safePage} of ${totalPages}` : ''}
           </div>
@@ -257,7 +257,7 @@ export default function VendorsList({ compact }: { compact?: boolean }) {
               type="button"
               onClick={() => setPage((p) => Math.max(1, p - 1))}
               disabled={safePage <= 1}
-              className="rounded border border-gray-200 px-2 py-1 disabled:opacity-50"
+              className="rounded-lg border border-slate-200/60 px-2 py-1 hover:bg-slate-50 transition-colors disabled:opacity-50"
             >
               {'<'}
             </button>
@@ -265,7 +265,7 @@ export default function VendorsList({ compact }: { compact?: boolean }) {
               type="button"
               onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
               disabled={safePage >= totalPages}
-              className="rounded border border-gray-200 px-2 py-1 disabled:opacity-50"
+              className="rounded-lg border border-slate-200/60 px-2 py-1 hover:bg-slate-50 transition-colors disabled:opacity-50"
             >
               {'>'}
             </button>
@@ -274,18 +274,19 @@ export default function VendorsList({ compact }: { compact?: boolean }) {
       </div>
 
       {confirmOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="w-full max-w-md rounded-lg bg-white shadow-lg">
-            <div className="px-6 py-4 border-b border-gray-200">
-              <div className="text-sm font-semibold text-gray-900">{confirmTitle}</div>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 edc-overlay" onMouseDown={() => setConfirmOpen(false)} />
+          <div className="edc-modal w-full max-w-md relative">
+            <div className="px-6 py-4 border-b border-slate-100">
+              <div className="text-sm font-semibold text-slate-800">{confirmTitle}</div>
             </div>
-            <div className="px-6 py-4 text-sm text-gray-700">{confirmMessage}</div>
-            <div className="px-6 py-4 border-t border-gray-200 flex items-center justify-end gap-2">
+            <div className="px-6 py-4 text-sm text-slate-600">{confirmMessage}</div>
+            <div className="px-6 py-4 border-t border-slate-100 flex items-center justify-end gap-2">
               <button
                 type="button"
                 onClick={() => setConfirmOpen(false)}
                 disabled={confirmLoading}
-                className="h-10 px-4 rounded bg-gray-100 text-gray-700 text-sm font-semibold hover:bg-gray-200 disabled:opacity-60"
+                className="h-10 px-4 rounded-lg bg-slate-100 text-slate-600 text-sm font-semibold hover:bg-slate-200 transition-colors disabled:opacity-60"
               >
                 Cancel
               </button>
@@ -293,7 +294,7 @@ export default function VendorsList({ compact }: { compact?: boolean }) {
                 type="button"
                 onClick={() => void runConfirm()}
                 disabled={confirmLoading}
-                className="h-10 px-4 rounded bg-red-600 text-white text-sm font-semibold hover:bg-red-700 disabled:opacity-60"
+                className="h-10 px-4 rounded-lg bg-red-600 text-white text-sm font-semibold hover:bg-red-700 transition-colors disabled:opacity-60"
               >
                 {confirmLoading ? 'Deleting...' : 'Delete'}
               </button>

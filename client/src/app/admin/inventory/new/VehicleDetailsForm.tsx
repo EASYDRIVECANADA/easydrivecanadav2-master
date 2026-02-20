@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useEffect, useMemo, useRef, useState } from 'react'
+import { supabase } from '@/lib/supabaseClient'
 
 type Props = {
   formData: any
@@ -12,6 +13,7 @@ export default function VehicleDetailsForm({ formData, handleChange, setFormData
   const [sendingVin, setSendingVin] = useState(false)
   const [vinPrefilled, setVinPrefilled] = useState(false)
   const [lastVinSent, setLastVinSent] = useState<string>('')
+  const stockAutofillRanRef = useRef(false)
   const adEditorRef = useRef<HTMLDivElement | null>(null)
   const lastAdHtmlRef = useRef<string>('')
   const [adToolbar, setAdToolbar] = useState({
@@ -33,6 +35,87 @@ export default function VehicleDetailsForm({ formData, handleChange, setFormData
       setVinPrefilled(false)
     }
   }, [formData?.vin, lastVinSent])
+
+  useEffect(() => {
+    let alive = true
+
+    const getLoggedInAdminDbUserId = async (): Promise<string | null> => {
+      try {
+        if (typeof window === 'undefined') return null
+        const raw = window.localStorage.getItem('edc_admin_session')
+        if (!raw) return null
+        const parsed = JSON.parse(raw) as { email?: string; user_id?: string }
+        const sessionUserId = String(parsed?.user_id ?? '').trim()
+        if (sessionUserId) return sessionUserId
+        const email = String(parsed?.email ?? '').trim().toLowerCase()
+        if (!email) return null
+
+        const { data, error } = await supabase
+          .from('edc_account_verifications')
+          .select('id')
+          .eq('email', email)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+
+        if (error) return null
+        return (data as any)?.id ? String((data as any).id) : null
+      } catch {
+        return null
+      }
+    }
+
+    const loadNextStockNumber = async () => {
+      try {
+        const current = String((formData as any)?.stockNumber ?? '').trim()
+        if (current) return
+        if (stockAutofillRanRef.current) return
+
+        const userId = await getLoggedInAdminDbUserId()
+        if (!userId) return
+        stockAutofillRanRef.current = true
+
+        const { data, error } = await supabase
+          .from('edc_vehicles')
+          .select('stock_number, created_at')
+          .eq('user_id', userId)
+          .order('created_at', { ascending: false })
+          .limit(200)
+
+        if (error) return
+        const rows = Array.isArray(data) ? data : []
+        let max = 0
+        let found = false
+
+        for (const r of rows) {
+          const raw = String((r as any)?.stock_number ?? '').trim()
+          if (!raw) continue
+          const match = raw.match(/(\d+)\s*$/)
+          if (!match?.[1]) continue
+          const n = Number(match[1])
+          if (!Number.isFinite(n)) continue
+          found = true
+          if (n > max) max = n
+        }
+
+        if (!alive) return
+        if (!found) return
+
+        setFormData((prev: any) => {
+          const prevStock = String(prev?.stockNumber ?? '').trim()
+          if (prevStock) return prev
+          return { ...prev, stockNumber: String(max + 1) }
+        })
+      } catch {
+        // ignore
+      }
+    }
+
+    void loadNextStockNumber()
+    return () => {
+      alive = false
+    }
+  }, [formData?.stockNumber, setFormData])
 
   useEffect(() => {
     const el = adEditorRef.current

@@ -219,37 +219,49 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
   )
 
   const handleSignOut = async () => {
+    setAccountMenuOpen(false)
+    setShowSignOutModal(false)
     if (typeof window !== 'undefined') {
       window.localStorage.removeItem('edc_admin_session')
       window.localStorage.removeItem('edc_customer_verification')
       window.localStorage.removeItem('edc_account_verified')
+      window.localStorage.removeItem('edc_new_vehicle_wizard')
+      window.localStorage.removeItem('edc_prefill_next_stock_number')
       window.dispatchEvent(new Event('edc_admin_session_changed'))
     }
     setSession(null)
     try {
-      await supabase.auth.signOut()
+      void supabase.auth.signOut()
     } catch {
       // ignore
     }
-    router.replace('/account')
+    if (typeof window !== 'undefined') {
+      window.location.assign('/admin')
+      return
+    }
+    router.replace('/admin')
   }
 
   return (
-    <div className="min-h-screen bg-gray-100">
+    <div className="min-h-screen">
       <div className="flex min-h-screen">
         {isAuthed && !hideSidebar ? (
           <aside
             className={
               collapsed
-                ? 'fixed inset-y-0 left-0 z-40 w-20 bg-[#0b1220] text-white transition-all duration-300 flex flex-col min-h-0 h-screen'
-                : 'fixed inset-y-0 left-0 z-40 w-56 bg-[#0b1220] text-white transition-all duration-300 flex flex-col min-h-0 h-screen'
+                ? 'fixed inset-y-0 left-0 z-40 w-[72px] transition-all duration-300 ease-out flex flex-col min-h-0 h-screen'
+                : 'fixed inset-y-0 left-0 z-40 w-60 transition-all duration-300 ease-out flex flex-col min-h-0 h-screen'
             }
+            style={{
+              background: 'linear-gradient(180deg, #0B1C2D 0%, #0a1929 40%, #071320 100%)',
+              borderRight: '1px solid rgba(255,255,255,.06)',
+            }}
           >
             <div
               className={
                 collapsed
-                  ? 'p-3 flex items-center justify-center'
-                  : 'p-4 flex items-center justify-between gap-2'
+                  ? 'p-3 pt-4 pb-3 flex flex-col items-center gap-2'
+                  : 'px-5 flex items-center justify-between gap-2 h-16'
               }
             >
               <Link href="/admin" className="flex items-center gap-3 min-w-0">
@@ -258,25 +270,27 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
                 </div>
               </Link>
 
-              <div ref={accountMenuRef} className="relative flex justify-end overflow-visible">
+              <div ref={accountMenuRef} className={`relative flex justify-end overflow-visible ${collapsed ? 'w-full' : ''}`}>
                 <button
                   type="button"
                   onClick={() => setAccountMenuOpen((v) => !v)}
                   className={
                     collapsed
-                      ? 'h-9 w-12 rounded-xl bg-white/10 hover:bg-white/15 border border-white/15 flex items-center justify-center text-xs font-bold'
-                      : 'h-9 px-3 rounded-xl bg-white/10 hover:bg-white/15 border border-white/15 inline-flex items-center gap-2 text-sm font-semibold whitespace-nowrap'
+                      ? 'h-9 w-9 mx-auto rounded-full bg-white/[.07] hover:bg-white/[.12] border border-white/[.08] flex items-center justify-center transition-colors'
+                      : 'h-8 px-3 rounded-lg bg-white/[.07] hover:bg-white/[.12] border border-white/[.08] inline-flex items-center gap-2 text-[13px] font-semibold whitespace-nowrap transition-colors'
                   }
                   aria-haspopup="menu"
                   aria-expanded={accountMenuOpen}
                   title="Account"
                 >
                   {collapsed ? (
-                    <span>{accountInitial}</span>
+                    <span className="text-white/90">
+                      <Icon name="account" />
+                    </span>
                   ) : (
                     <>
-                      <span className="whitespace-nowrap">{accountFirstName}</span>
-                      <svg className={`w-4 h-4 transition-transform ${accountMenuOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <span className="whitespace-nowrap text-white/90">{accountFirstName}</span>
+                      <svg className={`w-3.5 h-3.5 text-white/50 transition-transform duration-200 ${accountMenuOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                       </svg>
                     </>
@@ -286,16 +300,13 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
                 {accountMenuOpen ? (
                   <div
                     role="menu"
-                    className={
-                      collapsed
-                        ? 'absolute left-0 mt-2 w-max min-w-full rounded-xl border border-white/10 bg-[#0b1220] shadow-xl overflow-hidden'
-                        : 'absolute right-0 mt-2 w-max min-w-full rounded-xl border border-white/10 bg-[#0b1220] shadow-xl overflow-hidden'
-                    }
+                    className={`absolute ${collapsed ? 'left-1/2 -translate-x-1/2' : 'right-0'} top-full mt-1.5 w-48 rounded-xl border border-white/[.08] shadow-2xl overflow-hidden animate-slide-down`}
+                    style={{ background: 'linear-gradient(180deg, #12263a 0%, #0e1f30 100%)' }}
                   >
                     <Link
                       href="/admin/account"
                       role="menuitem"
-                      className="block px-4 py-3 text-sm text-white/90 hover:bg-white/10"
+                      className="block px-4 py-2.5 text-[13px] text-white/80 hover:bg-white/[.07] hover:text-white transition-colors"
                       onClick={() => setAccountMenuOpen(false)}
                     >
                       My Profile
@@ -304,7 +315,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
                       <Link
                         href="/admin/settings/dealership"
                         role="menuitem"
-                        className="block px-4 py-3 text-sm text-white/90 hover:bg-white/10"
+                        className="block px-4 py-2.5 text-[13px] text-white/80 hover:bg-white/[.07] hover:text-white transition-colors"
                         onClick={() => setAccountMenuOpen(false)}
                       >
                         Settings
@@ -313,17 +324,18 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
                       <button
                         type="button"
                         role="menuitem"
-                        className="w-full text-left px-4 py-3 text-sm text-white/40 cursor-not-allowed"
+                        className="w-full text-left px-4 py-2.5 text-[13px] text-white/30 cursor-not-allowed"
                         disabled
                         onClick={() => setAccountMenuOpen(false)}
                       >
                         Settings
                       </button>
                     )}
+                    <div className="border-t border-white/[.06]" />
                     <button
                       type="button"
                       role="menuitem"
-                      className="w-full text-left px-4 py-3 text-sm text-white/90 hover:bg-white/10"
+                      className="w-full text-left px-4 py-2.5 text-[13px] text-white/80 hover:bg-white/[.07] hover:text-white transition-colors"
                       onClick={() => {
                         setAccountMenuOpen(false)
                         setShowSignOutModal(true)
@@ -336,17 +348,17 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
               </div>
             </div>
 
-            <nav className={`${collapsed ? 'px-2 py-3' : 'px-2 py-3'} flex-1 overflow-y-auto min-h-0`} aria-label="Admin navigation">
-              <ul className="space-y-1">
+            <nav className={`${collapsed ? 'px-2' : 'px-3'} py-4 flex-1 overflow-y-auto min-h-0`} aria-label="Admin navigation">
+              <ul className="space-y-0.5">
                 {navItems.map((item) => {
                   const active = pathname === item.href || (item.href !== '/admin' && pathname.startsWith(item.href))
                   const base =
-                    `flex items-center ${collapsed ? 'justify-center gap-0 px-2' : 'gap-2 px-3'} py-2 rounded-xl text-xs font-medium transition-colors`
+                    `flex items-center ${collapsed ? 'justify-center gap-0 px-2' : 'gap-3 px-3'} py-2 rounded-xl text-[13px] font-medium transition-all duration-200`
                   const classes = item.disabled
-                    ? `${base} text-white/40 cursor-not-allowed`
+                    ? `${base} text-white/30 cursor-not-allowed`
                     : active
-                      ? `${base} bg-white/10 text-white`
-                      : `${base} text-white/80 hover:bg-white/10 hover:text-white`
+                      ? `${base} bg-white/[.08] text-white`
+                      : `${base} text-white/60 hover:bg-white/[.05] hover:text-white/90`
 
                   const isSales = item.label === 'Sales'
                   const isReports = item.label === 'Reports'
@@ -393,12 +405,12 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
                           </button>
 
                           {!collapsed && salesOpen ? (
-                            <ul className="mt-1 ml-4 pl-3 border-l border-white/10 space-y-1">
+                            <ul className="mt-1 ml-4 pl-3 border-l border-white/[.08] space-y-0.5">
                               {salesSubItems.map((sub) => {
                                 const subActive = pathname === sub.href
                                 const subClasses = subActive
-                                  ? 'flex items-center justify-between px-4 py-2 rounded-lg text-sm bg-[#118df0]/15 border border-[#118df0]/35 text-white transition-colors'
-                                  : 'flex items-center justify-between px-4 py-2 rounded-lg text-sm text-white/80 hover:bg-white/10 hover:text-white transition-colors'
+                                  ? 'flex items-center justify-between px-3 py-1.5 rounded-lg text-[13px] bg-cyan-500/10 text-cyan-400 transition-all duration-200'
+                                  : 'flex items-center justify-between px-3 py-1.5 rounded-lg text-[13px] text-white/55 hover:bg-white/[.05] hover:text-white/85 transition-all duration-200'
 
                                 return (
                                   <li key={sub.label}>
@@ -455,7 +467,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
                           </button>
 
                           {!collapsed && reportsOpen ? (
-                            <ul className="mt-1 ml-4 pl-3 border-l border-white/10 space-y-1">
+                            <ul className="mt-1 ml-4 pl-3 border-l border-white/[.08] space-y-0.5">
                               <li>
                                 <button
                                   type="button"
@@ -463,7 +475,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
                                     setReportsSalesOpen((v) => !v)
                                     setReportsInventoryOpen(false)
                                   }}
-                                  className={`w-full flex items-center justify-between px-4 py-2 rounded-lg text-sm transition-colors ${pathname.startsWith('/admin/reports/sales/') ? 'bg-[#118df0]/15 border border-[#118df0]/35 text-white' : 'text-white/80 hover:bg-white/10 hover:text-white'}`}
+                                  className={`w-full flex items-center justify-between px-3 py-1.5 rounded-lg text-[13px] transition-all duration-200 ${pathname.startsWith('/admin/reports/sales/') ? 'bg-cyan-500/10 text-cyan-400' : 'text-white/55 hover:bg-white/[.05] hover:text-white/85'}`}
                                   aria-expanded={reportsSalesOpen}
                                 >
                                   <span className="flex items-center gap-2">
@@ -481,12 +493,12 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
                                 </button>
 
                                 {reportsSalesOpen ? (
-                                  <ul className="mt-1 ml-4 pl-3 border-l border-white/10 space-y-1">
+                                  <ul className="mt-1 ml-4 pl-3 border-l border-white/[.08] space-y-0.5">
                                     {reportsSalesItems.map((sub) => {
                                       const subActive = pathname === sub.href
                                       const subClasses = subActive
-                                        ? 'flex items-center justify-between px-4 py-2 rounded-lg text-sm bg-[#118df0]/15 border border-[#118df0]/35 text-white transition-colors'
-                                        : 'flex items-center justify-between px-4 py-2 rounded-lg text-sm text-white/80 hover:bg-white/10 hover:text-white transition-colors'
+                                        ? 'flex items-center justify-between px-3 py-1.5 rounded-lg text-[13px] bg-cyan-500/10 text-cyan-400 transition-all duration-200'
+                                        : 'flex items-center justify-between px-3 py-1.5 rounded-lg text-[13px] text-white/55 hover:bg-white/[.05] hover:text-white/85 transition-all duration-200'
 
                                       return (
                                         <li key={sub.label}>
@@ -516,7 +528,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
                                     setReportsInventoryOpen((v) => !v)
                                     setReportsSalesOpen(false)
                                   }}
-                                  className={`w-full flex items-center justify-between px-4 py-2 rounded-lg text-sm transition-colors ${pathname.startsWith('/admin/reports/inventory/') ? 'bg-[#118df0]/15 border border-[#118df0]/35 text-white' : 'text-white/80 hover:bg-white/10 hover:text-white'}`}
+                                  className={`w-full flex items-center justify-between px-3 py-1.5 rounded-lg text-[13px] transition-all duration-200 ${pathname.startsWith('/admin/reports/inventory/') ? 'bg-cyan-500/10 text-cyan-400' : 'text-white/55 hover:bg-white/[.05] hover:text-white/85'}`}
                                   aria-expanded={reportsInventoryOpen}
                                 >
                                   <span className="flex items-center gap-2">
@@ -534,12 +546,12 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
                                 </button>
 
                                 {reportsInventoryOpen ? (
-                                  <ul className="mt-1 ml-4 pl-3 border-l border-white/10 space-y-1">
+                                  <ul className="mt-1 ml-4 pl-3 border-l border-white/[.08] space-y-0.5">
                                     {reportsInventoryItems.map((sub) => {
                                       const subActive = pathname === sub.href
                                       const subClasses = subActive
-                                        ? 'flex items-center justify-between px-4 py-2 rounded-lg text-sm bg-[#118df0]/15 border border-[#118df0]/35 text-white transition-colors'
-                                        : 'flex items-center justify-between px-4 py-2 rounded-lg text-sm text-white/80 hover:bg-white/10 hover:text-white transition-colors'
+                                        ? 'flex items-center justify-between px-3 py-1.5 rounded-lg text-[13px] bg-cyan-500/10 text-cyan-400 transition-all duration-200'
+                                        : 'flex items-center justify-between px-3 py-1.5 rounded-lg text-[13px] text-white/55 hover:bg-white/[.05] hover:text-white/85 transition-all duration-200'
 
                                       return (
                                         <li key={sub.label}>
@@ -581,11 +593,22 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
               </ul>
             </nav>
 
-            <div className={`${collapsed ? 'p-2' : 'p-4'} mt-4 border-t border-white/10`} />
+            <div className={`${collapsed ? 'px-2' : 'px-4'} py-3 border-t border-white/[.06]`}>
+              <button
+                type="button"
+                onClick={toggleCollapsed}
+                className="w-full flex items-center justify-center h-8 rounded-lg text-white/40 hover:text-white/70 hover:bg-white/[.05] transition-all duration-200"
+                title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+              >
+                <svg className={`w-4 h-4 transition-transform duration-300 ${collapsed ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M11 19l-7-7 7-7m8 14l-7-7 7-7" />
+                </svg>
+              </button>
+            </div>
           </aside>
         ) : null}
 
-        <main className={`flex-1 min-w-0 ${isAuthed && !hideSidebar ? (collapsed ? 'ml-20' : 'ml-56') : ''}`}>
+        <main className={`flex-1 min-w-0 ${isAuthed && !hideSidebar ? (collapsed ? 'ml-[72px]' : 'ml-60') : ''} transition-[margin] duration-300 ease-out`}>
           {children}
         </main>
       </div>
@@ -596,17 +619,17 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
             type="button"
             aria-label="Close"
             onClick={() => setShowSignOutModal(false)}
-            className="absolute inset-0 bg-black/40"
+            className="edc-overlay z-[100]"
           />
-          <div className="relative w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
-            <div className="text-lg font-semibold text-gray-900">Sign out</div>
-            <div className="mt-2 text-sm text-gray-600">Are you sure you want to sign out?</div>
+          <div className="edc-modal relative z-[101] w-full max-w-sm mx-4 p-6">
+            <div className="text-lg font-semibold text-slate-900">Sign out</div>
+            <div className="mt-2 text-sm text-slate-500">Are you sure you want to sign out?</div>
 
             <div className="mt-6 flex items-center justify-end gap-3">
               <button
                 type="button"
                 onClick={() => setShowSignOutModal(false)}
-                className="btn-outline text-sm px-5 py-2.5"
+                className="edc-btn-ghost text-sm"
               >
                 Cancel
               </button>
@@ -616,7 +639,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
                   setShowSignOutModal(false)
                   handleSignOut()
                 }}
-                className="btn-primary text-sm px-5 py-2.5"
+                className="edc-btn-primary text-sm"
               >
                 Sign Out
               </button>
@@ -629,75 +652,76 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
 }
 
 function Icon({ name }: { name: string }) {
+  const cls = 'w-[18px] h-[18px] shrink-0'
   if (name === 'home') {
     return (
-      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l9-9 9 9M4 10v10a1 1 0 001 1h5m4 0h5a1 1 0 001-1V10" />
+      <svg className={cls} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 12l9-9 9 9M4 10v10a1 1 0 001 1h5m4 0h5a1 1 0 001-1V10" />
       </svg>
     )
   }
   if (name === 'phone') {
     return (
-      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+      <svg className={cls} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
       </svg>
     )
   }
   if (name === 'users') {
     return (
-      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a4 4 0 00-3-3.87M9 20H2v-2a4 4 0 013-3.87m12 0a4 4 0 00-6 0m6 0a3 3 0 10-6 0M7 11a3 3 0 106 0" />
+      <svg className={cls} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17 20h5v-2a4 4 0 00-3-3.87M9 20H2v-2a4 4 0 013-3.87m12 0a4 4 0 00-6 0m6 0a3 3 0 10-6 0M7 11a3 3 0 106 0" />
       </svg>
     )
   }
   if (name === 'briefcase') {
     return (
-      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 6a3 3 0 016 0v1h4a2 2 0 012 2v3H3V9a2 2 0 012-2h4V6z" />
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12v7a2 2 0 002 2h14a2 2 0 002-2v-7" />
+      <svg className={cls} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 6a3 3 0 016 0v1h4a2 2 0 012 2v3H3V9a2 2 0 012-2h4V6z" />
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 12v7a2 2 0 002 2h14a2 2 0 002-2v-7" />
       </svg>
     )
   }
   if (name === 'car') {
     return (
-      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 17h10M6 12h12l-1.5-4.5A2 2 0 0014.6 6H9.4a2 2 0 00-1.9 1.5L6 12z" />
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 12v5a1 1 0 001 1h1m8-6v6m0 0h1a1 1 0 001-1v-5" />
+      <svg className={cls} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 17h10M6 12h12l-1.5-4.5A2 2 0 0014.6 6H9.4a2 2 0 00-1.9 1.5L6 12z" />
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M6 12v5a1 1 0 001 1h1m8-6v6m0 0h1a1 1 0 001-1v-5" />
       </svg>
     )
   }
   if (name === 'dollar') {
     return (
-      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 1v22m5-18H9a3 3 0 000 6h6a3 3 0 010 6H7" />
+      <svg className={cls} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 1v22m5-18H9a3 3 0 000 6h6a3 3 0 010 6H7" />
       </svg>
     )
   }
   if (name === 'wrench') {
     return (
-      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 2l-2 2m-3 3l-6 6m0 0l-2 2a3 3 0 11-4-4l2-2m4 4l4 4" />
+      <svg className={cls} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 2l-2 2m-3 3l-6 6m0 0l-2 2a3 3 0 11-4-4l2-2m4 4l4 4" />
       </svg>
     )
   }
   if (name === 'file') {
     return (
-      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h7l5 5v11a2 2 0 01-2 2z" />
+      <svg className={cls} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h7l5 5v11a2 2 0 01-2 2z" />
       </svg>
     )
   }
   if (name === 'account') {
     return (
-      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.121 17.804A13.937 13.937 0 0112 16c2.5 0 4.847.655 6.879 1.804M15 10a3 3 0 11-6 0 3 3 0 016 0z" />
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z" />
+      <svg className={cls} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5.121 17.804A13.937 13.937 0 0112 16c2.5 0 4.847.655 6.879 1.804M15 10a3 3 0 11-6 0 3 3 0 016 0z" />
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z" />
       </svg>
     )
   }
   return (
-    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+    <svg className={cls} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M6 18L18 6M6 6l12 12" />
     </svg>
   )
 }

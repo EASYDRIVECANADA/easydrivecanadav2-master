@@ -441,48 +441,46 @@ export default function DealAdjustorPage() {
   const totalCommission = filtered.reduce((sum, r) => sum + (Number.isFinite(r.bankCommission) ? r.bankCommission : 0), 0)
 
   return (
-    <div className="w-full">
-      <div className="bg-white shadow">
-        <div className="w-full px-4 sm:px-6 lg:px-8 py-4 flex items-start justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">Deal Adjustor</h1>
-          </div>
-          <div className="text-sm text-gray-600">
-            Total Deals: <span className="font-semibold">{totalDeals}</span>
+    <div className="min-h-screen">
+      <div className="edc-page-header">
+        <div className="flex items-center justify-between">
+          <h1 className="text-2xl font-bold text-slate-900">Deal Adjustor</h1>
+          <div className="text-sm text-slate-500">
+            Total: <span className="font-semibold text-slate-700">{totalDeals}</span>
           </div>
         </div>
       </div>
 
-      <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
-        <div className="bg-white rounded-xl shadow p-4">
+      <div className="px-6 py-6">
+        <div className="edc-card p-4">
           <div className="flex flex-col xl:flex-row xl:items-end gap-3">
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 flex-1">
               <div>
-                <label className="block text-xs font-semibold text-gray-600 mb-1">From</label>
+                <label className="block text-xs font-semibold text-slate-500 mb-1">From</label>
                 <input
                   type="date"
                   value={from}
                   onChange={(e) => setFrom(e.target.value)}
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+                  className="edc-input"
                 />
               </div>
               <div>
-                <label className="block text-xs font-semibold text-gray-600 mb-1">To</label>
+                <label className="block text-xs font-semibold text-slate-500 mb-1">To</label>
                 <input
                   type="date"
                   value={to}
                   onChange={(e) => setTo(e.target.value)}
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+                  className="edc-input"
                 />
               </div>
               <div>
-                <label className="block text-xs font-semibold text-gray-600 mb-1">Search</label>
+                <label className="block text-xs font-semibold text-slate-500 mb-1">Search</label>
                 <div className="relative">
                   <input
                     value={query}
                     onChange={(e) => setQuery(e.target.value)}
                     placeholder="Search..."
-                    className="w-full border border-gray-200 rounded-lg pl-10 pr-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+                    className="edc-input pl-10"
                   />
                   <svg
                     className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2"
@@ -497,11 +495,11 @@ export default function DealAdjustorPage() {
             </div>
 
             <div className="flex items-center justify-between gap-3">
-              <div className="text-sm text-gray-600 whitespace-nowrap">Bank Commission: <span className="font-semibold">${totalCommission.toFixed(2)}</span></div>
+              <div className="text-sm text-slate-500 whitespace-nowrap">Bank Commission: <span className="font-semibold text-slate-700">${totalCommission.toFixed(2)}</span></div>
               <select
                 value={perPage}
                 onChange={(e) => setPerPage(e.target.value)}
-                className="border border-gray-200 rounded-lg px-3 py-2"
+                className="edc-input w-auto"
               >
                 <option value="10">10</option>
                 <option value="25">25</option>
@@ -510,46 +508,46 @@ export default function DealAdjustorPage() {
             </div>
           </div>
 
-          <div className="mt-3 text-xs text-gray-500">Showing results from {from} to {to}</div>
+          <div className="mt-3 text-xs text-slate-400">Showing results from {from} to {to}</div>
         </div>
 
         {fetchError ? (
-          <div className="mt-4 rounded border border-red-200 bg-red-50 text-red-700 px-4 py-3 text-sm">{fetchError}</div>
+          <div className="mt-4 rounded-xl border border-danger-500/20 bg-danger-500/5 text-danger-600 px-4 py-3 text-sm">{fetchError}</div>
         ) : null}
 
-        <div className="bg-white rounded-xl shadow mt-4 overflow-hidden">
+        <div className="edc-card mt-4 overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="min-w-full">
-              <thead className="bg-gray-50">
+            <table className="edc-table">
+              <thead>
                 <tr>
-                  <th className="px-3 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider w-12"></th>
-                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Name</th>
-                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Vehicle</th>
-                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Type</th>
-                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Deal Date</th>
-                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Close Date</th>
-                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Salesperson</th>
-                  <th className="px-6 py-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">Bank Commission</th>
-                  <th className="px-6 py-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">Status</th>
+                  <th className="w-12"></th>
+                  <th>Name</th>
+                  <th>Vehicle</th>
+                  <th>Type</th>
+                  <th>Deal Date</th>
+                  <th>Close Date</th>
+                  <th>Salesperson</th>
+                  <th className="text-right">Bank Commission</th>
+                  <th className="text-right">Status</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100">
+              <tbody>
                 {loading ? (
                   <tr>
-                    <td className="px-6 py-10 text-center text-sm text-gray-500" colSpan={9}>
+                    <td className="px-6 py-10 text-center text-sm text-slate-400" colSpan={9}>
                       Loading deals...
                     </td>
                   </tr>
                 ) : filtered.length === 0 ? (
                   <tr>
-                    <td className="px-6 py-10 text-center text-sm text-gray-500" colSpan={9}>
+                    <td className="px-6 py-10 text-center text-sm text-slate-400" colSpan={9}>
                       No results.
                     </td>
                   </tr>
                 ) : (
                   filtered.slice(0, Number(perPage) || 10).map((r) => (
                   <Fragment key={r.id}>
-                    <tr className="hover:bg-gray-50">
+                    <tr>
                       <td className="px-3 py-3">
                         <button
                           type="button"
@@ -561,11 +559,11 @@ export default function DealAdjustorPage() {
                               return next
                             })
                           }
-                          className="w-9 h-9 rounded-lg bg-gray-100 hover:bg-gray-200 flex items-center justify-center transition-colors"
+                          className="w-8 h-8 rounded-lg bg-slate-100 hover:bg-slate-200 flex items-center justify-center transition-colors"
                           title="Fees"
                           aria-label="Fees"
                         >
-                          <svg className="w-5 h-5 text-[#118df0]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <svg className="w-4 h-4 text-cyan-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path
                               strokeLinecap="round"
                               strokeLinejoin="round"
@@ -575,9 +573,9 @@ export default function DealAdjustorPage() {
                           </svg>
                         </button>
                       </td>
-                      <td className="px-6 py-3 text-sm text-gray-900 whitespace-nowrap">{r.name}</td>
-                      <td className="px-6 py-3 text-sm text-[#118df0] min-w-[420px]">{r.vehicle}</td>
-                      <td className="px-6 py-3 text-sm text-gray-700 whitespace-nowrap">{r.type}</td>
+                      <td className="px-6 py-3 text-sm font-medium text-slate-800 whitespace-nowrap">{r.name}</td>
+                      <td className="px-6 py-3 text-sm text-cyan-700 min-w-[420px]">{r.vehicle}</td>
+                      <td className="px-6 py-3 text-sm text-slate-600 whitespace-nowrap">{r.type}</td>
                       <td className="px-6 py-3 text-sm whitespace-nowrap">
                         {editing?.rowId === r.id && editing.field === 'dealDate' ? (
                           <input
@@ -590,14 +588,14 @@ export default function DealAdjustorPage() {
                               if (e.key === 'Enter') commitEdit()
                               if (e.key === 'Escape') cancelEdit()
                             }}
-                            className="h-8 border border-gray-200 rounded px-2 text-sm"
+                            className="h-8 border border-slate-200 rounded-lg px-2 text-sm focus:ring-1 focus:ring-cyan-500/30 focus:border-cyan-500/40"
                             disabled={saving}
                           />
                         ) : (
                           <button
                             type="button"
                             onClick={() => startEdit(r.id, 'dealDate', toDateInputValue(r.dealDateRaw))}
-                            className="text-[#118df0] hover:underline"
+                            className="text-cyan-600 hover:text-cyan-700 hover:underline transition-colors"
                             title="Edit deal date"
                           >
                             {r.dealDate || 'N/A'}
@@ -617,21 +615,21 @@ export default function DealAdjustorPage() {
                               if (e.key === 'Enter') commitEdit()
                               if (e.key === 'Escape') cancelEdit()
                             }}
-                            className="h-8 border border-gray-200 rounded px-2 text-sm"
+                            className="h-8 border border-slate-200 rounded-lg px-2 text-sm focus:ring-1 focus:ring-cyan-500/30 focus:border-cyan-500/40"
                             disabled={saving}
                           />
                         ) : (
                           <button
                             type="button"
                             onClick={() => startEdit(r.id, 'closeDate', toDateInputValue(r.closeDateRaw))}
-                            className="text-[#118df0] hover:underline"
+                            className="text-cyan-600 hover:text-cyan-700 hover:underline transition-colors"
                             title="Edit close date"
                           >
                             {r.closeDate || 'N/A'}
                           </button>
                         )}
                       </td>
-                      <td className="px-6 py-3 text-sm text-gray-700 whitespace-nowrap">{r.salesperson}</td>
+                      <td className="px-6 py-3 text-sm text-slate-600 whitespace-nowrap">{r.salesperson}</td>
 
                       <td className="px-6 py-3 text-sm whitespace-nowrap text-right">
                         {editing?.rowId === r.id && editing.field === 'bankCommission' ? (
@@ -651,7 +649,7 @@ export default function DealAdjustorPage() {
                           <button
                             type="button"
                             onClick={() => startEdit(r.id, 'bankCommission', String(r.bankCommission ?? 0))}
-                            className="text-[#118df0] hover:underline"
+                            className="text-cyan-600 hover:text-cyan-700 hover:underline transition-colors"
                             title="Edit bank commission"
                           >
                             ${(Number(r.bankCommission) || 0).toFixed(2)}
@@ -666,7 +664,7 @@ export default function DealAdjustorPage() {
                             value={editValue}
                             onChange={(e) => setEditValue(e.target.value)}
                             onBlur={() => commitEdit()}
-                            className="h-8 border border-gray-200 rounded px-2 text-sm"
+                            className="h-8 border border-slate-200 rounded-lg px-2 text-sm focus:ring-1 focus:ring-cyan-500/30 focus:border-cyan-500/40"
                             disabled={saving}
                           >
                             <option value="Open">Open</option>
@@ -676,8 +674,8 @@ export default function DealAdjustorPage() {
                           <button
                             type="button"
                             onClick={() => startEdit(r.id, 'status', r.status)}
-                            className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold hover:opacity-90 ${
-                              r.status === 'Open' ? 'bg-blue-100 text-blue-700' : 'bg-slate-200 text-slate-700'
+                            className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold transition-colors ${
+                              r.status === 'Open' ? 'bg-cyan-500/10 text-cyan-700' : 'bg-slate-100 text-slate-600'
                             }`}
                             title="Edit status"
                           >
@@ -708,10 +706,10 @@ export default function DealAdjustorPage() {
                             if (merged.length === 0) return null
 
                             return (
-                              <div className="overflow-x-auto border border-gray-200 rounded-lg">
+                              <div className="overflow-x-auto border border-slate-200/60 rounded-xl">
                                 <table className="w-full">
-                                  <thead className="bg-gray-50">
-                                    <tr className="text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                                  <thead className="bg-slate-50/80">
+                                    <tr className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
                                       <th className="px-4 py-2 text-left w-[25%]">Name</th>
                                       <th className="px-4 py-2 text-left w-[35%]">Description</th>
                                       <th className="px-4 py-2 text-right w-[20%]">Cost</th>
@@ -738,9 +736,9 @@ export default function DealAdjustorPage() {
                                       const isEditingPrice = editing?.rowId === r.id && editing.field === priceField && editing.feeIndex === idx
 
                                       return (
-                                        <tr key={`${r.id}_merged_${kind}_${rowIdx}`} className="text-sm border-t border-gray-100">
+                                        <tr key={`${r.id}_merged_${kind}_${rowIdx}`} className="text-sm border-t border-slate-100">
                                           <td className="px-4 py-3">{item.name || 'Item'}</td>
-                                          <td className="px-4 py-3 text-gray-600">{item.description || ''}</td>
+                                          <td className="px-4 py-3 text-slate-500">{item.description || ''}</td>
                                           <td className="px-4 py-3 text-right">
                                             {!costField ? (
                                               money(0)
@@ -761,7 +759,7 @@ export default function DealAdjustorPage() {
                                               <button
                                                 type="button"
                                                 onClick={() => startEdit(r.id, costField, String(costVal), idx)}
-                                                className="text-[#118df0] hover:underline"
+                                                className="text-cyan-600 hover:text-cyan-700 hover:underline transition-colors"
                                               >
                                                 {money(costVal)}
                                               </button>
@@ -785,7 +783,7 @@ export default function DealAdjustorPage() {
                                               <button
                                                 type="button"
                                                 onClick={() => startEdit(r.id, priceField, String(priceVal), idx)}
-                                                className="text-[#118df0] hover:underline"
+                                                className="text-cyan-600 hover:text-cyan-700 hover:underline transition-colors"
                                               >
                                                 {money(priceVal)}
                                               </button>

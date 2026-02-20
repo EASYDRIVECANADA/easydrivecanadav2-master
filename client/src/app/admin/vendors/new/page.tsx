@@ -226,14 +226,15 @@ function AdminVendorsNewPageInner() {
   }
 
   return (
-    <div className="min-h-screen bg-white">
-      <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
-        <div className="flex items-center justify-between">
-          <h1 className="text-xl font-semibold text-gray-900">{vendorId ? 'Edit Vendor' : 'New Vendor'}</h1>
-        </div>
+    <div className="min-h-screen">
+      <div className="edc-page-header">
+        <h1 className="text-xl font-semibold text-slate-900">{vendorId ? 'Edit Vendor' : 'New Vendor'}</h1>
+      </div>
+
+      <div className="px-6 py-6">
 
         <div className="mt-6 grid grid-cols-1 gap-6 pb-20">
-          {loadingVendor ? <div className="text-sm text-gray-600">Loading…</div> : null}
+          {loadingVendor ? <div className="text-sm text-slate-500">Loading…</div> : null}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
             <Input label="company name" value={form.companyName} onChange={(v) => setField('companyName', v)} />
             <Input label="first name" value={form.firstName} onChange={(v) => setField('firstName', v)} />
@@ -255,7 +256,7 @@ function AdminVendorsNewPageInner() {
           </div>
 
           <div>
-            <div className="text-sm font-semibold text-gray-900">Street Address</div>
+            <div className="text-sm font-semibold text-slate-800">Street Address</div>
             <div className="mt-2 grid grid-cols-1 lg:grid-cols-2 gap-4">
               <Input
                 label="Enter a location"
@@ -291,7 +292,7 @@ function AdminVendorsNewPageInner() {
             type="button"
             onClick={() => void onSave()}
             disabled={saving || loadingVendor}
-            className="rounded bg-[#118df0] px-5 py-2.5 text-sm font-semibold text-white hover:bg-[#0d6ebd] disabled:opacity-50"
+            className="edc-btn-primary text-sm disabled:opacity-50"
           >
             {saving ? 'Saving...' : 'Save'}
           </button>
@@ -299,19 +300,20 @@ function AdminVendorsNewPageInner() {
       </div>
 
       {resultOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="w-full max-w-md rounded-lg bg-white shadow-lg">
-            <div className="px-6 py-4 border-b border-gray-200">
-              <div className="text-sm font-semibold text-gray-900">{resultTitle}</div>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true">
+          <div className="edc-overlay absolute inset-0" onMouseDown={() => { setResultOpen(false); router.push('/admin/vendors'); router.refresh(); }} />
+          <div className="edc-modal w-full max-w-md relative">
+            <div className="px-6 py-4 border-b border-slate-100">
+              <div className="text-sm font-semibold text-slate-800">{resultTitle}</div>
             </div>
-            <div className="px-6 py-5 text-sm text-gray-700">
+            <div className="px-6 py-5 text-sm text-slate-600">
               <div className={resultOk ? 'text-green-700 font-semibold' : 'text-red-700 font-semibold'}>
                 {resultOk ? 'Success' : 'Failed'}
               </div>
               <div className="mt-2 whitespace-pre-line">{resultMessage}</div>
-              <div className="mt-3 text-xs text-gray-500">Redirecting to vendors list…</div>
+              <div className="mt-3 text-xs text-slate-400">Redirecting to vendors list…</div>
             </div>
-            <div className="px-6 py-4 border-t border-gray-200 flex items-center justify-end">
+            <div className="px-6 py-4 border-t border-slate-100 flex items-center justify-end">
               <button
                 type="button"
                 onClick={() => {
@@ -319,7 +321,7 @@ function AdminVendorsNewPageInner() {
                   router.push('/admin/vendors')
                   router.refresh()
                 }}
-                className="h-10 px-4 rounded bg-[#118df0] text-white text-sm font-semibold hover:bg-[#0d6ebd]"
+                className="edc-btn-primary text-sm"
               >
                 OK
               </button>
@@ -350,11 +352,11 @@ function Input({
 }) {
   return (
     <div>
-      <label className="block text-xs font-semibold text-gray-600">{label}</label>
+      <label className="block text-xs font-semibold text-slate-500">{label}</label>
       <input
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="mt-1 h-10 w-full rounded border border-gray-200 bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-[#118df0]/40"
+        className="edc-input mt-1"
       />
     </div>
   )
@@ -373,11 +375,11 @@ function Select({
 }) {
   return (
     <div>
-      <label className="block text-xs font-semibold text-gray-600">{label}</label>
+      <label className="block text-xs font-semibold text-slate-500">{label}</label>
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="mt-1 h-10 w-full rounded border border-gray-200 bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-[#118df0]/40"
+        className="edc-input mt-1"
       >
         {options.map((opt) => (
           <option key={opt} value={opt}>

@@ -319,19 +319,17 @@ export default function CustomerShowroomPage() {
   }, [selected, downPaymentStr])
 
   return (
-    <div className="w-full">
-      <div className="bg-white shadow">
-        <div className="w-full px-4 sm:px-6 lg:px-8 py-4">
-          <h1 className="text-2xl font-bold text-gray-900">Customer Showroom</h1>
-          <p className="text-sm text-gray-500">Vehicles from Supabase (edc_vehicles)</p>
-        </div>
+    <div className="min-h-screen">
+      <div className="edc-page-header">
+        <h1 className="text-2xl font-bold text-slate-900">Customer Showroom</h1>
+        <p className="text-sm text-slate-500 mt-0.5">Vehicles from Supabase (edc_vehicles)</p>
       </div>
 
-      <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
-        <div className="bg-white rounded-xl shadow p-4">
+      <div className="px-6 py-6">
+        <div className="edc-card p-4">
           <div className="flex flex-col lg:flex-row lg:items-center gap-3">
             {/* View toggle */}
-            <div className="flex items-center gap-2 text-sm text-gray-700">
+            <div className="flex items-center gap-2 text-sm text-slate-600">
               <span className="hidden sm:block">View</span>
               <button
                 type="button"
@@ -361,7 +359,7 @@ export default function CustomerShowroomPage() {
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                   placeholder="Search vehicle, drive, colour, status..."
-                  className="w-full border border-gray-200 rounded-lg px-10 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+                  className="edc-input pl-10"
                 />
                 <svg
                   className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2"
@@ -378,7 +376,7 @@ export default function CustomerShowroomPage() {
               <select
                 value={status}
                 onChange={(e) => setStatus(e.target.value as any)}
-                className="w-full border border-gray-200 rounded-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+                className="edc-input"
               >
                 <option value="ALL">All Status</option>
                 <option value="In Stock">In Stock</option>
@@ -387,51 +385,51 @@ export default function CustomerShowroomPage() {
               </select>
             </div>
 
-            <div className="text-sm text-gray-500 whitespace-nowrap">Showing {filtered.length} of {rows.length}</div>
+            <div className="text-sm text-slate-500 whitespace-nowrap">Showing {filtered.length} of {rows.length}</div>
           </div>
 
           {fetchError ? (
-            <div className="mt-3 text-sm text-red-600">{fetchError}</div>
+            <div className="mt-3 text-sm text-danger-600">{fetchError}</div>
           ) : null}
         </div>
 
         {viewMode === 'TBL' ? (
-        <div className="bg-white rounded-xl shadow mt-4 overflow-hidden">
+        <div className="edc-card mt-4 overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="min-w-full">
-              <thead className="bg-gray-50">
+            <table className="edc-table">
+              <thead>
                 <tr>
-                  <th className="text-left text-xs font-semibold text-gray-600 uppercase tracking-wider px-3 py-3 w-12"></th>
-                  <th className="text-left text-xs font-semibold text-gray-600 uppercase tracking-wider px-6 py-3">Vehicle</th>
-                  <th className="text-left text-xs font-semibold text-gray-600 uppercase tracking-wider px-6 py-3">Drive</th>
-                  <th className="text-left text-xs font-semibold text-gray-600 uppercase tracking-wider px-6 py-3">Trans.</th>
-                  <th className="text-left text-xs font-semibold text-gray-600 uppercase tracking-wider px-6 py-3">Cyl.</th>
-                  <th className="text-left text-xs font-semibold text-gray-600 uppercase tracking-wider px-6 py-3">Colour</th>
-                  <th className="text-right text-xs font-semibold text-gray-600 uppercase tracking-wider px-6 py-3">Odometer</th>
-                  <th className="text-right text-xs font-semibold text-gray-600 uppercase tracking-wider px-6 py-3">Price</th>
-                  <th className="text-right text-xs font-semibold text-gray-600 uppercase tracking-wider px-6 py-3">Status</th>
+                  <th className="text-left text-xs font-semibold text-slate-500 uppercase tracking-wider px-3 py-3 w-12"></th>
+                  <th className="text-left text-xs font-semibold text-slate-500 uppercase tracking-wider px-6 py-3">Vehicle</th>
+                  <th className="text-left text-xs font-semibold text-slate-500 uppercase tracking-wider px-6 py-3">Drive</th>
+                  <th className="text-left text-xs font-semibold text-slate-500 uppercase tracking-wider px-6 py-3">Trans.</th>
+                  <th className="text-left text-xs font-semibold text-slate-500 uppercase tracking-wider px-6 py-3">Cyl.</th>
+                  <th className="text-left text-xs font-semibold text-slate-500 uppercase tracking-wider px-6 py-3">Colour</th>
+                  <th className="text-right text-xs font-semibold text-slate-500 uppercase tracking-wider px-6 py-3">Odometer</th>
+                  <th className="text-right text-xs font-semibold text-slate-500 uppercase tracking-wider px-6 py-3">Price</th>
+                  <th className="text-right text-xs font-semibold text-slate-500 uppercase tracking-wider px-6 py-3">Status</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100">
+              <tbody>
                 {loading ? (
                   <tr>
-                    <td className="px-6 py-10 text-center text-sm text-gray-500" colSpan={9}>
+                    <td className="px-6 py-10 text-center text-sm text-slate-400" colSpan={9}>
                       Loading...
                     </td>
                   </tr>
                 ) : null}
 
                 {filtered.map((r) => (
-                  <tr key={r.id} className="hover:bg-gray-50">
+                  <tr key={r.id}>
                     <td className="px-3 py-3">
                       <button
                         type="button"
                         onClick={() => { setSelected(r); setImageIdx(0) }}
-                        className="w-9 h-9 rounded-lg bg-gray-100 hover:bg-gray-200 flex items-center justify-center transition-colors"
+                        className="w-9 h-9 rounded-lg bg-slate-50 hover:bg-slate-100 flex items-center justify-center transition-colors"
                         title="Open deal sheet"
                         aria-label="Open deal sheet"
                       >
-                        <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <svg className="w-5 h-5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path
                             strokeLinecap="round"
                             strokeLinejoin="round"
@@ -441,13 +439,13 @@ export default function CustomerShowroomPage() {
                         </svg>
                       </button>
                     </td>
-                    <td className="px-6 py-3 text-sm font-medium text-[#118df0] whitespace-nowrap">{r.vehicle}</td>
-                    <td className="px-6 py-3 text-sm text-gray-700 whitespace-nowrap">{r.drive}</td>
-                    <td className="px-6 py-3 text-sm text-gray-700 whitespace-nowrap">{r.transmission}</td>
-                    <td className="px-6 py-3 text-sm text-gray-700 whitespace-nowrap">{r.cyl}</td>
-                    <td className="px-6 py-3 text-sm text-gray-700 whitespace-nowrap">{r.colour}</td>
-                    <td className="px-6 py-3 text-sm text-gray-700 whitespace-nowrap text-right">{r.odometerKm.toLocaleString()} km</td>
-                    <td className="px-6 py-3 text-sm text-gray-900 whitespace-nowrap text-right">${r.price.toLocaleString()}</td>
+                    <td className="px-6 py-3 text-sm font-medium text-slate-800 whitespace-nowrap">{r.vehicle}</td>
+                    <td className="px-6 py-3 text-sm text-slate-600 whitespace-nowrap">{r.drive}</td>
+                    <td className="px-6 py-3 text-sm text-slate-600 whitespace-nowrap">{r.transmission}</td>
+                    <td className="px-6 py-3 text-sm text-slate-600 whitespace-nowrap">{r.cyl}</td>
+                    <td className="px-6 py-3 text-sm text-slate-600 whitespace-nowrap">{r.colour}</td>
+                    <td className="px-6 py-3 text-sm text-slate-600 whitespace-nowrap text-right">{r.odometerKm.toLocaleString()} km</td>
+                    <td className="px-6 py-3 text-sm text-slate-800 whitespace-nowrap text-right">${r.price.toLocaleString()}</td>
                     <td className="px-6 py-3 text-sm whitespace-nowrap text-right">
                       <span
                         className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold ${
@@ -466,7 +464,7 @@ export default function CustomerShowroomPage() {
 
                 {filtered.length === 0 ? (
                   <tr>
-                    <td className="px-6 py-10 text-center text-sm text-gray-500" colSpan={9}>
+                    <td className="px-6 py-10 text-center text-sm text-slate-400" colSpan={9}>
                       No results.
                     </td>
                   </tr>
@@ -476,19 +474,19 @@ export default function CustomerShowroomPage() {
           </div>
         </div>
         ) : (
-        <div className="bg-white rounded-xl shadow mt-4">
-          <ul role="list" className="divide-y divide-gray-100">
+        <div className="edc-card mt-4">
+          <ul role="list" className="divide-y divide-slate-100">
             {loading ? (
-              <li className="px-4 py-10 text-center text-sm text-gray-500">Loading...</li>
+              <li className="px-4 py-10 text-center text-sm text-slate-400">Loading...</li>
             ) : null}
             {filtered.map((r) => (
-              <li key={r.id} className="p-4 hover:bg-gray-50">
+              <li key={r.id} className="p-4 hover:bg-slate-50 transition-colors">
                 <div className="flex items-start gap-4">
-                  <div className="w-40 h-28 bg-gray-100 rounded-lg border border-gray-200 flex items-center justify-center overflow-hidden">
+                  <div className="w-40 h-28 bg-slate-50 rounded-lg border border-slate-200/60 flex items-center justify-center overflow-hidden">
                     {Array.isArray(r.images) && r.images.length > 0 ? (
                       <img src={r.images[0]} alt={r.vehicle} className="w-full h-full object-cover" />
                     ) : (
-                      <svg className="w-10 h-10 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <svg className="w-10 h-10 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4-4a3 5 0 013 0l4 4M14 14l1-1a3 5 0 013 0l2 2" />
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7a2 2 0 012-2h14a2 2 0 012 2v10a2 2 0 01-2 2H5a2 2 0 01-2-2V7z" />
                       </svg>
@@ -496,18 +494,18 @@ export default function CustomerShowroomPage() {
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between">
-                      <button type="button" className="text-sm font-semibold text-[#118df0] hover:underline truncate text-left" onClick={() => { setSelected(r); setImageIdx(0) }}>{r.vehicle}</button>
-                      <div className="text-lg font-bold text-gray-900">${r.price.toLocaleString()}</div>
+                      <button type="button" className="text-sm font-semibold text-slate-800 hover:underline truncate text-left" onClick={() => { setSelected(r); setImageIdx(0) }}>{r.vehicle}</button>
+                      <div className="text-lg font-bold text-slate-800">${r.price.toLocaleString()}</div>
                     </div>
-                    <div className="mt-1 text-xs text-gray-600">
-                      {r.odometerKm.toLocaleString()} kms <span className="text-gray-400">•</span> {r.drive} <span className="text-gray-400">•</span> {r.transmission}
+                    <div className="mt-1 text-xs text-slate-500">
+                      {r.odometerKm.toLocaleString()} kms <span className="text-slate-300">•</span> {r.drive} <span className="text-slate-300">•</span> {r.transmission}
                     </div>
-                    <div className="mt-1 text-[11px] text-gray-500">Status: {r.status}</div>
+                    <div className="mt-1 text-[11px] text-slate-400">Status: {r.status}</div>
                     <div className="mt-2 flex items-center gap-2">
                       <button
                         type="button"
                         onClick={() => { setSelected(r); setImageIdx(0) }}
-                        className="h-8 px-3 rounded bg-gray-100 hover:bg-gray-200 text-xs font-semibold"
+                        className="edc-btn-ghost h-8 px-3 text-xs"
                       >
                         Open
                       </button>
@@ -524,7 +522,7 @@ export default function CustomerShowroomPage() {
               </li>
             ))}
             {filtered.length === 0 && !loading ? (
-              <li className="px-4 py-10 text-center text-sm text-gray-500">No results.</li>
+              <li className="px-4 py-10 text-center text-sm text-slate-400">No results.</li>
             ) : null}
           </ul>
         </div>
@@ -534,7 +532,7 @@ export default function CustomerShowroomPage() {
         <button
           type="button"
           onClick={() => setFiltersOpen(true)}
-          className="fixed right-0 top-1/2 -translate-y-1/2 z-40 bg-white border border-gray-300 rounded-l px-2 py-3 shadow"
+          className="fixed right-0 top-1/2 -translate-y-1/2 z-40 bg-white border border-slate-200/60 rounded-l px-2 py-3 shadow-premium"
           style={{ writingMode: 'vertical-rl', textOrientation: 'mixed' }}
         >
           Filters
@@ -542,11 +540,11 @@ export default function CustomerShowroomPage() {
 
         {/* Filters Drawer */}
         {filtersOpen && (
-          <div className="fixed top-0 right-0 h-full w-[320px] bg-white border-l border-gray-200 shadow-2xl z-50 overflow-y-auto">
-            <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
-              <div className="text-sm font-semibold">Filters</div>
-              <button type="button" onClick={() => setFiltersOpen(false)} className="w-8 h-8 rounded hover:bg-gray-100 flex items-center justify-center">
-                <svg className="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+          <div className="fixed top-0 right-0 h-full w-[320px] bg-white border-l border-slate-200/60 shadow-premium z-50 overflow-y-auto">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
+              <div className="text-sm font-semibold text-slate-800">Filters</div>
+              <button type="button" onClick={() => setFiltersOpen(false)} className="w-8 h-8 rounded hover:bg-slate-50 flex items-center justify-center transition-colors">
+                <svg className="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
               </button>
             </div>
 
@@ -556,7 +554,7 @@ export default function CustomerShowroomPage() {
                 <div className="text-center font-semibold mb-2">Year Range</div>
                 <div className="grid grid-cols-2 gap-2">
                   <div>
-                    <div className="text-xs text-gray-600 mb-1">From</div>
+                    <div className="text-xs text-slate-500 mb-1">From</div>
                     <select value={yearFrom} onChange={(e)=>setYearFrom(e.target.value?Number(e.target.value):'')} className="w-full border rounded px-2 py-1">
                       <option value="">Start Year</option>
                       {Array.from({length: (facets.maxYear - facets.minYear + 1)||0}, (_,i)=>facets.minYear+i).map(y => (
@@ -565,7 +563,7 @@ export default function CustomerShowroomPage() {
                     </select>
                   </div>
                   <div>
-                    <div className="text-xs text-gray-600 mb-1">To</div>
+                    <div className="text-xs text-slate-500 mb-1">To</div>
                     <select value={yearTo} onChange={(e)=>setYearTo(e.target.value?Number(e.target.value):'')} className="w-full border rounded px-2 py-1">
                       <option value="">End Year</option>
                       {Array.from({length: (facets.maxYear - facets.minYear + 1)||0}, (_,i)=>facets.minYear+i).map(y => (
@@ -579,14 +577,14 @@ export default function CustomerShowroomPage() {
               {/* Make/Model */}
               <div className="space-y-3">
                 <div className="text-center">
-                  <button className="bg-[#118df0] hover:bg-blue-600 text-white text-xs font-semibold rounded px-3 py-2">Makes ▾</button>
+                  <button className="bg-navy-900 hover:bg-navy-800 text-white text-xs font-semibold rounded px-3 py-2 transition-colors">Makes ▾</button>
                 </div>
                 <select value={makeSel} onChange={(e)=>setMakeSel(e.target.value)} className="w-full border rounded px-2 py-1">
                   <option value="">All Makes</option>
                   {facets.makes.map(m => (<option key={m} value={m}>{m}</option>))}
                 </select>
                 <div className="text-center">
-                  <button className="bg-[#118df0] hover:bg-blue-600 text-white text-xs font-semibold rounded px-3 py-2">Models ▾</button>
+                  <button className="bg-navy-900 hover:bg-navy-800 text-white text-xs font-semibold rounded px-3 py-2 transition-colors">Models ▾</button>
                 </div>
                 <select value={modelSel} onChange={(e)=>setModelSel(e.target.value)} className="w-full border rounded px-2 py-1">
                   <option value="">All Models</option>
@@ -596,15 +594,15 @@ export default function CustomerShowroomPage() {
 
               {/* Actions (top) */}
               <div className="flex items-center justify-center gap-2">
-                <button type="button" onClick={()=>setFiltersOpen(false)} className="h-8 px-4 rounded bg-green-600 text-white text-xs font-semibold">Search</button>
-                <button type="button" onClick={resetFilters} className="h-8 px-4 rounded bg-red-600 text-white text-xs font-semibold">Reset</button>
-                <button type="button" className="h-8 px-4 rounded bg-[#118df0] text-white text-xs font-semibold">Compare</button>
+                <button type="button" onClick={()=>setFiltersOpen(false)} className="edc-btn-primary h-8 px-4 text-xs">Search</button>
+                <button type="button" onClick={resetFilters} className="edc-btn-danger h-8 px-4 text-xs">Reset</button>
+                <button type="button" className="edc-btn-ghost h-8 px-4 text-xs">Compare</button>
               </div>
 
               {/* Price Range */}
               <div>
                 <div className="font-semibold mb-2">Price Range</div>
-                <div className="flex items-center justify-between text-xs text-gray-600 mb-1">
+                <div className="flex items-center justify-between text-xs text-slate-500 mb-1">
                   <span>${(Number(priceMin!==''?priceMin:facets.minPrice)||0).toLocaleString(undefined,{maximumFractionDigits:0})}</span>
                   <span>${(Number(priceMax!==''?priceMax:facets.maxPrice)||0).toLocaleString(undefined,{maximumFractionDigits:0})}</span>
                 </div>
@@ -617,7 +615,7 @@ export default function CustomerShowroomPage() {
               {/* Odometer Range */}
               <div>
                 <div className="font-semibold mb-2">Odometer Range</div>
-                <div className="flex items-center justify-between text-xs text-gray-600 mb-1">
+                <div className="flex items-center justify-between text-xs text-slate-500 mb-1">
                   <span>{(Number(odoMin!==''?odoMin:facets.minOdo)||0).toLocaleString()} kms</span>
                   <span>{(Number(odoMax!==''?odoMax:facets.maxOdo)||0).toLocaleString()} kms</span>
                 </div>
@@ -629,15 +627,15 @@ export default function CustomerShowroomPage() {
 
               {/* Body (placeholder button to match UI) */}
               <div className="text-center">
-                <button className="bg-[#118df0] hover:bg-blue-600 text-white text-xs font-semibold rounded px-3 py-2">Body ▾</button>
+                <button className="bg-navy-900 hover:bg-navy-800 text-white text-xs font-semibold rounded px-3 py-2 transition-colors">Body ▾</button>
               </div>
 
               {/* Options/Colours headers (visual only) */}
               <div className="text-center">
-                <button className="bg-[#118df0] hover:bg-blue-600 text-white text-xs font-semibold rounded px-3 py-2">Options ▾</button>
+                <button className="bg-navy-900 hover:bg-navy-800 text-white text-xs font-semibold rounded px-3 py-2 transition-colors">Options ▾</button>
               </div>
               <div className="text-center">
-                <button className="bg-[#118df0] hover:bg-blue-600 text-white text-xs font-semibold rounded px-3 py-2">Colours ▾</button>
+                <button className="bg-navy-900 hover:bg-navy-800 text-white text-xs font-semibold rounded px-3 py-2 transition-colors">Colours ▾</button>
               </div>
 
               {/* Drive checkboxes two columns */}
@@ -680,37 +678,38 @@ export default function CustomerShowroomPage() {
         )}
         {selected ? (
           <div
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+            className="fixed inset-0 z-50 flex items-center justify-center p-4"
             role="dialog"
             aria-modal="true"
             onMouseDown={(e) => {
               if (e.target === e.currentTarget) setSelected(null)
             }}
           >
-            <div className="w-full max-w-5xl bg-white rounded-2xl shadow-xl overflow-hidden">
-              <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+            <div className="edc-overlay absolute inset-0" onMouseDown={() => setSelected(null)} />
+            <div className="relative w-full max-w-5xl bg-white rounded-2xl shadow-premium overflow-hidden">
+              <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
                 <button
                   type="button"
-                  className="text-sm font-semibold text-[#118df0] hover:underline"
+                  className="text-sm font-semibold text-cyan-600 hover:underline"
                   onClick={() => setSelected(null)}
                 >
                   ← Showroom
                 </button>
                 <button
                   type="button"
-                  className="w-10 h-10 rounded-xl hover:bg-gray-100 flex items-center justify-center"
+                  className="w-10 h-10 rounded-xl hover:bg-slate-50 flex items-center justify-center transition-colors"
                   onClick={() => setSelected(null)}
                   aria-label="Close"
                 >
-                  <svg className="w-5 h-5 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-5 h-5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                   </svg>
                 </button>
               </div>
 
               <div className="grid grid-cols-1 lg:grid-cols-2">
-                <div className="bg-gray-100 p-6 flex flex-col">
-                  <div className="flex-1 rounded-xl bg-white border border-gray-200 flex items-center justify-center relative overflow-hidden">
+                <div className="bg-slate-50 p-6 flex flex-col">
+                  <div className="flex-1 rounded-xl bg-white border border-slate-200/60 flex items-center justify-center relative overflow-hidden">
                     {Array.isArray(selected.images) && selected.images.length > 0 ? (
                       <img
                         src={selected.images[Math.min(imageIdx, selected.images.length - 1)]}
@@ -719,11 +718,11 @@ export default function CustomerShowroomPage() {
                       />
                     ) : (
                       <div className="text-center">
-                        <svg className="w-20 h-20 text-gray-300 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <svg className="w-20 h-20 text-slate-300 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4-4a3 5 0 013 0l4 4M14 14l1-1a3 5 0 013 0l2 2" />
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7a2 2 0 012-2h14a2 2 0 012 2v10a2 2 0 01-2 2H5a2 2 0 01-2-2V7z" />
                         </svg>
-                        <div className="text-gray-400 text-sm font-semibold">NO IMAGE AVAILABLE</div>
+                        <div className="text-slate-400 text-sm font-semibold">NO IMAGE AVAILABLE</div>
                       </div>
                     )}
 
@@ -733,7 +732,7 @@ export default function CustomerShowroomPage() {
                       className="absolute left-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-white/80 hover:bg-white flex items-center justify-center"
                       disabled={!selected.images || selected.images.length <= 1}
                     >
-                      <svg className="w-5 h-5 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <svg className="w-5 h-5 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
                       </svg>
                     </button>
@@ -743,30 +742,30 @@ export default function CustomerShowroomPage() {
                       className="absolute right-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-white/80 hover:bg-white flex items-center justify-center"
                       disabled={!selected.images || selected.images.length <= 1}
                     >
-                      <svg className="w-5 h-5 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <svg className="w-5 h-5 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                       </svg>
                     </button>
                   </div>
 
                   <div className="mt-4">
-                    <div className="text-lg font-semibold text-gray-900">{selected.vehicle} {selected.colour}</div>
-                    <div className="text-sm text-gray-600">
-                      {selected.odometerKm.toLocaleString()} {selected.odoUnit || 'kms'} <span className="text-gray-400">•</span> {selected.drive}
-                      <span className="text-gray-400">•</span> {selected.transmission}
+                    <div className="text-lg font-semibold text-slate-800">{selected.vehicle} {selected.colour}</div>
+                    <div className="text-sm text-slate-500">
+                      {selected.odometerKm.toLocaleString()} {selected.odoUnit || 'kms'} <span className="text-slate-300">•</span> {selected.drive}
+                      <span className="text-slate-300">•</span> {selected.transmission}
                     </div>
                     {selected.vin ? (
-                      <div className="text-xs text-gray-500 mt-1">VIN: {selected.vin}</div>
+                      <div className="text-xs text-slate-400 mt-1">VIN: {selected.vin}</div>
                     ) : null}
                     {selected.stock ? (
-                      <div className="text-xs text-gray-500">Stock# {selected.stock}</div>
+                      <div className="text-xs text-slate-400">Stock# {selected.stock}</div>
                     ) : null}
                   </div>
                 </div>
 
                 <div className="p-6">
-                  <div className="bg-gray-50 rounded-xl border border-gray-200 overflow-hidden">
-                    <div className="divide-y divide-gray-200">
+                  <div className="bg-slate-50 rounded-xl border border-slate-200/60 overflow-hidden">
+                    <div className="divide-y divide-slate-200/60">
                       <Row label="Vehicle Price" value={fin.price} bold />
                       <Row label="Other Fees" value={fin.otherFees} />
                       <Row label="Licensing" value={fin.licensing} />
@@ -791,7 +790,7 @@ export default function CustomerShowroomPage() {
                     >
                       BUY NOW
                     </button>
-                    <button type="button" onClick={() => setShowPayment(true)} className="h-10 w-10 rounded-lg bg-[#118df0] text-white flex items-center justify-center" aria-label="Payment details">
+                    <button type="button" onClick={() => setShowPayment(true)} className="h-10 w-10 rounded-lg bg-navy-900 text-white flex items-center justify-center hover:bg-navy-800 transition-colors" aria-label="Payment details">
                       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6h10M10 12h10M10 18h10M4 6h.01M4 12h.01M4 18h.01" />
                       </svg>
@@ -804,22 +803,23 @@ export default function CustomerShowroomPage() {
         ) : null}
 
         {showPayment && selected ? (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onMouseDown={(e) => { if (e.target === e.currentTarget) setShowPayment(false) }}>
-            <div className="w-full max-w-md bg-white rounded-xl shadow-xl overflow-hidden">
-              <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
-                <div className="text-lg font-semibold">Payment</div>
-                <button type="button" onClick={() => setShowPayment(false)} className="w-8 h-8 rounded hover:bg-gray-100 flex items-center justify-center">
-                  <svg className="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true">
+            <div className="edc-overlay absolute inset-0" onMouseDown={() => setShowPayment(false)} />
+            <div className="edc-modal w-full max-w-md relative overflow-hidden">
+              <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
+                <div className="text-lg font-semibold text-slate-800">Payment</div>
+                <button type="button" onClick={() => setShowPayment(false)} className="w-8 h-8 rounded hover:bg-slate-50 flex items-center justify-center transition-colors">
+                  <svg className="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
                 </button>
               </div>
 
               <div className="px-5 py-4 space-y-3">
                 <div className="flex items-center justify-between text-sm">
-                  <div className="text-gray-600">Purchase Price</div>
+                  <div className="text-slate-600">Purchase Price</div>
                   <div className="font-semibold">${(Number(selected.price) || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
                 </div>
                 <div className="flex items-center justify-between text-sm">
-                  <div className="text-gray-600">Interest Rate</div>
+                  <div className="text-slate-600">Interest Rate</div>
                   <div className="flex items-center gap-2">
                     <input
                       type="text"
@@ -835,13 +835,13 @@ export default function CustomerShowroomPage() {
                         v = v.replace(/^0+(?=\d)/, '')
                         setInterestRateStr(v)
                       }}
-                      className="w-24 border border-gray-200 rounded px-2 py-1 text-right"
+                      className="edc-input w-24 text-right"
                     />
-                    <span className="text-gray-600">%</span>
+                    <span className="text-slate-500">%</span>
                   </div>
                 </div>
                 <div className="flex items-center justify-between text-sm">
-                  <div className="text-gray-600">Down Payment</div>
+                  <div className="text-slate-600">Down Payment</div>
                   <input
                     type="text"
                     inputMode="decimal"
@@ -856,25 +856,25 @@ export default function CustomerShowroomPage() {
                       v = v.replace(/^0+(?=\d)/, '')
                       setDownPaymentStr(v)
                     }}
-                    className="w-32 border border-gray-200 rounded px-2 py-1 text-right"
+                    className="edc-input w-32 text-right"
                   />
                 </div>
 
-                <div className="border-t border-gray-200 pt-3">
-                  <div className="text-center text-[#118df0] font-semibold mb-2">Payment Details</div>
+                <div className="border-t border-slate-200/60 pt-3">
+                  <div className="text-center text-cyan-600 font-semibold mb-2">Payment Details</div>
                   <div className="text-center text-2xl font-bold mb-3">Payment ${payment.toFixed(2)}</div>
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <div className="text-xs text-gray-600 mb-1">Term</div>
-                      <select value={termMonths} onChange={(e) => setTermMonths(Number(e.target.value))} className="w-full border border-gray-200 rounded px-2 py-2">
+                      <div className="text-xs text-slate-500 mb-1">Term</div>
+                      <select value={termMonths} onChange={(e) => setTermMonths(Number(e.target.value))} className="w-full edc-input">
                         {[6,12,18,24,30,36,42,48,54,60,66,72,78,84,90,96].map(m => (
                           <option key={m} value={m}>{m}</option>
                         ))}
                       </select>
                     </div>
                     <div>
-                      <div className="text-xs text-gray-600 mb-1">Frequency</div>
-                      <select value={frequency} onChange={(e) => setFrequency(e.target.value as any)} className="w-full border border-gray-200 rounded px-2 py-2">
+                      <div className="text-xs text-slate-500 mb-1">Frequency</div>
+                      <select value={frequency} onChange={(e) => setFrequency(e.target.value as any)} className="w-full edc-input">
                         {['Monthly','Bi-Weekly','Weekly','Semi-Monthly'].map(f => (
                           <option key={f} value={f}>{f}</option>
                         ))}
@@ -898,8 +898,8 @@ export default function CustomerShowroomPage() {
 function Row({ label, value, bold, highlight }: { label: string; value: string; bold?: boolean; highlight?: boolean }) {
   return (
     <div className={`flex items-center justify-between px-5 py-3 ${highlight ? 'bg-white' : ''}`}>
-      <div className={`${bold ? 'font-semibold text-gray-900' : 'text-gray-700'} text-sm`}>{label}</div>
-      <div className={`${bold ? 'font-semibold text-gray-900' : 'text-gray-700'} text-sm`}>{value}</div>
+      <div className={`${bold ? 'font-semibold text-slate-800' : 'text-slate-600'} text-sm`}>{label}</div>
+      <div className={`${bold ? 'font-semibold text-slate-800' : 'text-slate-600'} text-sm`}>{value}</div>
     </div>
   )
 }

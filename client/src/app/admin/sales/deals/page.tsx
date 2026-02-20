@@ -180,36 +180,31 @@ export default function DealsPage() {
   }
 
   return (
-    <div className="w-full">
-      <div className="bg-white shadow">
-        <div className="w-full px-4 sm:px-6 lg:px-8 py-4 flex items-start justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">Deals</h1>
-          </div>
+    <div className="min-h-screen">
+      <div className="edc-page-header">
+        <div className="flex items-center justify-between">
+          <h1 className="text-2xl font-bold text-slate-900">Deals</h1>
           <div className="flex items-center gap-3">
             <button
               type="button"
               onClick={handleCreateNewDeal}
-              className="h-10 w-10 rounded-lg bg-[#118df0] text-white text-sm font-semibold hover:bg-[#0d6ebd] flex items-center justify-center"
+              className="edc-btn-primary text-sm"
               title="Create New Deal"
-              aria-label="Create New Deal"
             >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-              </svg>
+              + New Deal
             </button>
-            <div className="text-sm text-gray-600">
-              Total Deals: <span className="font-semibold">{filtered.length}</span>
+            <div className="text-sm text-slate-500">
+              Total: <span className="font-semibold text-slate-700">{filtered.length}</span>
             </div>
           </div>
         </div>
       </div>
 
-      <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
-        <div className="bg-white rounded-xl shadow p-4">
+      <div className="px-6 py-6">
+        <div className="edc-card p-4">
           <div className="flex flex-col lg:flex-row lg:items-center gap-3">
             <div className="flex items-center gap-2">
-              <label className="text-sm text-gray-600">Show Closed</label>
+              <label className="text-sm text-slate-600">Show Closed</label>
               <input
                 type="checkbox"
                 className="h-4 w-4"
@@ -224,7 +219,7 @@ export default function DealsPage() {
                   value={query}
                   onChange={(e) => { setQuery(e.target.value); setPage(1) }}
                   placeholder="Search deals..."
-                  className="w-full border border-gray-200 rounded-lg px-10 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+                  className="edc-input pl-10"
                 />
                 <svg
                   className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2"
@@ -241,7 +236,7 @@ export default function DealsPage() {
               <select
                 value={stateFilter}
                 onChange={(e) => { setStateFilter(e.target.value); setPage(1) }}
-                className="w-full border border-gray-200 rounded-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+                className="edc-input"
               >
                 <option value="ALL">All States</option>
                 <option value="Open">Open</option>
@@ -252,7 +247,7 @@ export default function DealsPage() {
 
             <div className="w-full lg:w-28">
               <select
-                className="w-full border border-gray-200 rounded-lg px-3 py-2"
+                className="edc-input"
                 value={pageSize}
                 onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1) }}
               >
@@ -265,38 +260,38 @@ export default function DealsPage() {
         </div>
 
         {fetchError ? (
-          <div className="mt-4 rounded border border-red-200 bg-red-50 text-red-700 px-4 py-3 text-sm">{fetchError}</div>
+          <div className="mt-4 rounded-xl border border-danger-500/20 bg-danger-500/5 text-danger-600 px-4 py-3 text-sm">{fetchError}</div>
         ) : null}
 
-        <div className="bg-white rounded-xl shadow mt-4 overflow-hidden">
+        <div className="edc-card mt-4 overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="min-w-full">
-              <thead className="bg-gray-50">
+            <table className="edc-table">
+              <thead>
                 <tr>
-                  <th className="px-2 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider w-10"></th>
-                  <th className="px-2 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider w-10"></th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">ID</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Primary Customer</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Vehicle</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Type</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">State</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Deal Date</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Primary Salesperson</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Other</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Reference</th>
-                  <th className="px-2 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider w-10"></th>
+                  <th className="w-10"></th>
+                  <th className="w-10"></th>
+                  <th>ID</th>
+                  <th>Primary Customer</th>
+                  <th>Vehicle</th>
+                  <th>Type</th>
+                  <th>State</th>
+                  <th>Deal Date</th>
+                  <th>Primary Salesperson</th>
+                  <th>Other</th>
+                  <th>Reference</th>
+                  <th className="w-10"></th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100">
+              <tbody>
                 {loading ? (
                   <tr>
-                    <td className="px-6 py-10 text-center text-sm text-gray-500" colSpan={12}>
+                    <td className="px-6 py-10 text-center text-sm text-slate-400" colSpan={12}>
                       Loading deals...
                     </td>
                   </tr>
                 ) : paged.length === 0 ? (
                   <tr>
-                    <td className="px-6 py-10 text-center text-sm text-gray-500" colSpan={12}>
+                    <td className="px-6 py-10 text-center text-sm text-slate-400" colSpan={12}>
                       No results.
                     </td>
                   </tr>
@@ -304,43 +299,43 @@ export default function DealsPage() {
                   paged.map((r, idx) => (
                     <tr
                       key={r.dealId || idx}
-                      className={`hover:bg-gray-50 cursor-pointer ${selectedDeal?.dealId === r.dealId ? 'bg-blue-50' : ''}`}
+                      className={`cursor-pointer ${selectedDeal?.dealId === r.dealId ? 'bg-cyan-50/50' : ''}`}
                       onClick={() => setSelectedDeal(selectedDeal?.dealId === r.dealId ? null : r)}
                     >
                       <td className="px-2 py-3">
                         <button
                           type="button"
                           onClick={(e) => { e.stopPropagation(); router.push(`/admin/sales/deals/new?dealId=${encodeURIComponent(r.dealId)}`) }}
-                          className="w-8 h-8 rounded bg-gray-100 hover:bg-gray-200 flex items-center justify-center transition-colors"
+                          className="w-8 h-8 rounded-lg bg-slate-100 hover:bg-slate-200 flex items-center justify-center transition-colors"
                           title="Edit deal"
                           aria-label="Edit deal"
                         >
-                          <svg className="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536M9 13l6.586-6.586a2 2 0 112.828 2.828L11.828 15.828a2 2 0 01-1.414.586H8v-2.414a2 2 0 01.586-1.414z" />
+                          <svg className="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15.232 5.232l3.536 3.536M9 13l6.586-6.586a2 2 0 112.828 2.828L11.828 15.828a2 2 0 01-1.414.586H8v-2.414a2 2 0 01.586-1.414z" />
                           </svg>
                         </button>
                       </td>
                       <td className="px-2 py-3">
                         <input type="checkbox" className="h-4 w-4" />
                       </td>
-                      <td className="px-4 py-3 text-sm font-medium text-gray-900 whitespace-nowrap">{r.dealId}</td>
-                      <td className="px-4 py-3 text-sm text-gray-700 whitespace-nowrap">{r.primaryCustomer}</td>
-                      <td className="px-4 py-3 text-sm text-gray-700 min-w-[360px]">{r.vehicle}</td>
-                      <td className="px-4 py-3 text-sm text-gray-700 whitespace-nowrap">{r.type}</td>
+                      <td className="px-4 py-3 text-sm font-medium text-slate-800 whitespace-nowrap">{r.dealId}</td>
+                      <td className="px-4 py-3 text-sm text-slate-600 whitespace-nowrap">{r.primaryCustomer}</td>
+                      <td className="px-4 py-3 text-sm text-slate-600 min-w-[360px]">{r.vehicle}</td>
+                      <td className="px-4 py-3 text-sm text-slate-600 whitespace-nowrap">{r.type}</td>
                       <td className="px-4 py-3 text-sm whitespace-nowrap">{r.state}</td>
-                      <td className="px-4 py-3 text-sm text-gray-700 whitespace-nowrap">{formatDate(r.dealDate)}</td>
-                      <td className="px-4 py-3 text-sm text-gray-700 whitespace-nowrap">{r.primarySalesperson}</td>
-                      <td className="px-4 py-3 text-sm text-gray-700 whitespace-nowrap">{r.other}</td>
-                      <td className="px-4 py-3 text-sm text-gray-700 whitespace-nowrap">{r.reference}</td>
+                      <td className="px-4 py-3 text-sm text-slate-600 whitespace-nowrap">{formatDate(r.dealDate)}</td>
+                      <td className="px-4 py-3 text-sm text-slate-600 whitespace-nowrap">{r.primarySalesperson}</td>
+                      <td className="px-4 py-3 text-sm text-slate-600 whitespace-nowrap">{r.other}</td>
+                      <td className="px-4 py-3 text-sm text-slate-600 whitespace-nowrap">{r.reference}</td>
                       <td className="px-2 py-3 text-center">
                         <button
                           type="button"
                           onClick={(e) => { e.stopPropagation(); setDeleteTarget(r) }}
-                          className="w-8 h-8 rounded bg-red-50 hover:bg-red-100 flex items-center justify-center transition-colors"
+                          className="w-8 h-8 rounded-lg bg-danger-500/5 hover:bg-danger-500/10 flex items-center justify-center transition-colors"
                           title="Delete deal"
                           aria-label="Delete deal"
                         >
-                          <svg className="w-4 h-4 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <svg className="w-4 h-4 text-danger-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                           </svg>
                         </button>
@@ -352,13 +347,13 @@ export default function DealsPage() {
             </table>
           </div>
 
-          <div className="flex items-center justify-between px-6 py-4 border-t border-gray-100">
-            <div className="flex items-center gap-2 text-sm text-gray-600">
+          <div className="flex items-center justify-between px-6 py-4 border-t border-slate-100">
+            <div className="flex items-center gap-2 text-sm text-slate-600">
               <button
                 type="button"
                 disabled={safePage <= 1}
                 onClick={() => setPage((p) => Math.max(1, p - 1))}
-                className="px-2 py-1 rounded hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
+                className="px-2 py-1 rounded-lg hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
               >
                 Previous
               </button>
@@ -367,7 +362,7 @@ export default function DealsPage() {
                   key={p}
                   type="button"
                   onClick={() => setPage(p)}
-                  className={`w-8 h-8 rounded text-sm font-semibold ${p === safePage ? 'bg-[#118df0] text-white' : 'hover:bg-gray-100 text-gray-700'}`}
+                  className={`w-8 h-8 rounded-lg text-sm font-semibold transition-colors ${p === safePage ? 'bg-navy-900 text-white' : 'hover:bg-slate-100 text-slate-600'}`}
                 >
                   {p}
                 </button>
@@ -376,12 +371,12 @@ export default function DealsPage() {
                 type="button"
                 disabled={safePage >= totalPages}
                 onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                className="px-2 py-1 rounded hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
+                className="px-2 py-1 rounded-lg hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
               >
                 Next
               </button>
             </div>
-            <div className="text-sm text-gray-500">Page {safePage}</div>
+            <div className="text-sm text-slate-500">Page {safePage}</div>
           </div>
         </div>
 
@@ -389,20 +384,20 @@ export default function DealsPage() {
 
       {/* Right-side detail panel */}
       {selectedDeal && (
-        <div className="fixed top-0 right-0 h-full w-[340px] bg-white shadow-2xl border-l border-gray-200 z-50 overflow-y-auto">
+        <div className="fixed top-0 right-0 h-full w-[340px] bg-white shadow-premium border-l border-slate-200/60 z-50 overflow-y-auto">
           {/* Close button */}
           <div className="px-3 pt-3">
             <button
               type="button"
               onClick={() => setSelectedDeal(null)}
-              className="text-gray-400 hover:text-gray-600"
+              className="text-slate-400 hover:text-slate-600 transition-colors"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
             </button>
           </div>
 
           {/* Vehicle Section */}
-          <div className="px-6 pt-2 pb-5 flex flex-col items-center text-center border-b border-gray-200">
+          <div className="px-6 pt-2 pb-5 flex flex-col items-center text-center border-b border-slate-100">
             <div className="w-14 h-14 rounded-full bg-gray-100 flex items-center justify-center mb-3">
               <svg className="w-7 h-7 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 17a2 2 0 11-4 0 2 2 0 014 0zm10 0a2 2 0 11-4 0 2 2 0 014 0zM3 11l1.5-4.5A2 2 0 016.4 5h11.2a2 2 0 011.9 1.5L21 11M3 11h18M3 11v5a1 1 0 001 1h1m14 0h1a1 1 0 001-1v-5" /></svg>
             </div>
@@ -421,7 +416,7 @@ export default function DealsPage() {
               const price = ws?.purchase_price || ws?.total_balance_due || ''
               return (
                 <>
-                  <div className="text-base font-bold text-red-600 uppercase leading-tight">{title || 'No Vehicle'}</div>
+                  <div className="text-base font-bold text-slate-900 uppercase leading-tight">{title || 'No Vehicle'}</div>
                   {vin && <div className="text-xs text-gray-500 mt-1">{vin}</div>}
                   {stock && <div className="text-xs text-gray-500">{stock}</div>}
                   {status && <div className="text-xs text-gray-500">{status}</div>}
@@ -432,10 +427,10 @@ export default function DealsPage() {
           </div>
 
           {/* Customers Section */}
-          <div className="px-6 py-4 border-b border-gray-200">
+          <div className="px-6 py-4 border-b border-slate-100">
             <button type="button" onClick={() => setCustomersOpen(!customersOpen)} className="flex items-center gap-2 w-full text-left mb-3">
-              <svg className={`w-4 h-4 text-blue-500 transition-transform ${customersOpen ? 'rotate-0' : '-rotate-90'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
-              <span className="text-base font-bold text-gray-900">Customers</span>
+              <svg className={`w-4 h-4 text-cyan-500 transition-transform ${customersOpen ? 'rotate-0' : '-rotate-90'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+              <span className="text-sm font-semibold text-slate-900">Customers</span>
             </button>
             {customersOpen && (() => {
               const c = selectedDeal.customer
@@ -461,8 +456,8 @@ export default function DealsPage() {
           {/* Profit Analysis Section */}
           <div className="px-6 py-4">
             <button type="button" onClick={() => setProfitOpen(!profitOpen)} className="flex items-center gap-2 w-full text-left mb-4">
-              <svg className={`w-4 h-4 text-blue-500 transition-transform ${profitOpen ? 'rotate-0' : '-rotate-90'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
-              <span className="text-base font-bold text-gray-900">Profit Analysis</span>
+              <svg className={`w-4 h-4 text-cyan-500 transition-transform ${profitOpen ? 'rotate-0' : '-rotate-90'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+              <span className="text-sm font-semibold text-slate-900">Profit Analysis</span>
             </button>
             {profitOpen && (() => {
               const ws = selectedDeal.worksheet
@@ -515,29 +510,28 @@ export default function DealsPage() {
       {/* Delete confirmation modal */}
       {deleteTarget && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/40" onClick={() => !deleting && setDeleteTarget(null)} />
-          <div className="relative w-full max-w-md rounded-xl bg-white shadow-xl border border-gray-200">
-            <div className="px-5 py-5">
-              <div className="text-sm font-semibold text-gray-900">Are you sure delete?</div>
+          <div className="edc-overlay absolute inset-0" onClick={() => !deleting && setDeleteTarget(null)} />
+          <div className="edc-modal relative w-full max-w-sm mx-4 p-6">
+              <div className="text-base font-semibold text-slate-900">Delete Deal</div>
+              <div className="text-sm text-slate-500 mt-1">Are you sure you want to delete this deal?</div>
               <div className="mt-5 flex items-center justify-end gap-2">
                 <button
                   type="button"
                   disabled={deleting}
                   onClick={() => setDeleteTarget(null)}
-                  className="h-9 px-4 rounded bg-gray-100 text-gray-700 text-sm font-semibold hover:bg-gray-200 disabled:opacity-50"
+                  className="edc-btn-ghost text-sm"
                 >
-                  No
+                  Cancel
                 </button>
                 <button
                   type="button"
                   disabled={deleting}
                   onClick={handleDelete}
-                  className="h-9 px-4 rounded bg-red-600 text-white text-sm font-semibold hover:bg-red-700 disabled:opacity-50"
+                  className="edc-btn-danger text-sm"
                 >
-                  {deleting ? 'Deleting...' : 'Yes'}
+                  {deleting ? 'Deleting...' : 'Delete'}
                 </button>
               </div>
-            </div>
           </div>
         </div>
       )}
@@ -545,7 +539,7 @@ export default function DealsPage() {
       {/* Overlay backdrop */}
       {selectedDeal && (
         <div
-          className="fixed inset-0 bg-black/20 z-40"
+          className="fixed inset-0 bg-black/10 z-40 backdrop-blur-[1px]"
           onClick={() => setSelectedDeal(null)}
         />
       )}

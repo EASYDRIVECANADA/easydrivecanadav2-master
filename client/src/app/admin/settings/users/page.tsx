@@ -468,17 +468,20 @@ export default function SettingsUsersPage() {
     <div>
       {userAddedOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center" role="dialog" aria-modal="true">
-          <div className="absolute inset-0 bg-black/50" onMouseDown={() => setUserAddedOpen(false)} />
-          <div className="relative w-[360px] bg-white shadow-lg">
-            <div className="h-11 px-4 border-b border-gray-200 flex items-center justify-between">
-              <div className="text-sm font-semibold text-gray-800">Success</div>
+          <div
+            className="absolute inset-0 bg-navy-900/60 backdrop-blur-sm"
+            onMouseDown={() => setUserAddedOpen(false)}
+          />
+          <div className="edc-modal w-[360px] relative z-10">
+            <div className="h-11 px-4 border-b border-slate-200/60 flex items-center justify-between">
+              <div className="text-sm font-semibold text-slate-800">Success</div>
               <button type="button" className="h-8 w-8 flex items-center justify-center" onClick={() => setUserAddedOpen(false)}>
-                <span className="text-xl leading-none text-gray-500">×</span>
+                <span className="text-xl leading-none text-slate-400">×</span>
               </button>
             </div>
-            <div className="p-4 text-xs text-gray-700">{userAddedMessage}</div>
-            <div className="h-12 px-4 border-t border-gray-200 flex items-center justify-end">
-              <button type="button" className="h-8 px-4 bg-[#118df0] text-white text-xs font-semibold" onClick={() => setUserAddedOpen(false)}>
+            <div className="p-4 text-xs text-slate-600">{userAddedMessage}</div>
+            <div className="h-12 px-4 border-t border-slate-200/60 flex items-center justify-end">
+              <button type="button" className="edc-btn-primary h-8 px-4 text-xs" onClick={() => setUserAddedOpen(false)}>
                 OK
               </button>
             </div>
@@ -487,11 +490,14 @@ export default function SettingsUsersPage() {
       ) : null}
 
       {newUserOpen ? (
-        <div className="fixed inset-0 z-50 flex items-start justify-center pt-12" role="dialog" aria-modal="true">
-          <div className="absolute inset-0 bg-black/50" onMouseDown={closeNewUser} />
-          <div className="relative w-[460px] bg-white shadow-lg">
-            <div className="h-11 px-4 border-b border-gray-200 flex items-center justify-between">
-              <div className="flex items-center gap-2 text-sm font-semibold text-gray-800">
+        <div className="fixed inset-0 z-50 flex items-start justify-center p-4 overflow-y-auto" role="dialog" aria-modal="true">
+          <div className="absolute inset-0 bg-navy-900/60 backdrop-blur-sm" onMouseDown={closeNewUser} />
+          <div
+            className="edc-modal w-full max-w-[460px] relative z-10 flex flex-col max-h-[calc(100vh-2rem)]"
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <div className="h-11 px-4 border-b border-slate-200/60 flex items-center justify-between">
+              <div className="flex items-center gap-2 text-sm font-semibold text-slate-800">
                 <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
                   <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2" />
                   <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M12 11a4 4 0 100-8 4 4 0 000 8z" />
@@ -499,18 +505,18 @@ export default function SettingsUsersPage() {
                 New User
               </div>
               <button type="button" className="h-8 w-8 flex items-center justify-center" onClick={closeNewUser}>
-                <span className="text-xl leading-none text-gray-500">×</span>
+                <span className="text-xl leading-none text-slate-400">×</span>
               </button>
             </div>
 
             <div className="px-4 pt-3">
-              <div className="flex items-center gap-4 border-b border-gray-200">
+              <div className="flex items-center gap-4 border-b border-slate-200/60">
                 <button
                   type="button"
                   className={
                     newUserTab === 'details'
-                      ? 'h-7 px-3 text-xs font-semibold text-white bg-[#118df0]'
-                      : 'h-7 px-3 text-xs text-gray-700'
+                      ? 'h-7 px-3 text-xs font-semibold text-white bg-navy-900'
+                      : 'h-7 px-3 text-xs text-slate-600'
                   }
                   onClick={() => setNewUserTab('details')}
                 >
@@ -520,8 +526,8 @@ export default function SettingsUsersPage() {
                   type="button"
                   className={
                     newUserTab === 'permissions'
-                      ? 'h-7 px-3 text-xs font-semibold text-white bg-[#118df0]'
-                      : 'h-7 px-3 text-xs text-gray-700'
+                      ? 'h-7 px-3 text-xs font-semibold text-white bg-navy-900'
+                      : 'h-7 px-3 text-xs text-slate-600'
                   }
                   onClick={() => setNewUserTab('permissions')}
                 >
@@ -531,8 +537,8 @@ export default function SettingsUsersPage() {
                   type="button"
                   className={
                     newUserTab === 'password'
-                      ? 'h-7 px-3 text-xs font-semibold text-white bg-[#118df0]'
-                      : 'h-7 px-3 text-xs text-gray-700'
+                      ? 'h-7 px-3 text-xs font-semibold text-white bg-navy-900'
+                      : 'h-7 px-3 text-xs text-slate-600'
                   }
                   onClick={() => setNewUserTab('password')}
                 >
@@ -541,7 +547,7 @@ export default function SettingsUsersPage() {
               </div>
             </div>
 
-            <div className="px-4 py-3">
+            <div className="px-4 py-3 flex-1 overflow-y-auto">
               {newUserTab === 'details' ? (
                 <div className="space-y-2">
                   {[
@@ -652,9 +658,9 @@ export default function SettingsUsersPage() {
                     },
                   ].map((f) => (
                     <div key={f.label}>
-                      <div className="text-[11px] text-gray-700">{f.label}</div>
-                      <div className="mt-1 flex items-center border border-gray-200">
-                        <div className="w-9 h-8 flex items-center justify-center text-gray-500 border-r border-gray-200">
+                      <div className="text-[11px] text-slate-600">{f.label}</div>
+                      <div className="mt-1 flex items-center border border-slate-200/60">
+                        <div className="w-9 h-8 flex items-center justify-center text-slate-400 border-r border-slate-200/60">
                           {f.icon}
                         </div>
                         <input
@@ -672,16 +678,16 @@ export default function SettingsUsersPage() {
                 </div>
               ) : newUserTab === 'permissions' ? (
                 <div>
-                  <div className="border border-[#9ec5fe] bg-[#dbeafe] p-3">
+                  <div className="border border-slate-200/60 bg-slate-50 p-3 rounded-lg">
                     <div className="flex items-start gap-2">
-                      <div className="mt-0.5 text-[#1e40af]">
+                      <div className="mt-0.5 text-slate-600">
                         <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
                           <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M12 8h.01" />
                           <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M11 12h1v4h1" />
                           <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M12 22C6.48 22 2 17.52 2 12S6.48 2 12 2s10 4.48 10 10-4.48 10-10 10z" />
                         </svg>
                       </div>
-                      <div className="text-[11px] text-[#1e40af] leading-snug">
+                      <div className="text-[11px] text-slate-700 leading-snug">
                         Any changes to a users permissions will not take effect until <span className="font-semibold underline">after</span>{' '}
                         user has logged out. For this reason it is recommended that you do not set permissions to any sensitive
                         information until you are sure what the user will have access to.
@@ -689,8 +695,8 @@ export default function SettingsUsersPage() {
                     </div>
                   </div>
 
-                  <div className="mt-4 text-[12px] font-semibold text-gray-800">System Access</div>
-                  <div className="mt-2 border-t border-gray-200" />
+                  <div className="mt-4 text-[12px] font-semibold text-slate-700">System Access</div>
+                  <div className="mt-2 border-t border-slate-200/60" />
 
                   <div className="mt-2 space-y-1">
                     {[
@@ -714,22 +720,22 @@ export default function SettingsUsersPage() {
                       const v = Boolean((permissions as any)[p.key])
                       return (
                         <div key={p.key} className="flex items-center justify-between gap-4 py-1">
-                          <div className="text-[11px] text-gray-700">{p.label}</div>
+                          <div className="text-[11px] text-slate-600">{p.label}</div>
                           <button
                             type="button"
-                            className="h-5 w-16 rounded-full border border-gray-300 bg-white px-2 text-[9px] font-semibold text-gray-700 flex items-center justify-between"
+                            className="h-5 w-16 rounded-full border border-slate-300 bg-white px-2 text-[9px] font-semibold text-slate-600 flex items-center justify-between"
                             onClick={() => setPermissions((prev) => ({ ...prev, [p.key]: !v }))}
                             aria-pressed={v}
                           >
                             {v ? (
                               <>
-                                <span className="h-2.5 w-2.5 rounded-full bg-[#118df0] transition-all duration-150" />
+                                <span className="h-2.5 w-2.5 rounded-full bg-navy-900 transition-all duration-150" />
                                 <span>YES</span>
                               </>
                             ) : (
                               <>
                                 <span>NO</span>
-                                <span className="h-2.5 w-2.5 rounded-full bg-[#118df0] transition-all duration-150" />
+                                <span className="h-2.5 w-2.5 rounded-full bg-navy-900 transition-all duration-150" />
                               </>
                             )}
                           </button>
@@ -740,9 +746,9 @@ export default function SettingsUsersPage() {
                 </div>
               ) : (
                 <div>
-                  <div className="text-[11px] text-gray-700">Password</div>
-                  <div className="mt-1 flex items-center border border-gray-200">
-                    <div className="w-9 h-8 flex items-center justify-center text-gray-500 border-r border-gray-200 bg-gray-50">
+                  <div className="text-[11px] text-slate-600">Password</div>
+                  <div className="mt-1 flex items-center border border-slate-200/60">
+                    <div className="w-9 h-8 flex items-center justify-center text-slate-400 border-r border-slate-200/60 bg-slate-50">
                       <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
                         <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M12 11V7a4 4 0 10-8 0v4" />
                         <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M6 11h12v10H6z" />
@@ -760,9 +766,9 @@ export default function SettingsUsersPage() {
                   </div>
                   {passwordError ? <div className="mt-1 text-[11px] text-red-600">{passwordError}</div> : null}
 
-                  <div className="mt-3 text-[11px] text-gray-700">Confirm Password</div>
-                  <div className="mt-1 flex items-center border border-gray-200">
-                    <div className="w-9 h-8 flex items-center justify-center text-gray-500 border-r border-gray-200 bg-gray-50">
+                  <div className="mt-3 text-[11px] text-slate-600">Confirm Password</div>
+                  <div className="mt-1 flex items-center border border-slate-200/60">
+                    <div className="w-9 h-8 flex items-center justify-center text-slate-400 border-r border-slate-200/60 bg-slate-50">
                       <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
                         <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M12 11V7a4 4 0 10-8 0v4" />
                         <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M6 11h12v10H6z" />
@@ -782,8 +788,8 @@ export default function SettingsUsersPage() {
               )}
             </div>
 
-            <div className="h-12 px-4 border-t border-gray-200 flex items-center justify-end gap-2">
-              <button type="button" className="h-8 px-4 bg-red-600 text-white text-xs font-semibold" onClick={closeNewUser}>
+            <div className="h-12 px-4 border-t border-slate-200/60 flex items-center justify-end gap-2">
+              <button type="button" className="edc-btn-danger h-8 px-4 text-xs" onClick={closeNewUser}>
                 Cancel
               </button>
               {newUserTab === 'password' ? (
@@ -792,15 +798,15 @@ export default function SettingsUsersPage() {
                   disabled={!saveEnabled}
                   className={
                     saveEnabled
-                      ? 'h-8 px-4 bg-[#118df0] text-white text-xs font-semibold'
-                      : 'h-8 px-4 bg-[#118df0]/60 text-white text-xs font-semibold cursor-not-allowed'
+                      ? 'edc-btn-primary h-8 px-4 text-xs'
+                      : 'edc-btn-primary h-8 px-4 text-xs opacity-50 cursor-not-allowed'
                   }
                   onClick={() => void handleNewUserSave()}
                 >
                   {savingNewUser ? 'Saving…' : editingUserId ? 'Update' : 'Save'}
                 </button>
               ) : (
-                <button type="button" className="h-8 px-4 bg-[#118df0] text-white text-xs font-semibold" onClick={goNext}>
+                <button type="button" className="edc-btn-primary h-8 px-4 text-xs" onClick={goNext}>
                   Next
                 </button>
               )}
@@ -812,7 +818,7 @@ export default function SettingsUsersPage() {
       <div className="flex items-center justify-between gap-4 py-2">
         <button
           type="button"
-          className="h-7 w-7 flex items-center justify-center text-[#118df0]"
+          className="h-7 w-7 flex items-center justify-center text-slate-700 hover:text-slate-900"
           title="Add user"
           onClick={() => {
             setNewUserTab('details')
@@ -829,7 +835,7 @@ export default function SettingsUsersPage() {
 
         <div className="flex-1 flex items-center gap-2">
           <div className="relative w-full max-w-[360px]">
-            <div className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500">
+            <div className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400">
               <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor">
                 <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35" />
                 <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M11 19a8 8 0 110-16 8 8 0 010 16z" />
@@ -839,13 +845,13 @@ export default function SettingsUsersPage() {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="search"
-              className="h-7 w-full border border-gray-300 pl-7 pr-2 text-xs"
+              className="h-7 w-full border border-slate-300 pl-7 pr-2 text-xs"
             />
           </div>
         </div>
 
         <select
-          className="h-7 border border-gray-300 px-2 text-xs bg-white"
+          className="h-7 border border-slate-300 px-2 text-xs bg-white"
           value={pageSize}
           onChange={(e) => setPageSize(parseInt(e.target.value, 10))}
         >
@@ -855,18 +861,18 @@ export default function SettingsUsersPage() {
         </select>
       </div>
 
-      <div className="mt-2 border border-gray-200 bg-white">
-        <div className="grid grid-cols-[56px_1fr_1fr_1fr] gap-0 border-b border-gray-200 bg-gray-50">
+      <div className="mt-2 border border-slate-200/60 bg-white">
+        <div className="grid grid-cols-[56px_1fr_1fr_1fr] gap-0 border-b border-slate-200/60 bg-slate-50">
           <div className="h-9" />
-          <div className="h-9 flex items-center px-3 text-[11px] font-semibold text-gray-700">Name</div>
-          <div className="h-9 flex items-center px-3 text-[11px] font-semibold text-gray-700">Email</div>
-          <div className="h-9 flex items-center px-3 text-[11px] font-semibold text-gray-700">Title</div>
+          <div className="h-9 flex items-center px-3 text-[11px] font-semibold text-slate-600">Name</div>
+          <div className="h-9 flex items-center px-3 text-[11px] font-semibold text-slate-600">Email</div>
+          <div className="h-9 flex items-center px-3 text-[11px] font-semibold text-slate-600">Title</div>
         </div>
 
         {loading ? (
-          <div className="p-6 text-xs text-gray-500">Loading…</div>
+          <div className="p-6 text-xs text-slate-400">Loading…</div>
         ) : visible.length === 0 ? (
-          <div className="p-6 text-xs text-gray-500">No users found.</div>
+          <div className="p-6 text-xs text-slate-400">No users found.</div>
         ) : (
           <div>
             {visible.map((r) => {
@@ -874,7 +880,7 @@ export default function SettingsUsersPage() {
               const name = `${r.first_name || ''} ${r.last_name || ''}`.trim() || deriveNameFromEmail(r.email)
               const title = r.title || ''
               return (
-                <div key={r.id} className="grid grid-cols-[56px_1fr_1fr_1fr] border-b border-gray-200 hover:bg-gray-50">
+                <div key={r.id} className="grid grid-cols-[56px_1fr_1fr_1fr] border-b border-slate-200/60 hover:bg-slate-50">
                   <div className="h-9 flex items-center justify-center gap-3">
                     {isOwnerSessionRow ? (
                       <div className="h-6 w-6" />
@@ -882,7 +888,7 @@ export default function SettingsUsersPage() {
                       <>
                         <button
                           type="button"
-                          className="h-6 w-6 flex items-center justify-center text-gray-500 hover:text-gray-800"
+                          className="h-6 w-6 flex items-center justify-center text-slate-400 hover:text-slate-700"
                           title="Edit"
                           onClick={() => openEdit(r)}
                         >
@@ -906,9 +912,9 @@ export default function SettingsUsersPage() {
                       </>
                     )}
                   </div>
-                  <div className="h-9 flex items-center px-3 text-xs text-gray-800">{name}</div>
-                  <div className="h-9 flex items-center px-3 text-xs text-gray-800">{r.email}</div>
-                  <div className="h-9 flex items-center px-3 text-xs text-gray-800">{title}</div>
+                  <div className="h-9 flex items-center px-3 text-xs text-slate-700">{name}</div>
+                  <div className="h-9 flex items-center px-3 text-xs text-slate-700">{r.email}</div>
+                  <div className="h-9 flex items-center px-3 text-xs text-slate-700">{title}</div>
                 </div>
               )
             })}

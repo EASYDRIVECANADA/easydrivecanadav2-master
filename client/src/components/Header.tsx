@@ -122,7 +122,7 @@ export default function Header() {
     router.push('/account')
   }
 
-  const isAdmin = !!adminRole
+  const isAdmin = !!adminRole && pathname.startsWith('/admin')
 
   if (hideHeader) return null
 
@@ -136,7 +136,7 @@ export default function Header() {
         Skip to main content
       </a>
       
-      <header className="bg-white/80 backdrop-blur-xl border-b border-white/50 shadow-soft sticky top-0 z-50" role="banner">
+      <header className="bg-white/80 backdrop-blur-xl border-b border-white/50 shadow-soft z-50" role="banner">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center h-18 py-3">
           {/* Logo */}

@@ -78,23 +78,23 @@ export default function InventoryCostsPage() {
   const grand = filtered.reduce((sum, r) => sum + r.total, 0)
 
   return (
-    <div className="w-full">
-      <div className="bg-white shadow">
-        <div className="w-full px-4 sm:px-6 lg:px-8 py-4 flex items-start justify-between gap-4">
+    <div className="min-h-screen">
+      <div className="edc-page-header">
+        <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Inventory Costs</h1>
-            <p className="text-sm text-gray-500">Mock data only (UI design)</p>
+            <h1 className="text-2xl font-bold text-slate-900">Inventory Costs</h1>
+            <p className="text-sm text-slate-500 mt-0.5">Mock data only (UI design)</p>
           </div>
-          <div className="text-sm text-gray-600">Grand Total: <span className="font-semibold">${grand.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>
+          <div className="text-sm text-slate-500">Grand Total: <span className="font-semibold text-slate-700">${grand.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>
         </div>
       </div>
 
-      <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
-        <div className="bg-white rounded-xl shadow p-4">
+      <div className="px-6 py-6">
+        <div className="edc-card p-4">
           <div className="flex flex-col xl:flex-row xl:items-center gap-3">
             <div className="flex-1">
-              <label className="block text-xs font-semibold text-gray-600 mb-1">Filter by Status</label>
-              <select value={status} onChange={(e) => setStatus(e.target.value)} className="w-full border border-gray-200 rounded-lg px-3 py-2">
+              <label className="block text-xs font-semibold text-slate-500 mb-1">Filter by Status</label>
+              <select value={status} onChange={(e) => setStatus(e.target.value)} className="edc-input">
                 <option value="In Stock, Sold, Deal Pending In Trade, In Stock (No Deal)">In Stock, Sold, Deal Pending In Trade, In Stock (No Deal)</option>
                 <option value="In Stock">In Stock</option>
                 <option value="Sold">Sold</option>
@@ -102,18 +102,18 @@ export default function InventoryCostsPage() {
             </div>
 
             <div className="xl:w-[420px] relative">
-              <label className="block text-xs font-semibold text-gray-600 mb-1">&nbsp;</label>
-              <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="search" className="w-full border border-gray-200 rounded-lg pl-10 pr-3 py-2" />
+              <label className="block text-xs font-semibold text-slate-500 mb-1">&nbsp;</label>
+              <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="search" className="edc-input pl-10" />
               <svg className="w-4 h-4 text-gray-400 absolute left-3 top-[42px]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35m1.35-5.65a7 7 0 11-14 0 7 7 0 0114 0z" />
               </svg>
             </div>
 
-            <button type="button" className="h-10 px-4 rounded-lg bg-white border border-gray-200 text-sm hover:bg-gray-50 xl:mt-6">Advanced</button>
+            <button type="button" className="edc-btn-ghost text-sm xl:mt-6">Advanced</button>
 
             <div className="xl:w-[120px] xl:ml-auto">
-              <label className="block text-xs font-semibold text-gray-600 mb-1">&nbsp;</label>
-              <select value={perPage} onChange={(e) => setPerPage(e.target.value)} className="w-full border border-gray-200 rounded-lg px-3 py-2">
+              <label className="block text-xs font-semibold text-slate-500 mb-1">&nbsp;</label>
+              <select value={perPage} onChange={(e) => setPerPage(e.target.value)} className="edc-input">
                 <option value="50">50</option>
                 <option value="100">100</option>
                 <option value="150">150</option>
@@ -122,13 +122,13 @@ export default function InventoryCostsPage() {
             </div>
 
             <div className="flex items-center gap-2 xl:mt-6">
-              <button type="button" className="h-10 w-10 rounded-lg bg-white border border-gray-200 hover:bg-gray-50" title="Export">
-                <svg className="w-5 h-5 mx-auto text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <button type="button" className="h-10 w-10 rounded-lg border border-slate-200/60 hover:bg-slate-50 transition-colors" title="Export">
+                <svg className="w-5 h-5 mx-auto text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v10m0 0l-3-3m3 3l3-3M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2" />
                 </svg>
               </button>
-              <button type="button" className="h-10 w-10 rounded-lg bg-white border border-gray-200 hover:bg-gray-50" title="Print">
-                <svg className="w-5 h-5 mx-auto text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <button type="button" className="h-10 w-10 rounded-lg border border-slate-200/60 hover:bg-slate-50 transition-colors" title="Print">
+                <svg className="w-5 h-5 mx-auto text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 9V2h12v7M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2M6 14h12v8H6v-8z" />
                 </svg>
               </button>
@@ -136,36 +136,36 @@ export default function InventoryCostsPage() {
           </div>
         </div>
 
-        <div className="bg-white rounded-xl shadow mt-4 overflow-hidden">
+        <div className="edc-card mt-4 overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="min-w-max w-full">
-              <thead className="bg-gray-50">
+            <table className="edc-table min-w-max">
+              <thead>
                 <tr>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Date</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Name</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Description</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Vehicle</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Invoice</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Vendor</th>
-                  <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">Subtotal</th>
-                  <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">HST 13%</th>
-                  <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">Exempt 0%</th>
-                  <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">Total</th>
+                  <th>Date</th>
+                  <th>Name</th>
+                  <th>Description</th>
+                  <th>Vehicle</th>
+                  <th>Invoice</th>
+                  <th>Vendor</th>
+                  <th className="text-right">Subtotal</th>
+                  <th className="text-right">HST 13%</th>
+                  <th className="text-right">Exempt 0%</th>
+                  <th className="text-right">Total</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100">
+              <tbody>
                 {filtered.map((r) => (
-                  <tr key={r.id} className="hover:bg-gray-50">
-                    <td className="px-4 py-3 text-sm text-gray-700 whitespace-nowrap">{r.date}</td>
-                    <td className="px-4 py-3 text-sm text-gray-700 whitespace-nowrap">{r.name}</td>
-                    <td className="px-4 py-3 text-sm text-gray-700 whitespace-nowrap">{r.description}</td>
-                    <td className="px-4 py-3 text-sm text-gray-700 min-w-[420px]">{r.vehicle}</td>
-                    <td className="px-4 py-3 text-sm text-[#118df0] whitespace-nowrap">{r.invoice}</td>
-                    <td className="px-4 py-3 text-sm text-gray-700 whitespace-nowrap">{r.vendor}</td>
-                    <td className="px-4 py-3 text-sm text-gray-900 whitespace-nowrap text-right">${r.subtotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                    <td className="px-4 py-3 text-sm text-gray-900 whitespace-nowrap text-right">${r.hst13.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                    <td className="px-4 py-3 text-sm text-gray-900 whitespace-nowrap text-right">${r.exempt0.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                    <td className="px-4 py-3 text-sm text-gray-900 whitespace-nowrap text-right">${r.total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                  <tr key={r.id}>
+                    <td className="px-4 py-3 text-sm text-slate-600 whitespace-nowrap">{r.date}</td>
+                    <td className="px-4 py-3 text-sm text-slate-600 whitespace-nowrap">{r.name}</td>
+                    <td className="px-4 py-3 text-sm text-slate-600 whitespace-nowrap">{r.description}</td>
+                    <td className="px-4 py-3 text-sm text-slate-600 min-w-[420px]">{r.vehicle}</td>
+                    <td className="px-4 py-3 text-sm font-medium text-slate-800 whitespace-nowrap">{r.invoice}</td>
+                    <td className="px-4 py-3 text-sm text-slate-600 whitespace-nowrap">{r.vendor}</td>
+                    <td className="px-4 py-3 text-sm text-slate-800 whitespace-nowrap text-right">${r.subtotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    <td className="px-4 py-3 text-sm text-slate-800 whitespace-nowrap text-right">${r.hst13.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    <td className="px-4 py-3 text-sm text-slate-800 whitespace-nowrap text-right">${r.exempt0.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    <td className="px-4 py-3 text-sm text-slate-800 whitespace-nowrap text-right">${r.total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                   </tr>
                 ))}
               </tbody>

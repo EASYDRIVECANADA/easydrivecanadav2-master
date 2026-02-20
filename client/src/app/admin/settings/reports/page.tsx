@@ -10,8 +10,8 @@ function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean
       onClick={() => onChange(!checked)}
       className={
         checked
-          ? 'h-4 w-9 rounded-full bg-[#118df0] relative border border-[#118df0]'
-          : 'h-4 w-9 rounded-full bg-white relative border border-gray-300'
+          ? 'h-4 w-9 rounded-full bg-navy-900 relative border border-navy-900'
+          : 'h-4 w-9 rounded-full bg-white relative border border-slate-300'
       }
       aria-pressed={checked}
     >
@@ -19,7 +19,7 @@ function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean
         className={
           checked
             ? 'absolute right-0.5 top-0.5 h-3 w-3 rounded-full bg-white'
-            : 'absolute left-0.5 top-0.5 h-3 w-3 rounded-full bg-gray-400'
+            : 'absolute left-0.5 top-0.5 h-3 w-3 rounded-full bg-slate-400'
         }
       />
     </button>
@@ -45,13 +45,13 @@ function plainTextToHtml(s: string) {
 
 function ToolbarButton({
   active,
-  onClick,
   title,
+  onClick,
   children,
 }: {
   active?: boolean
-  onClick: () => void
   title: string
+  onClick: () => void
   children: React.ReactNode
 }) {
   return (
@@ -64,8 +64,8 @@ function ToolbarButton({
       }}
       className={
         active
-          ? 'h-5 min-w-5 px-1 border border-[#118df0] bg-[#118df0] text-[10px] text-white'
-          : 'h-5 min-w-5 px-1 border border-gray-200 bg-white text-[10px] text-gray-700'
+          ? 'h-5 min-w-5 px-1 border border-navy-900 bg-navy-900 text-[10px] text-white'
+          : 'h-5 min-w-5 px-1 border border-slate-200/60 bg-white text-[10px] text-slate-600'
       }
       tabIndex={-1}
     >
@@ -291,12 +291,12 @@ function RichTextEditorBlock({
 
   return (
     <div className="mt-5">
-      <div className="text-[11px] font-semibold text-gray-600">{title}</div>
-      {subtitle ? <div className="mt-1 text-[10px] text-gray-500">{subtitle}</div> : null}
-      <div className="mt-2 border border-gray-300">
+      <div className="text-[11px] font-semibold text-slate-500">{title}</div>
+      {subtitle ? <div className="mt-1 text-[10px] text-slate-400">{subtitle}</div> : null}
+      <div className="mt-2 border border-slate-200/60">
         <div
           ref={toolbarRef}
-          className="min-h-7 px-2 py-1 flex items-center flex-wrap gap-1 border-b border-gray-200 bg-gray-50 relative"
+          className="min-h-7 px-2 py-1 flex items-center flex-wrap gap-1 border-b border-slate-200/60 bg-slate-50 relative"
         >
           <ToolbarButton title="Bold" active={toolbarState.bold} onClick={() => runCmd('bold')}>
             B
@@ -336,7 +336,7 @@ function RichTextEditorBlock({
           </ToolbarButton>
 
           <select
-            className="h-5 border border-gray-200 bg-white text-[10px] text-gray-700 px-1"
+            className="h-5 border border-slate-200/60 bg-white text-[10px] text-slate-600 px-1"
             defaultValue=""
             onChange={(e) => {
               setFontSize(e.target.value)
@@ -358,8 +358,8 @@ function RichTextEditorBlock({
             type="button"
             className={
               colorPopover === 'text'
-                ? 'h-5 min-w-5 px-1 border border-[#118df0] bg-[#118df0] text-[10px] text-white'
-                : 'h-5 min-w-5 px-1 border border-gray-200 bg-white text-[10px] text-gray-700'
+                ? 'h-5 min-w-5 px-1 border border-navy-900 bg-navy-900 text-[10px] text-white'
+                : 'h-5 min-w-5 px-1 border border-slate-200/60 bg-white text-[10px] text-slate-600'
             }
             title="Text color"
             onMouseDown={(e) => {
@@ -375,8 +375,8 @@ function RichTextEditorBlock({
             type="button"
             className={
               colorPopover === 'highlight'
-                ? 'h-5 min-w-5 px-1 border border-[#118df0] bg-[#118df0] text-[10px] text-white'
-                : 'h-5 min-w-5 px-1 border border-gray-200 bg-white text-[10px] text-gray-700'
+                ? 'h-5 min-w-5 px-1 border border-navy-900 bg-navy-900 text-[10px] text-white'
+                : 'h-5 min-w-5 px-1 border border-slate-200/60 bg-white text-[10px] text-slate-600'
             }
             title="Background color"
             onMouseDown={(e) => {
@@ -399,15 +399,15 @@ function RichTextEditorBlock({
           </ToolbarButton>
 
           {colorPopover ? (
-            <div className="absolute left-2 top-full mt-1 w-[420px] border border-gray-200 bg-white shadow">
-              <div className="px-3 py-2 border-b border-gray-200">
-                <div className="text-[11px] font-semibold text-gray-700">
+            <div className="absolute left-2 top-full mt-1 w-[420px] border border-slate-200/60 bg-white shadow">
+              <div className="px-3 py-2 border-b border-slate-200/60">
+                <div className="text-[11px] font-semibold text-slate-600">
                   {colorPopover === 'text' ? 'Text Color' : 'Background Color'}
                 </div>
                 <div className="mt-1 flex items-center justify-between">
                   <button
                     type="button"
-                    className="text-[11px] text-gray-700"
+                    className="text-[11px] text-slate-600"
                     onMouseDown={(e) => {
                       e.preventDefault()
                       setPendingColor('transparent')
@@ -417,7 +417,7 @@ function RichTextEditorBlock({
                   </button>
                   <button
                     type="button"
-                    className="text-[11px] text-gray-700"
+                    className="text-[11px] text-slate-600"
                     onMouseDown={(e) => {
                       e.preventDefault()
                       setPendingColor(defaultColor(colorPopover))
@@ -436,8 +436,8 @@ function RichTextEditorBlock({
                       type="button"
                       className={
                         (pendingColor || '') === c
-                          ? 'h-4 w-4 border border-[#118df0]'
-                          : 'h-4 w-4 border border-gray-200'
+                          ? 'h-4 w-4 border border-navy-900'
+                          : 'h-4 w-4 border border-slate-200/60'
                       }
                       style={{ background: c }}
                       onMouseDown={(e) => {
@@ -453,7 +453,7 @@ function RichTextEditorBlock({
                 <div className="mt-3 flex items-center justify-end gap-2">
                   <button
                     type="button"
-                    className="h-8 px-4 bg-gray-600 text-white text-xs font-semibold"
+                    className="h-8 px-4 bg-slate-600 text-white text-xs font-semibold rounded"
                     onMouseDown={(e) => {
                       e.preventDefault()
                       setColorPopover(null)
@@ -463,7 +463,7 @@ function RichTextEditorBlock({
                   </button>
                   <button
                     type="button"
-                    className="h-8 px-4 bg-[#118df0] text-white text-xs font-semibold"
+                    className="edc-btn-primary h-8 px-4 text-xs"
                     onMouseDown={(e) => {
                       e.preventDefault()
                       const color = pendingColor ?? defaultColor(colorPopover)
@@ -480,7 +480,7 @@ function RichTextEditorBlock({
         </div>
         <div
           ref={editorRef}
-          className="w-full p-3 text-xs text-gray-800 outline-none overflow-auto"
+          className="w-full p-3 text-xs text-slate-700 outline-none overflow-auto"
           style={{ height }}
           contentEditable
           suppressContentEditableWarning
@@ -787,24 +787,24 @@ export default function SettingsReportsPage() {
 
       {saveModalOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center" role="dialog" aria-modal="true">
-          <div className="absolute inset-0 bg-black/50" onMouseDown={() => setSaveModalOpen(false)} />
-          <div className="relative w-[420px] bg-white rounded shadow-lg">
-            <div className="h-12 px-4 border-b border-gray-200 flex items-center justify-between">
-              <div className="text-sm font-semibold text-gray-800">Success</div>
+          <div className="absolute inset-0 edc-overlay" onMouseDown={() => setSaveModalOpen(false)} />
+          <div className="edc-modal w-[420px] relative">
+            <div className="h-12 px-4 border-b border-slate-200/60 flex items-center justify-between">
+              <div className="text-sm font-semibold text-slate-800">Success</div>
               <button
                 type="button"
                 className="h-8 w-8 flex items-center justify-center"
                 onClick={() => setSaveModalOpen(false)}
               >
-                <span className="text-xl leading-none text-gray-500">×</span>
+                <span className="text-xl leading-none text-slate-400">×</span>
               </button>
             </div>
             <div className="p-4">
-              <div className="text-sm text-gray-800">Successfully saved report settings.</div>
+              <div className="text-sm text-slate-700">Successfully saved report settings.</div>
               <div className="mt-4 flex justify-end">
                 <button
                   type="button"
-                  className="h-8 px-4 bg-[#118df0] text-white text-xs font-semibold"
+                  className="edc-btn-primary h-8 px-4 text-xs"
                   onClick={() => setSaveModalOpen(false)}
                 >
                   OK
@@ -817,24 +817,24 @@ export default function SettingsReportsPage() {
 
       {updateModalOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center" role="dialog" aria-modal="true">
-          <div className="absolute inset-0 bg-black/50" onMouseDown={() => setUpdateModalOpen(false)} />
-          <div className="relative w-[420px] bg-white rounded shadow-lg">
-            <div className="h-12 px-4 border-b border-gray-200 flex items-center justify-between">
-              <div className="text-sm font-semibold text-gray-800">Success</div>
+          <div className="absolute inset-0 edc-overlay" onMouseDown={() => setUpdateModalOpen(false)} />
+          <div className="edc-modal w-[420px] relative">
+            <div className="h-12 px-4 border-b border-slate-200/60 flex items-center justify-between">
+              <div className="text-sm font-semibold text-slate-800">Success</div>
               <button
                 type="button"
                 className="h-8 w-8 flex items-center justify-center"
                 onClick={() => setUpdateModalOpen(false)}
               >
-                <span className="text-xl leading-none text-gray-500">×</span>
+                <span className="text-xl leading-none text-slate-400">×</span>
               </button>
             </div>
             <div className="p-4">
-              <div className="text-sm text-gray-800">Successfully updated report settings.</div>
+              <div className="text-sm text-slate-700">Successfully updated report settings.</div>
               <div className="mt-4 flex justify-end">
                 <button
                   type="button"
-                  className="h-8 px-4 bg-[#118df0] text-white text-xs font-semibold"
+                  className="edc-btn-primary h-8 px-4 text-xs"
                   onClick={() => setUpdateModalOpen(false)}
                 >
                   OK
@@ -845,33 +845,33 @@ export default function SettingsReportsPage() {
         </div>
       ) : null}
 
-      <div className="text-[11px] font-semibold text-gray-600">BILL OF SALE</div>
-      <div className="mt-2 border-t border-gray-200" />
+      <div className="text-[11px] font-semibold text-slate-500">BILL OF SALE</div>
+      <div className="mt-2 border-t border-slate-200/60" />
 
       <div className="mt-4 space-y-3">
         <div className="flex items-center justify-between gap-4">
-          <div className="text-[11px] text-gray-700">Display deal date on bill of sale?</div>
+          <div className="text-[11px] text-slate-600">Display deal date on bill of sale?</div>
           <Toggle checked={showDealDateOnBos} onChange={setShowDealDateOnBos} />
         </div>
         <div className="flex items-center justify-between gap-4">
-          <div className="text-[11px] text-gray-700">Show salesperson on bill of sale?</div>
+          <div className="text-[11px] text-slate-600">Show salesperson on bill of sale?</div>
           <Toggle checked={showSalespersonOnBos} onChange={setShowSalespersonOnBos} />
         </div>
         <div className="flex items-center justify-between gap-4">
-          <div className="text-[11px] text-gray-700">Show accepted by on bill of sale?</div>
+          <div className="text-[11px] text-slate-600">Show accepted by on bill of sale?</div>
           <Toggle checked={showAcceptedByOnBos} onChange={setShowAcceptedByOnBos} />
         </div>
         <div className="flex items-center justify-between gap-4">
-          <div className="text-[11px] text-gray-700">Show OMVIC disclosure on bill of sale?</div>
+          <div className="text-[11px] text-slate-600">Show OMVIC disclosure on bill of sale?</div>
           <Toggle checked={showOmvicDisclosure} onChange={setShowOmvicDisclosure} />
         </div>
         <div className="flex items-center justify-between gap-4">
-          <div className="text-[11px] text-gray-700">Show vehicle certification on bill of sale?</div>
+          <div className="text-[11px] text-slate-600">Show vehicle certification on bill of sale?</div>
           <Toggle checked={showVehicleCertification} onChange={setShowVehicleCertification} />
         </div>
       </div>
 
-      <div className="mt-4 border-t border-gray-200" />
+      <div className="mt-4 border-t border-slate-200/60" />
 
       <RichTextEditorBlock
         title="Credit Card Terms"
@@ -930,8 +930,8 @@ export default function SettingsReportsPage() {
       />
 
       <div className="mt-6">
-        <div className="text-[11px] font-semibold text-gray-600">SERVICE INVOICE</div>
-        <div className="mt-2 border-t border-gray-200" />
+        <div className="text-[11px] font-semibold text-slate-500">SERVICE INVOICE</div>
+        <div className="mt-2 border-t border-slate-200/60" />
         <div className="mt-3 flex items-center gap-3">
           <input
             id="showRetailServiceInvoiceNote"
@@ -940,14 +940,14 @@ export default function SettingsReportsPage() {
             onChange={(e) => setShowRetailServiceInvoiceNote(e.target.checked)}
             className="h-3.5 w-3.5"
           />
-          <label htmlFor="showRetailServiceInvoiceNote" className="text-[11px] text-gray-700">
+          <label htmlFor="showRetailServiceInvoiceNote" className="text-[11px] text-slate-600">
             Show labor detail on service invoice?
           </label>
         </div>
       </div>
 
       <div className="flex items-center justify-between pt-8">
-        <button type="button" className="h-8 px-3 bg-gray-600 text-white text-xs font-semibold">
+        <button type="button" className="h-8 px-3 bg-slate-600 text-white text-xs font-semibold rounded">
           <span className="inline-flex items-center gap-2">
             <span className="text-sm leading-none">×</span>
             Cancel
@@ -959,8 +959,8 @@ export default function SettingsReportsPage() {
           disabled={saving}
           className={
             saving
-              ? 'h-8 px-4 bg-[#118df0]/70 text-white text-xs font-semibold cursor-not-allowed'
-              : 'h-8 px-4 bg-[#118df0] text-white text-xs font-semibold'
+              ? 'h-8 px-4 bg-navy-900/70 text-white text-xs font-semibold cursor-not-allowed'
+              : 'edc-btn-primary h-8 px-4 text-xs'
           }
         >
           <span className="inline-flex items-center gap-2">

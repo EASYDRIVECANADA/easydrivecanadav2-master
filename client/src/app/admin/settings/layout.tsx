@@ -74,20 +74,20 @@ export default function AdminSettingsLayout({ children }: { children: ReactNode 
   }, [pathname])
 
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen">
       <div className="w-full px-4 sm:px-6 lg:px-8 py-4">
         <div className="flex items-center gap-3">
           <select
             value={dealership}
             onChange={(e) => setDealership(e.target.value)}
-            className="h-8 w-full max-w-[420px] px-2 rounded border border-gray-300 bg-white text-xs font-medium text-gray-800"
+            className="h-8 w-full max-w-[420px] px-2 rounded border border-slate-200/60 bg-white text-xs font-medium text-slate-800"
           >
             <option value="EASYDRIVE CANADA">EASYDRIVE CANADA</option>
           </select>
         </div>
 
-        <div className="mt-3 border-b border-gray-200">
-          <div className="flex flex-wrap items-center gap-4 text-xs font-medium text-gray-600">
+        <div className="mt-3 border-b border-slate-200/60">
+          <div className="flex flex-wrap items-center gap-4 text-xs font-medium text-slate-600">
             {tabs.map((t) => {
               const selected = activeKey === t.key
               const disabled = !isVerified
@@ -105,10 +105,10 @@ export default function AdminSettingsLayout({ children }: { children: ReactNode 
                   }}
                   className={
                     disabled
-                      ? 'inline-flex items-center gap-1.5 px-2 py-2 border-b-2 border-transparent text-gray-400 cursor-not-allowed'
+                      ? 'inline-flex items-center gap-1.5 px-2 py-2 border-b-2 border-transparent text-slate-300 cursor-not-allowed'
                       : selected
-                        ? 'inline-flex items-center gap-1.5 px-2 py-2 border-b-2 border-[#118df0] text-[#118df0]'
-                        : 'inline-flex items-center gap-1.5 px-2 py-2 border-b-2 border-transparent hover:text-gray-900'
+                        ? 'inline-flex items-center gap-1.5 px-2 py-2 border-b-2 border-navy-900 text-navy-900'
+                        : 'inline-flex items-center gap-1.5 px-2 py-2 border-b-2 border-transparent hover:text-slate-800'
                   }
                 >
                   {t.key === 'dealership' ? (

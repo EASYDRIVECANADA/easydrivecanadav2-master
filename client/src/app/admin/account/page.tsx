@@ -107,33 +107,36 @@ export default function AdminAccountPage() {
   }, [displayRole, isFromVerification])
 
   return (
-    <div className="min-h-screen bg-gray-100">
-      <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
+    <div className="min-h-screen">
+      <div className="edc-page-header">
         <div className="flex items-center justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Account Settings</h1>
-            <p className="text-sm text-gray-600 mt-1">Manage your admin session and verification details.</p>
+            <h1 className="text-2xl font-bold text-slate-900">Account Settings</h1>
+            <p className="text-sm text-slate-500 mt-1">Manage your admin session and verification details.</p>
           </div>
           <button
             type="button"
             onClick={() => router.push('/admin')}
-            className="px-4 py-2 rounded-lg text-sm font-medium bg-white border border-gray-200 hover:bg-gray-50"
+            className="edc-btn-ghost text-sm"
           >
             Back to Dashboard
           </button>
         </div>
+      </div>
 
-        <div className="mt-6 max-w-3xl">
+      <div className="px-6 py-6">
+
+        <div className="max-w-3xl">
           {error ? (
-            <div className="p-4 rounded-xl border border-red-200 bg-red-50 text-red-700 text-sm">{error}</div>
+            <div className="p-4 rounded-xl border border-red-200 bg-red-50 text-danger-600 text-sm">{error}</div>
           ) : null}
 
-          <div className="mt-4 bg-white rounded-2xl border border-gray-200 shadow-sm p-6">
+          <div className="mt-4 edc-card p-6">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
               <div>
-                <div className="text-sm font-semibold text-gray-900">Profile</div>
-                <div className="mt-1 text-xs text-gray-600">Signed in as</div>
-                <div className="mt-1 text-sm font-medium text-gray-900 break-all">{session?.email || '—'}</div>
+                <div className="text-sm font-semibold text-slate-800">Profile</div>
+                <div className="mt-1 text-xs text-slate-500">Signed in as</div>
+                <div className="mt-1 text-sm font-medium text-slate-800 break-all">{session?.email || '—'}</div>
               </div>
               <div className="flex flex-col items-start sm:items-end gap-2">
                 <span
@@ -149,7 +152,7 @@ export default function AdminAccountPage() {
                   className={
                     isFromVerification
                       ? 'inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800'
-                      : 'inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-gray-100 text-gray-800'
+                      : 'inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-slate-100 text-slate-700'
                   }
                 >
                   {isFromVerification ? 'Verified via Gmail' : 'Access-code account'}
@@ -159,27 +162,27 @@ export default function AdminAccountPage() {
 
             <div className="mt-6 grid grid-cols-1 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Full name</label>
+                <label className="block text-sm font-medium text-slate-600 mb-1">Full name</label>
                 <input
-                  className="w-full border border-gray-300 rounded-lg px-4 py-2 bg-gray-50 text-gray-800"
+                  className="edc-input bg-slate-50"
                   value={verification?.full_name || ''}
                   disabled
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Address</label>
+                <label className="block text-sm font-medium text-slate-600 mb-1">Address</label>
                 <input
-                  className="w-full border border-gray-300 rounded-lg px-4 py-2 bg-gray-50 text-gray-800"
+                  className="edc-input bg-slate-50"
                   value={verification?.address || ''}
                   disabled
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Driver license number</label>
+                <label className="block text-sm font-medium text-slate-600 mb-1">Driver license number</label>
                 <input
-                  className="w-full border border-gray-300 rounded-lg px-4 py-2 bg-gray-50 text-gray-800"
+                  className="edc-input bg-slate-50"
                   value={verification?.license_number || ''}
                   disabled
                 />
@@ -190,28 +193,28 @@ export default function AdminAccountPage() {
               <button
                 type="button"
                 onClick={() => router.push('/account')}
-                className="px-4 py-2 rounded-lg text-sm font-medium bg-white border border-gray-200 hover:bg-gray-50"
+                className="edc-btn-ghost text-sm"
               >
                 Open Customer Account Page
               </button>
               <button
                 type="button"
                 onClick={() => router.push('/account/verification')}
-                className="px-4 py-2 rounded-lg text-sm font-medium bg-white border border-gray-200 hover:bg-gray-50"
+                className="edc-btn-ghost text-sm"
               >
                 Validate ID
               </button>
               <button
                 type="button"
                 onClick={() => router.push('/admin/users')}
-                className="px-4 py-2 rounded-lg text-sm font-medium bg-white border border-gray-200 hover:bg-gray-50"
+                className="edc-btn-ghost text-sm"
               >
                 Manage Users
               </button>
             </div>
 
             {loading ? (
-              <div className="mt-4 text-sm text-gray-500">Loading…</div>
+              <div className="mt-4 text-sm text-slate-400">Loading…</div>
             ) : null}
           </div>
         </div>

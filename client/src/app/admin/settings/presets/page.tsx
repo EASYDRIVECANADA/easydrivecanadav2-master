@@ -133,8 +133,8 @@ function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean
       onClick={() => onChange(!checked)}
       className={
         checked
-          ? 'h-4 w-9 rounded-full bg-[#118df0] relative border border-[#118df0]'
-          : 'h-4 w-9 rounded-full bg-white relative border border-gray-300'
+          ? 'h-4 w-9 rounded-full bg-navy-900 relative border border-navy-900'
+          : 'h-4 w-9 rounded-full bg-white relative border border-slate-300'
       }
       aria-pressed={checked}
     >
@@ -142,7 +142,7 @@ function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean
         className={
           checked
             ? 'absolute right-0.5 top-0.5 h-3 w-3 rounded-full bg-white'
-            : 'absolute left-0.5 top-0.5 h-3 w-3 rounded-full bg-gray-400'
+            : 'absolute left-0.5 top-0.5 h-3 w-3 rounded-full bg-slate-400'
         }
       />
     </button>
@@ -170,8 +170,8 @@ function ToolbarButton({
       }}
       className={
         active
-          ? 'h-5 min-w-5 px-1 border border-[#118df0] bg-[#118df0] text-[10px] text-white'
-          : 'h-5 min-w-5 px-1 border border-gray-200 bg-white text-[10px] text-gray-700'
+          ? 'h-5 min-w-5 px-1 border border-navy-900 bg-navy-900 text-[10px] text-white'
+          : 'h-5 min-w-5 px-1 border border-slate-200/60 bg-white text-[10px] text-slate-600'
       }
       tabIndex={-1}
     >
@@ -331,10 +331,10 @@ function SimpleRichTextEditor({
   }
 
   return (
-    <div className="border border-gray-300">
+    <div className="border border-slate-200/60">
       <div
         ref={toolbarRef}
-        className="min-h-7 px-2 py-1 flex items-center flex-wrap gap-1 border-b border-gray-200 bg-gray-50 relative"
+        className="min-h-7 px-2 py-1 flex items-center flex-wrap gap-1 border-b border-slate-200/60 bg-slate-50 relative"
       >
         <ToolbarButton title="Bold" active={toolbarState.bold} onClick={() => runCmd('bold')}>
           B
@@ -357,7 +357,7 @@ function SimpleRichTextEditor({
         </ToolbarButton>
 
         <select
-          className="h-5 border border-gray-200 bg-white text-[10px] text-gray-700 px-1"
+          className="h-5 border border-slate-200/60 bg-white text-[10px] text-slate-600 px-1"
           defaultValue=""
           onChange={(e) => {
             const v = e.target.value
@@ -380,8 +380,8 @@ function SimpleRichTextEditor({
           type="button"
           className={
             colorPopover === 'text'
-              ? 'h-5 min-w-5 px-1 border border-[#118df0] bg-[#118df0] text-[10px] text-white'
-              : 'h-5 min-w-5 px-1 border border-gray-200 bg-white text-[10px] text-gray-700'
+              ? 'h-5 min-w-5 px-1 border border-navy-900 bg-navy-900 text-[10px] text-white'
+              : 'h-5 min-w-5 px-1 border border-slate-200/60 bg-white text-[10px] text-slate-600'
           }
           title="Text color"
           onMouseDown={(e) => {
@@ -394,13 +394,13 @@ function SimpleRichTextEditor({
         </button>
 
         {colorPopover === 'text' ? (
-          <div className="absolute left-2 top-full mt-1 w-[420px] border border-gray-200 bg-white shadow">
-            <div className="px-3 py-2 border-b border-gray-200">
-              <div className="text-[11px] font-semibold text-gray-700">Text Color</div>
+          <div className="absolute left-2 top-full mt-1 w-[420px] border border-slate-200/60 bg-white shadow">
+            <div className="px-3 py-2 border-b border-slate-200/60">
+              <div className="text-[11px] font-semibold text-slate-600">Text Color</div>
               <div className="mt-1 flex items-center justify-between">
                 <button
                   type="button"
-                  className="text-[11px] text-gray-700"
+                  className="text-[11px] text-slate-500"
                   onMouseDown={(e) => {
                     e.preventDefault()
                     setPendingColor('#000000')
@@ -417,7 +417,7 @@ function SimpleRichTextEditor({
                   <button
                     key={c}
                     type="button"
-                    className={(pendingColor || '') === c ? 'h-4 w-4 border border-[#118df0]' : 'h-4 w-4 border border-gray-200'}
+                    className={(pendingColor || '') === c ? 'h-4 w-4 border border-navy-900' : 'h-4 w-4 border border-slate-200/60'}
                     style={{ background: c }}
                     onMouseDown={(e) => {
                       e.preventDefault()
@@ -432,7 +432,7 @@ function SimpleRichTextEditor({
               <div className="mt-3 flex items-center justify-end gap-2">
                 <button
                   type="button"
-                  className="h-8 px-4 bg-gray-600 text-white text-xs font-semibold"
+                  className="h-8 px-4 bg-slate-600 text-white text-xs font-semibold"
                   onMouseDown={(e) => {
                     e.preventDefault()
                     setColorPopover(null)
@@ -442,7 +442,7 @@ function SimpleRichTextEditor({
                 </button>
                 <button
                   type="button"
-                  className="h-8 px-4 bg-[#118df0] text-white text-xs font-semibold"
+                  className="h-8 px-4 bg-navy-900 text-white text-xs font-semibold"
                   onMouseDown={(e) => {
                     e.preventDefault()
                     const color = pendingColor ?? '#000000'
@@ -459,7 +459,7 @@ function SimpleRichTextEditor({
       </div>
       <div
         ref={editorRef}
-        className="w-full p-3 text-xs text-gray-800 outline-none overflow-auto"
+        className="w-full p-3 text-xs text-slate-700 outline-none overflow-auto"
         style={{ height }}
         contentEditable
         suppressContentEditableWarning
@@ -484,12 +484,12 @@ function MoneyField({
 }) {
   return (
     <div className="relative">
-      <div className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-gray-500">$</div>
+      <div className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-slate-400">$</div>
       <input
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
-        className="h-7 w-full border border-gray-300 pl-6 pr-2 text-xs"
+        className="h-7 w-full border border-slate-200/60 pl-6 pr-2 text-xs"
       />
     </div>
   )
@@ -506,12 +506,12 @@ function PercentField({
 }) {
   return (
     <div className="relative">
-      <div className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-600 text-xs">%</div>
+      <div className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-500 text-xs">%</div>
       <input
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
-        className="h-7 w-full border border-gray-300 pl-6 pr-2 text-xs"
+        className="h-7 w-full border border-slate-200/60 pl-6 pr-2 text-xs"
       />
     </div>
   )
@@ -533,15 +533,15 @@ function ModalShell({
       aria-modal="true"
       onMouseDown={onClose}
     >
-      <div className="absolute inset-0 bg-black/50" />
+      <div className="absolute inset-0 bg-navy-900/60 backdrop-blur-sm" />
       <div
-        className="relative w-[460px] bg-white rounded shadow-lg"
+        className="edc-modal w-[460px] relative z-10"
         onMouseDown={(e) => e.stopPropagation()}
       >
-        <div className="h-12 px-4 border-b border-gray-200 flex items-center justify-between">
-          <div className="text-sm font-semibold text-gray-800">{title}</div>
+        <div className="h-12 px-4 border-b border-slate-200/60 flex items-center justify-between">
+          <div className="text-sm font-semibold text-slate-700">{title}</div>
           <button type="button" className="h-8 w-8 flex items-center justify-center" onClick={onClose}>
-            <span className="text-xl leading-none text-gray-500">×</span>
+            <span className="text-xl leading-none text-slate-400">×</span>
           </button>
         </div>
         <div className="p-4">{children}</div>
@@ -1930,19 +1930,19 @@ export default function SettingsPresetsPage() {
 
   if (!isVerified) {
     return (
-      <div className="min-h-screen bg-gray-100">
+      <div className="min-h-screen bg-slate-50">
         <div className="w-full px-4 sm:px-6 lg:px-8 py-10">
-          <div className="max-w-2xl bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
-            <div className="text-lg font-bold text-gray-900">Settings are disabled</div>
-            <div className="mt-2 text-sm text-gray-700">
+          <div className="max-w-2xl bg-white border border-slate-200/60 rounded-2xl shadow-sm p-6">
+            <div className="text-lg font-bold text-slate-800">Settings are disabled</div>
+            <div className="mt-2 text-sm text-slate-500">
               Your account is not verified yet. Please validate your ID to access Settings.
             </div>
             <div className="mt-5 flex items-center gap-3">
-              <Link href="/account/verification" className="px-4 py-2 rounded-lg bg-[#118df0] text-white text-sm font-semibold">
+              <Link href="/account/verification" className="edc-btn-primary h-10 px-4 text-sm">
                 Validate ID
               </Link>
-              <Link href="/admin" className="px-4 py-2 rounded-lg bg-white border border-gray-200 text-sm font-semibold text-gray-800">
-                Back to Dashboard
+              <Link href="/admin" className="px-4 py-2 rounded-lg bg-white border border-slate-200/60 text-sm font-semibold text-slate-700">
+                Back
               </Link>
             </div>
           </div>
@@ -1955,17 +1955,20 @@ export default function SettingsPresetsPage() {
     <div>
       {saveSuccessOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center" role="dialog" aria-modal="true">
-          <div className="absolute inset-0 bg-black/50" onMouseDown={() => setSaveSuccessOpen(false)} />
-          <div className="relative w-[360px] bg-white shadow-lg">
-            <div className="h-11 px-4 border-b border-gray-200 flex items-center justify-between">
-              <div className="text-sm font-semibold text-gray-800">Success</div>
+          <div
+            className="absolute inset-0 bg-navy-900/60 backdrop-blur-sm"
+            onMouseDown={() => setSaveSuccessOpen(false)}
+          />
+          <div className="edc-modal w-[360px] relative z-10">
+            <div className="h-11 px-4 border-b border-slate-200/60 flex items-center justify-between">
+              <div className="text-sm font-semibold text-slate-700">Success</div>
               <button type="button" className="h-8 w-8 flex items-center justify-center" onClick={() => setSaveSuccessOpen(false)}>
-                <span className="text-xl leading-none text-gray-500">×</span>
+                <span className="text-xl leading-none text-slate-400">×</span>
               </button>
             </div>
-            <div className="p-4 text-xs text-gray-700">{saveSuccessMessage}</div>
-            <div className="h-12 px-4 border-t border-gray-200 flex items-center justify-end">
-              <button type="button" className="h-8 px-4 bg-[#118df0] text-white text-xs font-semibold" onClick={() => setSaveSuccessOpen(false)}>
+            <div className="p-4 text-xs text-slate-600">{saveSuccessMessage}</div>
+            <div className="h-12 px-4 border-t border-slate-200/60 flex items-center justify-end">
+              <button type="button" className="edc-btn-primary h-8 px-4 text-xs" onClick={() => setSaveSuccessOpen(false)}>
                 OK
               </button>
             </div>
@@ -1975,25 +1978,28 @@ export default function SettingsPresetsPage() {
 
       {deleteLeadPropertyConfirmOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center" role="dialog" aria-modal="true">
-          <div className="absolute inset-0 bg-black/50" onMouseDown={() => setDeleteLeadPropertyConfirmOpen(false)} />
-          <div className="relative w-[420px] bg-white shadow-lg" onMouseDown={(e) => e.stopPropagation()}>
-            <div className="h-11 px-4 border-b border-gray-200 flex items-center justify-between">
-              <div className="text-sm font-semibold text-gray-800">Warning</div>
+          <div
+            className="absolute inset-0 bg-navy-900/60 backdrop-blur-sm"
+            onMouseDown={() => setDeleteLeadPropertyConfirmOpen(false)}
+          />
+          <div className="edc-modal w-[420px] relative z-10" onMouseDown={(e) => e.stopPropagation()}>
+            <div className="h-11 px-4 border-b border-slate-200/60 flex items-center justify-between">
+              <div className="text-sm font-semibold text-slate-700">Warning</div>
               <button
                 type="button"
                 className="h-8 w-8 flex items-center justify-center"
                 onClick={() => setDeleteLeadPropertyConfirmOpen(false)}
               >
-                <span className="text-xl leading-none text-gray-500">×</span>
+                <span className="text-xl leading-none text-slate-400">×</span>
               </button>
             </div>
-            <div className="p-4 text-xs text-gray-700">
+            <div className="p-4 text-xs text-slate-600">
               Delete lead property {leadPropertyToDelete?.name || ''}? This cannot be undone.
             </div>
-            <div className="h-12 px-4 border-t border-gray-200 flex items-center justify-end gap-2">
+            <div className="h-12 px-4 border-t border-slate-200/60 flex items-center justify-end gap-2">
               <button
                 type="button"
-                className="h-8 px-4 bg-gray-600 text-white text-xs font-semibold"
+                className="h-8 px-4 bg-slate-600 text-white text-xs font-semibold"
                 onClick={() => setDeleteLeadPropertyConfirmOpen(false)}
                 disabled={saving}
               >
@@ -2018,23 +2024,26 @@ export default function SettingsPresetsPage() {
 
       {deleteDisclosureConfirmOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center" role="dialog" aria-modal="true">
-          <div className="absolute inset-0 bg-black/50" onMouseDown={() => setDeleteDisclosureConfirmOpen(false)} />
-          <div className="relative w-[420px] bg-white shadow-lg" onMouseDown={(e) => e.stopPropagation()}>
-            <div className="h-11 px-4 border-b border-gray-200 flex items-center justify-between">
-              <div className="text-sm font-semibold text-gray-800">Warning</div>
+          <div
+            className="absolute inset-0 bg-navy-900/60 backdrop-blur-sm"
+            onMouseDown={() => setDeleteDisclosureConfirmOpen(false)}
+          />
+          <div className="edc-modal w-[420px] relative z-10" onMouseDown={(e) => e.stopPropagation()}>
+            <div className="h-11 px-4 border-b border-slate-200/60 flex items-center justify-between">
+              <div className="text-sm font-semibold text-slate-700">Warning</div>
               <button
                 type="button"
                 className="h-8 w-8 flex items-center justify-center"
                 onClick={() => setDeleteDisclosureConfirmOpen(false)}
               >
-                <span className="text-xl leading-none text-gray-500">×</span>
+                <span className="text-xl leading-none text-slate-400">×</span>
               </button>
             </div>
-            <div className="p-4 text-xs text-gray-700">Delete disclosure {disclosureToDelete?.name || ''}? This cannot be undone.</div>
-            <div className="h-12 px-4 border-t border-gray-200 flex items-center justify-end gap-2">
+            <div className="p-4 text-xs text-slate-600">Delete disclosure {disclosureToDelete?.name || ''}? This cannot be undone.</div>
+            <div className="h-12 px-4 border-t border-slate-200/60 flex items-center justify-end gap-2">
               <button
                 type="button"
-                className="h-8 px-4 bg-gray-600 text-white text-xs font-semibold"
+                className="h-8 px-4 bg-slate-600 text-white text-xs font-semibold"
                 onClick={() => setDeleteDisclosureConfirmOpen(false)}
                 disabled={saving}
               >
@@ -2059,25 +2068,28 @@ export default function SettingsPresetsPage() {
 
       {deleteInventoryCostConfirmOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center" role="dialog" aria-modal="true">
-          <div className="absolute inset-0 bg-black/50" onMouseDown={() => setDeleteInventoryCostConfirmOpen(false)} />
-          <div className="relative w-[420px] bg-white shadow-lg" onMouseDown={(e) => e.stopPropagation()}>
-            <div className="h-11 px-4 border-b border-gray-200 flex items-center justify-between">
-              <div className="text-sm font-semibold text-gray-800">Warning</div>
+          <div
+            className="absolute inset-0 bg-navy-900/60 backdrop-blur-sm"
+            onMouseDown={() => setDeleteInventoryCostConfirmOpen(false)}
+          />
+          <div className="edc-modal w-[420px] relative z-10" onMouseDown={(e) => e.stopPropagation()}>
+            <div className="h-11 px-4 border-b border-slate-200/60 flex items-center justify-between">
+              <div className="text-sm font-semibold text-slate-700">Warning</div>
               <button
                 type="button"
                 className="h-8 w-8 flex items-center justify-center"
                 onClick={() => setDeleteInventoryCostConfirmOpen(false)}
               >
-                <span className="text-xl leading-none text-gray-500">×</span>
+                <span className="text-xl leading-none text-slate-400">×</span>
               </button>
             </div>
-            <div className="p-4 text-xs text-gray-700">
+            <div className="p-4 text-xs text-slate-600">
               Delete inventory cost {inventoryCostToDelete?.name || ''}? This cannot be undone.
             </div>
-            <div className="h-12 px-4 border-t border-gray-200 flex items-center justify-end gap-2">
+            <div className="h-12 px-4 border-t border-slate-200/60 flex items-center justify-end gap-2">
               <button
                 type="button"
-                className="h-8 px-4 bg-gray-600 text-white text-xs font-semibold"
+                className="h-8 px-4 bg-slate-600 text-white text-xs font-semibold"
                 onClick={() => setDeleteInventoryCostConfirmOpen(false)}
                 disabled={saving}
               >
@@ -2102,25 +2114,28 @@ export default function SettingsPresetsPage() {
 
       {deleteInsuranceConfirmOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center" role="dialog" aria-modal="true">
-          <div className="absolute inset-0 bg-black/50" onMouseDown={() => setDeleteInsuranceConfirmOpen(false)} />
-          <div className="relative w-[420px] bg-white shadow-lg" onMouseDown={(e) => e.stopPropagation()}>
-            <div className="h-11 px-4 border-b border-gray-200 flex items-center justify-between">
-              <div className="text-sm font-semibold text-gray-800">Warning</div>
+          <div
+            className="absolute inset-0 bg-navy-900/60 backdrop-blur-sm"
+            onMouseDown={() => setDeleteInsuranceConfirmOpen(false)}
+          />
+          <div className="edc-modal w-[420px] relative z-10" onMouseDown={(e) => e.stopPropagation()}>
+            <div className="h-11 px-4 border-b border-slate-200/60 flex items-center justify-between">
+              <div className="text-sm font-semibold text-slate-700">Warning</div>
               <button
                 type="button"
                 className="h-8 w-8 flex items-center justify-center"
                 onClick={() => setDeleteInsuranceConfirmOpen(false)}
               >
-                <span className="text-xl leading-none text-gray-500">×</span>
+                <span className="text-xl leading-none text-slate-400">×</span>
               </button>
             </div>
-            <div className="p-4 text-xs text-gray-700">
+            <div className="p-4 text-xs text-slate-600">
               Delete insurance {insuranceToDelete?.name || ''}? This cannot be undone.
             </div>
-            <div className="h-12 px-4 border-t border-gray-200 flex items-center justify-end gap-2">
+            <div className="h-12 px-4 border-t border-slate-200/60 flex items-center justify-end gap-2">
               <button
                 type="button"
-                className="h-8 px-4 bg-gray-600 text-white text-xs font-semibold"
+                className="h-8 px-4 bg-slate-600 text-white text-xs font-semibold"
                 onClick={() => setDeleteInsuranceConfirmOpen(false)}
                 disabled={saving}
               >
@@ -2145,25 +2160,28 @@ export default function SettingsPresetsPage() {
 
       {deleteWarrantyConfirmOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center" role="dialog" aria-modal="true">
-          <div className="absolute inset-0 bg-black/50" onMouseDown={() => setDeleteWarrantyConfirmOpen(false)} />
-          <div className="relative w-[420px] bg-white shadow-lg" onMouseDown={(e) => e.stopPropagation()}>
-            <div className="h-11 px-4 border-b border-gray-200 flex items-center justify-between">
-              <div className="text-sm font-semibold text-gray-800">Warning</div>
+          <div
+            className="absolute inset-0 bg-navy-900/60 backdrop-blur-sm"
+            onMouseDown={() => setDeleteWarrantyConfirmOpen(false)}
+          />
+          <div className="edc-modal w-[420px] relative z-10" onMouseDown={(e) => e.stopPropagation()}>
+            <div className="h-11 px-4 border-b border-slate-200/60 flex items-center justify-between">
+              <div className="text-sm font-semibold text-slate-700">Warning</div>
               <button
                 type="button"
                 className="h-8 w-8 flex items-center justify-center"
                 onClick={() => setDeleteWarrantyConfirmOpen(false)}
               >
-                <span className="text-xl leading-none text-gray-500">×</span>
+                <span className="text-xl leading-none text-slate-400">×</span>
               </button>
             </div>
-            <div className="p-4 text-xs text-gray-700">
+            <div className="p-4 text-xs text-slate-600">
               Delete warranty {warrantyToDelete?.name || ''}? This cannot be undone.
             </div>
-            <div className="h-12 px-4 border-t border-gray-200 flex items-center justify-end gap-2">
+            <div className="h-12 px-4 border-t border-slate-200/60 flex items-center justify-end gap-2">
               <button
                 type="button"
-                className="h-8 px-4 bg-gray-600 text-white text-xs font-semibold"
+                className="h-8 px-4 bg-slate-600 text-white text-xs font-semibold"
                 onClick={() => setDeleteWarrantyConfirmOpen(false)}
                 disabled={saving}
               >
@@ -2188,25 +2206,28 @@ export default function SettingsPresetsPage() {
 
       {deleteAccessoryConfirmOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center" role="dialog" aria-modal="true">
-          <div className="absolute inset-0 bg-black/50" onMouseDown={() => setDeleteAccessoryConfirmOpen(false)} />
-          <div className="relative w-[420px] bg-white shadow-lg" onMouseDown={(e) => e.stopPropagation()}>
-            <div className="h-11 px-4 border-b border-gray-200 flex items-center justify-between">
-              <div className="text-sm font-semibold text-gray-800">Warning</div>
+          <div
+            className="absolute inset-0 bg-navy-900/60 backdrop-blur-sm"
+            onMouseDown={() => setDeleteAccessoryConfirmOpen(false)}
+          />
+          <div className="edc-modal w-[420px] relative z-10" onMouseDown={(e) => e.stopPropagation()}>
+            <div className="h-11 px-4 border-b border-slate-200/60 flex items-center justify-between">
+              <div className="text-sm font-semibold text-slate-700">Warning</div>
               <button
                 type="button"
                 className="h-8 w-8 flex items-center justify-center"
                 onClick={() => setDeleteAccessoryConfirmOpen(false)}
               >
-                <span className="text-xl leading-none text-gray-500">×</span>
+                <span className="text-xl leading-none text-slate-400">×</span>
               </button>
             </div>
-            <div className="p-4 text-xs text-gray-700">
+            <div className="p-4 text-xs text-slate-600">
               Delete accessory {accessoryToDelete?.name || ''}? This cannot be undone.
             </div>
-            <div className="h-12 px-4 border-t border-gray-200 flex items-center justify-end gap-2">
+            <div className="h-12 px-4 border-t border-slate-200/60 flex items-center justify-end gap-2">
               <button
                 type="button"
-                className="h-8 px-4 bg-gray-600 text-white text-xs font-semibold"
+                className="h-8 px-4 bg-slate-600 text-white text-xs font-semibold"
                 onClick={() => setDeleteAccessoryConfirmOpen(false)}
                 disabled={saving}
               >
@@ -2231,23 +2252,26 @@ export default function SettingsPresetsPage() {
 
       {deleteTaxConfirmOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center" role="dialog" aria-modal="true">
-          <div className="absolute inset-0 bg-black/50" onMouseDown={() => setDeleteTaxConfirmOpen(false)} />
-          <div className="relative w-[420px] bg-white shadow-lg" onMouseDown={(e) => e.stopPropagation()}>
-            <div className="h-11 px-4 border-b border-gray-200 flex items-center justify-between">
-              <div className="text-sm font-semibold text-gray-800">Warning</div>
+          <div
+            className="absolute inset-0 bg-navy-900/60 backdrop-blur-sm"
+            onMouseDown={() => setDeleteTaxConfirmOpen(false)}
+          />
+          <div className="edc-modal w-[420px] relative z-10" onMouseDown={(e) => e.stopPropagation()}>
+            <div className="h-11 px-4 border-b border-slate-200/60 flex items-center justify-between">
+              <div className="text-sm font-semibold text-slate-700">Warning</div>
               <button
                 type="button"
                 className="h-8 w-8 flex items-center justify-center"
                 onClick={() => setDeleteTaxConfirmOpen(false)}
               >
-                <span className="text-xl leading-none text-gray-500">×</span>
+                <span className="text-xl leading-none text-slate-400">×</span>
               </button>
             </div>
-            <div className="p-4 text-xs text-gray-700">Delete tax rate {taxToDelete?.name || ''}? This cannot be undone.</div>
-            <div className="h-12 px-4 border-t border-gray-200 flex items-center justify-end gap-2">
+            <div className="p-4 text-xs text-slate-600">Delete tax rate {taxToDelete?.name || ''}? This cannot be undone.</div>
+            <div className="h-12 px-4 border-t border-slate-200/60 flex items-center justify-end gap-2">
               <button
                 type="button"
-                className="h-8 px-4 bg-gray-600 text-white text-xs font-semibold"
+                className="h-8 px-4 bg-slate-600 text-white text-xs font-semibold"
                 onClick={() => setDeleteTaxConfirmOpen(false)}
                 disabled={saving}
               >
@@ -2272,25 +2296,28 @@ export default function SettingsPresetsPage() {
 
       {deleteConfirmOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center" role="dialog" aria-modal="true">
-          <div className="absolute inset-0 bg-black/50" onMouseDown={() => setDeleteConfirmOpen(false)} />
-          <div className="relative w-[420px] bg-white shadow-lg" onMouseDown={(e) => e.stopPropagation()}>
-            <div className="h-11 px-4 border-b border-gray-200 flex items-center justify-between">
-              <div className="text-sm font-semibold text-gray-800">Warning</div>
+          <div
+            className="absolute inset-0 bg-navy-900/60 backdrop-blur-sm"
+            onMouseDown={() => setDeleteConfirmOpen(false)}
+          />
+          <div className="edc-modal w-[420px] relative z-10" onMouseDown={(e) => e.stopPropagation()}>
+            <div className="h-11 px-4 border-b border-slate-200/60 flex items-center justify-between">
+              <div className="text-sm font-semibold text-slate-700">Warning</div>
               <button
                 type="button"
                 className="h-8 w-8 flex items-center justify-center"
                 onClick={() => setDeleteConfirmOpen(false)}
               >
-                <span className="text-xl leading-none text-gray-500">×</span>
+                <span className="text-xl leading-none text-slate-400">×</span>
               </button>
             </div>
-            <div className="p-4 text-xs text-gray-700">
+            <div className="p-4 text-xs text-slate-600">
               Delete fee {feeToDelete?.name || ''}? This cannot be undone.
             </div>
-            <div className="h-12 px-4 border-t border-gray-200 flex items-center justify-end gap-2">
+            <div className="h-12 px-4 border-t border-slate-200/60 flex items-center justify-end gap-2">
               <button
                 type="button"
-                className="h-8 px-4 bg-gray-600 text-white text-xs font-semibold"
+                className="h-8 px-4 bg-slate-600 text-white text-xs font-semibold"
                 onClick={() => setDeleteConfirmOpen(false)}
                 disabled={saving}
               >
@@ -2315,9 +2342,9 @@ export default function SettingsPresetsPage() {
 
       <div className="grid grid-cols-[240px_1fr] gap-6">
         <div>
-          <div className="text-[11px] text-gray-500 mb-1">{activeCategory}</div>
+          <div className="text-[11px] text-slate-400 mb-1">{activeCategory}</div>
           <select
-            className="h-7 w-full border border-gray-300 px-2 text-xs bg-white"
+            className="h-7 w-full border border-slate-200/60 px-2 text-xs bg-white"
             value={activeCategory}
             onChange={(e) => setActiveCategory(e.target.value as PresetCategory)}
           >
@@ -2328,7 +2355,7 @@ export default function SettingsPresetsPage() {
             ))}
           </select>
 
-          <div className="mt-3 border border-gray-200 bg-white">
+          <div className="mt-3 border border-slate-200/60 bg-white">
             {categories.map((c) => {
               const isActive = c === activeCategory
               return (
@@ -2338,8 +2365,8 @@ export default function SettingsPresetsPage() {
                   onClick={() => setActiveCategory(c)}
                   className={
                     isActive
-                      ? 'w-full h-8 px-3 flex items-center text-xs bg-[#118df0] text-white'
-                      : 'w-full h-8 px-3 flex items-center text-xs text-[#118df0] hover:bg-gray-50'
+                      ? 'w-full h-8 px-3 flex items-center text-xs bg-navy-900 text-white'
+                      : 'w-full h-8 px-3 flex items-center text-xs text-slate-700 hover:bg-slate-50 hover:text-slate-900'
                   }
                 >
                   <span className="inline-flex items-center gap-2">
@@ -2362,7 +2389,7 @@ export default function SettingsPresetsPage() {
           <div className="flex items-center justify-between gap-4 py-2">
             <button
               type="button"
-              className="h-7 w-7 flex items-center justify-center text-[#118df0]"
+              className="h-7 w-7 flex items-center justify-center text-slate-700 hover:text-slate-900"
               title="Add"
               onClick={openModal}
             >
@@ -2374,7 +2401,7 @@ export default function SettingsPresetsPage() {
 
             <div className="flex-1 flex items-center gap-2">
               <div className="relative w-full max-w-[420px]">
-                <div className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500">
+                <div className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400">
                   <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor">
                     <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35" />
                     <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M11 19a8 8 0 110-16 8 8 0 010 16z" />
@@ -2384,13 +2411,13 @@ export default function SettingsPresetsPage() {
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   placeholder="search"
-                  className="h-7 w-full border border-gray-300 pl-7 pr-2 text-xs"
+                  className="h-7 w-full border border-slate-200/60 pl-7 pr-2 text-xs"
                 />
               </div>
             </div>
 
             <select
-              className="h-7 border border-gray-300 px-2 text-xs bg-white"
+              className="h-7 border border-slate-200/60 px-2 text-xs bg-white"
               value={pageSize}
               onChange={(e) => setPageSize(parseInt(e.target.value, 10))}
             >
@@ -2400,34 +2427,34 @@ export default function SettingsPresetsPage() {
             </select>
           </div>
 
-          <div className="mt-2 border border-gray-200">
-            <div className={`grid ${tableConfig.grid} gap-0 border-b border-gray-200 bg-white`}>
+          <div className="mt-2 border border-slate-200/60">
+            <div className={`grid ${tableConfig.grid} gap-0 border-b border-slate-200/60 bg-white`}>
               <div className="h-8" />
               {tableConfig.headers.map((h) => (
-                <div key={h} className="h-8 flex items-center text-[11px] font-semibold text-gray-700">
+                <div key={h} className="h-8 flex items-center text-[11px] font-semibold text-slate-600">
                   {h}
                 </div>
               ))}
             </div>
 
             {activeCategory === 'Fees' && loadingFees ? (
-              <div className="p-6 text-xs text-gray-500">Loading…</div>
+              <div className="p-6 text-xs text-slate-400">Loading…</div>
             ) : activeCategory === 'Accessories' && loadingAccessories ? (
-              <div className="p-6 text-xs text-gray-500">Loading…</div>
+              <div className="p-6 text-xs text-slate-400">Loading…</div>
             ) : activeCategory === 'Warranties' && loadingWarranties ? (
-              <div className="p-6 text-xs text-gray-500">Loading…</div>
+              <div className="p-6 text-xs text-slate-400">Loading…</div>
             ) : activeCategory === 'Insurances' && loadingInsurances ? (
-              <div className="p-6 text-xs text-gray-500">Loading…</div>
+              <div className="p-6 text-xs text-slate-400">Loading…</div>
             ) : activeCategory === 'Lead Properties' && loadingLeadProperties ? (
-              <div className="p-6 text-xs text-gray-500">Loading…</div>
+              <div className="p-6 text-xs text-slate-400">Loading…</div>
             ) : activeCategory === 'Disclosures' && loadingDisclosures ? (
-              <div className="p-6 text-xs text-gray-500">Loading…</div>
+              <div className="p-6 text-xs text-slate-400">Loading…</div>
             ) : activeCategory === 'Inventory Costs' && loadingInventoryCosts ? (
-              <div className="p-6 text-xs text-gray-500">Loading…</div>
+              <div className="p-6 text-xs text-slate-400">Loading…</div>
             ) : activeCategory === 'Tax Rates' && loadingTaxes ? (
-              <div className="p-6 text-xs text-gray-500">Loading…</div>
+              <div className="p-6 text-xs text-slate-400">Loading…</div>
             ) : visible.length === 0 ? (
-              <div className="p-6 text-xs text-gray-500">No presets found.</div>
+              <div className="p-6 text-xs text-slate-400">No presets found.</div>
             ) : (
               <div>
                 {visible.map((r) => {
@@ -2440,11 +2467,11 @@ export default function SettingsPresetsPage() {
                   const disclosure = activeCategory === 'Disclosures' ? disclosureRows.find((x) => x.id === r.id) : null
                   const invCost = activeCategory === 'Inventory Costs' ? inventoryCostRows.find((x) => x.id === r.id) : null
                   return (
-                  <div key={r.id} className={`grid ${tableConfig.grid} border-b border-gray-100`}>
+                  <div key={r.id} className={`grid ${tableConfig.grid} border-b border-slate-100`}>
                     <div className="h-10 flex items-center gap-2 px-2">
                       <button
                         type="button"
-                        className="h-6 w-6 flex items-center justify-center text-gray-500 hover:text-gray-800"
+                        className="h-6 w-6 flex items-center justify-center text-slate-400 hover:text-slate-700"
                         title="Edit"
                         onClick={() => {
                           if (activeCategory === 'Fees' && fee) openEditFee(fee)
@@ -2480,50 +2507,50 @@ export default function SettingsPresetsPage() {
                         <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
                           <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M3 6h18" />
                           <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M8 6V4h8v2" />
-                          <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M19 6l-1 14H6L5 6" />
+                          <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M18 6l-1 14H6L5 6" />
                         </svg>
                       </button>
                     </div>
                     {activeCategory === 'Lead Properties' ? (
                       <>
-                        <div className="h-10 flex items-center text-xs text-gray-800">{r.name}</div>
-                        <div className="h-10 flex items-center text-xs text-gray-800">{r.description || ''}</div>
-                        <div className="h-10 flex items-center text-xs text-gray-800">{r.fieldType || ''}</div>
+                        <div className="h-10 flex items-center text-xs text-slate-700">{r.name}</div>
+                        <div className="h-10 flex items-center text-xs text-slate-700">{r.description || ''}</div>
+                        <div className="h-10 flex items-center text-xs text-slate-700">{r.fieldType || ''}</div>
                       </>
                     ) : activeCategory === 'Disclosures' ? (
                       <>
-                        <div className="h-10 flex items-center text-xs text-gray-800">{r.name}</div>
-                        <div className="h-10 flex items-center text-xs text-gray-800">{r.disclosure || ''}</div>
-                        <div className="h-10 flex items-center text-xs text-gray-800">{r.favourite || ''}</div>
+                        <div className="h-10 flex items-center text-xs text-slate-700">{r.name}</div>
+                        <div className="h-10 flex items-center text-xs text-slate-700">{r.disclosure || ''}</div>
+                        <div className="h-10 flex items-center text-xs text-slate-700">{r.favourite || ''}</div>
                       </>
                     ) : activeCategory === 'Inventory Costs' ? (
                       <>
-                        <div className="h-10 flex items-center text-xs text-gray-800">{r.name}</div>
-                        <div className="h-10 flex items-center text-xs text-gray-800">{r.groupName || ''}</div>
-                        <div className="h-10 flex items-center text-xs text-gray-800">{r.price || ''}</div>
+                        <div className="h-10 flex items-center text-xs text-slate-700">{r.name}</div>
+                        <div className="h-10 flex items-center text-xs text-slate-700">{r.groupName || ''}</div>
+                        <div className="h-10 flex items-center text-xs text-slate-700">{r.price || ''}</div>
                       </>
                     ) : activeCategory === 'Insurances' ? (
                       <>
-                        <div className="h-10 flex items-center text-xs text-gray-800">{r.name}</div>
-                        <div className="h-10 flex items-center text-xs text-gray-800">{r.description || ''}</div>
-                        <div className="h-10 flex items-center text-xs text-gray-800">{r.duration || ''}</div>
-                        <div className="h-10 flex items-center text-xs text-gray-800">{r.deductible || ''}</div>
-                        <div className="h-10 flex items-center text-xs text-gray-800">{r.price || ''}</div>
+                        <div className="h-10 flex items-center text-xs text-slate-700">{r.name}</div>
+                        <div className="h-10 flex items-center text-xs text-slate-700">{r.description || ''}</div>
+                        <div className="h-10 flex items-center text-xs text-slate-700">{r.duration || ''}</div>
+                        <div className="h-10 flex items-center text-xs text-slate-700">{r.deductible || ''}</div>
+                        <div className="h-10 flex items-center text-xs text-slate-700">{r.price || ''}</div>
                       </>
                     ) : activeCategory === 'Warranties' ? (
                       <>
-                        <div className="h-10 flex items-center text-xs text-gray-800">{r.name}</div>
-                        <div className="h-10 flex items-center text-xs text-gray-800">{r.description || ''}</div>
-                        <div className="h-10 flex items-center text-xs text-gray-800">{r.distance || ''}</div>
-                        <div className="h-10 flex items-center text-xs text-gray-800">{r.duration || ''}</div>
-                        <div className="h-10 flex items-center text-xs text-gray-800">{r.deductible || ''}</div>
-                        <div className="h-10 flex items-center text-xs text-gray-800">{r.price || ''}</div>
+                        <div className="h-10 flex items-center text-xs text-slate-700">{r.name}</div>
+                        <div className="h-10 flex items-center text-xs text-slate-700">{r.description || ''}</div>
+                        <div className="h-10 flex items-center text-xs text-slate-700">{r.distance || ''}</div>
+                        <div className="h-10 flex items-center text-xs text-slate-700">{r.duration || ''}</div>
+                        <div className="h-10 flex items-center text-xs text-slate-700">{r.deductible || ''}</div>
+                        <div className="h-10 flex items-center text-xs text-slate-700">{r.price || ''}</div>
                       </>
                     ) : (
                       <>
-                        <div className="h-10 flex items-center text-xs text-gray-800">{r.name}</div>
-                        <div className="h-10 flex items-center text-xs text-gray-800">{r.description || ''}</div>
-                        <div className="h-10 flex items-center text-xs text-gray-800">{r.amount || ''}</div>
+                        <div className="h-10 flex items-center text-xs text-slate-700">{r.name}</div>
+                        <div className="h-10 flex items-center text-xs text-slate-700">{r.description || ''}</div>
+                        <div className="h-10 flex items-center text-xs text-slate-700">{r.amount || ''}</div>
                       </>
                     )}
                   </div>
@@ -2572,18 +2599,18 @@ export default function SettingsPresetsPage() {
           {taxPickerOpen ? (
             <div className="fixed inset-0 z-50 flex items-center justify-center" role="dialog" aria-modal="true">
               <div className="absolute inset-0" onMouseDown={() => setTaxPickerOpen(false)} />
-              <div className="relative w-[240px] border border-gray-200 bg-white shadow-lg" onMouseDown={(e) => e.stopPropagation()}>
+              <div className="relative w-[240px] border border-slate-200/60 bg-white shadow-lg" onMouseDown={(e) => e.stopPropagation()}>
                 <div className="p-3 space-y-2">
                   {loadingFeeTaxOptions ? (
-                    <div className="py-2 text-xs text-gray-500">Loading…</div>
+                    <div className="py-2 text-xs text-slate-400">Loading…</div>
                   ) : feeTaxOptions.length === 0 ? (
-                    <div className="py-2 text-xs text-gray-500">No tax rates found.</div>
+                    <div className="py-2 text-xs text-slate-400">No tax rates found.</div>
                   ) : (
                     feeTaxOptions.map((t) => {
                       const label = `${t.name || ''} ${t.rate == null ? '' : `${t.rate}%`}`.trim()
                       const checked = selectedTaxRates.includes(label)
                       return (
-                        <label key={t.id} className="flex items-center gap-2 text-xs text-gray-700">
+                        <label key={t.id} className="flex items-center gap-2 text-xs text-slate-600">
                           <input
                             type="checkbox"
                             checked={checked}
@@ -2604,7 +2631,7 @@ export default function SettingsPresetsPage() {
                   )}
                 </div>
                 <div className="p-3 pt-0 flex items-center justify-end">
-                  <button type="button" className="h-8 px-4 bg-[#118df0] text-white text-xs font-semibold" onClick={() => setTaxPickerOpen(false)}>
+                  <button type="button" className="h-8 px-4 bg-navy-900 text-white text-xs font-semibold" onClick={() => setTaxPickerOpen(false)}>
                     Close
                   </button>
                 </div>
@@ -2614,25 +2641,25 @@ export default function SettingsPresetsPage() {
 
           <div className="space-y-3">
             <div>
-              <div className="text-[11px] text-gray-700 mb-1">
+              <div className="text-[11px] text-slate-500 mb-1">
                 {activeCategory === 'Lead Properties' ? 'Label' : 'Name'}
               </div>
               <input
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder={activeCategory === 'Fees' ? 'fee name' : 'name'}
-                className="h-7 w-full border border-gray-300 px-2 text-xs"
+                className="h-7 w-full border border-slate-200/60 px-2 text-xs"
               />
             </div>
 
             {activeCategory !== 'Disclosures' ? (
               <div>
-                <div className="text-[11px] text-gray-700 mb-1">Description</div>
+                <div className="text-[11px] text-slate-500 mb-1">Description</div>
                 <textarea
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
                   placeholder="description"
-                  className="w-full border border-gray-300 p-2 text-xs resize-none"
+                  className="w-full border border-slate-200/60 p-2 text-xs resize-none"
                   style={{ height: 80 }}
                 />
               </div>
@@ -2641,18 +2668,18 @@ export default function SettingsPresetsPage() {
             {activeCategory === 'Fees' ? (
               <>
                 <div>
-                  <div className="text-[11px] text-gray-700 mb-1">Fee Amount</div>
+                  <div className="text-[11px] text-slate-500 mb-1">Fee Amount</div>
                   <MoneyField value={amount} onChange={setAmount} placeholder="0" />
                 </div>
                 <div>
-                  <div className="text-[11px] text-gray-700 mb-1">Fee Cost</div>
+                  <div className="text-[11px] text-slate-500 mb-1">Fee Cost</div>
                   <MoneyField value={cost} onChange={setCost} placeholder="0" />
                 </div>
                 <div className="flex items-center justify-between">
-                  <div className="text-[11px] text-gray-700">Default Tax Rates:</div>
+                  <div className="text-[11px] text-slate-500">Default Tax Rates:</div>
                   <button
                     type="button"
-                    className="text-[11px] text-[#118df0]"
+                    className="text-[11px] text-navy-900"
                     onClick={() => {
                       setTaxPickerOpen(true)
                       void fetchFeeTaxOptions()
@@ -2662,11 +2689,11 @@ export default function SettingsPresetsPage() {
                   </button>
                 </div>
                 <div className="flex items-center justify-between">
-                  <div className="text-[11px] text-gray-700">Default to new deals?</div>
+                  <div className="text-[11px] text-slate-500">Default to new deals?</div>
                   <Toggle checked={defaultToNewDeals} onChange={setDefaultToNewDeals} />
                 </div>
                 <div className="flex items-center justify-between">
-                  <div className="text-[11px] text-gray-700">Lien Fee?</div>
+                  <div className="text-[11px] text-slate-500">Lien Fee?</div>
                   <Toggle checked={lienFee} onChange={setLienFee} />
                 </div>
               </>
@@ -2675,17 +2702,17 @@ export default function SettingsPresetsPage() {
             {activeCategory === 'Accessories' ? (
               <>
                 <div>
-                  <div className="text-[11px] text-gray-700 mb-1">Amount</div>
+                  <div className="text-[11px] text-slate-500 mb-1">Amount</div>
                   <MoneyField value={amount} onChange={setAmount} placeholder="amount" />
                 </div>
                 <div>
-                  <div className="text-[11px] text-gray-700 mb-1">Cost</div>
+                  <div className="text-[11px] text-slate-500 mb-1">Cost</div>
                   <MoneyField value={cost} onChange={setCost} placeholder="cost" />
                 </div>
                 <div>
-                  <div className="text-[11px] text-gray-700 mb-1">Type</div>
+                  <div className="text-[11px] text-slate-500 mb-1">Type</div>
                   <select
-                    className="h-7 w-full border border-gray-300 px-2 text-xs bg-white"
+                    className="h-7 w-full border border-slate-200/60 px-2 text-xs bg-white"
                     value={type}
                     onChange={(e) => setType(e.target.value)}
                   >
@@ -2697,10 +2724,10 @@ export default function SettingsPresetsPage() {
                   </select>
                 </div>
                 <div className="flex items-center justify-between">
-                  <div className="text-[11px] text-gray-700">Default Tax Rates:</div>
+                  <div className="text-[11px] text-slate-500">Default Tax Rates:</div>
                   <button
                     type="button"
-                    className="text-[11px] text-[#118df0]"
+                    className="text-[11px] text-navy-900"
                     onClick={() => {
                       setTaxPickerOpen(true)
                       void fetchFeeTaxOptions()
@@ -2715,13 +2742,13 @@ export default function SettingsPresetsPage() {
             {activeCategory === 'Warranties' ? (
               <>
                 <div>
-                  <div className="text-[11px] text-gray-700 mb-1">Deductible</div>
+                  <div className="text-[11px] text-slate-500 mb-1">Deductible</div>
                   <MoneyField value={deductible} onChange={setDeductible} placeholder="0" />
                 </div>
                 <div>
-                  <div className="text-[11px] text-gray-700 mb-1">Duration</div>
+                  <div className="text-[11px] text-slate-500 mb-1">Duration</div>
                   <div className="relative">
-                    <div className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-600">
+                    <div className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-500">
                       <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor">
                         <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M3 12h18" />
                         <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M12 3v18" />
@@ -2731,14 +2758,14 @@ export default function SettingsPresetsPage() {
                       value={duration}
                       onChange={(e) => setDuration(e.target.value)}
                       placeholder="duration"
-                      className="h-7 w-full border border-gray-300 pl-7 pr-2 text-xs"
+                      className="h-7 w-full border border-slate-200/60 pl-7 pr-2 text-xs"
                     />
                   </div>
                 </div>
                 <div>
-                  <div className="text-[11px] text-gray-700 mb-1">Distance</div>
+                  <div className="text-[11px] text-slate-500 mb-1">Distance</div>
                   <div className="relative">
-                    <div className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-600">
+                    <div className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-500">
                       <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor">
                         <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M4 20h16" />
                         <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M6 20V8" />
@@ -2749,16 +2776,16 @@ export default function SettingsPresetsPage() {
                       value={distance}
                       onChange={(e) => setDistance(e.target.value)}
                       placeholder="distance"
-                      className="h-7 w-full border border-gray-300 pl-7 pr-2 text-xs"
+                      className="h-7 w-full border border-slate-200/60 pl-7 pr-2 text-xs"
                     />
                   </div>
                 </div>
                 <div>
-                  <div className="text-[11px] text-gray-700 mb-1">Price</div>
+                  <div className="text-[11px] text-slate-500 mb-1">Price</div>
                   <MoneyField value={price} onChange={setPrice} placeholder="0" />
                 </div>
                 <div>
-                  <div className="text-[11px] text-gray-700 mb-1">Cost</div>
+                  <div className="text-[11px] text-slate-500 mb-1">Cost</div>
                   <MoneyField value={cost} onChange={setCost} placeholder="0" />
                 </div>
                 <div className="flex items-center gap-2">
@@ -2769,15 +2796,15 @@ export default function SettingsPresetsPage() {
                     checked={dealerWarranty}
                     onChange={(e) => setDealerWarranty(e.target.checked)}
                   />
-                  <label htmlFor="dealerWarranty" className="text-[11px] text-gray-700">
+                  <label htmlFor="dealerWarranty" className="text-[11px] text-slate-500">
                     Dealer Warranty
                   </label>
                 </div>
                 <div className="flex items-center justify-between">
-                  <div className="text-[11px] text-gray-700">Default Tax Rates:</div>
+                  <div className="text-[11px] text-slate-500">Default Tax Rates:</div>
                   <button
                     type="button"
-                    className="text-[11px] text-[#118df0]"
+                    className="text-[11px] text-navy-900"
                     onClick={() => {
                       setTaxPickerOpen(true)
                       void fetchFeeTaxOptions()
@@ -2792,30 +2819,30 @@ export default function SettingsPresetsPage() {
             {activeCategory === 'Insurances' ? (
               <>
                 <div>
-                  <div className="text-[11px] text-gray-700 mb-1">Deductible</div>
+                  <div className="text-[11px] text-slate-500 mb-1">Deductible</div>
                   <MoneyField value={deductible} onChange={setDeductible} placeholder="deductible" />
                 </div>
                 <div>
-                  <div className="text-[11px] text-gray-700 mb-1">Duration</div>
+                  <div className="text-[11px] text-slate-500 mb-1">Duration</div>
                   <input
                     value={duration}
                     onChange={(e) => setDuration(e.target.value)}
                     placeholder="duration"
-                    className="h-7 w-full border border-gray-300 px-2 text-xs"
+                    className="h-7 w-full border border-slate-200/60 px-2 text-xs"
                   />
                 </div>
                 <div>
-                  <div className="text-[11px] text-gray-700 mb-1">Price</div>
+                  <div className="text-[11px] text-slate-500 mb-1">Price</div>
                   <MoneyField value={price} onChange={setPrice} placeholder="price" />
                 </div>
                 <div>
-                  <div className="text-[11px] text-gray-700 mb-1">Cost</div>
+                  <div className="text-[11px] text-slate-500 mb-1">Cost</div>
                   <MoneyField value={cost} onChange={setCost} placeholder="cost" />
                 </div>
                 <div>
-                  <div className="text-[11px] text-gray-700 mb-1">Type</div>
+                  <div className="text-[11px] text-slate-500 mb-1">Type</div>
                   <select
-                    className="h-7 w-full border border-gray-300 px-2 text-xs bg-white"
+                    className="h-7 w-full border border-slate-200/60 px-2 text-xs bg-white"
                     value={type}
                     onChange={(e) => setType(e.target.value)}
                   >
@@ -2825,10 +2852,10 @@ export default function SettingsPresetsPage() {
                   </select>
                 </div>
                 <div className="flex items-center justify-between">
-                  <div className="text-[11px] text-gray-700">Default Tax Rates:</div>
+                  <div className="text-[11px] text-slate-500">Default Tax Rates:</div>
                   <button
                     type="button"
-                    className="text-[11px] text-[#118df0]"
+                    className="text-[11px] text-navy-900"
                     onClick={() => {
                       setTaxPickerOpen(true)
                       void fetchFeeTaxOptions()
@@ -2843,7 +2870,7 @@ export default function SettingsPresetsPage() {
             {activeCategory === 'Tax Rates' ? (
               <>
                 <div>
-                  <div className="text-[11px] text-gray-700 mb-1">Rate</div>
+                  <div className="text-[11px] text-slate-500 mb-1">Rate</div>
                   <PercentField value={rate} onChange={setRate} placeholder="0" />
                 </div>
                 <div className="flex items-center gap-2">
@@ -2861,7 +2888,7 @@ export default function SettingsPresetsPage() {
                       }
                     }}
                   />
-                  <label htmlFor="defaultTaxRate" className="text-[11px] text-gray-700">
+                  <label htmlFor="defaultTaxRate" className="text-[11px] text-slate-500">
                     Default Tax Rate?
                   </label>
                 </div>
@@ -2869,11 +2896,11 @@ export default function SettingsPresetsPage() {
                 {isDefaultTaxRate ? (
                   <>
                     <div className="flex items-center justify-between">
-                      <div className="text-[11px] text-gray-700">Default to sales?</div>
+                      <div className="text-[11px] text-slate-500">Default to sales?</div>
                       <Toggle checked={defaultToSales} onChange={setDefaultToSales} />
                     </div>
                     <div className="flex items-center justify-between">
-                      <div className="text-[11px] text-gray-700">Default to purchases or costs?</div>
+                      <div className="text-[11px] text-slate-500">Default to purchases or costs?</div>
                       <Toggle checked={defaultToPurchasesOrCosts} onChange={setDefaultToPurchasesOrCosts} />
                     </div>
                   </>
@@ -2884,9 +2911,9 @@ export default function SettingsPresetsPage() {
             {activeCategory === 'Lead Properties' ? (
               <>
                 <div>
-                  <div className="text-[11px] text-gray-700 mb-1">Field Type</div>
+                  <div className="text-[11px] text-slate-500 mb-1">Field Type</div>
                   <select
-                    className="h-7 w-full border border-gray-300 px-2 text-xs bg-white"
+                    className="h-7 w-full border border-slate-200/60 px-2 text-xs bg-white"
                     value={fieldType}
                     onChange={(e) => setFieldType(e.target.value)}
                   >
@@ -2902,7 +2929,7 @@ export default function SettingsPresetsPage() {
             {activeCategory === 'Disclosures' ? (
               <>
                 <div>
-                  <div className="text-[11px] text-gray-700 mb-1">Disclosure</div>
+                  <div className="text-[11px] text-slate-500 mb-1">Disclosure</div>
                   <SimpleRichTextEditor value={disclosureBody} onChange={setDisclosureBody} height={120} />
                 </div>
               </>
@@ -2911,9 +2938,9 @@ export default function SettingsPresetsPage() {
             {activeCategory === 'Inventory Costs' ? (
               <>
                 <div>
-                  <div className="text-[11px] text-gray-700 mb-1">Group Name</div>
+                  <div className="text-[11px] text-slate-500 mb-1">Group Name</div>
                   <div className="relative">
-                    <div className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500">
+                    <div className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400">
                       <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor">
                         <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35" />
                         <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M11 19a8 8 0 110-16 8 8 0 010 16z" />
@@ -2923,14 +2950,14 @@ export default function SettingsPresetsPage() {
                       value={groupName}
                       onChange={(e) => setGroupName(e.target.value)}
                       placeholder="ex.transport fee"
-                      className="h-7 w-full border border-gray-300 pl-7 pr-2 text-xs"
+                      className="h-7 w-full border border-slate-200/60 pl-7 pr-2 text-xs"
                     />
                   </div>
                 </div>
                 <div>
-                  <div className="text-[11px] text-gray-700 mb-1">Vendor</div>
+                  <div className="text-[11px] text-slate-500 mb-1">Vendor</div>
                   <div className="relative">
-                    <div className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500">
+                    <div className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400">
                       <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor">
                         <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35" />
                         <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M11 19a8 8 0 110-16 8 8 0 010 16z" />
@@ -2940,33 +2967,33 @@ export default function SettingsPresetsPage() {
                       value={vendor}
                       onChange={(e) => setVendor(e.target.value)}
                       placeholder="vendor search"
-                      className="h-7 w-full border border-gray-300 pl-7 pr-2 text-xs"
+                      className="h-7 w-full border border-slate-200/60 pl-7 pr-2 text-xs"
                     />
                   </div>
                 </div>
                 <div>
-                  <div className="text-[11px] text-gray-700 mb-1">Amount</div>
+                  <div className="text-[11px] text-slate-500 mb-1">Amount</div>
                   <input
                     value={amount}
                     onChange={(e) => setAmount(e.target.value)}
                     placeholder="0"
-                    className="h-7 w-full border border-gray-300 px-2 text-xs"
+                    className="h-7 w-full border border-slate-200/60 px-2 text-xs"
                   />
                 </div>
                 <div>
-                  <div className="text-[11px] text-gray-700 mb-1">Discount</div>
+                  <div className="text-[11px] text-slate-500 mb-1">Discount</div>
                   <input
                     value={discount}
                     onChange={(e) => setDiscount(e.target.value)}
                     placeholder="0"
-                    className="h-7 w-full border border-gray-300 px-2 text-xs"
+                    className="h-7 w-full border border-slate-200/60 px-2 text-xs"
                   />
                 </div>
                 <div className="flex items-center justify-between">
-                  <div className="text-[11px] text-gray-700">Default Tax Rates:</div>
+                  <div className="text-[11px] text-slate-500">Default Tax Rates:</div>
                   <button
                     type="button"
-                    className="text-[11px] text-[#118df0]"
+                    className="text-[11px] text-navy-900"
                     onClick={() => {
                       setTaxPickerOpen(true)
                       void fetchFeeTaxOptions()
@@ -3002,7 +3029,7 @@ export default function SettingsPresetsPage() {
               className={
                 activeCategory === 'Tax Rates' || activeCategory === 'Lead Properties' || activeCategory === 'Disclosures'
                   ? 'h-7 px-3 bg-green-600 text-white text-xs'
-                  : 'h-7 px-3 bg-[#118df0] text-white text-xs'
+                  : 'h-7 px-3 bg-navy-900 text-white text-xs'
               }
             >
               {saving

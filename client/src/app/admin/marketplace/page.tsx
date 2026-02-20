@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import VehicleCard from '@/components/VehicleCard'
-import { supabase } from '@/lib/supabaseClient'
 
 type MarketVehicle = {
   id: string
@@ -103,13 +102,28 @@ export default function MarketplacePage() {
       setLoading(true)
       setError(null)
       try {
-        const { data, error } = await supabase
-          .from('edc_vehicles')
-          .select('*')
-          .limit(500)
-        if (error) throw error
+        const res = await fetch('/api/vehicles', { cache: 'no-store' })
+        if (!res.ok) {
+          const text = await res.text().catch(() => '')
+          throw new Error(text || `Failed to fetch vehicles (${res.status})`)
+        }
+
+        const json = await res.json().catch(() => null)
+        const data = Array.isArray(json?.vehicles) ? json.vehicles : []
+
+        let scoped = data
+        try {
+          const raw = localStorage.getItem('edc_admin_session')
+          const parsed = raw ? (JSON.parse(raw) as { user_id?: string }) : null
+          const sessionUserId = String(parsed?.user_id ?? '').trim()
+          if (sessionUserId) {
+            scoped = data.filter((v: any) => String(v?.user_id ?? '').trim() === sessionUserId)
+          }
+        } catch {
+          // ignore
+        }
         if (cancelled) return
-        const mapped: MarketVehicle[] = (data || []).map((r: any) => {
+        const mapped: MarketVehicle[] = (scoped || []).map((r: any) => {
           const imgs = normalizeImages(r.images ?? r.image_urls ?? r.image)
           const features = normalizeFeatures(r.features)
           return {
@@ -209,15 +223,15 @@ export default function MarketplacePage() {
   const features = unique(vehicles.flatMap((v) => v.features || []))
 
   return (
-    <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
+    <div className="px-6 py-6">
       <div className="flex items-start gap-6">
         {/* Sidebar Filters */}
-        <aside className="w-72 bg-white rounded-xl shadow p-4">
-          <div className="flex items-center justify-between">
-            <div className="text-xs font-semibold text-gray-700">Filters</div>
+        <aside className="w-72 edc-card p-4 sticky top-6 self-start">
+          <div className="flex items-center justify-between pb-3 border-b border-slate-200/60">
+            <div className="text-xs font-semibold text-slate-700">Filters</div>
             <button
               type="button"
-              className="text-xs text-[#118df0] hover:underline"
+              className="text-xs text-navy-900 hover:underline transition-colors"
               onClick={() => {
                 setMake('')
                 setCollection('')
@@ -236,8 +250,8 @@ export default function MarketplacePage() {
           </div>
           <div className="mt-3 space-y-4">
             <div>
-              <div className="text-xs font-semibold text-gray-600 mb-1">Make</div>
-              <select value={make} onChange={(e) => setMake(e.target.value)} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm">
+              <div className="text-xs font-semibold text-slate-500 mb-1">Make</div>
+              <select value={make} onChange={(e) => setMake(e.target.value)} className="edc-input text-sm">
                 <option value="">All Makes</option>
                 {makes.map((m) => (
                   <option key={m} value={m}>{m}</option>
@@ -245,8 +259,8 @@ export default function MarketplacePage() {
               </select>
             </div>
             <div>
-              <div className="text-xs font-semibold text-gray-600 mb-1">Collection</div>
-              <select value={collection} onChange={(e) => setCollection(e.target.value)} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm">
+              <div className="text-xs font-semibold text-slate-500 mb-1">Collection</div>
+              <select value={collection} onChange={(e) => setCollection(e.target.value)} className="edc-input text-sm">
                 <option value="">All Vehicles</option>
                 {collections.map((c) => (
                   <option key={c} value={c}>{c}</option>
@@ -254,8 +268,8 @@ export default function MarketplacePage() {
               </select>
             </div>
             <div>
-              <div className="text-xs font-semibold text-gray-600 mb-1">Body Style</div>
-              <select value={bodyStyle} onChange={(e) => setBodyStyle(e.target.value)} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm">
+              <div className="text-xs font-semibold text-slate-500 mb-1">Body Style</div>
+              <select value={bodyStyle} onChange={(e) => setBodyStyle(e.target.value)} className="edc-input text-sm">
                 <option value="">All Styles</option>
                 {bodyStyles.map((b) => (
                   <option key={b} value={b}>{b}</option>
@@ -263,8 +277,8 @@ export default function MarketplacePage() {
               </select>
             </div>
             <div>
-              <div className="text-xs font-semibold text-gray-600 mb-1">Exterior Color</div>
-              <select value={exteriorColor} onChange={(e) => setExteriorColor(e.target.value)} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm">
+              <div className="text-xs font-semibold text-slate-500 mb-1">Exterior Color</div>
+              <select value={exteriorColor} onChange={(e) => setExteriorColor(e.target.value)} className="edc-input text-sm">
                 <option value="">All Colors</option>
                 {colors.map((c) => (
                   <option key={c} value={c}>{c}</option>
@@ -272,8 +286,8 @@ export default function MarketplacePage() {
               </select>
             </div>
             <div>
-              <div className="text-xs font-semibold text-gray-600 mb-1">Features</div>
-              <select value={feature} onChange={(e) => setFeature(e.target.value)} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm">
+              <div className="text-xs font-semibold text-slate-500 mb-1">Features</div>
+              <select value={feature} onChange={(e) => setFeature(e.target.value)} className="edc-input text-sm">
                 <option value="">All Features</option>
                 {features.map((f) => (
                   <option key={f} value={f}>{f}</option>
@@ -281,17 +295,17 @@ export default function MarketplacePage() {
               </select>
             </div>
             <div>
-              <div className="text-xs font-semibold text-gray-600 mb-1">Price Range</div>
+              <div className="text-xs font-semibold text-slate-500 mb-1">Price Range</div>
               <div className="grid grid-cols-2 gap-2">
-                <input value={minPrice} onChange={(e) => setMinPrice(e.target.value)} placeholder="Min" className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" />
-                <input value={maxPrice} onChange={(e) => setMaxPrice(e.target.value)} placeholder="Max" className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" />
+                <input value={minPrice} onChange={(e) => setMinPrice(e.target.value)} placeholder="Min" className="edc-input text-sm" />
+                <input value={maxPrice} onChange={(e) => setMaxPrice(e.target.value)} placeholder="Max" className="edc-input text-sm" />
               </div>
             </div>
             <div>
-              <div className="text-xs font-semibold text-gray-600 mb-1">Year Range</div>
+              <div className="text-xs font-semibold text-slate-500 mb-1">Year Range</div>
               <div className="grid grid-cols-2 gap-2">
-                <input value={minYear} onChange={(e) => setMinYear(e.target.value)} placeholder="Min" className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" />
-                <input value={maxYear} onChange={(e) => setMaxYear(e.target.value)} placeholder="Max" className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" />
+                <input value={minYear} onChange={(e) => setMinYear(e.target.value)} placeholder="Min" className="edc-input text-sm" />
+                <input value={maxYear} onChange={(e) => setMaxYear(e.target.value)} placeholder="Max" className="edc-input text-sm" />
               </div>
             </div>
           </div>
@@ -300,9 +314,9 @@ export default function MarketplacePage() {
         {/* Results */}
         <section className="flex-1">
           <div className="flex items-center justify-between mb-3">
-            <div className="text-sm text-gray-600">{loading ? 'Loading…' : error ? 'Failed to load vehicles' : `Showing ${filtered.length} of ${vehicles.length} total vehicles`}</div>
+            <div className="text-sm text-slate-500">{loading ? 'Loading…' : error ? 'Failed to load vehicles' : `Showing ${filtered.length} of ${vehicles.length} total vehicles`}</div>
             <div className="w-48">
-              <select value={sort} onChange={(e) => setSort(e.target.value as any)} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm">
+              <select value={sort} onChange={(e) => setSort(e.target.value as any)} className="edc-input text-sm">
                 <option value="newest">Newest</option>
                 <option value="price_asc">Price: Low to High</option>
                 <option value="price_desc">Price: High to Low</option>
@@ -316,84 +330,95 @@ export default function MarketplacePage() {
             ))}
 
             {filtered.length === 0 ? (
-              <div className="col-span-full text-center text-sm text-gray-500 py-10">No vehicles found.</div>
+              <div className="col-span-full text-center text-sm text-slate-400 py-10">No vehicles found.</div>
             ) : null}
           </div>
 
           {selected ? (
             <div
-              className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+              className="fixed inset-0 z-50 flex items-center justify-center p-4"
               role="dialog"
               aria-modal="true"
               onMouseDown={(e) => {
                 if (e.target === e.currentTarget) setSelected(null)
               }}
             >
-              <div className="w-full max-w-6xl bg-white rounded-2xl shadow-xl overflow-hidden grid grid-cols-1 lg:grid-cols-3 h-[85vh] max-h-[85vh]">
+              <div
+                className="absolute inset-0 bg-navy-900/60 backdrop-blur-sm"
+                onMouseDown={() => {
+                  setSelected(null)
+                  setSelectedImageIndex(0)
+                }}
+              />
+              <div
+                className="relative z-10 w-full max-w-6xl bg-white rounded-2xl shadow-premium overflow-hidden grid grid-cols-1 lg:grid-cols-3 h-[85vh] max-h-[85vh]"
+                onMouseDown={(e) => e.stopPropagation()}
+              >
                 <div className="lg:col-span-2 p-6">
-                  <div className="w-full h-80 md:h-[28rem] bg-gray-100 rounded-xl overflow-hidden flex items-center justify-center relative">
-                    {selected.images && selected.images.length > 0 ? (
-                      <img
-                        src={toImageSrc(selected.images[Math.min(selectedImageIndex, selected.images.length - 1)])}
-                        alt="Vehicle"
-                        className="w-full h-full object-contain"
-                      />
-                    ) : (
-                      <div className="text-center text-gray-500">No Image</div>
-                    )}
-
-                    {selected.images && selected.images.length > 1 ? (
+                  <div className="w-full h-80 md:h-[28rem] bg-slate-50 rounded-xl overflow-hidden flex items-center justify-center relative">
+                    {selected.images?.length ? (
                       <>
-                        <button
-                          type="button"
-                          className="absolute left-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-white/80 hover:bg-white flex items-center justify-center shadow"
-                          onClick={() =>
-                            setSelectedImageIndex((i) =>
-                              (i - 1 + selected.images.length) % selected.images.length
-                            )
-                          }
-                          aria-label="Previous image"
-                        >
-                          <svg className="w-5 h-5 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                          </svg>
-                        </button>
-                        <button
-                          type="button"
-                          className="absolute right-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-white/80 hover:bg-white flex items-center justify-center shadow"
-                          onClick={() =>
-                            setSelectedImageIndex((i) => (i + 1) % selected.images.length)
-                          }
-                          aria-label="Next image"
-                        >
-                          <svg className="w-5 h-5 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                          </svg>
-                        </button>
-                        <div className="absolute bottom-3 right-3 bg-black/60 text-white text-xs px-2 py-1 rounded-full">
-                          {Math.min(selectedImageIndex, selected.images.length - 1) + 1}/{selected.images.length}
-                        </div>
+                        <img
+                          src={toImageSrc(selected.images[selectedImageIndex] || selected.images[0] || '')}
+                          alt={`${selected.year} ${selected.make} ${selected.model}`}
+                          className="w-full h-full object-cover"
+                        />
+                        {selected.images.length > 1 ? (
+                          <>
+                            <button
+                              type="button"
+                              className="absolute left-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-white/80 hover:bg-white flex items-center justify-center shadow"
+                              onClick={() =>
+                                setSelectedImageIndex((i) =>
+                                  (i - 1 + selected.images.length) % selected.images.length
+                                )
+                              }
+                              aria-label="Previous image"
+                            >
+                              <svg className="w-5 h-5 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                              </svg>
+                            </button>
+                            <button
+                              type="button"
+                              className="absolute right-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-white/80 hover:bg-white flex items-center justify-center shadow"
+                              onClick={() =>
+                                setSelectedImageIndex((i) => (i + 1) % selected.images.length)
+                              }
+                              aria-label="Next image"
+                            >
+                              <svg className="w-5 h-5 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                              </svg>
+                            </button>
+                            <div className="absolute bottom-3 right-3 bg-black/60 text-white text-xs px-2 py-1 rounded-full">
+                              {Math.min(selectedImageIndex, selected.images.length - 1) + 1}/{selected.images.length}
+                            </div>
+                          </>
+                        ) : null}
                       </>
-                    ) : null}
+                    ) : (
+                      <div className="text-xs text-slate-400">No image</div>
+                    )}
                   </div>
                   <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-3">
-                    <div className="bg-gray-50 rounded-xl p-4 text-center">
-                      <div className="text-xs text-gray-500">Mileage</div>
-                      <div className="text-lg font-semibold text-gray-900">{selected.mileage.toLocaleString()} km</div>
+                    <div className="bg-slate-50 rounded-xl p-4 text-center">
+                      <div className="text-xs text-slate-500">Mileage</div>
+                      <div className="text-lg font-semibold text-slate-800">{selected.mileage.toLocaleString()} km</div>
                     </div>
-                    <div className="bg-gray-50 rounded-xl p-4 text-center">
-                      <div className="text-xs text-gray-500">Year</div>
-                      <div className="text-lg font-semibold text-gray-900">{selected.year}</div>
+                    <div className="bg-slate-50 rounded-xl p-4 text-center">
+                      <div className="text-xs text-slate-500">Year</div>
+                      <div className="text-lg font-semibold text-slate-800">{selected.year}</div>
                     </div>
-                    <div className="bg-gray-50 rounded-xl p-4 text-center">
-                      <div className="text-xs text-gray-500">Fuel</div>
-                      <div className="text-lg font-semibold text-gray-900">{selected.fuelType || '—'}</div>
+                    <div className="bg-slate-50 rounded-xl p-4 text-center">
+                      <div className="text-xs text-slate-500">Fuel</div>
+                      <div className="text-lg font-semibold text-slate-800">{selected.fuelType || '—'}</div>
                     </div>
                   </div>
-                  <div className="mt-5 bg-gray-50 rounded-2xl border border-gray-100 p-5">
+                  <div className="mt-5 bg-slate-50 rounded-2xl border border-slate-100 p-5">
                     <div className="flex items-center gap-3 mb-4">
-                      <div className="w-1 h-6 rounded-full bg-[#118df0]"></div>
-                      <div className="text-base font-semibold text-gray-900">Vehicle Specifications</div>
+                      <div className="w-1 h-6 rounded-full bg-navy-900"></div>
+                      <div className="text-base font-semibold text-slate-800">Vehicle Specifications</div>
                     </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -416,24 +441,24 @@ export default function MarketplacePage() {
                     </div>
                   </div>
                 </div>
-                <div className="p-6 border-t lg:border-t-0 lg:border-l border-gray-100 flex flex-col gap-3 min-h-0">
-                  <div className="text-xl font-semibold text-gray-900">{selected.year} {selected.make} {selected.model}</div>
+                <div className="p-6 border-t lg:border-t-0 lg:border-l border-slate-100 flex flex-col gap-3 min-h-0">
+                  <div className="text-xl font-semibold text-slate-900">{selected.year} {selected.make} {selected.model}</div>
                   <div>
-                    <span className="inline-flex items-center rounded-full bg-[#118df0] text-white px-3 py-1 text-sm font-semibold">
+                    <span className="inline-flex items-center rounded-full bg-navy-900 text-white px-3 py-1 text-sm font-semibold">
                       ${selected.price.toLocaleString()}
                     </span>
                   </div>
                   {selected.adDescription && selected.adDescription.trim() !== '' ? (
                     <div className="flex-1 min-h-0">
-                      <div className="text-sm font-semibold text-gray-900 mb-2">Description</div>
-                      <div className="text-sm text-gray-700 bg-gray-50 rounded-xl p-3 h-full overflow-auto whitespace-pre-wrap">
+                      <div className="text-sm font-semibold text-slate-800 mb-2">Description</div>
+                      <div className="text-sm text-slate-600 bg-slate-50 rounded-xl p-3 h-full overflow-auto whitespace-pre-wrap">
                         {selected.adDescription}
                       </div>
                     </div>
                   ) : null}
                   <button
                     type="button"
-                    className="mt-auto h-10 px-4 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-800 text-sm font-semibold"
+                    className="edc-btn-ghost mt-auto text-sm"
                     onClick={() => {
                       setSelected(null)
                       setSelectedImageIndex(0)
@@ -462,7 +487,7 @@ function Spec({
 }) {
   return (
     <div className="flex items-start gap-3">
-      <div className="w-9 h-9 rounded-xl bg-white border border-gray-100 flex items-center justify-center text-gray-600">
+      <div className="w-9 h-9 rounded-xl bg-white border border-slate-100 flex items-center justify-center text-slate-500">
         {icon === 'tag' ? (
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M3 11.5V5a2 2 0 012-2h6.5a2 2 0 011.414.586l8.5 8.5a2 2 0 010 2.828l-6.5 6.5a2 2 0 01-2.828 0l-8.5-8.5A2 2 0 013 11.5z" />
@@ -512,8 +537,8 @@ function Spec({
         )}
       </div>
       <div className="min-w-0">
-        <div className="text-xs text-gray-500">{label}</div>
-        <div className="text-sm font-semibold text-gray-900 break-words">{value}</div>
+        <div className="text-xs text-slate-500">{label}</div>
+        <div className="text-sm font-semibold text-slate-800 break-words">{value}</div>
       </div>
     </div>
   )

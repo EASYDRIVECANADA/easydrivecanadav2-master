@@ -322,50 +322,50 @@ export default function SalesReportPage() {
   }, [from, perPage, query, rows, to])
 
   return (
-    <div className="w-full">
-      <div className="bg-white shadow">
-        <div className="w-full px-4 sm:px-6 lg:px-8 py-4 flex items-start justify-between gap-4">
+    <div className="min-h-screen">
+      <div className="edc-page-header">
+        <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">
+            <h1 className="text-2xl font-bold text-slate-900">
               Default Report ({from ? from.replaceAll('-', '/') : 'All'} - {to ? to.replaceAll('-', '/') : 'All'})
             </h1>
-            <p className="text-sm text-gray-500">Closed deals only</p>
+            <p className="text-sm text-slate-500 mt-0.5">Closed deals only</p>
           </div>
 
           <div className="flex items-center gap-3">
             <select
               value={perPage}
               onChange={(e) => setPerPage(e.target.value)}
-              className="h-10 border border-gray-200 rounded-lg px-3 text-sm"
+              className="edc-input w-auto text-sm"
             >
               <option value="50">50</option>
               <option value="100">100</option>
               <option value="250">250</option>
               <option value="500">500</option>
             </select>
-            <button type="button" className="h-10 px-4 rounded-lg bg-[#118df0] text-white text-sm font-semibold hover:bg-[#0d6ebd]">
+            <button type="button" className="edc-btn-primary text-sm">
               Export
             </button>
           </div>
         </div>
       </div>
 
-      <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
-        <div className="bg-white rounded-xl shadow p-4">
+      <div className="px-6 py-6">
+        <div className="edc-card p-4">
           <div className="flex flex-col lg:flex-row lg:items-center gap-3">
             <div className="flex items-center gap-2">
               <input
                 type="date"
                 value={from}
                 onChange={(e) => setFrom(e.target.value)}
-                className="h-10 border border-gray-200 rounded-lg px-3 text-sm"
+                className="edc-input w-auto text-sm"
               />
-              <div className="text-sm text-gray-400">to</div>
+              <div className="text-sm text-slate-400">to</div>
               <input
                 type="date"
                 value={to}
                 onChange={(e) => setTo(e.target.value)}
-                className="h-10 border border-gray-200 rounded-lg px-3 text-sm"
+                className="edc-input w-auto text-sm"
               />
             </div>
             <div className="flex-1">
@@ -374,7 +374,7 @@ export default function SalesReportPage() {
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                   placeholder="search"
-                  className="w-full border border-gray-200 rounded-lg pl-10 pr-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+                  className="edc-input pl-10"
                 />
                 <svg
                   className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2"
@@ -387,46 +387,46 @@ export default function SalesReportPage() {
               </div>
             </div>
 
-            <button type="button" className="h-10 px-4 rounded-lg bg-white border border-gray-200 text-sm hover:bg-gray-50">
+            <button type="button" className="edc-btn-ghost text-sm">
               Advanced
             </button>
           </div>
 
-          <div className="mt-2 text-xs text-gray-500">Total Sales: <span className="font-semibold">{filtered.length}</span></div>
+          <div className="mt-2 text-xs text-slate-500">Total Sales: <span className="font-semibold text-slate-700">{filtered.length}</span></div>
         </div>
 
         {error ? (
-          <div className="mt-4 bg-white rounded-xl shadow p-4">
-            <div className="text-sm text-red-600">{error}</div>
+          <div className="mt-4 edc-card p-4">
+            <div className="text-sm text-danger-600">{error}</div>
           </div>
         ) : null}
 
         {loading ? (
-          <div className="mt-4 bg-white rounded-xl shadow p-4">
-            <div className="text-sm text-gray-600">Loading...</div>
+          <div className="mt-4 edc-card p-4">
+            <div className="text-sm text-slate-500">Loading...</div>
           </div>
         ) : null}
 
-        <div className="bg-white rounded-xl shadow mt-4 overflow-hidden">
+        <div className="edc-card mt-4 overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="min-w-max w-full">
-              <thead className="bg-gray-50 sticky top-0 z-10">
+            <table className="edc-table min-w-max">
+              <thead>
                 <tr>
                   {columns.map((c) => (
                     <th
                       key={c.key}
-                      className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider whitespace-nowrap"
+                      className="whitespace-nowrap"
                     >
                       {c.label}
                     </th>
                   ))}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100">
+              <tbody>
                 {filtered.map((r, idx) => (
-                  <tr key={idx} className="hover:bg-gray-50">
+                  <tr key={idx}>
                     {columns.map((c) => (
-                      <td key={c.key} className="px-4 py-3 text-sm text-gray-700 whitespace-nowrap">
+                      <td key={c.key} className="px-4 py-3 text-sm text-slate-600 whitespace-nowrap">
                         {c.key.startsWith('__') ? '' : (r[c.key] ?? '')}
                       </td>
                     ))}

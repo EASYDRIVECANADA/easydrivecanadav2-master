@@ -728,20 +728,20 @@ export default function AdminCostumerPage() {
   }
 
   return (
-    <div className="w-full">
+    <div className="min-h-screen">
       {saveSuccessOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center" role="dialog" aria-modal="true">
-          <div className="absolute inset-0 bg-black/50" onMouseDown={closeSuccessModal} />
-          <div className="relative w-[360px] bg-white shadow-lg">
-            <div className="h-11 px-4 border-b border-gray-200 flex items-center justify-between">
-              <div className="text-sm font-semibold text-gray-800">Success</div>
+          <div className="edc-overlay absolute inset-0" onMouseDown={closeSuccessModal} />
+          <div className="edc-modal relative w-[360px]">
+            <div className="h-11 px-4 border-b border-slate-100 flex items-center justify-between">
+              <div className="text-sm font-semibold text-slate-800">Success</div>
               <button type="button" className="h-8 w-8 flex items-center justify-center" onClick={closeSuccessModal}>
-                <span className="text-xl leading-none text-gray-500">×</span>
+                <span className="text-xl leading-none text-slate-400">×</span>
               </button>
             </div>
-            <div className="p-4 text-xs text-gray-700">{saveSuccessMessage}</div>
-            <div className="h-12 px-4 border-t border-gray-200 flex items-center justify-end">
-              <button type="button" className="h-8 px-4 bg-[#118df0] text-white text-xs font-semibold" onClick={closeSuccessModal}>
+            <div className="p-4 text-sm text-slate-600">{saveSuccessMessage}</div>
+            <div className="h-12 px-4 border-t border-slate-100 flex items-center justify-end">
+              <button type="button" className="edc-btn-primary text-xs" onClick={closeSuccessModal}>
                 OK
               </button>
             </div>
@@ -751,17 +751,17 @@ export default function AdminCostumerPage() {
 
       {saveErrorOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center" role="dialog" aria-modal="true">
-          <div className="absolute inset-0 bg-black/50" onMouseDown={() => setSaveErrorOpen(false)} />
-          <div className="relative w-[360px] bg-white shadow-lg">
-            <div className="h-11 px-4 border-b border-gray-200 flex items-center justify-between">
-              <div className="text-sm font-semibold text-gray-800">Error</div>
+          <div className="edc-overlay absolute inset-0" onMouseDown={() => setSaveErrorOpen(false)} />
+          <div className="edc-modal relative w-[360px]">
+            <div className="h-11 px-4 border-b border-slate-100 flex items-center justify-between">
+              <div className="text-sm font-semibold text-danger-600">Error</div>
               <button type="button" className="h-8 w-8 flex items-center justify-center" onClick={() => setSaveErrorOpen(false)}>
-                <span className="text-xl leading-none text-gray-500">×</span>
+                <span className="text-xl leading-none text-slate-400">×</span>
               </button>
             </div>
-            <div className="p-4 text-xs text-gray-700">{saveErrorMessage || 'Something went wrong'}</div>
-            <div className="h-12 px-4 border-t border-gray-200 flex items-center justify-end">
-              <button type="button" className="h-8 px-4 bg-gray-600 text-white text-xs font-semibold" onClick={() => setSaveErrorOpen(false)}>
+            <div className="p-4 text-sm text-slate-600">{saveErrorMessage || 'Something went wrong'}</div>
+            <div className="h-12 px-4 border-t border-slate-100 flex items-center justify-end">
+              <button type="button" className="edc-btn-ghost text-xs" onClick={() => setSaveErrorOpen(false)}>
                 OK
               </button>
             </div>
@@ -770,17 +770,17 @@ export default function AdminCostumerPage() {
       ) : null}
 
       {showCreate ? (
-        <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
-          <div className="bg-white rounded-xl shadow overflow-hidden flex flex-col">
-            <div className="flex items-center justify-between px-4 py-2 border-b border-gray-200">
+        <div className="px-6 py-6">
+          <div className="edc-card overflow-hidden flex flex-col">
+            <div className="flex items-center justify-between px-4 py-2 border-b border-slate-100">
               <div className="flex items-center gap-3">
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
                     className={
                       activeTab === 'customer'
-                        ? 'h-9 px-4 rounded-t-md bg-[#118df0] text-white text-sm font-semibold'
-                        : 'h-9 px-4 rounded-t-md bg-gray-100 text-gray-700 text-sm font-semibold hover:bg-gray-200'
+                        ? 'h-9 px-4 rounded-t-lg bg-navy-900 text-white text-sm font-semibold transition-colors'
+                        : 'h-9 px-4 rounded-t-lg bg-slate-100 text-slate-600 text-sm font-semibold hover:bg-slate-200 transition-colors'
                     }
                     onClick={() => setActiveTab('customer')}
                   >
@@ -790,8 +790,8 @@ export default function AdminCostumerPage() {
                     type="button"
                     className={
                       activeTab === 'credit'
-                        ? 'h-9 px-4 rounded-t-md bg-[#118df0] text-white text-sm font-semibold'
-                        : 'h-9 px-4 rounded-t-md bg-gray-100 text-gray-700 text-sm font-semibold hover:bg-gray-200'
+                        ? 'h-9 px-4 rounded-t-lg bg-navy-900 text-white text-sm font-semibold transition-colors'
+                        : 'h-9 px-4 rounded-t-lg bg-slate-100 text-slate-600 text-sm font-semibold hover:bg-slate-200 transition-colors'
                     }
                     onClick={() => setActiveTab('credit')}
                   >
@@ -801,8 +801,8 @@ export default function AdminCostumerPage() {
                     type="button"
                     className={
                       activeTab === 'history'
-                        ? 'h-9 px-4 rounded-t-md bg-[#118df0] text-white text-sm font-semibold'
-                        : 'h-9 px-4 rounded-t-md bg-gray-100 text-gray-700 text-sm font-semibold hover:bg-gray-200'
+                        ? 'h-9 px-4 rounded-t-lg bg-navy-900 text-white text-sm font-semibold transition-colors'
+                        : 'h-9 px-4 rounded-t-lg bg-slate-100 text-slate-600 text-sm font-semibold hover:bg-slate-200 transition-colors'
                     }
                     onClick={() => setActiveTab('history')}
                   >
@@ -817,7 +817,7 @@ export default function AdminCostumerPage() {
                   <div className="inline-flex shadow-sm">
                     <button
                       type="button"
-                      className="h-10 px-4 rounded-l-md bg-[#118df0] text-white text-sm font-bold hover:bg-[#0d6ebd] flex items-center gap-2"
+                      className="h-10 px-4 rounded-l-lg bg-navy-900 text-white text-sm font-bold hover:bg-navy-800 flex items-center gap-2 transition-colors"
                       onClick={() => {
                         if (!creditConsent) {
                           setPrintDropdownOpen(true)
@@ -839,7 +839,7 @@ export default function AdminCostumerPage() {
                     </button>
                     <button
                       type="button"
-                      className="h-10 w-10 rounded-r-md bg-[#118df0] text-white hover:bg-[#0d6ebd] flex items-center justify-center border-l border-white/20"
+                      className="h-10 w-10 rounded-r-lg bg-navy-900 text-white hover:bg-navy-800 flex items-center justify-center border-l border-white/20 transition-colors"
                       aria-label="Print options"
                       onClick={() => setPrintDropdownOpen((o) => !o)}
                     >
@@ -849,14 +849,14 @@ export default function AdminCostumerPage() {
                     </button>
                   </div>
                   {printDropdownOpen && (
-                    <div className="absolute right-0 mt-1 w-56 bg-white border border-gray-200 rounded-lg shadow-lg z-10">
+                    <div className="absolute right-0 mt-1 w-56 bg-white border border-slate-200/60 rounded-xl shadow-premium z-10">
                       <div className="p-3">
-                        <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                        <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
                           <input
                             type="checkbox"
                             checked={creditConsent}
                             onChange={(e) => setCreditConsent(e.target.checked)}
-                            className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                            className="rounded border-slate-300 text-cyan-500 focus:ring-cyan-500"
                           />
                           Credit Consent
                         </label>
@@ -877,12 +877,12 @@ export default function AdminCostumerPage() {
               )}
             </div>
 
-            <div className="px-6 py-4 border-t border-gray-200 flex items-center justify-end">
+            <div className="px-6 py-4 border-t border-slate-100 flex items-center justify-end">
               <button
                 type="button"
                 onClick={handleSave}
                 disabled={saving}
-                className={`h-10 px-6 rounded text-white text-sm font-semibold ${saving ? 'bg-[#73baf2] cursor-not-allowed' : 'bg-[#118df0] hover:bg-[#0d6ebd]'}`}
+                className="edc-btn-primary text-sm disabled:opacity-60"
               >
                 {saving ? 'Saving...' : 'Save'}
               </button>
@@ -890,16 +890,16 @@ export default function AdminCostumerPage() {
           </div>
         </div>
       ) : (
-        <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
-          <div className="bg-white rounded-xl shadow overflow-hidden">
-            <div className="px-4 py-3 border-b border-gray-200 flex items-center gap-3">
+        <div className="px-6 py-6">
+          <div className="edc-card overflow-hidden">
+            <div className="px-4 py-3 border-b border-slate-100 flex items-center gap-3">
               <div className="flex-1">
                 <div className="relative">
                   <input
                     value={query}
                     onChange={(e) => setQuery(e.target.value)}
                     placeholder=""
-                    className="w-full border border-gray-200 rounded-lg pl-10 pr-4 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+                    className="edc-input pl-10"
                   />
                   <svg
                     className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2"
@@ -915,7 +915,7 @@ export default function AdminCostumerPage() {
               <button
                 type="button"
                 onClick={handleOpenCreate}
-                className="w-10 h-10 rounded-lg bg-[#118df0] text-white flex items-center justify-center hover:bg-[#0d6ebd]"
+                className="w-10 h-10 rounded-lg bg-navy-900 text-white flex items-center justify-center hover:bg-navy-800 transition-colors"
                 aria-label="Add new costumer"
                 title="Add new costumer"
               >
@@ -933,7 +933,7 @@ export default function AdminCostumerPage() {
                     setChecked({})
                     setCheckedAll(false)
                   }}
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
+                  className="edc-input text-sm"
                 >
                   <option value={5}>5</option>
                   <option value={10}>10</option>
@@ -943,11 +943,11 @@ export default function AdminCostumerPage() {
             </div>
 
             <div className="overflow-x-auto">
-              <table className="min-w-full">
-                <thead className="bg-white">
-                  <tr className="border-b border-gray-200">
-                    <th className="px-3 py-3 w-10"></th>
-                    <th className="px-3 py-3 w-10">
+              <table className="edc-table">
+                <thead>
+                  <tr>
+                    <th className="w-10"></th>
+                    <th className="w-10">
                       <input
                         type="checkbox"
                         className="h-4 w-4"
@@ -956,21 +956,21 @@ export default function AdminCostumerPage() {
                         aria-label="Select all"
                       />
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Name</th>
-                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Phone</th>
-                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Mobile</th>
-                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Email</th>
-                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">DL</th>
-                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">DOB</th>
-                    <th className="px-3 py-3 w-10"></th>
+                    <th>Name</th>
+                    <th>Phone</th>
+                    <th>Mobile</th>
+                    <th>Email</th>
+                    <th>DL</th>
+                    <th>DOB</th>
+                    <th className="w-10"></th>
                   </tr>
                 </thead>
 
-                <tbody className="divide-y divide-gray-100">
+                <tbody>
                   {pageRows.map((r) => (
-                    <tr key={r.id} className="hover:bg-gray-50">
+                    <tr key={r.id}>
                       <td className="px-3 py-3">
-                        <button type="button" className="text-gray-400 hover:text-gray-600" aria-label="Edit" onClick={() => handleEdit(r.id)}>
+                        <button type="button" className="text-slate-400 hover:text-slate-600 transition-colors" aria-label="Edit" onClick={() => handleEdit(r.id)}>
                           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path
                               strokeLinecap="round"
@@ -999,19 +999,19 @@ export default function AdminCostumerPage() {
                           aria-label={`Select ${r.name}`}
                         />
                       </td>
-                      <td className="px-6 py-3 text-sm text-[#118df0] whitespace-nowrap">{r.name}</td>
-                      <td className="px-6 py-3 text-sm text-[#118df0] whitespace-nowrap">{r.phone}</td>
-                      <td className="px-6 py-3 text-sm text-gray-700 whitespace-nowrap">{r.mobile}</td>
-                      <td className="px-6 py-3 text-sm text-[#118df0] whitespace-nowrap">{r.email}</td>
-                      <td className="px-6 py-3 text-sm text-gray-700 whitespace-nowrap">{r.dl || r.rin || '—'}</td>
-                      <td className="px-6 py-3 text-sm text-gray-700 whitespace-nowrap">{r.dob}</td>
+                      <td className="px-6 py-3 text-sm font-medium text-slate-800 whitespace-nowrap">{r.name}</td>
+                      <td className="px-6 py-3 text-sm text-cyan-700 whitespace-nowrap">{r.phone}</td>
+                      <td className="px-6 py-3 text-sm text-slate-600 whitespace-nowrap">{r.mobile}</td>
+                      <td className="px-6 py-3 text-sm text-cyan-700 whitespace-nowrap">{r.email}</td>
+                      <td className="px-6 py-3 text-sm text-slate-600 whitespace-nowrap">{r.dl || r.rin || '—'}</td>
+                      <td className="px-6 py-3 text-sm text-slate-600 whitespace-nowrap">{r.dob}</td>
                       <td className="px-3 py-3 text-right">
                         <button
                           type="button"
                           className={
                             deletingId === r.id
-                              ? 'text-gray-300 cursor-not-allowed'
-                              : 'text-gray-400 hover:text-red-600'
+                              ? 'text-slate-200 cursor-not-allowed'
+                              : 'text-slate-400 hover:text-danger-500 transition-colors'
                           }
                           aria-label="Delete"
                           disabled={deletingId === r.id}
@@ -1030,7 +1030,7 @@ export default function AdminCostumerPage() {
 
                   {pageRows.length === 0 ? (
                     <tr>
-                      <td className="px-6 py-10 text-center text-sm text-gray-500" colSpan={9}>
+                      <td className="px-6 py-10 text-center text-sm text-slate-400" colSpan={9}>
                         No results.
                       </td>
                     </tr>
@@ -1040,13 +1040,13 @@ export default function AdminCostumerPage() {
             </div>
 
             <div className="px-4 py-3 flex items-center gap-3">
-              <button type="button" className="text-[#118df0]" aria-label="Previous">
+              <button type="button" className="text-cyan-600 hover:text-cyan-700 transition-colors" aria-label="Previous">
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
                 </svg>
               </button>
-              <div className="text-sm text-gray-600">{rangeLabel}</div>
-              <button type="button" className="text-[#118df0]" aria-label="Next">
+              <div className="text-sm text-slate-600">{rangeLabel}</div>
+              <button type="button" className="text-cyan-600 hover:text-cyan-700 transition-colors" aria-label="Next">
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                 </svg>
@@ -1059,20 +1059,20 @@ export default function AdminCostumerPage() {
       {/* Documents Preview Modal (PDF) */}
       {showDocPreview && pdfDataUri ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/40" onClick={() => setShowDocPreview(false)} />
-          <div className="relative w-full max-w-3xl h-[90vh] rounded-xl bg-white shadow-xl border border-gray-200 flex flex-col overflow-hidden">
-            <div className="h-12 px-4 border-b border-gray-200 flex items-center justify-between">
-              <div className="text-sm font-semibold text-gray-800">Credit Consent</div>
+          <div className="edc-overlay absolute inset-0" onClick={() => setShowDocPreview(false)} />
+          <div className="edc-modal relative w-full max-w-3xl h-[90vh] flex flex-col overflow-hidden">
+            <div className="h-12 px-4 border-b border-slate-100 flex items-center justify-between">
+              <div className="text-sm font-semibold text-slate-800">Credit Consent</div>
               <div className="flex items-center gap-2">
-                <button type="button" onClick={handleDownloadPdf} className="h-9 px-3 rounded bg-gray-100 text-gray-700 text-sm font-semibold hover:bg-gray-200">
+                <button type="button" onClick={handleDownloadPdf} className="edc-btn-ghost text-sm">
                   Download
                 </button>
-                <button type="button" onClick={() => setShowDocPreview(false)} className="h-9 w-9 rounded bg-gray-100 text-gray-700 hover:bg-gray-200 flex items-center justify-center" aria-label="Close">
+                <button type="button" onClick={() => setShowDocPreview(false)} className="h-9 w-9 rounded-lg bg-slate-100 text-slate-500 hover:bg-slate-200 flex items-center justify-center transition-colors" aria-label="Close">
                   <span className="text-xl leading-none">×</span>
                 </button>
               </div>
             </div>
-            <div className="flex-1 bg-gray-100 p-3">
+            <div className="flex-1 bg-slate-50 p-3">
               <iframe title="Credit Consent PDF" src={pdfDataUri} className="w-full h-full bg-white rounded" />
             </div>
           </div>

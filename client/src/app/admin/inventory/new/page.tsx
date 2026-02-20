@@ -18,6 +18,7 @@ export default function NewVehiclePage() {
   const [purchaseSaved, setPurchaseSaved] = useState(false)
   const [costsSaved, setCostsSaved] = useState(false)
   const [webhookUserId, setWebhookUserId] = useState<string | null>(null)
+  const stockAutofillRanRef = useRef(false)
   const [formData, setFormData] = useState({
     make: '',
     model: '',
@@ -154,6 +155,24 @@ export default function NewVehiclePage() {
   }, [])
 
   useEffect(() => {
+    try {
+      const current = String((formData as any)?.stockNumber ?? '').trim()
+      if (current) return
+      const next = String(localStorage.getItem('edc_prefill_next_stock_number') ?? '').trim()
+      if (!next) return
+      localStorage.removeItem('edc_prefill_next_stock_number')
+      setFormData((prev: any) => {
+        const prevStock = String(prev?.stockNumber ?? '').trim()
+        if (prevStock) return prev
+        return { ...prev, stockNumber: next }
+      })
+    } catch {
+      // ignore
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  useEffect(() => {
     const el = adEditorRef.current
     if (!el) return
     const adHtml = String((formData as any)?.adDescription || '')
@@ -232,6 +251,79 @@ export default function NewVehiclePage() {
       cancelled = true
     }
   }, [])
+
+  useEffect(() => {
+    let alive = true
+
+    const loadNextStockNumber = async () => {
+      try {
+        const current = String((formData as any)?.stockNumber ?? '').trim()
+        if (current) return
+        if (stockAutofillRanRef.current) return
+
+        const userId = webhookUserId ?? (await getWebhookUserId())
+        if (!userId) return
+
+        const extractNumericSuffix = (raw: string) => {
+          const m = String(raw || '').trim().match(/(\d+)\s*$/)
+          if (!m?.[1]) return null
+          const n = Number(m[1])
+          return Number.isFinite(n) ? n : null
+        }
+
+        let rows: any[] = []
+        const { data, error } = await supabase
+          .from('edc_vehicles')
+          .select('stock_number, created_at')
+          .eq('user_id', userId)
+          .order('created_at', { ascending: false })
+          .limit(300)
+
+        if (!error) {
+          rows = Array.isArray(data) ? data : []
+        }
+
+        if (!rows.length) {
+          const res = await fetch('/api/vehicles', { cache: 'no-store' })
+          if (res.ok) {
+            const json = await res.json().catch(() => null)
+            const all = Array.isArray(json?.vehicles) ? json.vehicles : []
+            rows = all.filter((v: any) => String(v?.user_id ?? '').trim() === String(userId).trim())
+          }
+        }
+
+        let max = 0
+        let found = false
+
+        for (const r of rows) {
+          const raw = String((r as any)?.stock_number ?? '').trim()
+          if (!raw) continue
+          const n = extractNumericSuffix(raw)
+          if (n === null) continue
+          found = true
+          if (n > max) max = n
+        }
+
+        if (!alive) return
+        if (!found) return
+
+        stockAutofillRanRef.current = true
+        setFormData((prev: any) => {
+          const prevStock = String(prev?.stockNumber ?? '').trim()
+          if (prevStock) return prev
+          return { ...prev, stockNumber: String(max + 1) }
+        })
+      } catch {
+        // ignore
+      }
+    }
+
+    void loadNextStockNumber()
+    return () => {
+      alive = false
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [formData?.stockNumber, webhookUserId])
 
   useEffect(() => {
     if (!createdVehicleId && activeTab !== 'details') {

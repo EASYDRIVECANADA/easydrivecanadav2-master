@@ -175,35 +175,30 @@ export default function AdminUsersPage() {
   const activeUsers = users.filter(u => u.isActive || u.role === 'ADMIN')
 
   return (
-    <div className="min-h-screen bg-gray-100">
-      {/* Header */}
-      <div className="bg-white shadow">
-        <div className="w-full px-4 sm:px-6 lg:px-8 py-4">
-          <div className="flex justify-between items-center">
-            <div className="flex items-center">
-              <h1 className="text-2xl font-bold text-gray-900">User Management</h1>
-            </div>
-            <button
-              onClick={handleAddUser}
-              className="bg-[#118df0] text-white px-4 py-2 rounded-lg font-medium hover:bg-[#0d6ebd] transition-colors"
-            >
-              + Add User
-            </button>
-          </div>
+    <div className="min-h-screen">
+      <div className="edc-page-header">
+        <div className="flex justify-between items-center">
+          <h1 className="text-2xl font-bold text-slate-900">User Management</h1>
+          <button
+            onClick={handleAddUser}
+            className="edc-btn-primary text-sm"
+          >
+            + Add User
+          </button>
         </div>
       </div>
 
-      <div className="w-full px-4 sm:px-6 lg:px-8 py-8">
+      <div className="px-6 py-6">
         {loading ? (
-          <div className="bg-white rounded-xl shadow p-8 text-center">
-            <div className="animate-spin w-8 h-8 border-4 border-[#118df0] border-t-transparent rounded-full mx-auto"></div>
-            <p className="mt-4 text-gray-500">Loading users...</p>
+          <div className="edc-card p-8 text-center">
+            <div className="animate-spin w-8 h-8 border-4 border-cyan-500 border-t-transparent rounded-full mx-auto"></div>
+            <p className="mt-4 text-slate-500">Loading users...</p>
           </div>
         ) : (
           <>
             {/* Pending Approvals */}
             {pendingUsers.length > 0 && (
-              <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-6 mb-6">
+              <div className="edc-card border-yellow-200 bg-yellow-50/50 p-6 mb-6">
                 <h2 className="text-lg font-semibold text-yellow-900 mb-4 flex items-center">
                   <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
@@ -212,11 +207,11 @@ export default function AdminUsersPage() {
                 </h2>
                 <div className="space-y-3">
                   {pendingUsers.map((user) => (
-                    <div key={user.id} className="bg-white rounded-lg p-4 flex items-center justify-between">
+                    <div key={user.id} className="bg-white rounded-lg p-4 flex items-center justify-between border border-slate-100">
                       <div>
-                        <p className="font-medium text-gray-900">{user.email}</p>
-                        <p className="text-sm text-gray-500">Role: {user.role}</p>
-                        <p className="text-xs text-gray-400 mt-1">Requested: {formatDate(user.createdAt)}</p>
+                        <p className="font-medium text-slate-800">{user.email}</p>
+                        <p className="text-sm text-slate-500">Role: {user.role}</p>
+                        <p className="text-xs text-slate-400 mt-1">Requested: {formatDate(user.createdAt)}</p>
                       </div>
                       <div className="flex gap-2">
                         <button
@@ -239,23 +234,23 @@ export default function AdminUsersPage() {
             )}
 
             {/* Active Users Table */}
-            <div className="bg-white rounded-xl shadow overflow-hidden overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
+            <div className="edc-card overflow-hidden overflow-x-auto">
+            <table className="edc-table">
+              <thead>
                 <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">User</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Role</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Created</th>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                  <th>User</th>
+                  <th>Role</th>
+                  <th>Status</th>
+                  <th>Created</th>
+                  <th className="text-right">Actions</th>
                 </tr>
               </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
+              <tbody>
                 {activeUsers.map((user) => (
-                  <tr key={user.id} className="hover:bg-gray-50">
+                  <tr key={user.id}>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div>
-                        <div className="text-sm text-gray-500">{user.email}</div>
+                        <div className="text-sm text-slate-600">{user.email}</div>
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
@@ -267,18 +262,18 @@ export default function AdminUsersPage() {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <span className={`px-2 py-1 text-xs font-medium rounded-full ${
-                        user.isActive ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
+                        user.isActive ? 'bg-green-100 text-green-800' : 'bg-slate-100 text-slate-600'
                       }`}>
                         {user.isActive ? 'Active' : 'Inactive'}
                       </span>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500">
                       {formatDate(user.createdAt)}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                       <button
                         onClick={() => handleEditUser(user)}
-                        className="text-[#118df0] hover:underline mr-4"
+                        className="text-cyan-600 hover:underline mr-4"
                       >
                         Edit
                       </button>
@@ -302,7 +297,7 @@ export default function AdminUsersPage() {
 
             {activeUsers.length === 0 && pendingUsers.length === 0 && (
               <div className="text-center py-12">
-                <p className="text-gray-500">No users found. Add your first user to get started.</p>
+                <p className="text-slate-500">No users found. Add your first user to get started.</p>
               </div>
             )}
           </div>
@@ -312,13 +307,14 @@ export default function AdminUsersPage() {
 
       {/* Add/Edit Modal */}
       {showModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true">
+          <div className="edc-overlay absolute inset-0" onMouseDown={() => setShowModal(false)} />
+          <div className="edc-modal max-w-md w-full p-6 relative">
             <div className="flex justify-between items-center mb-4">
-              <h2 className="text-xl font-bold">{editingUser ? 'Edit User' : 'Add New User'}</h2>
+              <h2 className="text-xl font-bold text-slate-900">{editingUser ? 'Edit User' : 'Add New User'}</h2>
               <button
                 onClick={() => setShowModal(false)}
-                className="text-gray-400 hover:text-gray-600"
+                className="text-slate-400 hover:text-slate-600"
               >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -334,38 +330,38 @@ export default function AdminUsersPage() {
 
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Email *</label>
+                <label className="block text-sm font-medium text-slate-600 mb-1">Email *</label>
                 <input
                   type="email"
                   required
                   value={formData.email}
                   onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                  className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+                  className="edc-input"
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Access Code *</label>
+                <label className="block text-sm font-medium text-slate-600 mb-1">Access Code *</label>
                 <input
                   type="password"
                   required
                   value={formData.accessCode}
                   onChange={(e) => setFormData({ ...formData, accessCode: e.target.value })}
-                  className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+                  className="edc-input"
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Role *</label>
+                <label className="block text-sm font-medium text-slate-600 mb-1">Role *</label>
                 <select
                   value={formData.role}
                   onChange={(e) => setFormData({ ...formData, role: e.target.value })}
-                  className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+                  className="edc-input"
                 >
                   <option value="STAFF">Staff</option>
                   <option value="ADMIN">Admin</option>
                 </select>
-                <p className="mt-1 text-xs text-gray-500">
+                <p className="mt-1 text-xs text-slate-500">
                   Staff can manage inventory. Admins can manage users and all settings.
                 </p>
               </div>
@@ -378,21 +374,21 @@ export default function AdminUsersPage() {
                   onChange={(e) => setFormData({ ...formData, isActive: e.target.checked })}
                   className="h-4 w-4"
                 />
-                <label htmlFor="isActive" className="text-sm text-gray-700">Active</label>
+                <label htmlFor="isActive" className="text-sm text-slate-600">Active</label>
               </div>
 
               <div className="flex gap-4 pt-4">
                 <button
                   type="submit"
                   disabled={saving}
-                  className="flex-1 bg-[#118df0] text-white py-2 rounded-lg font-semibold hover:bg-[#0d6ebd] transition-colors disabled:opacity-50"
+                  className="edc-btn-primary flex-1 disabled:opacity-50"
                 >
                   {saving ? 'Saving...' : editingUser ? 'Update User' : 'Add User'}
                 </button>
                 <button
                   type="button"
                   onClick={() => setShowModal(false)}
-                  className="px-6 py-2 border border-gray-300 rounded-lg font-medium hover:bg-gray-50 transition-colors"
+                  className="edc-btn-ghost"
                 >
                   Cancel
                 </button>

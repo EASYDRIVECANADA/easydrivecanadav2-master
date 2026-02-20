@@ -273,6 +273,30 @@ export default function AdminInventoryPage() {
   }, [])
 
   const handleOpenAddModal = () => {
+    try {
+      const extractNumericSuffix = (raw: string) => {
+        const m = String(raw || '').trim().match(/(\d+)\s*$/)
+        if (!m?.[1]) return null
+        const n = Number(m[1])
+        return Number.isFinite(n) ? n : null
+      }
+
+      let max = 0
+      let found = false
+      for (const v of vehicles) {
+        const n = extractNumericSuffix(String((v as any)?.stockNumber ?? ''))
+        if (n === null) continue
+        found = true
+        if (n > max) max = n
+      }
+      if (found) {
+        localStorage.setItem('edc_prefill_next_stock_number', String(max + 1))
+      } else {
+        localStorage.removeItem('edc_prefill_next_stock_number')
+      }
+    } catch {
+      // ignore
+    }
     // Navigate to the new tabbed Add Vehicle page
     router.push('/admin/inventory/new')
   }
@@ -789,23 +813,29 @@ export default function AdminInventoryPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-100">
+    <div className="min-h-screen">
       {/* Header */}
-      <div className="bg-white shadow">
-        <div className="w-full px-4 sm:px-6 lg:px-8 py-4">
-          <div className="flex justify-between items-center">
-            <div className="flex items-center">
-              <h1 className="text-2xl font-bold text-gray-900">Inventory Management</h1>
-            </div>
+      <div className="edc-page-header">
+        <div className="flex justify-between items-center">
+          <h1 className="text-2xl font-bold text-slate-900">Inventory Management</h1>
+          <button
+            type="button"
+            onClick={handleOpenAddModal}
+            className="edc-btn-primary text-sm"
+          >
+            + Add Vehicle
+          </button>
+        </div>
+      </div>
 
       {/* Right Drawer */}
       {drawerVehicle && (
-        <div className="fixed inset-y-0 right-0 w-full sm:w-[440px] bg-white shadow-2xl z-50 flex flex-col">
+        <div className="fixed inset-y-0 right-0 w-full sm:w-[440px] bg-white shadow-premium z-50 flex flex-col border-l border-slate-200/60">
           {/* Enhanced Header */}
-          <div className="px-5 pt-4 border-b border-gray-200">
+          <div className="px-5 pt-4 border-b border-slate-200/60">
             <div className="flex items-center justify-between">
               <div className="w-10 h-10"></div>
-              <button onClick={closeDrawer} className="p-2 rounded hover:bg-gray-100" aria-label="Close">
+              <button onClick={closeDrawer} className="p-2 rounded-lg hover:bg-slate-100 transition-colors" aria-label="Close">
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"/></svg>
               </button>
             </div>
@@ -827,9 +857,9 @@ export default function AdminInventoryPage() {
                 )
               })()}
               <div className="self-end mr-3 -mt-6">
-                <span className="px-2 py-0.5 text-[10px] font-semibold rounded-full bg-blue-100 text-blue-700">{drawerVehicle.status || 'In Stock'}</span>
+                <span className="edc-badge-cyan text-[10px]">{drawerVehicle.status || 'In Stock'}</span>
               </div>
-              <h3 className="text-xl font-bold text-red-600 text-center leading-snug">
+              <h3 className="text-xl font-bold text-slate-900 text-center leading-snug">
                 {drawerVehicle.year} {drawerVehicle.make} {drawerVehicle.model}
               </h3>
               <div className="text-xs text-gray-500 text-center">
@@ -845,7 +875,7 @@ export default function AdminInventoryPage() {
           </div>
 
           <div className="p-5 overflow-y-auto">
-            <h4 className="text-base font-semibold text-gray-900 mb-4 text-center">Profit Analysis</h4>
+            <h4 className="text-base font-semibold text-slate-900 mb-4 text-center">Profit Analysis</h4>
             {(() => {
               const purchasePrice = Number(drawerCosts.purchasePrice || 0)
               const acv = Number(drawerCosts.actualCashValue || 0)
@@ -940,20 +970,10 @@ export default function AdminInventoryPage() {
           </div>
         </div>
       )}
-            <button
-              type="button"
-              onClick={handleOpenAddModal}
-              className="bg-[#118df0] text-white px-4 py-2 rounded-lg font-medium hover:bg-[#0d6ebd] transition-colors"
-            >
-              + Add Vehicle
-            </button>
-          </div>
-        </div>
-      </div>
 
-      <div className="w-full px-4 sm:px-6 lg:px-8 py-8">
+      <div className="px-6 py-6">
         {/* Search / Filters / Page size */}
-        <div className="bg-white rounded-xl shadow p-4 mb-6">
+        <div className="edc-card p-4 mb-5">
           <div className="flex items-center justify-between gap-4 flex-wrap">
             <div className="flex items-center gap-3 flex-1 min-w-[320px]">
               <div className="flex-1 relative">
@@ -962,7 +982,7 @@ export default function AdminInventoryPage() {
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder="Search inventory"
-                  className="w-full border border-gray-300 rounded-lg pl-10 pr-4 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+                  className="edc-input pl-10"
                 />
                 <svg className="absolute left-3 top-2.5 w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
@@ -973,7 +993,7 @@ export default function AdminInventoryPage() {
                 <button
                   type="button"
                   onClick={() => setStatusFilterOpen((v) => !v)}
-                  className="inline-flex items-center gap-2 px-3 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
+                  className="edc-btn-ghost text-sm py-2"
                 >
                   {selectedStatusLabel}
                   <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -982,14 +1002,14 @@ export default function AdminInventoryPage() {
                 </button>
 
                 {statusFilterOpen && (
-                  <div className="absolute z-20 mt-2 w-56 bg-white border border-gray-200 rounded-lg shadow-lg p-3">
-                    <div className="text-xs font-semibold text-gray-500 mb-2">Filter by Status</div>
+                  <div className="absolute z-20 mt-2 w-56 bg-white border border-slate-200 rounded-xl shadow-premium p-3 animate-slide-down">
+                    <div className="text-xs font-semibold text-slate-500 mb-2">Filter by Status</div>
                     <div className="max-h-56 overflow-auto space-y-2">
                       {allStatusOptions.map((s) => (
                         <label key={s} className="flex items-center gap-2 text-sm text-gray-700">
                           <input
                             type="checkbox"
-                            className="h-4 w-4 rounded border-gray-300 text-[#118df0] focus:ring-[#118df0]"
+                            className="h-4 w-4 rounded border-slate-300 text-cyan-500 focus:ring-cyan-500"
                             checked={statusFilter.has(s)}
                             onChange={(e) => toggleStatus(s, e.target.checked)}
                           />
@@ -1015,7 +1035,7 @@ export default function AdminInventoryPage() {
                       <button
                         type="button"
                         onClick={() => setStatusFilterOpen(false)}
-                        className="text-xs text-[#118df0] hover:text-[#0d6ebd] font-medium"
+                        className="text-xs text-cyan-600 hover:text-cyan-700 font-medium"
                       >
                         Close
                       </button>
@@ -1032,14 +1052,14 @@ export default function AdminInventoryPage() {
                   setItemsPerPage(parseInt(e.target.value, 10) || 10)
                   setCurrentPage(1)
                 }}
-                className="border border-gray-300 rounded-lg px-2 py-2 text-sm text-gray-700 bg-white"
+                className="edc-select text-sm w-auto py-2"
               >
                 <option value={10}>10</option>
                 <option value={20}>20</option>
                 <option value={50}>50</option>
                 <option value={100}>100</option>
               </select>
-              <div className="text-sm text-gray-600 font-medium">
+              <div className="text-sm text-slate-500 font-medium">
                 Total Inventory: {totalVehicles}
               </div>
             </div>
@@ -1047,23 +1067,23 @@ export default function AdminInventoryPage() {
         </div>
 
         {selectedIds.size > 0 && (
-          <div className="bg-white rounded-xl shadow p-3 mb-6">
+          <div className="edc-card p-3 mb-5">
             <div className="flex items-center justify-between gap-3 flex-wrap">
-              <div className="text-sm font-semibold text-gray-700">
+              <div className="text-sm font-semibold text-slate-700">
                 {selectedIds.size} selected
               </div>
               <div className="flex items-center gap-2">
                 <button
                   type="button"
                   onClick={handleDeleteSelected}
-                  className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold text-white bg-red-600 hover:bg-red-700"
+                  className="edc-btn-danger text-sm"
                 >
                   Delete
                 </button>
                 <button
                   type="button"
                   onClick={handleExportSelected}
-                  className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold text-white bg-[#118df0] hover:bg-[#0d6ebd]"
+                  className="edc-btn-primary text-sm"
                 >
                   Export
                 </button>
@@ -1073,28 +1093,28 @@ export default function AdminInventoryPage() {
         )}
 
         {loading ? (
-          <div className="bg-white rounded-xl shadow p-8 text-center">
-            <div className="animate-spin w-8 h-8 border-4 border-[#118df0] border-t-transparent rounded-full mx-auto"></div>
-            <p className="mt-4 text-gray-500">Loading vehicles...</p>
+          <div className="edc-card p-12 text-center">
+            <div className="loading-ring mx-auto" />
+            <p className="loading-text">Loading vehicles...</p>
           </div>
         ) : vehicles.length === 0 ? (
-          <div className="bg-white rounded-xl shadow p-8 text-center">
-            <svg className="w-16 h-16 text-gray-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+          <div className="edc-card p-12 text-center">
+            <svg className="w-14 h-14 text-slate-300 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
             </svg>
-            <h3 className="text-xl font-semibold text-gray-700 mb-2">No Vehicles</h3>
-            <p className="text-gray-500 mb-4">Start by adding your first vehicle or importing a CSV file.</p>
-            <div className="flex justify-center gap-4">
+            <h3 className="text-lg font-semibold text-slate-700 mb-1">No Vehicles</h3>
+            <p className="text-sm text-slate-500 mb-5">Start by adding your first vehicle or importing a CSV file.</p>
+            <div className="flex justify-center gap-3">
               <button
                 type="button"
                 onClick={handleOpenAddModal}
-                className="bg-[#118df0] text-white px-6 py-2 rounded-lg font-medium hover:bg-[#0d6ebd] transition-colors"
+                className="edc-btn-primary text-sm"
               >
                 Add Vehicle
               </button>
               <Link
                 href="/admin/import"
-                className="border border-[#118df0] text-[#118df0] px-6 py-2 rounded-lg font-medium hover:bg-[#118df0] hover:text-white transition-colors"
+                className="edc-btn-ghost text-sm"
               >
                 Import CSV
               </Link>
@@ -1103,11 +1123,11 @@ export default function AdminInventoryPage() {
         ) : (
           <>
             {/* Desktop Table View */}
-            <div className="hidden lg:block bg-white rounded-xl shadow overflow-hidden">
-              <table className="min-w-full w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
+            <div className="hidden lg:block edc-card overflow-hidden">
+              <table className="edc-table">
+                <thead>
                   <tr>
-                    <th className="px-3 py-2 text-center text-sm font-bold text-gray-700 uppercase tracking-wider sticky left-0 bg-white z-10">
+                    <th className="px-3 py-3 text-center sticky left-0 bg-slate-50/80 z-10">
                       <div className="flex items-center justify-center gap-2">
                         <input
                           type="checkbox"
@@ -1121,41 +1141,29 @@ export default function AdminInventoryPage() {
                         </svg>
                       </div>
                     </th>
-                    <th className="px-3 py-2 text-left text-sm font-bold text-gray-700 uppercase tracking-wider">Description</th>
-                    <th className="px-3 py-2 text-left text-sm font-bold text-gray-700 uppercase tracking-wider">Trim</th>
-                    <th className="px-3 py-2 text-left text-sm font-bold text-gray-700 uppercase tracking-wider leading-tight">
-                      Vehicle<br />Type
-                    </th>
-                    <th className="px-3 py-2 text-left text-sm font-bold text-gray-700 uppercase tracking-wider">Drive</th>
-                    <th className="px-3 py-2 text-left text-sm font-bold text-gray-700 uppercase tracking-wider leading-tight">
-                      Trans-
-                      <br />mission
-                    </th>
-                    <th className="px-3 py-2 text-left text-sm font-bold text-gray-700 uppercase tracking-wider">Cylinders</th>
-                    <th className="px-3 py-2 text-left text-sm font-bold text-gray-700 uppercase tracking-wider">Colour</th>
-                    <th className="px-3 py-2 text-left text-sm font-bold text-gray-700 uppercase tracking-wider">Odometer</th>
-                    <th className="px-3 py-2 text-left text-sm font-bold text-gray-700 uppercase tracking-wider leading-tight">
-                      Actual Cash<br />Value
-                    </th>
-                    <th className="px-3 py-2 text-left text-sm font-bold text-gray-700 uppercase tracking-wider">List Price</th>
-                    <th className="px-3 py-2 text-left text-sm font-bold text-gray-700 uppercase tracking-wider leading-tight">
-                      Sale<br />Price
-                    </th>
-                    <th className="px-3 py-2 text-left text-sm font-bold text-gray-700 uppercase tracking-wider">DII</th>
-                    <th className="px-3 py-2 text-left text-sm font-bold text-gray-700 uppercase tracking-wider">Stock #</th>
-                    <th className="px-3 py-2 text-left text-sm font-bold text-gray-700 uppercase tracking-wider">Key #</th>
-                    <th className="px-3 py-2 text-left text-sm font-bold text-gray-700 uppercase tracking-wider leading-tight">
-                      Cert/
-                      <br />AS-IS
-                    </th>
-                    <th className="px-3 py-2 text-left text-sm font-bold text-gray-700 uppercase tracking-wider">Status</th>
-                    <th className="px-3 py-2 text-left text-sm font-bold text-gray-700 uppercase tracking-wider">Other</th>
+                    <th>Description</th>
+                    <th>Trim</th>
+                    <th className="leading-tight">Vehicle<br />Type</th>
+                    <th>Drive</th>
+                    <th className="leading-tight">Trans-<br />mission</th>
+                    <th>Cylinders</th>
+                    <th>Colour</th>
+                    <th>Odometer</th>
+                    <th className="leading-tight">Actual Cash<br />Value</th>
+                    <th>List Price</th>
+                    <th className="leading-tight">Sale<br />Price</th>
+                    <th>DII</th>
+                    <th>Stock #</th>
+                    <th>Key #</th>
+                    <th className="leading-tight">Cert/<br />AS-IS</th>
+                    <th>Status</th>
+                    <th>Other</th>
                   </tr>
                 </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
+                <tbody>
                   {paginatedVehicles.map((vehicle) => (
-                  <tr key={vehicle.id} className="hover:bg-gray-50 cursor-pointer" onClick={() => setDrawerVehicle(vehicle)}>
-                    <td className="px-3 py-2 whitespace-nowrap text-center sticky left-0 bg-white z-10">
+                  <tr key={vehicle.id} className="cursor-pointer" onClick={() => setDrawerVehicle(vehicle)}>
+                    <td className="px-3 py-3 whitespace-nowrap text-center sticky left-0 bg-white z-10">
                       <div className="flex items-center justify-center gap-2">
                         <input
                           type="checkbox"
@@ -1177,37 +1185,37 @@ export default function AdminInventoryPage() {
                         </Link>
                       </div>
                     </td>
-                    <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-900">
+                    <td className="px-3 py-3 whitespace-nowrap text-xs font-medium text-slate-800">
                       {vehicle.year} {vehicle.make} {vehicle.model}
                     </td>
-                    <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-500">{vehicle.trim || '—'}</td>
-                    <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-500">{vehicle.bodyStyle || vehicle.inventoryType || '—'}</td>
-                    <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-500">{vehicle.drivetrain || '—'}</td>
-                    <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-500">{vehicle.transmission || '—'}</td>
-                    <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-500">{vehicle.cylinders || '—'}</td>
-                    <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-500">{vehicle.exteriorColor || '—'}</td>
-                    <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-500">
+                    <td className="px-3 py-3 whitespace-nowrap text-xs text-slate-500">{vehicle.trim || '—'}</td>
+                    <td className="px-3 py-3 whitespace-nowrap text-xs text-slate-500">{vehicle.bodyStyle || vehicle.inventoryType || '—'}</td>
+                    <td className="px-3 py-3 whitespace-nowrap text-xs text-slate-500">{vehicle.drivetrain || '—'}</td>
+                    <td className="px-3 py-3 whitespace-nowrap text-xs text-slate-500">{vehicle.transmission || '—'}</td>
+                    <td className="px-3 py-3 whitespace-nowrap text-xs text-slate-500">{vehicle.cylinders || '—'}</td>
+                    <td className="px-3 py-3 whitespace-nowrap text-xs text-slate-500">{vehicle.exteriorColor || '—'}</td>
+                    <td className="px-3 py-3 whitespace-nowrap text-xs text-slate-500">
                       {typeof vehicle.odometer === 'number' ? vehicle.odometer.toLocaleString() : '—'} {vehicle.odometerUnit || ''}
                     </td>
-                    <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-900">
+                    <td className="px-3 py-3 whitespace-nowrap text-xs font-medium text-slate-800">
                       {formatMoney((vehicle.purchaseData as any)?.actualCashValue ?? (vehicle.purchaseData as any)?.actual_cash_value ?? 0)}
                     </td>
-                    <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-900">{formatMoney(vehicle.price)}</td>
-                    <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-900">
+                    <td className="px-3 py-3 whitespace-nowrap text-xs font-medium text-slate-800">{formatMoney(vehicle.price)}</td>
+                    <td className="px-3 py-3 whitespace-nowrap text-xs font-medium text-slate-800">
                       {formatMoney(vehicle.salePrice ?? (vehicle.costsData as any)?.salePrice ?? (vehicle.costsData as any)?.sale_price ?? 0)}
                     </td>
-                    <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-500">{getDaysInInventory(vehicle)}</td>
-                    <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-500">{vehicle.stockNumber || '—'}</td>
-                    <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-500">{vehicle.keyNumber || '—'}</td>
-                    <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-500">
+                    <td className="px-3 py-3 whitespace-nowrap text-xs text-slate-500">{getDaysInInventory(vehicle)}</td>
+                    <td className="px-3 py-3 whitespace-nowrap text-xs text-slate-500">{vehicle.stockNumber || '—'}</td>
+                    <td className="px-3 py-3 whitespace-nowrap text-xs text-slate-500">{vehicle.keyNumber || '—'}</td>
+                    <td className="px-3 py-3 whitespace-nowrap text-xs text-slate-500">
                       {vehicle.certified || vehicle.condition || '—'}
                     </td>
-                    <td className="px-3 py-2 whitespace-nowrap">
-                      <span className="px-2 py-0.5 text-[10px] font-medium rounded-full bg-gray-100 text-gray-800">
+                    <td className="px-3 py-3 whitespace-nowrap">
+                      <span className="edc-badge-neutral text-[10px]">
                         {vehicle.status || '—'}
                       </span>
                     </td>
-                    <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-500">
+                    <td className="px-3 py-3 whitespace-nowrap text-xs text-slate-500">
                       {(vehicle as any).raw?.assignment || (vehicle as any).raw?.substatus || (vehicle as any).raw?.lot_location || '—'}
                     </td>
                   </tr>
@@ -1323,22 +1331,22 @@ export default function AdminInventoryPage() {
 
           {/* Pagination */}
           {totalPages > 1 && (
-            <div className="bg-white rounded-xl shadow px-4 py-3 flex items-center justify-between mt-6">
-              <div className="text-sm text-gray-700">
+            <div className="edc-card px-4 py-3 flex items-center justify-between mt-5">
+              <div className="text-sm text-slate-600">
                 Page {currentPage} of {totalPages}
               </div>
               <div className="flex gap-2">
                 <button
                   onClick={() => setCurrentPage(1)}
                   disabled={currentPage === 1}
-                  className="px-3 py-1 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="px-3 py-1 border border-slate-200 rounded-lg text-sm font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                 >
                   First
                 </button>
                 <button
                   onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
                   disabled={currentPage === 1}
-                  className="px-3 py-1 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="px-3 py-1 border border-slate-200 rounded-lg text-sm font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                 >
                   Previous
                 </button>
@@ -1357,10 +1365,10 @@ export default function AdminInventoryPage() {
                     <button
                       key={pageNum}
                       onClick={() => setCurrentPage(pageNum)}
-                      className={`px-3 py-1 border rounded-md text-sm font-medium ${
+                      className={`px-3 py-1 border rounded-lg text-sm font-medium transition-colors ${
                         currentPage === pageNum
-                          ? 'bg-[#118df0] text-white border-[#118df0]'
-                          : 'border-gray-300 text-gray-700 hover:bg-gray-50'
+                          ? 'bg-navy-900 text-white border-navy-900'
+                          : 'border-slate-200 text-slate-600 hover:bg-slate-50'
                       }`}
                     >
                       {pageNum}
@@ -1370,14 +1378,14 @@ export default function AdminInventoryPage() {
                 <button
                   onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
                   disabled={currentPage === totalPages}
-                  className="px-3 py-1 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="px-3 py-1 border border-slate-200 rounded-lg text-sm font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                 >
                   Next
                 </button>
                 <button
                   onClick={() => setCurrentPage(totalPages)}
                   disabled={currentPage === totalPages}
-                  className="px-3 py-1 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="px-3 py-1 border border-slate-200 rounded-lg text-sm font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                 >
                   Last
                 </button>
@@ -1390,20 +1398,20 @@ export default function AdminInventoryPage() {
 
       {modalOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center">
-          <div className="absolute inset-0 bg-black/50" onClick={closeModal}></div>
-          <div className="relative w-[92vw] max-w-md rounded-2xl bg-white shadow-xl border border-gray-200">
-            <div className="px-5 py-4 border-b border-gray-100">
-              <h3 className="text-base font-semibold text-gray-900">{modalTitle}</h3>
+          <div className="edc-overlay absolute inset-0" onClick={closeModal}></div>
+          <div className="edc-modal relative w-[92vw] max-w-md">
+            <div className="px-5 py-4 border-b border-slate-100">
+              <h3 className="text-base font-semibold text-slate-900">{modalTitle}</h3>
             </div>
             <div className="px-5 py-4">
-              <p className="text-sm text-gray-700 whitespace-pre-line">{modalMessage}</p>
+              <p className="text-sm text-slate-600 whitespace-pre-line">{modalMessage}</p>
             </div>
-            <div className="px-5 py-4 border-t border-gray-100 flex items-center justify-end gap-2">
+            <div className="px-5 py-4 border-t border-slate-100 flex items-center justify-end gap-2">
               {modalMode === 'confirm' ? (
                 <>
                   <button
                     type="button"
-                    className="px-4 py-2 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-100 disabled:opacity-50"
+                    className="edc-btn-ghost text-sm"
                     onClick={closeModal}
                     disabled={modalBusy}
                   >
@@ -1411,7 +1419,7 @@ export default function AdminInventoryPage() {
                   </button>
                   <button
                     type="button"
-                    className="px-4 py-2 rounded-lg text-sm font-semibold text-white bg-red-600 hover:bg-red-700 disabled:opacity-50"
+                    className="edc-btn-danger text-sm"
                     onClick={async () => {
                       if (!modalOnConfirm) return
                       await modalOnConfirm()
@@ -1424,7 +1432,7 @@ export default function AdminInventoryPage() {
               ) : (
                 <button
                   type="button"
-                  className="px-4 py-2 rounded-lg text-sm font-semibold text-white bg-[#118df0] hover:bg-[#0a7dd4] disabled:opacity-50"
+                  className="edc-btn-primary text-sm"
                   onClick={closeModal}
                   disabled={modalBusy}
                 >
@@ -1439,14 +1447,14 @@ export default function AdminInventoryPage() {
       {showAddModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
           <div
-            className="absolute inset-0 bg-black/50"
+            className="edc-overlay absolute inset-0"
             onClick={() => (addSubmitting ? null : setShowAddModal(false))}
           ></div>
-          <div className="relative bg-white w-full max-w-4xl mx-4 rounded-2xl shadow-xl overflow-hidden max-h-[90vh] flex flex-col">
-            <div className="px-6 py-4 border-b flex items-center justify-between">
+          <div className="edc-modal relative w-full max-w-4xl mx-4 overflow-hidden max-h-[90vh] flex flex-col">
+            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
               <div>
-                <h2 className="text-lg font-semibold text-gray-900">Add New Vehicle</h2>
-                <p className="text-sm text-gray-500">Create a vehicle and then add photos</p>
+                <h2 className="text-lg font-semibold text-slate-900">Add New Vehicle</h2>
+                <p className="text-sm text-slate-500">Create a vehicle and then add photos</p>
               </div>
               <button
                 type="button"
@@ -1463,14 +1471,14 @@ export default function AdminInventoryPage() {
             <div className="p-6 overflow-y-auto">
               <form onSubmit={handleAddSubmit} className="space-y-8">
                 {addError && (
-                  <div className="p-4 bg-red-50 border border-red-200 rounded-lg text-red-700">{addError}</div>
+                  <div className="p-3 bg-danger-500/10 border border-danger-500/20 rounded-xl text-danger-600 text-sm">{addError}</div>
                 )}
 
                 <div>
-                  <h3 className="text-lg font-semibold mb-4 border-b pb-2">Basic Information</h3>
+                  <h3 className="text-base font-semibold text-slate-900 mb-4 border-b border-slate-100 pb-2">Basic Information</h3>
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Make *</label>
+                      <label className="block text-[13px] font-medium text-slate-600 mb-1">Make *</label>
                       <input
                         type="text"
                         name="make"
@@ -1478,11 +1486,11 @@ export default function AdminInventoryPage() {
                         value={addFormData.make}
                         onChange={handleAddChange}
                         placeholder="e.g., Toyota"
-                        className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+                        className="edc-input"
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Model *</label>
+                      <label className="block text-[13px] font-medium text-slate-600 mb-1">Model *</label>
                       <input
                         type="text"
                         name="model"
@@ -1490,11 +1498,11 @@ export default function AdminInventoryPage() {
                         value={addFormData.model}
                         onChange={handleAddChange}
                         placeholder="e.g., Camry"
-                        className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+                        className="edc-input"
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Year *</label>
+                      <label className="block text-[13px] font-medium text-slate-600 mb-1">Year *</label>
                       <input
                         type="number"
                         name="year"
@@ -1503,11 +1511,11 @@ export default function AdminInventoryPage() {
                         onChange={handleAddChange}
                         min="1990"
                         max={new Date().getFullYear() + 1}
-                        className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+                        className="edc-input"
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Price ($) *</label>
+                      <label className="block text-[13px] font-medium text-slate-600 mb-1">Price ($) *</label>
                       <input
                         type="number"
                         name="price"
@@ -1515,11 +1523,11 @@ export default function AdminInventoryPage() {
                         value={addFormData.price}
                         onChange={handleAddChange}
                         placeholder="e.g., 25000"
-                        className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+                        className="edc-input"
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Mileage (km) *</label>
+                      <label className="block text-[13px] font-medium text-slate-600 mb-1">Mileage (km) *</label>
                       <input
                         type="number"
                         name="mileage"
@@ -1527,16 +1535,16 @@ export default function AdminInventoryPage() {
                         value={addFormData.mileage}
                         onChange={handleAddChange}
                         placeholder="e.g., 50000"
-                        className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+                        className="edc-input"
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+                      <label className="block text-[13px] font-medium text-slate-600 mb-1">Status</label>
                       <select
                         name="status"
                         value={addFormData.status}
                         onChange={handleAddChange}
-                        className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+                        className="edc-input"
                       >
                         <option value="ACTIVE">Active</option>
                         <option value="PENDING">Pending</option>
@@ -1545,12 +1553,12 @@ export default function AdminInventoryPage() {
                       </select>
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Inventory Type</label>
+                      <label className="block text-[13px] font-medium text-slate-600 mb-1">Inventory Type</label>
                       <select
                         name="inventoryType"
                         value={addFormData.inventoryType}
                         onChange={handleAddChange}
-                        className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+                        className="edc-input"
                       >
                         <option value="FLEET">Fleet Cars</option>
                         <option value="PREMIERE">Premiere Cars</option>
@@ -1560,21 +1568,21 @@ export default function AdminInventoryPage() {
                 </div>
 
                 <div>
-                  <h3 className="text-lg font-semibold mb-4 border-b pb-2">Identification & Location</h3>
+                  <h3 className="text-base font-semibold text-slate-900 mb-4 border-b border-slate-100 pb-2">Identification & Location</h3>
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Stock Number (Unit ID)</label>
+                      <label className="block text-[13px] font-medium text-slate-600 mb-1">Stock Number (Unit ID)</label>
                       <input
                         type="text"
                         name="stockNumber"
                         value={addFormData.stockNumber}
                         onChange={handleAddChange}
                         placeholder="e.g., 8FDJTG"
-                        className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+                        className="edc-input"
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">VIN *</label>
+                      <label className="block text-[13px] font-medium text-slate-600 mb-1">VIN *</label>
                       <input
                         type="text"
                         name="vin"
@@ -1582,22 +1590,22 @@ export default function AdminInventoryPage() {
                         value={addFormData.vin}
                         onChange={handleAddChange}
                         placeholder="Vehicle Identification Number"
-                        className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+                        className="edc-input"
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Series</label>
+                      <label className="block text-[13px] font-medium text-slate-600 mb-1">Series</label>
                       <input
                         type="text"
                         name="series"
                         value={addFormData.series}
                         onChange={handleAddChange}
                         placeholder="e.g., 40K4, 45KF"
-                        className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+                        className="edc-input"
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">City *</label>
+                      <label className="block text-[13px] font-medium text-slate-600 mb-1">City *</label>
                       <input
                         type="text"
                         name="city"
@@ -1605,17 +1613,17 @@ export default function AdminInventoryPage() {
                         value={addFormData.city}
                         onChange={handleAddChange}
                         placeholder="e.g., Toronto"
-                        className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+                        className="edc-input"
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Province *</label>
+                      <label className="block text-[13px] font-medium text-slate-600 mb-1">Province *</label>
                       <select
                         name="province"
                         required
                         value={addFormData.province}
                         onChange={handleAddChange}
-                        className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+                        className="edc-input"
                       >
                         <option value="ON">Ontario</option>
                         <option value="QC">Quebec</option>
@@ -1633,29 +1641,29 @@ export default function AdminInventoryPage() {
                       </select>
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Key #</label>
+                      <label className="block text-[13px] font-medium text-slate-600 mb-1">Key #</label>
                       <input
                         type="text"
                         name="keyNumber"
                         value={addFormData.keyNumber}
                         onChange={handleAddChange}
                         placeholder="e.g., 12"
-                        className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+                        className="edc-input"
                       />
                     </div>
                   </div>
                 </div>
 
                 <div>
-                  <h3 className="text-lg font-semibold mb-4 border-b pb-2">Specifications</h3>
+                  <h3 className="text-base font-semibold text-slate-900 mb-4 border-b border-slate-100 pb-2">Specifications</h3>
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Fuel Type</label>
+                      <label className="block text-[13px] font-medium text-slate-600 mb-1">Fuel Type</label>
                       <select
                         name="fuelType"
                         value={addFormData.fuelType}
                         onChange={handleAddChange}
-                        className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+                        className="edc-input"
                       >
                         <option value="Gasoline">Gasoline</option>
                         <option value="Diesel">Diesel</option>
@@ -1664,12 +1672,12 @@ export default function AdminInventoryPage() {
                       </select>
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Transmission</label>
+                      <label className="block text-[13px] font-medium text-slate-600 mb-1">Transmission</label>
                       <select
                         name="transmission"
                         value={addFormData.transmission}
                         onChange={handleAddChange}
-                        className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+                        className="edc-input"
                       >
                         <option value="Automatic">Automatic</option>
                         <option value="Manual">Manual</option>
@@ -1677,12 +1685,12 @@ export default function AdminInventoryPage() {
                       </select>
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Drivetrain</label>
+                      <label className="block text-[13px] font-medium text-slate-600 mb-1">Drivetrain</label>
                       <select
                         name="drivetrain"
                         value={addFormData.drivetrain}
                         onChange={handleAddChange}
-                        className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+                        className="edc-input"
                       >
                         <option value="FWD">FWD</option>
                         <option value="RWD">RWD</option>
@@ -1691,7 +1699,7 @@ export default function AdminInventoryPage() {
                       </select>
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Body Style *</label>
+                      <label className="block text-[13px] font-medium text-slate-600 mb-1">Body Style *</label>
                       <input
                         type="text"
                         name="bodyStyle"
@@ -1699,28 +1707,28 @@ export default function AdminInventoryPage() {
                         value={addFormData.bodyStyle}
                         onChange={handleAddChange}
                         placeholder="e.g., Sedan"
-                        className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+                        className="edc-input"
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Trim</label>
+                      <label className="block text-[13px] font-medium text-slate-600 mb-1">Trim</label>
                       <input
                         type="text"
                         name="trim"
                         value={addFormData.trim}
                         onChange={handleAddChange}
                         placeholder="e.g., SE, XLE"
-                        className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+                        className="edc-input"
                       />
                     </div>
                   </div>
                 </div>
 
                 <div>
-                  <h3 className="text-lg font-semibold mb-4 border-b pb-2">Colors</h3>
+                  <h3 className="text-base font-semibold text-slate-900 mb-4 border-b border-slate-100 pb-2">Colors</h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Exterior Color *</label>
+                      <label className="block text-[13px] font-medium text-slate-600 mb-1">Exterior Color *</label>
                       <input
                         type="text"
                         name="exteriorColor"
@@ -1728,57 +1736,57 @@ export default function AdminInventoryPage() {
                         value={addFormData.exteriorColor}
                         onChange={handleAddChange}
                         placeholder="e.g., Silver"
-                        className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+                        className="edc-input"
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Interior Color</label>
+                      <label className="block text-[13px] font-medium text-slate-600 mb-1">Interior Color</label>
                       <input
                         type="text"
                         name="interiorColor"
                         value={addFormData.interiorColor}
                         onChange={handleAddChange}
                         placeholder="e.g., Black"
-                        className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+                        className="edc-input"
                       />
                     </div>
                   </div>
                 </div>
 
                 <div>
-                  <h3 className="text-lg font-semibold mb-4 border-b pb-2">Description & Features</h3>
+                  <h3 className="text-base font-semibold text-slate-900 mb-4 border-b border-slate-100 pb-2">Description & Features</h3>
                   <div className="grid grid-cols-1 gap-4">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Equipment</label>
+                      <label className="block text-[13px] font-medium text-slate-600 mb-1">Equipment</label>
                       <textarea
                         name="equipment"
                         rows={2}
                         value={addFormData.equipment}
                         onChange={handleAddChange}
                         placeholder="e.g., A3 40 KOMFORT AWD SEDAN"
-                        className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+                        className="edc-input"
                       ></textarea>
                       <p className="mt-1 text-xs text-gray-500">Full equipment description from EDC inventory</p>
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                      <label className="block text-[13px] font-medium text-slate-600 mb-1">Description</label>
                       <textarea
                         name="description"
                         value={addFormData.description}
                         onChange={handleAddChange}
                         rows={4}
-                        className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+                        className="edc-input"
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Features (comma-separated)</label>
+                      <label className="block text-[13px] font-medium text-slate-600 mb-1">Features (comma-separated)</label>
                       <textarea
                         name="features"
                         value={addFormData.features}
                         onChange={handleAddChange}
                         rows={3}
                         placeholder="Bluetooth, Backup Camera, Sunroof"
-                        className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+                        className="edc-input"
                       />
                     </div>
                   </div>
@@ -1789,14 +1797,14 @@ export default function AdminInventoryPage() {
                     type="button"
                     onClick={() => setShowAddModal(false)}
                     disabled={addSubmitting}
-                    className="px-5 py-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                    className="edc-btn-ghost text-sm"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
                     disabled={addSubmitting}
-                    className="bg-[#118df0] text-white px-6 py-2 rounded-lg font-semibold hover:bg-[#0d6ebd] transition-colors disabled:opacity-50"
+                    className="edc-btn-primary text-sm"
                   >
                     {addSubmitting ? 'Creating…' : 'Create Vehicle & Add Photos'}
                   </button>
