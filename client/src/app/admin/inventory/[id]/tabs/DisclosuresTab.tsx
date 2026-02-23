@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, forwardRef, useImperativeHandle, useRef } from 'react'
+import { useState, useEffect, forwardRef, useImperativeHandle, useRef, useMemo } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 
 interface Disclosure {
@@ -18,13 +18,36 @@ export interface DisclosuresTabHandle {
   save: () => Promise<boolean>
 }
 
-const PRESET_DISCLOSURES = [
-  { id: '1', title: 'The vehicle was previously from another Province', content: '' },
-  { id: '2', title: 'Customer Acknowledgement Clause', content: 'The Buyer confirms that they have inspected the vehicle, provided the car fax report, reviewed the Bill of Sale, test-driven the vehicle with a salesperson, explained all questions, including the bill of sale, by the salesperson, and had all questions answered to their satisfaction. The Buyer agrees to proceed with the purchase and accepts the vehicle in its current condition.' },
-  { id: '3', title: 'As-Is Condition', content: 'This vehicle is sold as-is, where-is, with all faults and defects.' },
-  { id: '4', title: 'Odometer Disclosure', content: 'The odometer reading is believed to be accurate to the best of our knowledge.' },
-  { id: '5', title: 'Previous Damage Disclosure', content: 'This vehicle has been in a previous accident and has been repaired.' },
-]
+type PresetDisclosureRow = {
+  id: string
+  user_id: string | null
+  name: string | null
+  disclosure: string | null
+}
+
+const toPlainText = (raw: string) => {
+  const html = String(raw || '')
+  if (!html.trim()) return ''
+
+  if (typeof window !== 'undefined') {
+    // Step 1: decode HTML entities into text
+    const el = window.document.createElement('div')
+    el.innerHTML = html
+    const decodedText = String(el.textContent || el.innerText || '')
+    // Step 2: remove any tag-like remnants that came from encoded HTML
+    return decodedText.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
+  }
+
+  // SSR fallback
+  const decodedText = html
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&amp;/gi, '&')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+
+  return decodedText.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
+}
 
 const NOTES_DISCLOSURE_ID = '__custom_note__'
 
@@ -35,6 +58,9 @@ const DisclosuresTab = forwardRef<DisclosuresTabHandle, DisclosuresTabProps>(fun
   const [customNote, setCustomNote] = useState('')
   const [currentStockNumber, setCurrentStockNumber] = useState<string>('')
   const [saving, setSaving] = useState(false)
+  const [presets, setPresets] = useState<Disclosure[]>([])
+  const [loadingPresets, setLoadingPresets] = useState(false)
+  const [presetsError, setPresetsError] = useState<string | null>(null)
   const editorRef = useRef<HTMLDivElement | null>(null)
   const [toolbarState, setToolbarState] = useState({
     bold: false,
@@ -52,9 +78,79 @@ const DisclosuresTab = forwardRef<DisclosuresTabHandle, DisclosuresTabProps>(fun
     save: handleSave,
   }))
 
+  const getLoggedInAdminDbUserId = async (): Promise<string | null> => {
+    try {
+      if (typeof window === 'undefined') return null
+      const raw = window.localStorage.getItem('edc_admin_session')
+      if (!raw) return null
+      const parsed = JSON.parse(raw) as { email?: string; user_id?: string }
+      const sessionUserId = String(parsed?.user_id ?? '').trim()
+      if (sessionUserId) return sessionUserId
+      const email = String(parsed?.email ?? '').trim().toLowerCase()
+      if (!email) return null
+
+      const { data, error } = await supabase
+        .from('edc_account_verifications')
+        .select('id')
+        .eq('email', email)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+
+      if (error) return null
+      return (data as any)?.id ?? null
+    } catch {
+      return null
+    }
+  }
+
   useEffect(() => {
     fetchDisclosures()
   }, [vehicleId])
+
+  useEffect(() => {
+    let cancelled = false
+    const load = async () => {
+      setLoadingPresets(true)
+      setPresetsError(null)
+      try {
+        const uid = await getLoggedInAdminDbUserId()
+        if (!uid) {
+          if (!cancelled) setPresets([])
+          return
+        }
+
+        const { data, error } = await supabase
+          .from('presets_disclosures')
+          .select('id, user_id, name, disclosure')
+          .eq('user_id', uid)
+          .order('name', { ascending: true })
+
+        if (error) throw error
+
+        const rows = (Array.isArray(data) ? data : []) as unknown as PresetDisclosureRow[]
+        const mapped: Disclosure[] = rows.map((r) => ({
+          id: String(r.id),
+          title: String(r.name || '').trim(),
+          content: toPlainText(String(r.disclosure || '')),
+        }))
+
+        if (!cancelled) setPresets(mapped)
+      } catch (e: any) {
+        if (!cancelled) {
+          setPresets([])
+          setPresetsError(e?.message || 'Failed to load disclosures')
+        }
+      } finally {
+        if (!cancelled) setLoadingPresets(false)
+      }
+    }
+
+    void load()
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   useEffect(() => {
     const el = editorRef.current
@@ -178,15 +274,15 @@ const DisclosuresTab = forwardRef<DisclosuresTabHandle, DisclosuresTabProps>(fun
           const combined = body ? (title ? `${title}\n${body}` : body) : title
           console.log('[DisclosuresTab] edc_disclosures prefill length', combined.length)
           if (combined) {
-            const isLikelyHtml = /<[^>]+>/.test(combined)
+            const plain = toPlainText(combined)
             setCustomNote(
-              isLikelyHtml
-                ? combined
-                : `<div>${combined
+              plain
+                ? `<div>${plain
                     .replace(/&/g, '&amp;')
                     .replace(/</g, '&lt;')
                     .replace(/>/g, '&gt;')
                     .replace(/\n/g, '<br/>')}</div>`
+                : ''
             )
             setSelectedDisclosures([])
             return
@@ -205,11 +301,28 @@ const DisclosuresTab = forwardRef<DisclosuresTabHandle, DisclosuresTabProps>(fun
     return title
   }
 
-  const appendToNotes = (text: string) => {
+  const removeDisclosureTextFromNotes = (disclosureId: string) => {
+    const el = editorRef.current
+    if (!el) return
+    try {
+      const nodes = Array.from(el.querySelectorAll('[data-disclosure-id]'))
+      for (const n of nodes) {
+        if ((n as HTMLElement).getAttribute('data-disclosure-id') === disclosureId) {
+          n.remove()
+        }
+      }
+      setCustomNote(el.innerHTML)
+    } catch {
+      // ignore
+    }
+  }
+
+  const appendToNotes = (text: string, disclosureId?: string) => {
     const t = String(text || '').trim()
     if (!t) return
     const parts = t.split(/\n+/g).map(s => s.trim()).filter(Boolean)
-    const html = parts.map(p => `<div>${escapeHtml(p)}</div>`).join('') + '<div><br/></div>'
+    const body = parts.map(p => `<div>${escapeHtml(p)}</div>`).join('') + '<div><br/></div>'
+    const html = disclosureId ? `<div data-disclosure-id="${escapeHtml(disclosureId)}">${body}</div>` : body
     insertHtmlAtCursor(html)
   }
 
@@ -223,11 +336,12 @@ const DisclosuresTab = forwardRef<DisclosuresTabHandle, DisclosuresTabProps>(fun
     if (!selectedDisclosures.find(d => d.id === safeDisclosure.id)) {
       setSelectedDisclosures([...selectedDisclosures, safeDisclosure])
     }
-    appendToNotes(getDisclosureText(safeDisclosure))
+    appendToNotes(getDisclosureText(safeDisclosure), safeDisclosure.id)
   }
 
   const handleRemoveDisclosure = (id: string) => {
     setSelectedDisclosures(selectedDisclosures.filter(d => d.id !== id))
+    removeDisclosureTextFromNotes(id)
   }
 
   const handleSave = async (): Promise<boolean> => {
@@ -269,9 +383,11 @@ const DisclosuresTab = forwardRef<DisclosuresTabHandle, DisclosuresTabProps>(fun
     }
   }
 
-  const filteredPresets = PRESET_DISCLOSURES.filter(d =>
-    String(d?.title || '').toLowerCase().includes(String(searchQuery || '').toLowerCase())
-  )
+  const filteredPresets = useMemo(() => {
+    const q = String(searchQuery || '').trim().toLowerCase()
+    if (!q) return presets
+    return presets.filter((d) => String(d?.title || '').toLowerCase().includes(q))
+  }, [presets, searchQuery])
 
   return (
     <div className="bg-white rounded-xl shadow p-6">
@@ -322,28 +438,37 @@ const DisclosuresTab = forwardRef<DisclosuresTabHandle, DisclosuresTabProps>(fun
           </div>
 
           <div className="border border-gray-200 rounded-lg max-h-80 overflow-y-auto">
-            {filteredPresets.map((preset) => (
-              <div
-                key={preset.id}
-                draggable
-                onDragStart={(e) => {
-                  e.dataTransfer.effectAllowed = 'copy'
-                  e.dataTransfer.setData('text/plain', getDisclosureText(preset))
-                  e.dataTransfer.setData('application/json', JSON.stringify(preset))
-                }}
-                className="p-3 border-b border-gray-100 last:border-b-0 hover:bg-gray-50"
-              >
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-gray-700">{preset.title}</span>
-                  <button
-                    onClick={() => handleAddDisclosure(preset)}
-                    className="bg-[#118df0] text-white text-xs px-3 py-1 rounded hover:bg-[#0d6ebd] transition-colors"
-                  >
-                    Add
-                  </button>
+            {loadingPresets ? (
+              <div className="p-3 text-sm text-gray-500">Loading…</div>
+            ) : presetsError ? (
+              <div className="p-3 text-sm text-red-600">{presetsError}</div>
+            ) : filteredPresets.length === 0 ? (
+              <div className="p-3 text-sm text-gray-500">No disclosures found.</div>
+            ) : (
+              filteredPresets.map((preset) => (
+                <div
+                  key={preset.id}
+                  draggable
+                  onDragStart={(e) => {
+                    e.dataTransfer.effectAllowed = 'copy'
+                    e.dataTransfer.setData('text/plain', getDisclosureText(preset))
+                    e.dataTransfer.setData('application/json', JSON.stringify(preset))
+                  }}
+                  className="p-3 border-b border-gray-100 last:border-b-0 hover:bg-gray-50"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-gray-700">{preset.title}</span>
+                    <button
+                      type="button"
+                      onClick={() => handleAddDisclosure(preset)}
+                      className="bg-[#118df0] text-white text-xs px-3 py-1 rounded hover:bg-[#0d6ebd] transition-colors"
+                    >
+                      Add
+                    </button>
+                  </div>
                 </div>
-              </div>
-            ))}
+              ))
+            )}
           </div>
 
           {/* Selected Disclosures */}

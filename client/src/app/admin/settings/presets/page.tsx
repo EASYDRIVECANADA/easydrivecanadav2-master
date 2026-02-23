@@ -115,6 +115,22 @@ type InventoryCostRow = {
   default_tax_rate: string | null
 }
 
+const disclosurePreviewText = (raw: string) => {
+  const html = String(raw || '')
+  if (!html.trim()) return ''
+
+  let text = ''
+  if (typeof window !== 'undefined') {
+    const el = window.document.createElement('div')
+    el.innerHTML = html
+    text = String(el.textContent || el.innerText || '')
+  } else {
+    text = html.replace(/<[^>]*>/g, ' ')
+  }
+
+  return text.replace(/\s+/g, ' ').trim()
+}
+
 const categories: PresetCategory[] = [
   'Fees',
   'Accessories',
@@ -2520,7 +2536,15 @@ export default function SettingsPresetsPage() {
                     ) : activeCategory === 'Disclosures' ? (
                       <>
                         <div className="h-10 flex items-center text-xs text-slate-700">{r.name}</div>
-                        <div className="h-10 flex items-center text-xs text-slate-700">{r.disclosure || ''}</div>
+                        <div
+                          className="h-10 flex items-center text-xs text-slate-700 overflow-hidden"
+                          title={disclosurePreviewText(r.disclosure || '')}
+                        >
+                          {(() => {
+                            const t = disclosurePreviewText(r.disclosure || '')
+                            return t.length > 120 ? `${t.slice(0, 120)}…` : t
+                          })()}
+                        </div>
                         <div className="h-10 flex items-center text-xs text-slate-700">{r.favourite || ''}</div>
                       </>
                     ) : activeCategory === 'Inventory Costs' ? (
