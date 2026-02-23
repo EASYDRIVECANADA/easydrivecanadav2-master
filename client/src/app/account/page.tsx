@@ -20,6 +20,7 @@ function AccountPageInner() {
   const [userEmail, setUserEmail] = useState<string | null>(null)
   const [userName, setUserName] = useState<string | null>(null)
   const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
   const [loading, setLoading] = useState(false)
   const [initLoading, setInitLoading] = useState(true)
   const [isVerified, setIsVerified] = useState(false)
@@ -35,6 +36,12 @@ function AccountPageInner() {
   const [customerAuthEmail, setCustomerAuthEmail] = useState('')
   const [customerAuthPassword, setCustomerAuthPassword] = useState('')
   const [customerCreateMode, setCustomerCreateMode] = useState(false)
+  const [rememberMe, setRememberMe] = useState(false)
+  const [forgotOpen, setForgotOpen] = useState(false)
+  const [forgotEmail, setForgotEmail] = useState('')
+  const [forgotSending, setForgotSending] = useState(false)
+  const [forgotStage, setForgotStage] = useState<'form' | 'result'>('form')
+  const [forgotResult, setForgotResult] = useState('')
   const [editingName, setEditingName] = useState('')
   const [editingAddress, setEditingAddress] = useState('')
   const [editingLicenseNumber, setEditingLicenseNumber] = useState('')
@@ -131,13 +138,23 @@ function AccountPageInner() {
     const normalizedEmail = email.trim().toLowerCase()
     if (!normalizedEmail || !accessCode) return false
 
-    const { data, error: dbError } = await supabase
+    const queryPromise = supabase
       .from('edc_admin_users')
       .select('email, role, is_active')
       .eq('email', normalizedEmail)
       .eq('access_code', accessCode)
       .limit(1)
       .maybeSingle()
+
+    const timeoutMs = 4000
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      setTimeout(() => reject(new Error('timeout')), timeoutMs)
+    })
+
+    const { data, error: dbError } = await Promise.race([queryPromise, timeoutPromise]).catch(() => ({
+      data: null,
+      error: { message: 'timeout' } as any,
+    }))
 
     if (dbError) return false
     if (!data || !data.is_active) return false
@@ -155,17 +172,21 @@ function AccountPageInner() {
     if (!normalizedEmail || !password) return false
 
     try {
+      const controller = typeof AbortController !== 'undefined' ? new AbortController() : null
+      const timeoutId = controller ? window.setTimeout(() => controller.abort(), 4000) : null
       const res = await fetch('/api/users-login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: normalizedEmail, password }),
+        signal: controller?.signal,
+      }).finally(() => {
+        if (timeoutId) window.clearTimeout(timeoutId)
       })
 
       const json = (await res.json().catch(() => null)) as any
       if (!res.ok) {
-        const msg = String(json?.error ?? '').trim() || 'Invalid credentials'
-        setError(msg)
-        return null
+        void json
+        return false
       }
       const session = json?.session
       const sessionEmail = String(session?.email ?? '').trim().toLowerCase()
@@ -194,6 +215,7 @@ function AccountPageInner() {
   const handleUnifiedSignIn = async (e: FormEvent) => {
     e.preventDefault()
     setError('')
+    setNotice('')
     setLoading(true)
     try {
       const email = customerAuthEmail.trim().toLowerCase()
@@ -202,6 +224,12 @@ function AccountPageInner() {
       if (!email || !passwordOrAccessCode) {
         setError('Email and password are required')
         return
+      }
+
+      if (typeof window !== 'undefined') {
+        const key = 'edc_remember_email'
+        if (rememberMe) window.localStorage.setItem(key, email)
+        else window.localStorage.removeItem(key)
       }
 
       if (customerCreateMode) {
@@ -221,12 +249,28 @@ function AccountPageInner() {
         return
       }
 
+      const signInPromise = supabase.auth.signInWithPassword({
+        email,
+        password: passwordOrAccessCode,
+      })
+      const timeoutMs = 8000
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new Error('timeout')), timeoutMs)
+      })
+
+      const { data: signInData, error: signInError } = await Promise.race([signInPromise, timeoutPromise]).catch(() => ({
+        data: null,
+        error: { message: 'Login timed out. Please try again.' } as any,
+      }))
+
+      if (!signInError && (signInData as any)?.session) {
+        router.push('/inventory')
+        return
+      }
+
       const usersLoginResult = await tryUsersTableLogin(email, passwordOrAccessCode)
       if (usersLoginResult === true) {
         router.push('/admin')
-        return
-      }
-      if (usersLoginResult === null) {
         return
       }
 
@@ -236,22 +280,87 @@ function AccountPageInner() {
         return
       }
 
-      const { error: signInError } = await supabase.auth.signInWithPassword({
-        email,
-        password: passwordOrAccessCode,
-      })
       if (signInError) {
         setError(signInError.message)
         return
       }
+
+      setError('Invalid login credentials')
+      return
     } finally {
       setLoading(false)
     }
   }
 
   useEffect(() => {
+    if (typeof window === 'undefined') return
+    const key = 'edc_remember_email'
+    const email = customerAuthEmail.trim().toLowerCase()
+    if (!rememberMe) {
+      window.localStorage.removeItem(key)
+      return
+    }
+    if (!email) return
+    window.localStorage.setItem(key, email)
+  }, [rememberMe, customerAuthEmail])
+
+  const openForgotModal = () => {
+    setError('')
+    setNotice('')
+    setForgotEmail(customerAuthEmail.trim().toLowerCase())
+    setForgotStage('form')
+    setForgotResult('')
+    setForgotOpen(true)
+  }
+
+  const handleSendForgot = async () => {
+    setError('')
+    setNotice('')
+
+    const email = forgotEmail.trim().toLowerCase()
+    if (!email) {
+      setError('Please enter your email.')
+      return
+    }
+
+    setForgotSending(true)
+    try {
+      const res = await fetch('/api/forgot-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        const upstreamStatus = json?.upstreamStatus
+        const upstreamBody = String(json?.upstreamBody ?? json?.error ?? '').trim()
+        const msg = upstreamBody || `Request failed (${res.status})`
+        setError(upstreamStatus ? `${msg}` : msg)
+        return
+      }
+
+      const upstreamStatus = json?.upstreamStatus
+      const upstreamBody = String(json?.upstreamBody ?? '').trim()
+      void upstreamStatus
+      const result = upstreamBody || 'Done.'
+      setForgotResult(result)
+      setForgotStage('result')
+    } finally {
+      setForgotSending(false)
+    }
+  }
+
+  useEffect(() => {
     const init = async () => {
       try {
+        if (typeof window !== 'undefined') {
+          const saved = window.localStorage.getItem('edc_remember_email')
+          if (saved) {
+            setCustomerAuthEmail(saved)
+            setRememberMe(true)
+          }
+        }
+
         const { data } = await supabase.auth.getSession()
         const user = data.session?.user
         if (user) {
@@ -265,18 +374,7 @@ function AccountPageInner() {
           if (user.email) {
             const hasRow = await syncVerifiedFromDb(user.email)
             await loadLatestVerification(user.email)
-            if (isOauthFlow()) {
-              if (hasRow === true) {
-                setStaffAdminSession(user.email)
-                router.replace('/admin')
-                return
-              }
-              if (hasRow === false) {
-                setStaffAdminSession(user.email)
-                router.replace('/admin')
-                return
-              }
-            }
+            void hasRow
           }
         }
       } finally {
@@ -305,16 +403,7 @@ function AccountPageInner() {
       if (user?.email) {
         const email = user.email
         void syncVerifiedFromDb(user.email).then((hasRow) => {
-          if (isOauthFlow()) {
-            if (hasRow === true) {
-              setStaffAdminSession(email)
-              router.replace('/admin')
-            }
-            if (hasRow === false) {
-              setStaffAdminSession(email)
-              router.replace('/admin')
-            }
-          }
+          void hasRow
         })
         void loadLatestVerification(user.email)
         return
@@ -328,6 +417,16 @@ function AccountPageInner() {
       sub.subscription.unsubscribe()
     }
   }, [])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    if (!forgotOpen) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setForgotOpen(false)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [forgotOpen])
 
   if (initLoading) {
     return <div className="min-h-screen" />
@@ -512,6 +611,15 @@ function AccountPageInner() {
             </div>
           )}
 
+          {notice ? (
+            <div className="mb-6 p-4 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-700 flex items-center gap-3">
+              <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+              </svg>
+              {notice}
+            </div>
+          ) : null}
+
           {userEmail ? (
             /* Signed In State */
             <div className="text-center">
@@ -635,15 +743,7 @@ function AccountPageInner() {
                 <h2 className="text-xl font-bold text-gray-900">Sign In</h2>
               </div>
 
-              {error ? (
-                <div className="mb-6 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</div>
-              ) : null}
-
-              <p className="text-gray-600 mb-6">
-                {customerCreateMode
-                  ? 'Create an account using email and password, or continue with Google.'
-                  : 'Sign in using your email and password (or admin access code).'}
-              </p>
+              <p className="text-gray-600 mb-6">Sign in using your email and password (or admin access code).</p>
 
               <form onSubmit={handleUnifiedSignIn} className="space-y-4 text-left">
                 <div>
@@ -672,20 +772,23 @@ function AccountPageInner() {
                     onChange={(e) => setCustomerAuthPassword(e.target.value)}
                     className="input-field"
                     placeholder="Enter your password"
-                    autoComplete={
-                      customerCreateMode ? 'new-password' : 'current-password'
-                    }
+                    autoComplete="current-password"
                   />
                 </div>
 
                 <div className="flex items-center justify-between">
                   <label className="flex items-center gap-2 text-sm text-gray-600">
-                    <input type="checkbox" className="h-4 w-4 rounded border-gray-300" />
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 rounded border-gray-300"
+                      checked={rememberMe}
+                      onChange={(e) => setRememberMe(e.target.checked)}
+                    />
                     Remember me
                   </label>
                   <button
                     type="button"
-                    onClick={() => setError('Forgot password is not available yet.')}
+                    onClick={openForgotModal}
                     className="text-sm text-[#118df0] hover:underline"
                   >
                     Forgot Password?
@@ -700,27 +803,11 @@ function AccountPageInner() {
                   {loading ? (
                     <>
                       <div className="loading-ring" style={{width: '20px', height: '20px', borderWidth: '2px'}} />
-                      Please wait\u2026
-                    </>
-                  ) : customerCreateMode ? (
-                    <>
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
-                      Create Account
+                      Please wait
                     </>
                   ) : (
-                    <>
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
-                      Sign In
-                    </>
+                    'Sign In'
                   )}
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setCustomerCreateMode((v) => !v)}
-                  className="w-full bg-white/80 text-gray-900 px-6 py-3.5 rounded-full font-semibold border border-gray-200/60 shadow-sm shadow-black/5 transition-all duration-300 hover:bg-white hover:shadow-md hover:-translate-y-0.5"
-                >
-                  {customerCreateMode ? 'I already have an account' : 'Create new account instead'}
                 </button>
               </form>
 
@@ -751,6 +838,94 @@ function AccountPageInner() {
               </button>
             </div>
           )}
+
+          {forgotOpen ? (
+            <div
+              className="fixed inset-0 z-[9999] flex items-center justify-center p-4"
+              role="dialog"
+              aria-modal="true"
+              onMouseDown={(e) => {
+                if (e.target === e.currentTarget) setForgotOpen(false)
+              }}
+            >
+              <div className="absolute inset-0 bg-black/60" onMouseDown={() => setForgotOpen(false)} />
+              <div className="relative z-10 w-full max-w-md bg-white rounded-2xl shadow-premium border border-gray-200/60 overflow-hidden">
+                <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+                  <div className="text-sm font-semibold text-gray-900">Forgot Password</div>
+                  <button
+                    type="button"
+                    className="w-10 h-10 rounded-xl hover:bg-slate-50 flex items-center justify-center transition-colors"
+                    onClick={() => setForgotOpen(false)}
+                    aria-label="Close"
+                  >
+                    <svg className="w-5 h-5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+
+                {forgotStage === 'form' ? (
+                  <div className="p-5 space-y-4">
+                    <div className="text-sm text-gray-600">
+                      Enter your email address and we will send a reset link.
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1" htmlFor="forgotEmail">
+                        Email
+                      </label>
+                      <input
+                        id="forgotEmail"
+                        type="email"
+                        value={forgotEmail}
+                        onChange={(e) => setForgotEmail(e.target.value)}
+                        className="input-field"
+                        placeholder="Enter your email"
+                        autoComplete="email"
+                        disabled={forgotSending}
+                      />
+                    </div>
+
+                    <div className="flex items-center justify-end gap-3 pt-2">
+                      <button
+                        type="button"
+                        className="btn-outline px-5 py-2.5"
+                        onClick={() => setForgotOpen(false)}
+                        disabled={forgotSending}
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        className="btn-primary px-6 py-2.5 disabled:opacity-50"
+                        onClick={handleSendForgot}
+                        disabled={forgotSending}
+                      >
+                        {forgotSending ? 'Sending…' : 'Send'}
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="p-5 space-y-4">
+                    <div className="text-sm text-gray-700 whitespace-pre-wrap">{forgotResult || 'Done.'}</div>
+                    <div className="flex items-center justify-end pt-2">
+                      <button
+                        type="button"
+                        className="btn-primary px-8 py-2.5"
+                        onClick={() => {
+                          setForgotOpen(false)
+                          setForgotStage('form')
+                          setForgotResult('')
+                        }}
+                      >
+                        OK
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : null}
 
           {/* Navigation */}
           <div className="flex items-center justify-between mt-10 pt-6 border-t border-gray-200/60">

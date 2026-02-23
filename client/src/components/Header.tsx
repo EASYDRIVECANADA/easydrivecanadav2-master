@@ -111,7 +111,7 @@ export default function Header() {
       window.localStorage.removeItem('edc_customer_verification')
       window.localStorage.removeItem('edc_account_verified')
     }
-    router.push('/account')
+    router.push('/')
   }
 
   const handleAdminSignOut = () => {
@@ -119,7 +119,7 @@ export default function Header() {
       window.localStorage.removeItem('edc_admin_session')
       window.dispatchEvent(new Event('edc_admin_session_changed'))
     }
-    router.push('/account')
+    router.push('/')
   }
 
   const isAdmin = !!adminRole && pathname.startsWith('/admin')

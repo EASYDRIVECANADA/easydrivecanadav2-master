@@ -64,6 +64,8 @@ export default function VehicleDetailPage() {
 
   const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'
 
+  const [bucketImageCache] = useState(() => new Map<string, string[]>())
+
   const normalizeImages = (raw: any): string[] => {
     if (!raw) return []
     if (Array.isArray(raw)) return raw.map(String).filter(Boolean)
@@ -202,6 +204,53 @@ export default function VehicleDetailPage() {
         return
       }
 
+      const loadBucketImages = async (vehicleId: string): Promise<string[]> => {
+        const id = String(vehicleId || '').trim()
+        if (!id) return []
+        const cached = bucketImageCache.get(id)
+        if (cached) return cached
+
+        try {
+          const { data, error: listError } = await supabase.storage
+            .from('vehicle-photos')
+            .list(id, {
+              limit: 100,
+              sortBy: { column: 'name', order: 'asc' },
+            })
+
+          if (listError || !Array.isArray(data) || data.length === 0) {
+            bucketImageCache.set(id, [])
+            return []
+          }
+
+          const files = data
+            .filter((f) => !!f?.name && !String(f.name).endsWith('/'))
+            .map((f) => `${id}/${f.name}`)
+
+          const urls: string[] = []
+          for (const path of files) {
+            const pub = supabase.storage.from('vehicle-photos').getPublicUrl(path)
+            const publicUrl = String(pub?.data?.publicUrl || '').trim()
+            if (publicUrl) {
+              urls.push(publicUrl)
+              continue
+            }
+
+            const { data: signed } = await supabase.storage
+              .from('vehicle-photos')
+              .createSignedUrl(path, 60 * 60)
+            const signedUrl = String((signed as any)?.signedUrl || '').trim()
+            if (signedUrl) urls.push(signedUrl)
+          }
+
+          bucketImageCache.set(id, urls)
+          return urls
+        } catch {
+          bucketImageCache.set(id, [])
+          return []
+        }
+      }
+
       const anyData = data as any
       const mapped: Vehicle = {
         id: String(anyData.id || ''),
@@ -226,7 +275,7 @@ export default function VehicleDetailPage() {
         seats: Number(anyData.seats || 0),
         features: normalizeFeatures(anyData.features),
         description: String(anyData.description || anyData.ad_description || anyData.adDescription || ''),
-        images: normalizeImages(anyData.images),
+        images: await loadBucketImages(String(anyData.id || params.id || '')),
         status: String(anyData.status || ''),
         city: String(anyData.city || ''),
         province: String(anyData.province || ''),

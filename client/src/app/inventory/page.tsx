@@ -60,6 +60,8 @@ export default function InventoryPage() {
     maxYear: '',
   })
 
+  const [bucketImageCache] = useState(() => new Map<string, string[]>())
+
   const normalizeImages = (raw: any): string[] => {
     if (!raw) return []
     if (Array.isArray(raw)) return raw.map(String).filter(Boolean)
@@ -139,35 +141,83 @@ export default function InventoryPage() {
       const { data, error } = await supabase
         .from('edc_vehicles')
         .select(
-          'id, stock_number, make, model, series, year, price, mileage, odometer, odometer_unit, fuel_type, transmission, body_style, exterior_color, city, province, images, status, inventory_type, features'
+          'id, stock_number, make, model, series, year, price, mileage, odometer, odometer_unit, fuel_type, transmission, body_style, exterior_color, city, province, status, inventory_type, features'
         )
-        .not('status', 'in', '("SOLD","Sold","VOID","Void")')
         .order('created_at', { ascending: false })
 
       if (error) throw error
 
-      const mapped: Vehicle[] = (data || []).map((v: any) => ({
-        id: v.id,
-        stockNumber: v.stock_number || undefined,
-        make: v.make,
-        model: v.model,
-        series: v.series || '',
-        year: v.year,
-        price: Number(v.price || 0),
-        mileage: Number((v.odometer ?? v.mileage) || 0),
-        odometer: v.odometer === null || v.odometer === undefined ? undefined : Number(v.odometer || 0),
-        odometerUnit: v.odometer_unit || '',
-        fuelType: v.fuel_type || '',
-        transmission: v.transmission || '',
-        bodyStyle: v.body_style || '',
-        exteriorColor: v.exterior_color || '',
-        city: v.city || '',
-        province: v.province || '',
-        features: normalizeFeatures(v.features),
-        images: normalizeImages(v.images),
-        status: v.status,
-        inventoryType: v.inventory_type || '',
-      }))
+      const loadBucketImages = async (vehicleId: string): Promise<string[]> => {
+        const id = String(vehicleId || '').trim()
+        if (!id) return []
+        const cached = bucketImageCache.get(id)
+        if (cached) return cached
+
+        try {
+          const { data, error: listError } = await supabase.storage
+            .from('vehicle-photos')
+            .list(id, {
+              limit: 100,
+              sortBy: { column: 'name', order: 'asc' },
+            })
+
+          if (listError || !Array.isArray(data) || data.length === 0) {
+            bucketImageCache.set(id, [])
+            return []
+          }
+
+          const files = data
+            .filter((f) => !!f?.name && !String(f.name).endsWith('/'))
+            .map((f) => `${id}/${f.name}`)
+
+          const urls: string[] = []
+          for (const path of files) {
+            const pub = supabase.storage.from('vehicle-photos').getPublicUrl(path)
+            const publicUrl = String(pub?.data?.publicUrl || '').trim()
+            if (publicUrl) {
+              urls.push(publicUrl)
+              continue
+            }
+
+            const { data: signed } = await supabase.storage
+              .from('vehicle-photos')
+              .createSignedUrl(path, 60 * 60)
+            const signedUrl = String((signed as any)?.signedUrl || '').trim()
+            if (signedUrl) urls.push(signedUrl)
+          }
+
+          bucketImageCache.set(id, urls)
+          return urls
+        } catch {
+          bucketImageCache.set(id, [])
+          return []
+        }
+      }
+
+      const mapped: Vehicle[] = await Promise.all(
+        (data || []).map(async (v: any) => ({
+          id: v.id,
+          stockNumber: v.stock_number || undefined,
+          make: v.make,
+          model: v.model,
+          series: v.series || '',
+          year: v.year,
+          price: Number(v.price || 0),
+          mileage: Number((v.odometer ?? v.mileage) || 0),
+          odometer: v.odometer === null || v.odometer === undefined ? undefined : Number(v.odometer || 0),
+          odometerUnit: v.odometer_unit || '',
+          fuelType: v.fuel_type || '',
+          transmission: v.transmission || '',
+          bodyStyle: v.body_style || '',
+          exteriorColor: v.exterior_color || '',
+          city: v.city || '',
+          province: v.province || '',
+          features: normalizeFeatures(v.features),
+          images: await loadBucketImages(String(v.id)),
+          status: v.status,
+          inventoryType: v.inventory_type || '',
+        }))
+      )
 
       setVehicles(mapped)
     } catch (_error) {

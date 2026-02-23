@@ -45,11 +45,43 @@ export default function AdminVehiclePhotosPage() {
     fetchVehicle()
   }, [params.id])
 
+  const refreshImagesFromBucket = async (vehicleId: string) => {
+    const id = String(vehicleId || '').trim()
+    if (!id) return []
+
+    const { data, error: listError } = await supabase.storage.from(BUCKET).list(id, {
+      limit: 100,
+      sortBy: { column: 'name', order: 'asc' },
+    })
+
+    if (listError || !Array.isArray(data) || data.length === 0) return []
+
+    const files = data
+      .filter((f) => !!f?.name && !String(f.name).endsWith('/'))
+      .map((f) => `${id}/${f.name}`)
+
+    const urls: string[] = []
+    for (const path of files) {
+      const pub = supabase.storage.from(BUCKET).getPublicUrl(path)
+      const publicUrl = String(pub?.data?.publicUrl || '').trim()
+      if (publicUrl) {
+        urls.push(publicUrl)
+        continue
+      }
+
+      const { data: signed } = await supabase.storage.from(BUCKET).createSignedUrl(path, 60 * 60)
+      const signedUrl = String((signed as any)?.signedUrl || '').trim()
+      if (signedUrl) urls.push(signedUrl)
+    }
+
+    return urls
+  }
+
   const fetchVehicle = async () => {
     try {
       const { data, error } = await supabase
         .from('edc_vehicles')
-        .select('id, make, model, year, images')
+        .select('id, make, model, year')
         .eq('id', String(params.id))
         .maybeSingle()
 
@@ -63,7 +95,7 @@ export default function AdminVehiclePhotosPage() {
         make: data.make,
         model: data.model,
         year: data.year,
-        images: Array.isArray(data.images) ? data.images : [],
+        images: await refreshImagesFromBucket(String(data.id)),
       })
     } catch (error) {
       console.error('Error fetching vehicle:', error)
@@ -80,8 +112,6 @@ export default function AdminVehiclePhotosPage() {
     const files = Array.from(e.target.files)
 
     try {
-      const uploadedUrls: string[] = []
-
       for (const file of files) {
         const fileName = `${Date.now()}_${file.name}`
         const objectPath = `${String(params.id)}/${fileName}`
@@ -96,28 +126,11 @@ export default function AdminVehiclePhotosPage() {
           continue
         }
 
-        const { data: publicData } = supabase.storage.from(BUCKET).getPublicUrl(objectPath)
-        if (publicData?.publicUrl) uploadedUrls.push(publicData.publicUrl)
+        void objectPath
       }
 
-      if (uploadedUrls.length === 0) {
-        alert('No photos uploaded')
-        return
-      }
-
-      const updatedImages = [...(vehicle?.images || []), ...uploadedUrls]
-      const { error: dbError } = await supabase
-        .from('edc_vehicles')
-        .update({ images: updatedImages })
-        .eq('id', String(params.id))
-
-      if (dbError) {
-        console.error('DB update error:', dbError)
-        alert('Uploaded files, but failed to save to vehicle')
-        return
-      }
-
-      setVehicle((prev) => (prev ? { ...prev, images: updatedImages } : prev))
+      const nextUrls = await refreshImagesFromBucket(String(params.id))
+      setVehicle((prev) => (prev ? { ...prev, images: nextUrls } : prev))
       // After successful upload, go to Disclosures tab
       router.push(`/admin/inventory/${String(params.id)}?tab=disclosures`)
     } catch (error) {
@@ -146,18 +159,8 @@ export default function AdminVehiclePhotosPage() {
         if (storageError) console.error('Storage delete error:', storageError)
       }
 
-      const updatedImages = vehicle.images.filter((img) => img !== photoPath)
-      const { error: dbError } = await supabase
-        .from('edc_vehicles')
-        .update({ images: updatedImages })
-        .eq('id', String(params.id))
-
-      if (dbError) {
-        alert('Failed to delete photo')
-        return
-      }
-
-      setVehicle({ ...vehicle, images: updatedImages })
+      const nextUrls = await refreshImagesFromBucket(String(params.id))
+      setVehicle({ ...vehicle, images: nextUrls })
     } catch (error) {
       console.error('Error deleting photo:', error)
       alert('Failed to delete photo')
@@ -170,20 +173,24 @@ export default function AdminVehiclePhotosPage() {
     if (!vehicle) return
     
     try {
-      // Reorder images array to put the selected image first
-      const updatedImages = [photoPath, ...vehicle.images.filter(img => img !== photoPath)]
+      const storagePath = getStoragePathFromPublicUrl(photoPath)
+      const id = String(params.id || '').trim()
+      if (!storagePath || !id) return
 
-      const { error } = await supabase
-        .from('edc_vehicles')
-        .update({ images: updatedImages })
-        .eq('id', String(params.id))
+      const parts = storagePath.split('/')
+      const fileName = parts.slice(1).join('/')
+      if (!fileName) return
 
-      if (error) {
-        alert('Failed to update main photo')
-        return
+      const toName = `000_main_${fileName.replace(/^000_main_/, '')}`
+      const toPath = `${id}/${toName}`
+
+      if (storagePath !== toPath) {
+        const { error: moveError } = await supabase.storage.from(BUCKET).move(storagePath, toPath)
+        if (moveError) throw moveError
       }
 
-      setVehicle({ ...vehicle, images: updatedImages })
+      const nextUrls = await refreshImagesFromBucket(id)
+      setVehicle({ ...vehicle, images: nextUrls })
     } catch (error) {
       console.error('Error setting main photo:', error)
       alert('Failed to update main photo')

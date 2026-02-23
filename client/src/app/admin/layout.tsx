@@ -222,24 +222,28 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
     setAccountMenuOpen(false)
     setShowSignOutModal(false)
     if (typeof window !== 'undefined') {
-      window.localStorage.removeItem('edc_admin_session')
-      window.localStorage.removeItem('edc_customer_verification')
-      window.localStorage.removeItem('edc_account_verified')
-      window.localStorage.removeItem('edc_new_vehicle_wizard')
-      window.localStorage.removeItem('edc_prefill_next_stock_number')
+      try {
+        window.localStorage.removeItem('edc_admin_session')
+        window.localStorage.removeItem('edc_customer_verification')
+        window.localStorage.removeItem('edc_account_verified')
+        window.localStorage.removeItem('edc_new_vehicle_wizard')
+        window.localStorage.removeItem('edc_prefill_next_stock_number')
+      } catch {
+        // ignore
+      }
       window.dispatchEvent(new Event('edc_admin_session_changed'))
     }
-    setSession(null)
+
     try {
       void supabase.auth.signOut()
     } catch {
       // ignore
     }
     if (typeof window !== 'undefined') {
-      window.location.assign('/admin')
+      window.location.assign('/')
       return
     }
-    router.replace('/admin')
+    router.replace('/')
   }
 
   return (

@@ -23,40 +23,20 @@ export default function ImagesTab({ vehicleId, images, onImagesUpdate }: ImagesT
   const [pendingImages, setPendingImages] = useState<PendingImage[]>([])
   const [generating, setGenerating] = useState(false)
 
+  const BUCKET = 'vehicle-photos'
+
   const busy = generating || uploading
 
-  const arrayBufferToBase64 = (buffer: ArrayBuffer) => {
-    let binary = ''
-    const bytes = new Uint8Array(buffer)
-    const chunkSize = 0x8000
-    for (let i = 0; i < bytes.length; i += chunkSize) {
-      const chunk = bytes.subarray(i, i + chunkSize)
-      let s = ''
-      for (let j = 0; j < chunk.length; j++) s += String.fromCharCode(chunk[j])
-      binary += s
+  const getStoragePathFromPublicUrl = (publicUrl: string) => {
+    try {
+      const u = new URL(publicUrl)
+      const marker = `/storage/v1/object/public/${BUCKET}/`
+      const idx = u.pathname.indexOf(marker)
+      if (idx === -1) return null
+      return decodeURIComponent(u.pathname.substring(idx + marker.length))
+    } catch {
+      return null
     }
-    return btoa(binary)
-  }
-
-  const normalizeImages = (raw: any): string[] => {
-    if (!raw) return []
-    if (Array.isArray(raw)) return raw.map(String).filter(Boolean)
-    if (typeof raw === 'string') {
-      const s = raw.trim()
-      if (!s) return []
-      try {
-        const parsed = JSON.parse(s)
-        if (Array.isArray(parsed)) return parsed.map(String).filter(Boolean)
-      } catch {
-        // ignore
-      }
-      // comma-separated fallback
-      return s
-        .split(',')
-        .map(x => x.trim())
-        .filter(Boolean)
-    }
-    return []
   }
 
   const toImageSrc = (value: string) => {
@@ -72,16 +52,43 @@ export default function ImagesTab({ vehicleId, images, onImagesUpdate }: ImagesT
     return `data:${mime};base64,${v}`
   }
 
-  const refreshImagesFromDb = async () => {
+  const refreshImagesFromBucket = async () => {
     try {
-      const { data, error } = await supabase
-        .from('edc_vehicles')
-        .select('images')
-        .eq('id', vehicleId)
-        .maybeSingle()
-      if (error) throw error
-      const next = normalizeImages((data as any)?.images)
-      onImagesUpdate(next)
+      const id = String(vehicleId || '').trim()
+      if (!id) {
+        onImagesUpdate([])
+        return
+      }
+
+      const { data, error: listError } = await supabase.storage.from(BUCKET).list(id, {
+        limit: 100,
+        sortBy: { column: 'name', order: 'asc' },
+      })
+
+      if (listError || !Array.isArray(data) || data.length === 0) {
+        onImagesUpdate([])
+        return
+      }
+
+      const files = data
+        .filter((f) => !!f?.name && !String(f.name).endsWith('/'))
+        .map((f) => `${id}/${f.name}`)
+
+      const urls: string[] = []
+      for (const path of files) {
+        const pub = supabase.storage.from(BUCKET).getPublicUrl(path)
+        const publicUrl = String(pub?.data?.publicUrl || '').trim()
+        if (publicUrl) {
+          urls.push(publicUrl)
+          continue
+        }
+
+        const { data: signed } = await supabase.storage.from(BUCKET).createSignedUrl(path, 60 * 60)
+        const signedUrl = String((signed as any)?.signedUrl || '').trim()
+        if (signedUrl) urls.push(signedUrl)
+      }
+
+      onImagesUpdate(urls)
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
       setErrorMsg(msg || 'Error loading images')
@@ -90,7 +97,7 @@ export default function ImagesTab({ vehicleId, images, onImagesUpdate }: ImagesT
   }
 
   useEffect(() => {
-    refreshImagesFromDb()
+    refreshImagesFromBucket()
   }, [vehicleId])
 
   useEffect(() => {
@@ -142,25 +149,22 @@ export default function ImagesTab({ vehicleId, images, onImagesUpdate }: ImagesT
     setErrorMsg('')
 
     try {
-      const imagesPayload: string[] = []
+      const id = String(vehicleId || '').trim()
+      if (!id) throw new Error('Missing vehicle id')
+
       for (const p of pendingImages) {
-        const ab = await p.file.arrayBuffer()
-        imagesPayload.push(arrayBufferToBase64(ab))
+        const safeName = String(p.file?.name || 'image').replace(/[^a-zA-Z0-9._-]/g, '_')
+        const objectPath = `${id}/${Date.now()}_${safeName}`
+        const { error: uploadError } = await supabase.storage.from(BUCKET).upload(objectPath, p.file, {
+          upsert: false,
+          contentType: p.file?.type || undefined,
+        })
+        if (uploadError) throw uploadError
       }
-
-      const res = await fetch('/api/image', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'upload', vehicleId, images: imagesPayload }),
-      })
-
-      const text = await res.text().catch(() => '')
-      if (!res.ok) throw new Error(text || `Webhook responded with ${res.status}`)
-      if (!String(text).toLowerCase().includes('done')) throw new Error(text || 'Webhook did not return done')
 
       pendingImages.forEach(p => URL.revokeObjectURL(p.previewUrl))
       setPendingImages([])
-      await refreshImagesFromDb()
+      await refreshImagesFromBucket()
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error)
       setErrorMsg(msg || 'Error uploading images')
@@ -174,23 +178,13 @@ export default function ImagesTab({ vehicleId, images, onImagesUpdate }: ImagesT
     setDeleting(imageUrl)
     setErrorMsg('')
     try {
-      const { data, error } = await supabase
-        .from('edc_vehicles')
-        .select('images')
-        .eq('id', vehicleId)
-        .maybeSingle()
-      if (error) throw error
+      const storagePath = getStoragePathFromPublicUrl(imageUrl)
+      if (storagePath) {
+        const { error: storageError } = await supabase.storage.from(BUCKET).remove([storagePath])
+        if (storageError) throw storageError
+      }
 
-      const current = normalizeImages((data as any)?.images)
-      const next = current.filter((img) => img !== imageUrl)
-
-      const { error: upErr } = await supabase
-        .from('edc_vehicles')
-        .update({ images: next })
-        .eq('id', vehicleId)
-      if (upErr) throw upErr
-
-      await refreshImagesFromDb()
+      await refreshImagesFromBucket()
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error)
       setErrorMsg(msg || 'Error deleting image')
@@ -233,7 +227,7 @@ export default function ImagesTab({ vehicleId, images, onImagesUpdate }: ImagesT
       if (!res.ok) throw new Error(text || `Webhook responded with ${res.status}`)
 
       setGenerating(false)
-      await refreshImagesFromDb()
+      await refreshImagesFromBucket()
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error)
       setErrorMsg(msg || 'Error generating image')

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { supabase } from '@/lib/supabaseClient'
 
 type ShowroomVehicle = {
   id: string
@@ -50,6 +51,8 @@ export default function CustomerShowroomPage() {
   const [loading, setLoading] = useState(true)
   const [fetchError, setFetchError] = useState<string | null>(null)
 
+  const [bucketImageCache] = useState(() => new Map<string, string[]>())
+
   useEffect(() => {
     let cancelled = false
 
@@ -57,12 +60,59 @@ export default function CustomerShowroomPage() {
       try {
         setLoading(true)
         setFetchError(null)
+
+        const loadBucketImages = async (vehicleId: string): Promise<string[]> => {
+          const id = String(vehicleId || '').trim()
+          if (!id) return []
+          const cached = bucketImageCache.get(id)
+          if (cached) return cached
+
+          try {
+            const { data, error: listError } = await supabase.storage
+              .from('vehicle-photos')
+              .list(id, {
+                limit: 100,
+                sortBy: { column: 'name', order: 'asc' },
+              })
+
+            if (listError || !Array.isArray(data) || data.length === 0) {
+              bucketImageCache.set(id, [])
+              return []
+            }
+
+            const files = data
+              .filter((f) => !!f?.name && !String(f.name).endsWith('/'))
+              .map((f) => `${id}/${f.name}`)
+
+            const urls: string[] = []
+            for (const path of files) {
+              const pub = supabase.storage.from('vehicle-photos').getPublicUrl(path)
+              const publicUrl = String(pub?.data?.publicUrl || '').trim()
+              if (publicUrl) {
+                urls.push(publicUrl)
+                continue
+              }
+
+              const { data: signed } = await supabase.storage
+                .from('vehicle-photos')
+                .createSignedUrl(path, 60 * 60)
+              const signedUrl = String((signed as any)?.signedUrl || '').trim()
+              if (signedUrl) urls.push(signedUrl)
+            }
+
+            bucketImageCache.set(id, urls)
+            return urls
+          } catch {
+            bucketImageCache.set(id, [])
+            return []
+          }
+        }
         const res = await fetch('/api/vehicles', { cache: 'no-store' })
         const json = await res.json().catch(() => ({}))
         if (!res.ok || json.error) throw new Error(json.error || `Failed to fetch vehicles (${res.status})`)
 
         const vehicles = Array.isArray(json.vehicles) ? json.vehicles : []
-        const mapped: ShowroomVehicle[] = vehicles.map((v: any) => {
+        const mapped: ShowroomVehicle[] = await Promise.all(vehicles.map(async (v: any) => {
           const toNumber = (val: any) => {
             if (val === null || val === undefined) return 0
             if (typeof val === 'number') return Number.isFinite(val) ? val : 0
@@ -123,24 +173,7 @@ export default function CustomerShowroomPage() {
               ? 'Sold'
               : 'In Stock'
 
-          // normalize images to string array
-          let imgs: string[] = []
-          const rawImgs = v.images
-          if (Array.isArray(rawImgs)) imgs = rawImgs.filter(Boolean).map((x: any) => String(x))
-          else if (typeof rawImgs === 'string' && rawImgs.trim()) {
-            try {
-              const parsed = JSON.parse(rawImgs)
-              if (Array.isArray(parsed)) imgs = parsed.filter(Boolean).map((x: any) => String(x))
-              else imgs = rawImgs.split(',').map((s) => s.trim()).filter(Boolean)
-            } catch {
-              imgs = rawImgs.split(',').map((s) => s.trim()).filter(Boolean)
-            }
-          }
-
-          // if images are base64 (no scheme), prefix with data:image/jpeg
-          const imgsNormalized = imgs
-            .map((s) => s.startsWith('data:image') ? s : (s ? `data:image/jpeg;base64,${s}` : ''))
-            .filter(Boolean)
+          const imgsNormalized = await loadBucketImages(String(v.id || ''))
 
           // normalize features
           let feats: string[] = []
@@ -172,7 +205,7 @@ export default function CustomerShowroomPage() {
             stock: (v.stock_number ?? v.stockNumber ?? '').toString().trim() || undefined,
             features: feats,
           }
-        })
+        }))
 
         if (!cancelled) setRows(mapped)
       } catch (e: any) {

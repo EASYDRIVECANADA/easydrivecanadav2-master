@@ -21,13 +21,24 @@ export async function POST(request: Request) {
       auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
     })
 
-    const { data, error } = await supabase
+    const queryPromise = supabase
       .from('users')
       .select('id, user_id, email, administrator')
       .ilike('email', email)
       .eq('password', password)
       .limit(1)
       .maybeSingle()
+
+    const timeoutMs = 4000
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      setTimeout(() => reject(new Error('timeout')), timeoutMs)
+    })
+
+    const { data, error } = await Promise.race([queryPromise, timeoutPromise])
+
+    if ((error as any)?.message === 'timeout') {
+      return NextResponse.json({ ok: false, error: 'Login timed out' }, { status: 504 })
+    }
 
     if (error) return NextResponse.json({ ok: false, error: 'Login failed' }, { status: 500 })
 

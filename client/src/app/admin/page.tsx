@@ -2,6 +2,7 @@
 
 import { useMemo, useState, useEffect } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
 
 // Extend Window interface for Google Identity Services
@@ -195,6 +196,7 @@ type Kpi = {
 }
 
 export default function AdminPage() {
+  const router = useRouter()
   const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [user, setUser] = useState<User | null>(null)
   const [email, setEmail] = useState('')
@@ -242,6 +244,12 @@ export default function AdminPage() {
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  useEffect(() => {
+    if (checkingAuth) return
+    if (isAuthenticated) return
+    router.replace('/account')
+  }, [checkingAuth, isAuthenticated, router])
 
   const checkAuth = async () => {
     const sessionStr = localStorage.getItem('edc_admin_session')
@@ -327,6 +335,9 @@ export default function AdminPage() {
     }
     setUser(null)
     setIsAuthenticated(false)
+    if (typeof window !== 'undefined') {
+      window.location.replace('/')
+    }
   }
 
   const getLoggedInAdminDbUserId = async (): Promise<string | null> => {

@@ -93,6 +93,8 @@ export default function AdminEditVehiclePage() {
   const [images, setImages] = useState<string[]>([])
   const [activeTab, setActiveTab] = useState<TabType>('details')
 
+  const [bucketImageCache] = useState(() => new Map<string, string[]>())
+
   useEffect(() => {
     const sessionStr = localStorage.getItem('edc_admin_session')
     if (!sessionStr) {
@@ -175,7 +177,55 @@ export default function AdminEditVehiclePage() {
         certified: data.certified || false,
         verified: data.verified || false,
       })
-      setImages(Array.isArray(data.images) ? data.images : [])
+
+      const loadBucketImages = async (vehicleId: string): Promise<string[]> => {
+        const id = String(vehicleId || '').trim()
+        if (!id) return []
+        const cached = bucketImageCache.get(id)
+        if (cached) return cached
+
+        try {
+          const { data, error: listError } = await supabase.storage
+            .from('vehicle-photos')
+            .list(id, {
+              limit: 100,
+              sortBy: { column: 'name', order: 'asc' },
+            })
+
+          if (listError || !Array.isArray(data) || data.length === 0) {
+            bucketImageCache.set(id, [])
+            return []
+          }
+
+          const files = data
+            .filter((f) => !!f?.name && !String(f.name).endsWith('/'))
+            .map((f) => `${id}/${f.name}`)
+
+          const urls: string[] = []
+          for (const path of files) {
+            const pub = supabase.storage.from('vehicle-photos').getPublicUrl(path)
+            const publicUrl = String(pub?.data?.publicUrl || '').trim()
+            if (publicUrl) {
+              urls.push(publicUrl)
+              continue
+            }
+
+            const { data: signed } = await supabase.storage
+              .from('vehicle-photos')
+              .createSignedUrl(path, 60 * 60)
+            const signedUrl = String((signed as any)?.signedUrl || '').trim()
+            if (signedUrl) urls.push(signedUrl)
+          }
+
+          bucketImageCache.set(id, urls)
+          return urls
+        } catch {
+          bucketImageCache.set(id, [])
+          return []
+        }
+      }
+
+      setImages(await loadBucketImages(String(data.id)))
     } catch (error) {
       console.error('Error fetching vehicle:', error)
     } finally {

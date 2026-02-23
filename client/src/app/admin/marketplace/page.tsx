@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import VehicleCard from '@/components/VehicleCard'
+import { supabase } from '@/lib/supabaseClient'
 
 type MarketVehicle = {
   id: string
@@ -33,6 +34,8 @@ export default function MarketplacePage() {
   const [error, setError] = useState<string | null>(null)
   const [selected, setSelected] = useState<MarketVehicle | null>(null)
   const [selectedImageIndex, setSelectedImageIndex] = useState(0)
+
+  const [bucketImageCache] = useState(() => new Map<string, string[]>())
 
   const [make, setMake] = useState('')
   const [collection, setCollection] = useState('')
@@ -79,6 +82,53 @@ export default function MarketplacePage() {
       return []
     }
 
+    const loadBucketImages = async (vehicleId: string): Promise<string[]> => {
+      const id = String(vehicleId || '').trim()
+      if (!id) return []
+      const cached = bucketImageCache.get(id)
+      if (cached) return cached
+
+      try {
+        const { data, error: listError } = await supabase.storage
+          .from('vehicle-photos')
+          .list(id, {
+            limit: 100,
+            sortBy: { column: 'name', order: 'asc' },
+          })
+
+        if (listError || !Array.isArray(data) || data.length === 0) {
+          bucketImageCache.set(id, [])
+          return []
+        }
+
+        const files = data
+          .filter((f) => !!f?.name && !String(f.name).endsWith('/'))
+          .map((f) => `${id}/${f.name}`)
+
+        const urls: string[] = []
+        for (const path of files) {
+          const pub = supabase.storage.from('vehicle-photos').getPublicUrl(path)
+          const publicUrl = String(pub?.data?.publicUrl || '').trim()
+          if (publicUrl) {
+            urls.push(publicUrl)
+            continue
+          }
+
+          const { data: signed } = await supabase.storage
+            .from('vehicle-photos')
+            .createSignedUrl(path, 60 * 60)
+          const signedUrl = String((signed as any)?.signedUrl || '').trim()
+          if (signedUrl) urls.push(signedUrl)
+        }
+
+        bucketImageCache.set(id, urls)
+        return urls
+      } catch {
+        bucketImageCache.set(id, [])
+        return []
+      }
+    }
+
     const normalizeFeatures = (raw: any): string[] => {
       if (!raw) return []
       if (Array.isArray(raw)) return raw.map(String).map((s) => s.trim()).filter(Boolean)
@@ -123,33 +173,37 @@ export default function MarketplacePage() {
           // ignore
         }
         if (cancelled) return
-        const mapped: MarketVehicle[] = (scoped || []).map((r: any) => {
-          const imgs = normalizeImages(r.images ?? r.image_urls ?? r.image)
-          const features = normalizeFeatures(r.features)
-          return {
-            id: String(r.id),
-            make: r.make || '',
-            model: r.model || '',
-            series: r.series || '',
-            year: Number(r.year) || 0,
-            price: Number(r.price) || 0,
-            mileage: Number(r.mileage ?? r.odometer ?? 0) || 0,
-            fuelType: r.fuelType || r.fuel_type || '',
-            transmission: r.transmission || '',
-            images: imgs,
-            bodyStyle: r.body_style || r.bodyStyle || '',
-            exteriorColor: r.exterior_color || r.color || '',
-            interiorColor: r.interior_color || '',
-            vin: r.vin || '',
-            engine: r.engine || '',
-            drivetrain: r.drivetrain || '',
-            odometer: r.odometer === null || r.odometer === undefined ? undefined : Number(r.odometer || 0),
-            odometerUnit: r.odometer_unit || '',
-            features,
-            collection: r.collection || r.inventory_type || '',
-            adDescription: r.ad_description || '',
-          }
-        })
+        const mapped: MarketVehicle[] = await Promise.all(
+          (scoped || []).map(async (r: any) => {
+            const id = String(r.id)
+            const imgs = normalizeImages(r.images ?? r.image_urls ?? r.image)
+            const features = normalizeFeatures(r.features)
+            const bucketImgs = imgs.length === 0 ? await loadBucketImages(id) : []
+            return {
+              id,
+              make: r.make || '',
+              model: r.model || '',
+              series: r.series || '',
+              year: Number(r.year) || 0,
+              price: Number(r.price) || 0,
+              mileage: Number(r.mileage ?? r.odometer ?? 0) || 0,
+              fuelType: r.fuelType || r.fuel_type || '',
+              transmission: r.transmission || '',
+              images: imgs.length ? imgs : bucketImgs,
+              bodyStyle: r.body_style || r.bodyStyle || '',
+              exteriorColor: r.exterior_color || r.color || '',
+              interiorColor: r.interior_color || '',
+              vin: r.vin || '',
+              engine: r.engine || '',
+              drivetrain: r.drivetrain || '',
+              odometer: r.odometer === null || r.odometer === undefined ? undefined : Number(r.odometer || 0),
+              odometerUnit: r.odometer_unit || '',
+              features,
+              collection: r.collection || r.inventory_type || '',
+              adDescription: r.ad_description || '',
+            }
+          })
+        )
         setVehicles(mapped)
       } catch (e: any) {
         if (!cancelled) setError(e?.message || 'Failed to load vehicles')
