@@ -19,6 +19,7 @@ export default function VendorsList({ compact }: { compact?: boolean }) {
   const [error, setError] = useState<string | null>(null)
 
   const [scopedUserId, setScopedUserId] = useState<string | null>(null)
+  const [isAdminRole, setIsAdminRole] = useState(false)
 
   const [query, setQuery] = useState('')
   const [pageSize, setPageSize] = useState(10)
@@ -60,6 +61,25 @@ export default function VendorsList({ compact }: { compact?: boolean }) {
     const load = async () => {
       const id = await getLoggedInAdminDbUserId()
       setScopedUserId(id)
+
+      try {
+        const raw = typeof window !== 'undefined' ? window.localStorage.getItem('edc_admin_session') : null
+        const parsed = raw ? (JSON.parse(raw) as any) : null
+        const email = String(parsed?.email || '').trim().toLowerCase()
+        const uid = String(parsed?.user_id || '').trim()
+
+        const { data: byId } = uid
+          ? await supabase.from('users').select('role').eq('user_id', uid).maybeSingle()
+          : ({ data: null } as any)
+        const { data: byEmail } = !byId?.role && email
+          ? await supabase.from('users').select('role').eq('email', email).maybeSingle()
+          : ({ data: null } as any)
+
+        const r = String((byId as any)?.role ?? (byEmail as any)?.role ?? '').trim().toLowerCase()
+        setIsAdminRole(r === 'admin')
+      } catch {
+        setIsAdminRole(false)
+      }
     }
     void load()
   }, [getLoggedInAdminDbUserId])
@@ -68,16 +88,21 @@ export default function VendorsList({ compact }: { compact?: boolean }) {
     setLoading(true)
     setError(null)
     try {
-      if (!scopedUserId) {
-        setRows([])
-        return
-      }
-      const { data, error: dbError } = await supabase
+      let q = supabase
         .from('edc_vendors')
         .select('id, vendor_name, phone, mobile, email')
-        .eq('user_id', scopedUserId)
         .order('vendor_name', { ascending: true })
         .limit(1000)
+
+      if (!isAdminRole) {
+        if (!scopedUserId) {
+          setRows([])
+          return
+        }
+        q = q.eq('user_id', scopedUserId)
+      }
+
+      const { data, error: dbError } = await q
 
       if (dbError) throw dbError
       setRows(Array.isArray(data) ? (data as any) : [])
@@ -87,7 +112,7 @@ export default function VendorsList({ compact }: { compact?: boolean }) {
     } finally {
       setLoading(false)
     }
-  }, [scopedUserId])
+  }, [isAdminRole, scopedUserId])
 
   useEffect(() => {
     void fetchRows()

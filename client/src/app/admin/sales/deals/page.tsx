@@ -39,6 +39,7 @@ export default function DealsPage() {
   // Delete state
   const [deleteTarget, setDeleteTarget] = useState<DealRow | null>(null)
   const [deleting, setDeleting] = useState(false)
+  const [isAdminRole, setIsAdminRole] = useState(false)
 
   const getLoggedInUserId = useCallback(async (): Promise<string | null> => {
     try {
@@ -67,13 +68,44 @@ export default function DealsPage() {
     }
   }, [])
 
+  const getIsAdminRole = useCallback(async (): Promise<boolean> => {
+    try {
+      if (typeof window === 'undefined') return false
+      const raw = window.localStorage.getItem('edc_admin_session')
+      if (!raw) return false
+      const parsed = JSON.parse(raw) as { email?: string; user_id?: string }
+      const email = String(parsed?.email ?? '').trim().toLowerCase()
+      const uid = String(parsed?.user_id ?? '').trim()
+
+      const { data: byId } = uid
+        ? await supabase.from('users').select('role').eq('user_id', uid).maybeSingle()
+        : ({ data: null } as any)
+      const { data: byEmail } = !byId?.role && email
+        ? await supabase.from('users').select('role').eq('email', email).maybeSingle()
+        : ({ data: null } as any)
+
+      const r = String((byId as any)?.role ?? (byEmail as any)?.role ?? '').trim().toLowerCase()
+      return r === 'admin'
+    } catch {
+      return false
+    }
+  }, [])
+
+  useEffect(() => {
+    void (async () => {
+      const admin = await getIsAdminRole()
+      setIsAdminRole(admin)
+    })()
+  }, [getIsAdminRole])
+
   const fetchDeals = useCallback(async () => {
     try {
       setLoading(true)
       setFetchError(null)
 
-      const scopedUserId = await getLoggedInUserId()
-      if (!scopedUserId) {
+      const [scopedUserId, admin] = await Promise.all([getLoggedInUserId(), getIsAdminRole()])
+      setIsAdminRole(admin)
+      if (!admin && !scopedUserId) {
         setRows([])
         return
       }
@@ -100,10 +132,12 @@ export default function DealsPage() {
         delivery: d.delivery || null,
       }))
 
-      const deals = dealsAll.filter((r) => {
-        const uid = String(r.customer?.user_id ?? '').trim()
-        return uid && uid === scopedUserId
-      })
+      const deals = admin
+        ? dealsAll
+        : dealsAll.filter((r) => {
+            const uid = String(r.customer?.user_id ?? '').trim()
+            return uid && uid === scopedUserId
+          })
 
       setRows(deals)
     } catch (e: any) {
@@ -111,7 +145,7 @@ export default function DealsPage() {
     } finally {
       setLoading(false)
     }
-  }, [getLoggedInUserId])
+  }, [getIsAdminRole, getLoggedInUserId])
 
   useEffect(() => {
     fetchDeals()

@@ -215,6 +215,7 @@ export default function AdminPage() {
   const [inventoryVehicles, setInventoryVehicles] = useState<
     { id: string; year: string; make: string; model: string; stockNumber: string; createdAtIso: string }[]
   >([])
+  const [isAdminRole, setIsAdminRole] = useState(false)
   const [inventoryMonth, setInventoryMonth] = useState<string>(() => {
     const d = new Date()
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
@@ -371,13 +372,31 @@ export default function AdminPage() {
     const load = async () => {
       const id = await getLoggedInAdminDbUserId()
       setScopedUserId(id)
+
+      try {
+        const sessionStr = typeof window !== 'undefined' ? window.localStorage.getItem('edc_admin_session') : null
+        const parsed = sessionStr ? (JSON.parse(sessionStr) as any) : null
+        const email = String(parsed?.email || '').trim().toLowerCase()
+        const uid = String(parsed?.user_id || '').trim()
+
+        const { data: byId } = uid
+          ? await supabase.from('users').select('role').eq('user_id', uid).maybeSingle()
+          : ({ data: null } as any)
+        const { data: byEmail } = !byId?.role && email
+          ? await supabase.from('users').select('role').eq('email', email).maybeSingle()
+          : ({ data: null } as any)
+
+        const r = String((byId as any)?.role ?? (byEmail as any)?.role ?? '').trim().toLowerCase()
+        setIsAdminRole(r === 'admin')
+      } catch {
+        setIsAdminRole(false)
+      }
     }
     void load()
   }, [isAuthenticated])
 
   useEffect(() => {
     if (!isAuthenticated) return
-    if (!scopedUserId) return
 
     const loadStats = async () => {
       setStatsLoading(true)
@@ -386,15 +405,29 @@ export default function AdminPage() {
       try {
         const now = new Date()
 
+        let vehiclesQuery = supabase
+          .from('edc_vehicles')
+          .select('id, created_at, year, make, model, stock_number', { count: 'exact' })
+        let vendorsQuery = supabase.from('edc_vendors').select('id', { count: 'exact' })
+
+        if (!isAdminRole) {
+          if (!scopedUserId) {
+            setInventoryTotal(0)
+            setVendorsTotal(0)
+            setDealsTotal(0)
+            setDealsOpen(0)
+            setDealsClosed(0)
+            setSalesSeries([])
+            setInventoryVehicles([])
+            return
+          }
+          vehiclesQuery = vehiclesQuery.eq('user_id', scopedUserId)
+          vendorsQuery = vendorsQuery.eq('user_id', scopedUserId)
+        }
+
         const [vehiclesRes, vendorsRes, dealsRes] = await Promise.all([
-          supabase
-            .from('edc_vehicles')
-            .select('id, created_at, year, make, model, stock_number', { count: 'exact' })
-            .eq('user_id', scopedUserId),
-          supabase
-            .from('edc_vendors')
-            .select('id', { count: 'exact' })
-            .eq('user_id', scopedUserId),
+          vehiclesQuery,
+          vendorsQuery,
           fetch('/api/deals').then(async (r) => {
             if (!r.ok) throw new Error(`Failed to fetch deals (${r.status})`)
             return r.json()
@@ -419,7 +452,9 @@ export default function AdminPage() {
         setVendorsTotal(typeof vendorsRes.count === 'number' ? vendorsRes.count : 0)
 
         const dealsAll = Array.isArray(dealsRes?.deals) ? dealsRes.deals : []
-        const scopedDeals = dealsAll.filter((d: any) => String(d?.customer?.user_id ?? '').trim() === scopedUserId)
+        const scopedDeals = isAdminRole
+          ? dealsAll
+          : dealsAll.filter((d: any) => String(d?.customer?.user_id ?? '').trim() === scopedUserId)
         setDealsTotal(scopedDeals.length)
 
         const openDeals = scopedDeals.filter((d: any) => {
@@ -497,7 +532,7 @@ export default function AdminPage() {
     }
 
     void loadStats()
-  }, [isAuthenticated, scopedUserId])
+  }, [isAdminRole, isAuthenticated, scopedUserId])
 
   const kpis = useMemo<Kpi[]>(() => {
     const fmt = (n: number | null) => (typeof n === 'number' ? n.toLocaleString() : statsLoading ? '—' : '—')

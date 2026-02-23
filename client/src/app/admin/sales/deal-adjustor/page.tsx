@@ -39,6 +39,7 @@ export default function DealAdjustorPage() {
   const [editing, setEditing] = useState<{ rowId: string; field: string; feeIndex?: number } | null>(null)
   const [editValue, setEditValue] = useState<string>('')
   const [saving, setSaving] = useState(false)
+  const [isAdminRole, setIsAdminRole] = useState(false)
 
   const getLoggedInUserId = useCallback(async (): Promise<string | null> => {
     try {
@@ -66,6 +67,36 @@ export default function DealAdjustorPage() {
       return null
     }
   }, [])
+
+  const getIsAdminRole = useCallback(async (): Promise<boolean> => {
+    try {
+      if (typeof window === 'undefined') return false
+      const raw = window.localStorage.getItem('edc_admin_session')
+      if (!raw) return false
+      const parsed = JSON.parse(raw) as { email?: string; user_id?: string }
+      const email = String(parsed?.email ?? '').trim().toLowerCase()
+      const uid = String(parsed?.user_id ?? '').trim()
+
+      const { data: byId } = uid
+        ? await supabase.from('users').select('role').eq('user_id', uid).maybeSingle()
+        : ({ data: null } as any)
+      const { data: byEmail } = !byId?.role && email
+        ? await supabase.from('users').select('role').eq('email', email).maybeSingle()
+        : ({ data: null } as any)
+
+      const r = String((byId as any)?.role ?? (byEmail as any)?.role ?? '').trim().toLowerCase()
+      return r === 'admin'
+    } catch {
+      return false
+    }
+  }, [])
+
+  useEffect(() => {
+    void (async () => {
+      const admin = await getIsAdminRole()
+      setIsAdminRole(admin)
+    })()
+  }, [getIsAdminRole])
 
   const formatDate = (d: string) => {
     if (!d) return ''
@@ -291,8 +322,9 @@ export default function DealAdjustorPage() {
       setLoading(true)
       setFetchError(null)
 
-      const scopedUserId = await getLoggedInUserId()
-      if (!scopedUserId) {
+      const [scopedUserId, admin] = await Promise.all([getLoggedInUserId(), getIsAdminRole()])
+      setIsAdminRole(admin)
+      if (!admin && !scopedUserId) {
         setRows([])
         return
       }
@@ -303,7 +335,9 @@ export default function DealAdjustorPage() {
       if (json.error) throw new Error(json.error)
 
       const dealsAll: any[] = Array.isArray(json.deals) ? json.deals : []
-      const dealsScoped = dealsAll.filter((d: any) => String(d?.customer?.user_id ?? '').trim() === scopedUserId)
+      const dealsScoped = admin
+        ? dealsAll
+        : dealsAll.filter((d: any) => String(d?.customer?.user_id ?? '').trim() === scopedUserId)
 
       const mapped: AdjustorRow[] = dealsScoped.map((d: any) => {
         const customer = d.customer || {}
@@ -405,7 +439,7 @@ export default function DealAdjustorPage() {
     } finally {
       setLoading(false)
     }
-  }, [getLoggedInUserId])
+  }, [getIsAdminRole, getLoggedInUserId])
 
   useEffect(() => {
     fetchDeals()
