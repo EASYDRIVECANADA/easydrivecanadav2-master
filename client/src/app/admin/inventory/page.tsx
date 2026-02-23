@@ -81,6 +81,9 @@ export default function AdminInventoryPage() {
   const [modalOnConfirm, setModalOnConfirm] = useState<(() => Promise<void> | void) | null>(null)
   const [scopedUserId, setScopedUserId] = useState<string | null>(null)
   const [bucketImageCache] = useState(() => new Map<string, string[]>())
+  const [canAddVehicle, setCanAddVehicle] = useState(true)
+  const [addGateLoading, setAddGateLoading] = useState(false)
+  const [addGateReason, setAddGateReason] = useState('')
   const [addFormData, setAddFormData] = useState({
     make: '',
     model: '',
@@ -268,12 +271,58 @@ export default function AdminInventoryPage() {
     const boot = async () => {
       const uid = await getLoggedInAdminDbUserId()
       setScopedUserId(uid)
+      await checkCanAddVehicle(uid)
       await fetchVehicles(uid)
     }
     void boot()
   }, [])
 
+  const checkCanAddVehicle = async (userId: string | null) => {
+    try {
+      setAddGateLoading(true)
+      setAddGateReason('')
+      setCanAddVehicle(true)
+
+      if (!userId) return
+
+      const sessionStr = typeof window !== 'undefined' ? window.localStorage.getItem('edc_admin_session') : null
+      const sessionEmail = sessionStr ? String((JSON.parse(sessionStr) as any)?.email || '').trim().toLowerCase() : ''
+
+      const { data: uById } = await supabase.from('users').select('role').eq('user_id', userId).maybeSingle()
+      const { data: uByEmail } = !uById?.role && sessionEmail
+        ? await supabase.from('users').select('role').eq('email', sessionEmail).maybeSingle()
+        : ({ data: null } as any)
+
+      const rawRole = String((uById as any)?.role ?? (uByEmail as any)?.role ?? '').trim().toLowerCase()
+      const role = rawRole === 'public' ? 'public' : rawRole === 'private' ? 'private' : ''
+
+      if (role !== 'private') return
+
+      const { count } = await supabase
+        .from('edc_vehicles')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', userId)
+
+      if ((count || 0) >= 1) {
+        setCanAddVehicle(false)
+        setAddGateReason('Upgrade required: private accounts can upload only one vehicle.')
+      }
+    } catch {
+      setCanAddVehicle(true)
+      setAddGateReason('')
+    } finally {
+      setAddGateLoading(false)
+    }
+  }
+
   const handleOpenAddModal = () => {
+    if (!canAddVehicle) {
+      openAlert(
+        'Upgrade required',
+        'Your account is set to private, which allows only one inventory upload. Please upgrade to a dealership account to upload more vehicles.'
+      )
+      return
+    }
     try {
       const extractNumericSuffix = (raw: string) => {
         const m = String(raw || '').trim().match(/(\d+)\s*$/)
@@ -311,6 +360,13 @@ export default function AdminInventoryPage() {
 
   const handleAddSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (!canAddVehicle) {
+      openAlert(
+        'Upgrade required',
+        'Your account is set to private, which allows only one inventory upload. Please upgrade to a dealership account to upload more vehicles.'
+      )
+      return
+    }
     setAddSubmitting(true)
     setAddError('')
 
@@ -359,10 +415,12 @@ export default function AdminInventoryPage() {
         return
       }
 
-      setShowAddModal(false)
-      router.push(`/admin/inventory/${data.id}/photos`)
-    } catch {
-      setAddError('Unable to create vehicle. Please try again.')
+      await checkCanAddVehicle(scopedUserId)
+
+      // Go to edit page
+      router.push(`/admin/inventory/${data.id}`)
+    } catch (error) {
+      console.error('Error creating vehicle:', error)
     } finally {
       setAddSubmitting(false)
     }
@@ -868,7 +926,9 @@ export default function AdminInventoryPage() {
           <button
             type="button"
             onClick={handleOpenAddModal}
-            className="edc-btn-primary text-sm"
+            disabled={!canAddVehicle || addGateLoading}
+            title={!canAddVehicle ? (addGateReason || 'Upgrade your account to add more vehicles.') : undefined}
+            className={`edc-btn-primary text-sm ${!canAddVehicle || addGateLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
           >
             + Add Vehicle
           </button>
@@ -1155,7 +1215,9 @@ export default function AdminInventoryPage() {
               <button
                 type="button"
                 onClick={handleOpenAddModal}
-                className="edc-btn-primary text-sm"
+                disabled={!canAddVehicle || addGateLoading}
+                title={!canAddVehicle ? (addGateReason || 'Upgrade your account to add more vehicles.') : undefined}
+                className={`edc-btn-primary text-sm ${!canAddVehicle || addGateLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
               >
                 Add Vehicle
               </button>

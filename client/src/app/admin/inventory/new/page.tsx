@@ -18,6 +18,8 @@ export default function NewVehiclePage() {
   const [purchaseSaved, setPurchaseSaved] = useState(false)
   const [costsSaved, setCostsSaved] = useState(false)
   const [webhookUserId, setWebhookUserId] = useState<string | null>(null)
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false)
+  const [gatingError, setGatingError] = useState('')
   const stockAutofillRanRef = useRef(false)
   const [formData, setFormData] = useState({
     make: '',
@@ -449,11 +451,60 @@ export default function NewVehiclePage() {
     e.preventDefault()
     setSubmitting(true)
     setError('')
+    setGatingError('')
 
     try {
       const user_id = webhookUserId ?? (await getWebhookUserId())
       if (!user_id) {
         setError('Missing user session. Please re-login.')
+        return
+      }
+
+      // Upload gating: role=private allows only 1 vehicle insert; role=public allows multiple
+      try {
+        const { data: uById, error: userErrById } = await supabase
+          .from('users')
+          .select('role')
+          .eq('user_id', user_id)
+          .maybeSingle()
+
+        const sessionStr = typeof window !== 'undefined' ? window.localStorage.getItem('edc_admin_session') : null
+        const sessionEmail = sessionStr ? String((JSON.parse(sessionStr) as any)?.email || '').trim().toLowerCase() : ''
+
+        const { data: uByEmail } = !uById?.role && sessionEmail
+          ? await supabase.from('users').select('role').eq('email', sessionEmail).maybeSingle()
+          : ({ data: null } as any)
+
+        if (userErrById) {
+          const msg = String((userErrById as any)?.message || '').toLowerCase()
+          if (msg.includes("does not exist") || msg.includes('column')) {
+            setGatingError('Unable to check account role. Please contact support.')
+          }
+        }
+
+        const rawRole = String((uById as any)?.role ?? (uByEmail as any)?.role ?? '').trim().toLowerCase()
+        const role = rawRole === 'public' ? 'public' : rawRole === 'private' ? 'private' : ''
+
+        if (role === 'private') {
+          const { count, error: countErr } = await supabase
+            .from('edc_vehicles')
+            .select('id', { count: 'exact', head: true })
+            .eq('user_id', user_id)
+
+          if (countErr) {
+            const msg = String((countErr as any)?.message || '')
+            setGatingError(msg ? `Unable to check upload limit: ${msg}` : 'Unable to check upload limit.')
+            return
+          }
+
+          if ((count || 0) >= 1) {
+            setShowUpgradeModal(true)
+            return
+          }
+        }
+      } catch (gErr: any) {
+        const msg = String(gErr?.message || '').trim()
+        setGatingError(msg || 'Unable to check upload limit.')
         return
       }
 
@@ -562,6 +613,28 @@ export default function NewVehiclePage() {
 
   return (
     <div className="min-h-screen bg-gray-100">
+      {showUpgradeModal ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setShowUpgradeModal(false)} />
+          <div className="relative w-[92%] max-w-md rounded-xl bg-white p-6 shadow-lg">
+            <div className="text-lg font-semibold text-slate-900">Upgrade required</div>
+            <div className="mt-2 text-sm text-slate-600">
+              Your account is set to <span className="font-semibold">private</span>, which allows only one inventory upload.
+              Please upgrade to a <span className="font-semibold">dealership account</span> to upload more vehicles.
+            </div>
+            <div className="mt-6 flex justify-end gap-2">
+              <button
+                type="button"
+                className="px-4 py-2 rounded-lg border border-slate-200 bg-white text-slate-700"
+                onClick={() => setShowUpgradeModal(false)}
+              >
+                OK
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       {/* Header */}
       <div className="bg-white shadow">
         <div className="w-full px-4 sm:px-6 lg:px-8 py-4">
@@ -646,6 +719,11 @@ export default function NewVehiclePage() {
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <form onSubmit={handleSubmit} className="bg-white rounded-xl shadow p-8">
+          {gatingError ? (
+            <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg text-red-700">
+              {gatingError}
+            </div>
+          ) : null}
           {error && (
             <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg text-red-700">
               {error}
