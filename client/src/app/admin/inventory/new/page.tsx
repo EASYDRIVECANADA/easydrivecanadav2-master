@@ -212,9 +212,17 @@ export default function NewVehiclePage() {
       if (typeof window === 'undefined') return null
       const raw = window.localStorage.getItem('edc_admin_session')
       if (!raw) return null
-      const parsed = JSON.parse(raw) as { email?: string; user_id?: string }
+      const parsed = JSON.parse(raw) as { email?: string; user_id?: string; role?: string }
       const sessionUserId = String(parsed?.user_id ?? '').trim()
       if (sessionUserId) return sessionUserId
+
+      const sessionEmail = String(parsed?.email ?? '').trim()
+      const sessionRole = String(parsed?.role ?? '').trim()
+      if (sessionEmail && sessionRole) {
+        // edc_admin_users credential session: allow flow without user scoping
+        return null
+      }
+
       const email = String(parsed?.email ?? '').trim().toLowerCase()
       if (!email) return null
 
@@ -454,42 +462,67 @@ export default function NewVehiclePage() {
     setGatingError('')
 
     try {
-      const user_id = webhookUserId ?? (await getWebhookUserId())
-      if (!user_id) {
+      const sessionStr = typeof window !== 'undefined' ? window.localStorage.getItem('edc_admin_session') : null
+      const parsedSession = sessionStr ? (JSON.parse(sessionStr) as any) : null
+      const sessionEmail = String(parsedSession?.email || '').trim().toLowerCase()
+
+      let effectiveUserId = String(webhookUserId ?? (await getWebhookUserId()) ?? '').trim()
+      let isAdmin = false
+
+      try {
+        const { data: byId } = effectiveUserId
+          ? await supabase.from('users').select('user_id, role').eq('user_id', effectiveUserId).maybeSingle()
+          : ({ data: null } as any)
+        const { data: byEmail } = !byId?.role && sessionEmail
+          ? await supabase.from('users').select('user_id, role').eq('email', sessionEmail).maybeSingle()
+          : ({ data: null } as any)
+
+        const roleRaw = String((byId as any)?.role ?? (byEmail as any)?.role ?? '').trim().toLowerCase()
+        isAdmin = roleRaw === 'admin'
+        if (!effectiveUserId) {
+          const uid = String((byId as any)?.user_id ?? (byEmail as any)?.user_id ?? '').trim()
+          if (uid) effectiveUserId = uid
+        }
+      } catch {
+        // ignore
+      }
+
+      if (!effectiveUserId && !isAdmin) {
         setError('Missing user session. Please re-login.')
         return
       }
 
       // Upload gating: role=private allows only 1 vehicle insert; role=public allows multiple
       try {
-        const { data: uById, error: userErrById } = await supabase
-          .from('users')
-          .select('role')
-          .eq('user_id', user_id)
-          .maybeSingle()
+        if (!isAdmin) {
+          const { data: uById, error: userErrById } = effectiveUserId
+            ? await supabase.from('users').select('role').eq('user_id', effectiveUserId).maybeSingle()
+            : ({ data: null, error: null } as any)
 
-        const sessionStr = typeof window !== 'undefined' ? window.localStorage.getItem('edc_admin_session') : null
-        const sessionEmail = sessionStr ? String((JSON.parse(sessionStr) as any)?.email || '').trim().toLowerCase() : ''
+          const { data: uByEmail } = !uById?.role && sessionEmail
+            ? await supabase.from('users').select('role').eq('email', sessionEmail).maybeSingle()
+            : ({ data: null } as any)
 
-        const { data: uByEmail } = !uById?.role && sessionEmail
-          ? await supabase.from('users').select('role').eq('email', sessionEmail).maybeSingle()
-          : ({ data: null } as any)
-
-        if (userErrById) {
-          const msg = String((userErrById as any)?.message || '').toLowerCase()
-          if (msg.includes("does not exist") || msg.includes('column')) {
-            setGatingError('Unable to check account role. Please contact support.')
+          if (userErrById) {
+            const msg = String((userErrById as any)?.message || '').toLowerCase()
+            if (msg.includes("does not exist") || msg.includes('column')) {
+              setGatingError('Unable to check account role. Please contact support.')
+            }
           }
-        }
 
-        const rawRole = String((uById as any)?.role ?? (uByEmail as any)?.role ?? '').trim().toLowerCase()
-        const role = rawRole === 'public' ? 'public' : rawRole === 'private' ? 'private' : ''
+          const rawRole = String((uById as any)?.role ?? (uByEmail as any)?.role ?? '').trim().toLowerCase()
+          const role = rawRole === 'public' ? 'public' : rawRole === 'private' ? 'private' : rawRole === 'admin' ? 'admin' : ''
 
-        if (role === 'private') {
+          if (role === 'admin') {
+            // admin: no upload restrictions
+            // continue
+          }
+
+          if (role === 'private') {
           const { count, error: countErr } = await supabase
             .from('edc_vehicles')
             .select('id', { count: 'exact', head: true })
-            .eq('user_id', user_id)
+            .eq('user_id', effectiveUserId)
 
           if (countErr) {
             const msg = String((countErr as any)?.message || '')
@@ -500,6 +533,7 @@ export default function NewVehiclePage() {
           if ((count || 0) >= 1) {
             setShowUpgradeModal(true)
             return
+          }
           }
         }
       } catch (gErr: any) {
@@ -538,7 +572,7 @@ export default function NewVehiclePage() {
           })
         )
 
-        ;(webhookBody as any).user_id = user_id
+        ;(webhookBody as any).user_id = effectiveUserId || null
 
         ;(webhookBody as any).ad_description = String((formData as any).adDescription ?? '').trim() === ''
           ? null

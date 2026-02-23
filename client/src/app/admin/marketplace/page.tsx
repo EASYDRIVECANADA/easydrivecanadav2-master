@@ -160,21 +160,9 @@ export default function MarketplacePage() {
 
         const json = await res.json().catch(() => null)
         const data = Array.isArray(json?.vehicles) ? json.vehicles : []
-
-        let scoped = data
-        try {
-          const raw = localStorage.getItem('edc_admin_session')
-          const parsed = raw ? (JSON.parse(raw) as { user_id?: string }) : null
-          const sessionUserId = String(parsed?.user_id ?? '').trim()
-          if (sessionUserId) {
-            scoped = data.filter((v: any) => String(v?.user_id ?? '').trim() === sessionUserId)
-          }
-        } catch {
-          // ignore
-        }
         if (cancelled) return
         const mapped: MarketVehicle[] = await Promise.all(
-          (scoped || []).map(async (r: any) => {
+          (data || []).map(async (r: any) => {
             const id = String(r.id)
             const imgs = normalizeImages(r.images ?? r.image_urls ?? r.image)
             const features = normalizeFeatures(r.features)

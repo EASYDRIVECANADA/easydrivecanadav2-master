@@ -148,16 +148,32 @@ export default function AdminInventoryPage() {
       if (typeof window === 'undefined') return null
       const raw = window.localStorage.getItem('edc_admin_session')
       if (!raw) return null
-      const parsed = JSON.parse(raw) as { email?: string; user_id?: string }
+      const parsed = JSON.parse(raw) as { email?: string; user_id?: string; role?: string }
       const sessionUserId = String(parsed?.user_id ?? '').trim()
+      const sessionEmail = String(parsed?.email ?? '').trim().toLowerCase()
+
+      // If the logged-in user is an admin (users.role === 'admin'), do NOT scope inventory
+      try {
+        const { data: roleById } = sessionUserId
+          ? await supabase.from('users').select('role').eq('user_id', sessionUserId).maybeSingle()
+          : ({ data: null } as any)
+        const { data: roleByEmail } = !roleById?.role && sessionEmail
+          ? await supabase.from('users').select('role').eq('email', sessionEmail).maybeSingle()
+          : ({ data: null } as any)
+        const r = String((roleById as any)?.role ?? (roleByEmail as any)?.role ?? '').trim().toLowerCase()
+        if (r === 'admin') return null
+      } catch {
+        // ignore
+      }
+
       if (sessionUserId) return sessionUserId
-      const email = String(parsed?.email ?? '').trim().toLowerCase()
-      if (!email) return null
+
+      if (!sessionEmail) return null
 
       const { data, error } = await supabase
         .from('edc_account_verifications')
         .select('id')
-        .eq('email', email)
+        .eq('email', sessionEmail)
         .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle()
@@ -283,6 +299,26 @@ export default function AdminInventoryPage() {
       setAddGateReason('')
       setCanAddVehicle(true)
 
+      // If user is an admin, skip restrictions
+      try {
+        const sessionStr = typeof window !== 'undefined' ? window.localStorage.getItem('edc_admin_session') : null
+        const parsed = sessionStr ? (JSON.parse(sessionStr) as any) : null
+        const sessionEmail = String(parsed?.email || '').trim().toLowerCase()
+        const sessionUserId = String(parsed?.user_id || '').trim()
+
+        const { data: roleById } = sessionUserId
+          ? await supabase.from('users').select('role').eq('user_id', sessionUserId).maybeSingle()
+          : ({ data: null } as any)
+        const { data: roleByEmail } = !roleById?.role && sessionEmail
+          ? await supabase.from('users').select('role').eq('email', sessionEmail).maybeSingle()
+          : ({ data: null } as any)
+
+        const r = String((roleById as any)?.role ?? (roleByEmail as any)?.role ?? '').trim().toLowerCase()
+        if (r === 'admin') return
+      } catch {
+        // ignore
+      }
+
       if (!userId) return
 
       const sessionStr = typeof window !== 'undefined' ? window.localStorage.getItem('edc_admin_session') : null
@@ -294,7 +330,9 @@ export default function AdminInventoryPage() {
         : ({ data: null } as any)
 
       const rawRole = String((uById as any)?.role ?? (uByEmail as any)?.role ?? '').trim().toLowerCase()
-      const role = rawRole === 'public' ? 'public' : rawRole === 'private' ? 'private' : ''
+      const role = rawRole === 'public' ? 'public' : rawRole === 'private' ? 'private' : rawRole === 'admin' ? 'admin' : ''
+
+      if (role === 'admin') return
 
       if (role !== 'private') return
 

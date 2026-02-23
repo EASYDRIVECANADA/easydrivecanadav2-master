@@ -678,6 +678,30 @@ export default function SettingsPresetsPage() {
 
     read()
 
+    const checkAdmin = async () => {
+      try {
+        const raw = window.localStorage.getItem('edc_admin_session')
+        if (!raw) return
+        const parsed = JSON.parse(raw) as { email?: string; user_id?: string }
+        const email = String(parsed?.email ?? '').trim().toLowerCase()
+        const uid = String(parsed?.user_id ?? '').trim()
+
+        const { data: byId } = uid
+          ? await supabase.from('users').select('role').eq('user_id', uid).maybeSingle()
+          : ({ data: null } as any)
+        const { data: byEmail } = !byId?.role && email
+          ? await supabase.from('users').select('role').eq('email', email).maybeSingle()
+          : ({ data: null } as any)
+
+        const r = String((byId as any)?.role ?? (byEmail as any)?.role ?? '').trim().toLowerCase()
+        if (r === 'admin') setIsVerified(true)
+      } catch {
+        // ignore
+      }
+    }
+
+    void checkAdmin()
+
     const onStorage = (e: StorageEvent) => {
       if (e.key === 'edc_account_verified') read()
     }
