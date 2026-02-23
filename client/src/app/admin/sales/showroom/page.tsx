@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
 
@@ -23,6 +24,7 @@ type ShowroomVehicle = {
 
 export default function CustomerShowroomPage() {
   const router = useRouter()
+  const [mounted, setMounted] = useState(false)
   const [query, setQuery] = useState('')
   const [status, setStatus] = useState<'ALL' | ShowroomVehicle['status']>('ALL')
   const [selected, setSelected] = useState<ShowroomVehicle | null>(null)
@@ -52,6 +54,10 @@ export default function CustomerShowroomPage() {
   const [fetchError, setFetchError] = useState<string | null>(null)
 
   const [bucketImageCache] = useState(() => new Map<string, string[]>())
+
+  useEffect(() => {
+    setMounted(true)
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -565,7 +571,7 @@ export default function CustomerShowroomPage() {
         <button
           type="button"
           onClick={() => setFiltersOpen(true)}
-          className="fixed right-0 top-1/2 -translate-y-1/2 z-40 bg-white border border-slate-200/60 rounded-l px-2 py-3 shadow-premium"
+          className="fixed right-0 top-1/2 -translate-y-1/2 z-[70] bg-white border border-slate-200/60 rounded-l px-2 py-3 shadow-premium"
           style={{ writingMode: 'vertical-rl', textOrientation: 'mixed' }}
         >
           Filters
@@ -573,7 +579,7 @@ export default function CustomerShowroomPage() {
 
         {/* Filters Drawer */}
         {filtersOpen && (
-          <div className="fixed top-0 right-0 h-full w-[320px] bg-white border-l border-slate-200/60 shadow-premium z-50 overflow-y-auto">
+          <div className="fixed top-0 right-0 h-full w-[320px] bg-white border-l border-slate-200/60 shadow-premium z-[80] overflow-y-auto">
             <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
               <div className="text-sm font-semibold text-slate-800">Filters</div>
               <button type="button" onClick={() => setFiltersOpen(false)} className="w-8 h-8 rounded hover:bg-slate-50 flex items-center justify-center transition-colors">
@@ -709,220 +715,261 @@ export default function CustomerShowroomPage() {
             </div>
           </div>
         )}
-        {selected ? (
-          <div
-            className="fixed inset-0 z-50 flex items-center justify-center p-4"
-            role="dialog"
-            aria-modal="true"
-            onMouseDown={(e) => {
-              if (e.target === e.currentTarget) setSelected(null)
-            }}
-          >
-            <div className="edc-overlay absolute inset-0" onMouseDown={() => setSelected(null)} />
-            <div className="relative w-full max-w-5xl bg-white rounded-2xl shadow-premium overflow-hidden">
-              <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
-                <button
-                  type="button"
-                  className="text-sm font-semibold text-cyan-600 hover:underline"
-                  onClick={() => setSelected(null)}
-                >
-                  ← Showroom
-                </button>
-                <button
-                  type="button"
-                  className="w-10 h-10 rounded-xl hover:bg-slate-50 flex items-center justify-center transition-colors"
-                  onClick={() => setSelected(null)}
-                  aria-label="Close"
-                >
-                  <svg className="w-5 h-5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
+        {mounted && selected
+          ? createPortal(
+              <div
+                className="fixed inset-0 z-[9999] flex items-center justify-center p-4"
+                role="dialog"
+                aria-modal="true"
+                onMouseDown={(e) => {
+                  if (e.target === e.currentTarget) setSelected(null)
+                }}
+              >
+                <div className="edc-overlay absolute inset-0" style={{ zIndex: 0 }} onMouseDown={() => setSelected(null)} />
+                <div className="relative z-[1] w-full max-w-5xl bg-white rounded-2xl shadow-premium overflow-hidden">
+                  <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+                    <button
+                      type="button"
+                      className="text-sm font-semibold text-cyan-600 hover:underline"
+                      onClick={() => setSelected(null)}
+                    >
+                      ← Showroom
+                    </button>
+                    <button
+                      type="button"
+                      className="w-10 h-10 rounded-xl hover:bg-slate-50 flex items-center justify-center transition-colors"
+                      onClick={() => setSelected(null)}
+                      aria-label="Close"
+                    >
+                      <svg className="w-5 h-5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
 
-              <div className="grid grid-cols-1 lg:grid-cols-2">
-                <div className="bg-slate-50 p-6 flex flex-col">
-                  <div className="flex-1 rounded-xl bg-white border border-slate-200/60 flex items-center justify-center relative overflow-hidden">
-                    {Array.isArray(selected.images) && selected.images.length > 0 ? (
-                      <img
-                        src={selected.images[Math.min(imageIdx, selected.images.length - 1)]}
-                        alt={selected.vehicle}
-                        className="w-full h-full object-contain"
-                      />
-                    ) : (
-                      <div className="text-center">
-                        <svg className="w-20 h-20 text-slate-300 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4-4a3 5 0 013 0l4 4M14 14l1-1a3 5 0 013 0l2 2" />
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7a2 2 0 012-2h14a2 2 0 012 2v10a2 2 0 01-2 2H5a2 2 0 01-2-2V7z" />
-                        </svg>
-                        <div className="text-slate-400 text-sm font-semibold">NO IMAGE AVAILABLE</div>
+                  <div className="grid grid-cols-1 lg:grid-cols-2">
+                    <div className="bg-slate-50 p-6 flex flex-col">
+                      <div className="flex-1 rounded-xl bg-white border border-slate-200/60 flex items-center justify-center relative overflow-hidden">
+                        {Array.isArray(selected.images) && selected.images.length > 0 ? (
+                          <img
+                            src={selected.images[Math.min(imageIdx, selected.images.length - 1)]}
+                            alt={selected.vehicle}
+                            className="w-full h-full object-contain"
+                          />
+                        ) : (
+                          <div className="text-center">
+                            <svg className="w-20 h-20 text-slate-300 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4-4a3 5 0 013 0l4 4M14 14l1-1a3 5 0 013 0l2 2" />
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7a2 2 0 012-2h14a2 2 0 012 2v10a2 2 0 01-2 2H5a2 2 0 01-2-2V7z" />
+                            </svg>
+                            <div className="text-slate-400 text-sm font-semibold">NO IMAGE AVAILABLE</div>
+                          </div>
+                        )}
+
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setImageIdx((i) =>
+                              selected.images && selected.images.length ? (i - 1 + selected.images.length) % selected.images.length : 0
+                            )
+                          }
+                          className="absolute left-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-white/80 hover:bg-white flex items-center justify-center"
+                          disabled={!selected.images || selected.images.length <= 1}
+                        >
+                          <svg className="w-5 h-5 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                          </svg>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setImageIdx((i) => (selected.images && selected.images.length ? (i + 1) % selected.images.length : 0))}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-white/80 hover:bg-white flex items-center justify-center"
+                          disabled={!selected.images || selected.images.length <= 1}
+                        >
+                          <svg className="w-5 h-5 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                          </svg>
+                        </button>
                       </div>
-                    )}
 
+                      <div className="mt-4">
+                        <div className="text-lg font-semibold text-slate-800">
+                          {selected.vehicle} {selected.colour}
+                        </div>
+                        <div className="text-sm text-slate-500">
+                          {selected.odometerKm.toLocaleString()} {selected.odoUnit || 'kms'} <span className="text-slate-300">•</span> {selected.drive}
+                          <span className="text-slate-300">•</span> {selected.transmission}
+                        </div>
+                        {selected.vin ? <div className="text-xs text-slate-400 mt-1">VIN: {selected.vin}</div> : null}
+                        {selected.stock ? <div className="text-xs text-slate-400">Stock# {selected.stock}</div> : null}
+                      </div>
+                    </div>
+
+                    <div className="p-6">
+                      <div className="bg-slate-50 rounded-xl border border-slate-200/60 overflow-hidden">
+                        <div className="divide-y divide-slate-200/60">
+                          <Row label="Vehicle Price" value={fin.price} bold />
+                          <Row label="Other Fees" value={fin.otherFees} />
+                          <Row label="Licensing" value={fin.licensing} />
+                          <Row label="Total Price" value={fin.totalPrice} />
+                          <Row label="Trade Value" value={fin.tradeValue} />
+                          <Row label="True Trade Value" value={fin.trueTradeValue} />
+                          <Row label="Lien Payout" value={fin.lienPayout} />
+                          <Row label="Sub Total" value={fin.subTotal} />
+                          <Row label="HST" value={fin.hst} />
+                          <Row label="Total Tax(s)" value={fin.totalTaxes} />
+                          <Row label="Grand Total" value={fin.grandTotal} bold />
+                          <Row label="Deposit" value={fin.deposit} />
+                          <Row label="Payable on Delivery" value={fin.payableOnDelivery} bold highlight />
+                        </div>
+                      </div>
+
+                      <div className="mt-4 flex items-center justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={() => router.push(`/admin/sales/deals/new?vehicleId=${encodeURIComponent(selected.id)}`)}
+                          className="h-10 px-4 rounded-lg bg-green-600 text-white text-sm font-semibold hover:bg-green-700"
+                        >
+                          BUY NOW
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setShowPayment(true)}
+                          className="h-10 w-10 rounded-lg bg-navy-900 text-white flex items-center justify-center hover:bg-navy-800 transition-colors"
+                          aria-label="Payment details"
+                        >
+                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6h10M10 12h10M10 18h10M4 6h.01M4 12h.01M4 18h.01" />
+                          </svg>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>,
+              document.body
+            )
+          : null}
+
+        {mounted && showPayment && selected
+          ? createPortal(
+              <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4" role="dialog" aria-modal="true">
+                <div className="edc-overlay absolute inset-0" style={{ zIndex: 0 }} onMouseDown={() => setShowPayment(false)} />
+                <div className="edc-modal w-full max-w-md relative z-[1] overflow-hidden">
+                  <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
+                    <div className="text-lg font-semibold text-slate-800">Payment</div>
                     <button
                       type="button"
-                      onClick={() => setImageIdx((i) => (selected.images && selected.images.length ? (i - 1 + selected.images.length) % selected.images.length : 0))}
-                      className="absolute left-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-white/80 hover:bg-white flex items-center justify-center"
-                      disabled={!selected.images || selected.images.length <= 1}
+                      onClick={() => setShowPayment(false)}
+                      className="w-8 h-8 rounded hover:bg-slate-50 flex items-center justify-center transition-colors"
                     >
-                      <svg className="w-5 h-5 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                      </svg>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setImageIdx((i) => (selected.images && selected.images.length ? (i + 1) % selected.images.length : 0))}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-white/80 hover:bg-white flex items-center justify-center"
-                      disabled={!selected.images || selected.images.length <= 1}
-                    >
-                      <svg className="w-5 h-5 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                      <svg className="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                       </svg>
                     </button>
                   </div>
 
-                  <div className="mt-4">
-                    <div className="text-lg font-semibold text-slate-800">{selected.vehicle} {selected.colour}</div>
-                    <div className="text-sm text-slate-500">
-                      {selected.odometerKm.toLocaleString()} {selected.odoUnit || 'kms'} <span className="text-slate-300">•</span> {selected.drive}
-                      <span className="text-slate-300">•</span> {selected.transmission}
+                  <div className="px-5 py-4 space-y-3">
+                    <div className="flex items-center justify-between text-sm">
+                      <div className="text-slate-600">Purchase Price</div>
+                      <div className="font-semibold">
+                        ${ (Number(selected.price) || 0).toLocaleString(undefined, { minimumFractionDigits: 2 }) }
+                      </div>
                     </div>
-                    {selected.vin ? (
-                      <div className="text-xs text-slate-400 mt-1">VIN: {selected.vin}</div>
-                    ) : null}
-                    {selected.stock ? (
-                      <div className="text-xs text-slate-400">Stock# {selected.stock}</div>
-                    ) : null}
-                  </div>
-                </div>
 
-                <div className="p-6">
-                  <div className="bg-slate-50 rounded-xl border border-slate-200/60 overflow-hidden">
-                    <div className="divide-y divide-slate-200/60">
-                      <Row label="Vehicle Price" value={fin.price} bold />
-                      <Row label="Other Fees" value={fin.otherFees} />
-                      <Row label="Licensing" value={fin.licensing} />
-                      <Row label="Total Price" value={fin.totalPrice} />
-                      <Row label="Trade Value" value={fin.tradeValue} />
-                      <Row label="True Trade Value" value={fin.trueTradeValue} />
-                      <Row label="Lien Payout" value={fin.lienPayout} />
-                      <Row label="Sub Total" value={fin.subTotal} />
-                      <Row label="HST" value={fin.hst} />
-                      <Row label="Total Tax(s)" value={fin.totalTaxes} />
-                      <Row label="Grand Total" value={fin.grandTotal} bold />
-                      <Row label="Deposit" value={fin.deposit} />
-                      <Row label="Payable on Delivery" value={fin.payableOnDelivery} bold highlight />
+                    <div className="flex items-center justify-between text-sm">
+                      <div className="text-slate-600">Interest Rate</div>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          placeholder="0"
+                          value={interestRateStr}
+                          onChange={(e) => {
+                            let v = e.target.value.replace(/[^\d.]/g, '')
+                            const firstDot = v.indexOf('.')
+                            if (firstDot !== -1) {
+                              v = v.slice(0, firstDot + 1) + v.slice(firstDot + 1).replace(/\./g, '')
+                            }
+                            v = v.replace(/^0+(?=\d)/, '')
+                            setInterestRateStr(v)
+                          }}
+                          className="edc-input w-24 text-right"
+                        />
+                        <span className="text-slate-500">%</span>
+                      </div>
                     </div>
-                  </div>
 
-                  <div className="mt-4 flex items-center justify-end gap-2">
-                    <button
-                      type="button"
-                      onClick={() => router.push(`/admin/sales/deals/new?vehicleId=${encodeURIComponent(selected.id)}`)}
-                      className="h-10 px-4 rounded-lg bg-green-600 text-white text-sm font-semibold hover:bg-green-700"
-                    >
-                      BUY NOW
-                    </button>
-                    <button type="button" onClick={() => setShowPayment(true)} className="h-10 w-10 rounded-lg bg-navy-900 text-white flex items-center justify-center hover:bg-navy-800 transition-colors" aria-label="Payment details">
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6h10M10 12h10M10 18h10M4 6h.01M4 12h.01M4 18h.01" />
-                      </svg>
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        ) : null}
-
-        {showPayment && selected ? (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true">
-            <div className="edc-overlay absolute inset-0" onMouseDown={() => setShowPayment(false)} />
-            <div className="edc-modal w-full max-w-md relative overflow-hidden">
-              <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
-                <div className="text-lg font-semibold text-slate-800">Payment</div>
-                <button type="button" onClick={() => setShowPayment(false)} className="w-8 h-8 rounded hover:bg-slate-50 flex items-center justify-center transition-colors">
-                  <svg className="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-                </button>
-              </div>
-
-              <div className="px-5 py-4 space-y-3">
-                <div className="flex items-center justify-between text-sm">
-                  <div className="text-slate-600">Purchase Price</div>
-                  <div className="font-semibold">${(Number(selected.price) || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
-                </div>
-                <div className="flex items-center justify-between text-sm">
-                  <div className="text-slate-600">Interest Rate</div>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="text"
-                      inputMode="decimal"
-                      placeholder="0"
-                      value={interestRateStr}
-                      onChange={(e) => {
-                        let v = e.target.value.replace(/[^\d.]/g, '')
-                        const firstDot = v.indexOf('.')
-                        if (firstDot !== -1) {
-                          v = v.slice(0, firstDot + 1) + v.slice(firstDot + 1).replace(/\./g, '')
-                        }
-                        v = v.replace(/^0+(?=\d)/, '')
-                        setInterestRateStr(v)
-                      }}
-                      className="edc-input w-24 text-right"
-                    />
-                    <span className="text-slate-500">%</span>
-                  </div>
-                </div>
-                <div className="flex items-center justify-between text-sm">
-                  <div className="text-slate-600">Down Payment</div>
-                  <input
-                    type="text"
-                    inputMode="decimal"
-                    placeholder="0"
-                    value={downPaymentStr}
-                    onChange={(e) => {
-                      let v = e.target.value.replace(/[^\d.]/g, '')
-                      const firstDot = v.indexOf('.')
-                      if (firstDot !== -1) {
-                        v = v.slice(0, firstDot + 1) + v.slice(firstDot + 1).replace(/\./g, '')
-                      }
-                      v = v.replace(/^0+(?=\d)/, '')
-                      setDownPaymentStr(v)
-                    }}
-                    className="edc-input w-32 text-right"
-                  />
-                </div>
-
-                <div className="border-t border-slate-200/60 pt-3">
-                  <div className="text-center text-cyan-600 font-semibold mb-2">Payment Details</div>
-                  <div className="text-center text-2xl font-bold mb-3">Payment ${payment.toFixed(2)}</div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <div className="text-xs text-slate-500 mb-1">Term</div>
-                      <select value={termMonths} onChange={(e) => setTermMonths(Number(e.target.value))} className="w-full edc-input">
-                        {[6,12,18,24,30,36,42,48,54,60,66,72,78,84,90,96].map(m => (
-                          <option key={m} value={m}>{m}</option>
-                        ))}
-                      </select>
+                    <div className="flex items-center justify-between text-sm">
+                      <div className="text-slate-600">Down Payment</div>
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        placeholder="0"
+                        value={downPaymentStr}
+                        onChange={(e) => {
+                          let v = e.target.value.replace(/[^\d.]/g, '')
+                          const firstDot = v.indexOf('.')
+                          if (firstDot !== -1) {
+                            v = v.slice(0, firstDot + 1) + v.slice(firstDot + 1).replace(/\./g, '')
+                          }
+                          v = v.replace(/^0+(?=\d)/, '')
+                          setDownPaymentStr(v)
+                        }}
+                        className="edc-input w-32 text-right"
+                      />
                     </div>
-                    <div>
-                      <div className="text-xs text-slate-500 mb-1">Frequency</div>
-                      <select value={frequency} onChange={(e) => setFrequency(e.target.value as any)} className="w-full edc-input">
-                        {['Monthly','Bi-Weekly','Weekly','Semi-Monthly'].map(f => (
-                          <option key={f} value={f}>{f}</option>
-                        ))}
-                      </select>
+
+                    <div className="border-t border-slate-200/60 pt-3">
+                      <div className="text-center text-cyan-600 font-semibold mb-2">Payment Details</div>
+                      <div className="text-center text-2xl font-bold mb-3">Payment ${payment.toFixed(2)}</div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <div className="text-xs text-slate-500 mb-1">Term</div>
+                          <select
+                            value={termMonths}
+                            onChange={(e) => setTermMonths(Number(e.target.value))}
+                            className="w-full edc-input"
+                          >
+                            {[6, 12, 18, 24, 30, 36, 42, 48, 54, 60, 66, 72, 78, 84, 90, 96].map((m) => (
+                              <option key={m} value={m}>
+                                {m}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <div>
+                          <div className="text-xs text-slate-500 mb-1">Frequency</div>
+                          <select
+                            value={frequency}
+                            onChange={(e) => setFrequency(e.target.value as any)}
+                            className="w-full edc-input"
+                          >
+                            {['Monthly', 'Bi-Weekly', 'Weekly', 'Semi-Monthly'].map((f) => (
+                              <option key={f} value={f}>
+                                {f}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="pt-2 flex justify-end">
+                      <button
+                        type="button"
+                        className="h-9 px-4 rounded bg-green-600 text-white text-sm font-semibold"
+                        onClick={() => setShowPayment(false)}
+                      >
+                        BUY NOW
+                      </button>
                     </div>
                   </div>
                 </div>
-
-                <div className="pt-2 flex justify-end">
-                  <button type="button" className="h-9 px-4 rounded bg-green-600 text-white text-sm font-semibold" onClick={() => setShowPayment(false)}>BUY NOW</button>
-                </div>
-              </div>
-            </div>
-          </div>
-        ) : null}
+              </div>,
+              document.body
+            )
+          : null}
       </div>
     </div>
   )
