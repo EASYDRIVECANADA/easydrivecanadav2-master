@@ -415,7 +415,7 @@ export default function MarketplacePage() {
                         <img
                           src={toImageSrc(selected.images[selectedImageIndex] || selected.images[0] || '')}
                           alt={`${selected.year} ${selected.make} ${selected.model}`}
-                          className="w-full h-full object-cover"
+                          className="w-full h-full object-contain bg-slate-50"
                         />
                         {selected.images.length > 1 ? (
                           <>
