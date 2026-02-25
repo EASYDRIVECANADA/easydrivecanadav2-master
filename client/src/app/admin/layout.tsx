@@ -178,25 +178,25 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
   const navItems = useMemo(
     () => [
       { href: '/admin', label: 'Home', icon: 'home' },
-      { href: '/admin/leads', label: 'Leads', icon: 'phone' },
-      { href: '/admin/costumer', label: 'Customers', icon: 'users' },
-      { href: '/admin/vendors', label: 'Vendors', icon: 'briefcase' },
-      { href: '/admin/marketplace', label: 'Market Place', icon: 'briefcase' },
-      { href: '/admin/inventory', label: 'Inventory', icon: 'car' },
+      { href: '/admin/leads', label: 'Leads', icon: 'phone', disabled: !isVerified },
+      { href: '/admin/costumer', label: 'Customers', icon: 'users', disabled: !isVerified },
+      { href: '/admin/vendors', label: 'Vendors', icon: 'briefcase', disabled: !isVerified },
+      { href: '/admin/marketplace', label: 'Market Place', icon: 'briefcase', disabled: !isVerified },
+      { href: '/admin/inventory', label: 'Inventory', icon: 'car', disabled: !isVerified },
       { href: '/admin/sales', label: 'Sales', icon: 'dollar' },
       { href: '/admin', label: 'Service', icon: 'wrench', disabled: !isVerified },
-      { href: '/admin/reports', label: 'Reports', icon: 'file' },
+      { href: '/admin/reports', label: 'Reports', icon: 'file', disabled: !isVerified },
     ],
     [isVerified]
   )
 
   const salesSubItems = useMemo(
     () => [
-      { href: '/admin/sales/showroom', label: 'Customer Showroom' },
-      { href: '/admin/sales/deals', label: 'Deals' },
-      { href: '/admin/sales/deal-adjustor', label: 'Deal Adjustor' },
+      { href: '/admin/sales/showroom', label: 'Customer Showroom', disabled: !isVerified },
+      { href: '/admin/sales/deals', label: 'Deals', disabled: !isVerified },
+      { href: '/admin/sales/deal-adjustor', label: 'Deal Adjustor', disabled: !isVerified },
     ],
-    []
+    [isVerified]
   )
 
   const reportsSalesItems = useMemo(
@@ -418,13 +418,15 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
 
                                 return (
                                   <li key={sub.label}>
-                                    <Link
-                                      href={sub.href}
-                                      className={subClasses}
-                                      title={sub.label}
-                                    >
-                                      <span>{sub.label}</span>
-                                    </Link>
+                                    {sub.disabled ? (
+                                      <div className="flex items-center justify-between px-3 py-1.5 rounded-lg text-[13px] text-white/30 cursor-not-allowed" title={sub.label}>
+                                        <span>{sub.label}</span>
+                                      </div>
+                                    ) : (
+                                      <Link href={sub.href} className={subClasses} title={sub.label}>
+                                        <span>{sub.label}</span>
+                                      </Link>
+                                    )}
                                   </li>
                                 )
                               })}

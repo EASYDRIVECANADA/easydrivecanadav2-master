@@ -25,12 +25,65 @@ function AccountPageInner() {
   const [initLoading, setInitLoading] = useState(true)
   const [isVerified, setIsVerified] = useState(false)
   const [hasAdminSession, setHasAdminSession] = useState(false)
+  const [isGoogleAuth, setIsGoogleAuth] = useState(false)
+  const [redirectingAdmin, setRedirectingAdmin] = useState(false)
 
   const setStaffAdminSession = (email: string) => {
     if (typeof window === 'undefined') return
     const session = { email: email.trim().toLowerCase(), role: 'STAFF' }
     window.localStorage.setItem('edc_admin_session', JSON.stringify(session))
     window.dispatchEvent(new Event('edc_admin_session_changed'))
+  }
+
+  const setAdminSession = (email: string, role: string) => {
+    if (typeof window === 'undefined') return
+    const session = { email: email.trim().toLowerCase(), role }
+    window.localStorage.setItem('edc_admin_session', JSON.stringify(session))
+    window.dispatchEvent(new Event('edc_admin_session_changed'))
+  }
+
+  const tryRedirectGoogleAdmin = async (email: string | null, isGoogle: boolean) => {
+    const normalizedEmail = String(email || '').trim().toLowerCase()
+    if (!normalizedEmail) return
+    if (redirectingAdmin) return
+    if (!isGoogle) return
+
+    try {
+      const [adminResult, verificationResult] = await Promise.all([
+        supabase
+          .from('edc_admin_users')
+          .select('email, role, is_active')
+          .eq('email', normalizedEmail)
+          .limit(1)
+          .maybeSingle(),
+        supabase
+          .from('edc_account_verifications')
+          .select('id')
+          .eq('email', normalizedEmail)
+          .limit(1)
+      ])
+
+      const hasVerification = Array.isArray(verificationResult.data) && verificationResult.data.length > 0
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem('edc_account_verified', hasVerification ? 'true' : 'false')
+      }
+
+      setRedirectingAdmin(true)
+      if (!adminResult.error) {
+        const role = String((adminResult.data as any)?.role || '').trim().toUpperCase()
+        const isActive = Boolean((adminResult.data as any)?.is_active)
+        if (isActive && (role === 'ADMIN' || role === 'STAFF')) {
+          setAdminSession(normalizedEmail, role)
+        } else {
+          setStaffAdminSession(normalizedEmail)
+        }
+      } else {
+        setStaffAdminSession(normalizedEmail)
+      }
+      router.replace('/admin')
+    } catch {
+      // ignore
+    }
   }
 
   const [customerAuthEmail, setCustomerAuthEmail] = useState('')
@@ -364,9 +417,19 @@ function AccountPageInner() {
         const { data } = await supabase.auth.getSession()
         const user = data.session?.user
         if (user) {
+          const provider = (user as any)?.app_metadata?.provider
+          const identities = Array.isArray((user as any)?.identities) ? ((user as any).identities as any[]) : []
+          const isGoogle = provider === 'google' || identities.some((i) => String(i?.provider || '').toLowerCase() === 'google')
+          
+          if (isGoogle && user.email) {
+            await tryRedirectGoogleAdmin(user.email, true)
+            return
+          }
+
           setUserEmail(user.email || null)
           const metaName = (user.user_metadata as any)?.full_name
           setUserName(typeof metaName === 'string' ? metaName : null)
+          setIsGoogleAuth(Boolean(isGoogle))
           const nextName = typeof metaName === 'string' ? metaName : ''
           setEditingName(nextName)
           setOriginalName(nextName)
@@ -394,6 +457,10 @@ function AccountPageInner() {
       setUserEmail(user?.email || null)
       const metaName = (user?.user_metadata as any)?.full_name
       setUserName(typeof metaName === 'string' ? metaName : null)
+      const provider = (user as any)?.app_metadata?.provider
+      const identities = Array.isArray((user as any)?.identities) ? ((user as any)?.identities as any[]) : []
+      const isGoogle = provider === 'google' || identities.some((i) => String(i?.provider || '').toLowerCase() === 'google')
+      setIsGoogleAuth(Boolean(isGoogle))
       const nextName = typeof metaName === 'string' ? metaName : ''
       setEditingName(nextName)
       setOriginalName(nextName)
@@ -402,6 +469,7 @@ function AccountPageInner() {
 
       if (user?.email) {
         const email = user.email
+        void tryRedirectGoogleAdmin(email, Boolean(isGoogle))
         void syncVerifiedFromDb(user.email).then((hasRow) => {
           void hasRow
         })
@@ -444,7 +512,7 @@ function AccountPageInner() {
       const { error: oauthError } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: `${window.location.origin}/account`,
+          redirectTo: `${window.location.origin}/admin`,
         },
       })
       if (oauthError) setError(oauthError.message)
@@ -637,9 +705,11 @@ function AccountPageInner() {
                     <div className="mt-1 text-sm font-medium text-gray-900 break-all">{userEmail}</div>
                   </div>
                   <div className="flex flex-col items-start sm:items-end gap-2">
-                    <span className={isVerified ? 'badge badge-success' : 'badge badge-warning'}>
-                      {isVerified ? 'Verified' : 'Verification Required'}
-                    </span>
+                    {isVerified || !isGoogleAuth ? (
+                      <span className={isVerified ? 'badge badge-success' : 'badge badge-warning'}>
+                        {isVerified ? 'Verified' : 'Verification Required'}
+                      </span>
+                    ) : null}
                     {!isEditingProfile ? (
                       <button
                         type="button"

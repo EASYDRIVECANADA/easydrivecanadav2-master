@@ -27,14 +27,30 @@ export async function POST(req: Request) {
     upstreamForm.append('email', email)
 
     const anyFile = file as any
+    const ab = await (file as File).arrayBuffer().catch(() => null)
+    if (!ab) {
+      return NextResponse.json({ error: 'Failed to read image file' }, { status: 400 })
+    }
+    const mime = String((anyFile as any)?.type || (file as any)?.type || '').trim() || 'application/octet-stream'
+    const b64 = Buffer.from(ab).toString('base64')
+    upstreamForm.append('b64', b64)
+    upstreamForm.append('mime', mime)
+    upstreamForm.append('filename', String((anyFile as any)?.name || 'license.jpg'))
+
     upstreamForm.append('file', anyFile, anyFile?.name || 'license.jpg')
 
-    const res = await fetch('https://primary-production-6722.up.railway.app/webhook-test/validation', {
+    const res = await fetch('https://primary-production-6722.up.railway.app/webhook/validationID', {
       method: 'POST',
       body: upstreamForm,
     })
 
     const text = await res.text().catch(() => '')
+    let parsed: any = null
+    try {
+      parsed = text ? JSON.parse(text) : null
+    } catch {
+      parsed = null
+    }
 
     if (!res.ok) {
       return NextResponse.json(
@@ -42,6 +58,7 @@ export async function POST(req: Request) {
           error: text || `Webhook error (${res.status})`,
           upstreamStatus: res.status,
           upstreamBody: text,
+          upstreamJson: parsed,
         },
         { status: 502 }
       )
@@ -52,6 +69,7 @@ export async function POST(req: Request) {
         ok: true,
         upstreamStatus: res.status,
         upstreamBody: text,
+        upstreamJson: parsed,
       },
       { status: 200 }
     )
