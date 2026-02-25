@@ -17,6 +17,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
   const router = useRouter()
   const [session, setSession] = useState<AdminSession | null>(null)
   const [userName, setUserName] = useState<string | null>(null)
+  const [profileB64, setProfileB64] = useState<string | null>(null)
   const [isVerified, setIsVerified] = useState(false)
   const [collapsed, setCollapsed] = useState(false)
   const [accountMenuOpen, setAccountMenuOpen] = useState(false)
@@ -114,6 +115,34 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
 
     void run()
   }, [])
+
+  useEffect(() => {
+    const email = String(session?.email || '').trim().toLowerCase()
+    if (!email) {
+      setProfileB64(null)
+      return
+    }
+
+    const run = async () => {
+      try {
+        const { data } = await supabase.from('users').select('profile').eq('email', email).limit(1).maybeSingle()
+        const raw = String((data as any)?.profile || '').trim()
+        setProfileB64(raw || null)
+      } catch {
+        setProfileB64(null)
+      }
+    }
+
+    void run()
+  }, [session?.email])
+
+  const profileImgSrc = useMemo(() => {
+    const raw = String(profileB64 || '').trim()
+    if (!raw) return null
+    if (raw.startsWith('data:')) return raw
+    if (raw.startsWith('http://') || raw.startsWith('https://')) return raw
+    return `data:image/jpeg;base64,${raw}`
+  }, [profileB64])
 
   const toggleCollapsed = () => {
     setCollapsed((prev) => {
@@ -264,39 +293,59 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
             <div
               className={
                 collapsed
-                  ? 'p-3 pt-4 pb-3 flex flex-col items-center gap-2'
-                  : 'px-5 flex items-center justify-between gap-2 h-16'
+                  ? 'pt-2 pb-2 px-1 flex flex-col items-center gap-2 overflow-visible'
+                  : 'px-4 pt-3 pb-3 flex items-center justify-between overflow-visible'
               }
             >
-              <Link href="/admin" className="flex items-center gap-3 min-w-0">
-                <div className="relative h-8 w-8 shrink-0">
-                  <Image src="/images/logo.png" alt="EDC" fill className="object-contain" />
+              {collapsed ? (
+                <Link href="/admin" className="flex items-center justify-center w-full overflow-visible">
+                  <div className="relative h-14 w-14 shrink-0">
+                    <Image src="/images/logo.png" alt="EDC" fill className="object-contain" />
+                  </div>
+                </Link>
+              ) : (
+                <div className="flex-1 flex justify-center overflow-visible">
+                  <Link href="/admin" className="flex items-center overflow-visible">
+                    <div className="relative h-20 w-20 shrink-0">
+                      <Image src="/images/logo.png" alt="EDC" fill className="object-contain" />
+                    </div>
+                  </Link>
                 </div>
-              </Link>
+              )}
 
-              <div ref={accountMenuRef} className={`relative flex justify-end overflow-visible ${collapsed ? 'w-full' : ''}`}>
+              <div
+                ref={accountMenuRef}
+                className={collapsed ? 'relative flex justify-end overflow-visible w-full' : 'relative flex items-center justify-end overflow-visible'}
+              >
                 <button
                   type="button"
                   onClick={() => setAccountMenuOpen((v) => !v)}
                   className={
                     collapsed
-                      ? 'h-9 w-9 mx-auto rounded-full bg-white/[.07] hover:bg-white/[.12] border border-white/[.08] flex items-center justify-center transition-colors'
-                      : 'h-8 px-3 rounded-lg bg-white/[.07] hover:bg-white/[.12] border border-white/[.08] inline-flex items-center gap-2 text-[13px] font-semibold whitespace-nowrap transition-colors'
+                      ? 'h-9 w-9 mx-auto rounded-full bg-transparent border-0 flex items-center justify-center transition-opacity hover:opacity-90 outline-none focus:outline-none focus:ring-0 ring-0'
+                      : 'h-9 w-9 rounded-full bg-transparent border-0 inline-flex items-center justify-center transition-opacity hover:opacity-90 outline-none focus:outline-none focus:ring-0 ring-0'
                   }
                   aria-haspopup="menu"
                   aria-expanded={accountMenuOpen}
                   title="Account"
                 >
                   {collapsed ? (
-                    <span className="text-white/90">
-                      <Icon name="account" />
-                    </span>
+                    profileImgSrc ? (
+                      <img src={profileImgSrc} alt="Profile" className="h-9 w-9 rounded-full object-cover" />
+                    ) : (
+                      <span className="text-white/90">
+                        <Icon name="account" />
+                      </span>
+                    )
                   ) : (
                     <>
-                      <span className="whitespace-nowrap text-white/90">{accountFirstName}</span>
-                      <svg className={`w-3.5 h-3.5 text-white/50 transition-transform duration-200 ${accountMenuOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                      </svg>
+                      {profileImgSrc ? (
+                        <img src={profileImgSrc} alt="Profile" className="h-9 w-9 rounded-full object-cover" />
+                      ) : (
+                        <span className="text-white/90">
+                          <Icon name="account" />
+                        </span>
+                      )}
                     </>
                   )}
                 </button>

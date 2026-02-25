@@ -47,11 +47,35 @@ export default function AdminAccountPage() {
   const [showManageAccount, setShowManageAccount] = useState(false)
   const [usersRow, setUsersRow] = useState<any | null>(null)
   const [showPassword, setShowPassword] = useState(false)
+  const [editFirstName, setEditFirstName] = useState('')
+  const [editLastName, setEditLastName] = useState('')
+  const [editTitle, setEditTitle] = useState('')
+  const [editPhone, setEditPhone] = useState('')
+  const [editMobile, setEditMobile] = useState('')
+  const [editEmail, setEditEmail] = useState('')
+  const [editPassword, setEditPassword] = useState('')
+  const [updatingAccount, setUpdatingAccount] = useState(false)
+  const [updateAccountError, setUpdateAccountError] = useState('')
+  const [updateAccountSuccess, setUpdateAccountSuccess] = useState('')
+  const [profileFile, setProfileFile] = useState<File | null>(null)
+  const [profilePreviewUrl, setProfilePreviewUrl] = useState<string | null>(null)
+  const [profileUploading, setProfileUploading] = useState(false)
+  const [profileUploadError, setProfileUploadError] = useState('')
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null)
   const [licenseFile, setLicenseFile] = useState<File | null>(null)
   const [licensePreviewUrl, setLicensePreviewUrl] = useState<string | null>(null)
   const [sendingLicense, setSendingLicense] = useState(false)
   const [licenseSendResult, setLicenseSendResult] = useState('')
   const [licenseSendError, setLicenseSendError] = useState('')
+
+  const profileImgSrc = useMemo(() => {
+    if (profilePreviewUrl) return profilePreviewUrl
+    const raw = String(avatarUrl || '').trim()
+    if (!raw) return null
+    if (raw.startsWith('data:')) return raw
+    if (raw.startsWith('http://') || raw.startsWith('https://')) return raw
+    return `data:image/jpeg;base64,${raw}`
+  }, [avatarUrl, profilePreviewUrl])
   const [validationModalOpen, setValidationModalOpen] = useState(false)
   const [validationModalMode, setValidationModalMode] = useState<'FORM' | 'ERROR'>('FORM')
   const [validationModalMessage, setValidationModalMessage] = useState('')
@@ -394,6 +418,11 @@ export default function AdminAccountPage() {
   }, [router])
 
   useEffect(() => {
+    const p = String((usersRow as any)?.profile || '').trim()
+    setAvatarUrl(p ? p : null)
+  }, [usersRow])
+
+  useEffect(() => {
     const email = session?.email?.trim().toLowerCase()
     if (!email) return
 
@@ -435,6 +464,134 @@ export default function AdminAccountPage() {
 
     void run()
   }, [session])
+
+  useEffect(() => {
+    const row = usersRow as any
+    setEditFirstName(String(row?.first_name ?? '').trim())
+    setEditLastName(String(row?.last_name ?? '').trim())
+    setEditTitle(String(row?.title ?? '').trim())
+    setEditPhone(String(row?.phone ?? '').trim())
+    setEditMobile(String(row?.mobile ?? '').trim())
+    setEditEmail(String(row?.email ?? session?.email ?? '').trim())
+    setEditPassword(String(row?.password ?? '').trim())
+  }, [session?.email, usersRow])
+
+  const buildUpdatePayload = (overrides?: Record<string, any>) => {
+    const sessionEmail = String(session?.email || '').trim().toLowerCase()
+    const base = (usersRow && typeof usersRow === 'object' ? { ...(usersRow as any) } : {}) as any
+    return {
+      session_email: sessionEmail,
+      ...base,
+      first_name: editFirstName,
+      last_name: editLastName,
+      title: editTitle,
+      phone: editPhone,
+      mobile: editMobile,
+      email: editEmail,
+      password: editPassword,
+      profile: avatarUrl,
+      ...(overrides || {}),
+    }
+  }
+
+  const handleUpdateAccount = async () => {
+    if (updatingAccount) return
+    const email = String(session?.email || '').trim().toLowerCase()
+    if (!email) return
+
+    setUpdatingAccount(true)
+    setUpdateAccountError('')
+    setUpdateAccountSuccess('')
+    try {
+      let profileImageBase64: string | null = null
+      let profileImageName: string | null = null
+      let profileImageType: string | null = null
+
+      if (profileFile) {
+        setProfileUploading(true)
+        setProfileUploadError('')
+        try {
+          profileImageName = profileFile.name
+          profileImageType = profileFile.type
+          profileImageBase64 = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader()
+            reader.onerror = () => reject(new Error('Unable to read profile image'))
+            reader.onload = () => {
+              const res = String(reader.result || '')
+              const comma = res.indexOf(',')
+              resolve(comma >= 0 ? res.slice(comma + 1) : res)
+            }
+            reader.readAsDataURL(profileFile)
+          })
+        } finally {
+          setProfileUploading(false)
+        }
+      }
+
+      const payload = buildUpdatePayload({
+        profile: avatarUrl,
+        profile_image_base64: profileImageBase64,
+        profile_image_name: profileImageName,
+        profile_image_type: profileImageType,
+      })
+
+      const res = await fetch('https://primary-production-6722.up.railway.app/webhook/update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+
+      const text = await res.text().catch(() => '')
+      if (!res.ok) throw new Error(text || `Request failed (${res.status})`)
+
+      const trimmed = String(text || '').trim()
+      const isDone = trimmed.toLowerCase() === 'done'
+      if (!isDone) throw new Error(trimmed || 'Update failed')
+
+      try {
+        const fetchEmail = String(editEmail || email).trim().toLowerCase()
+        const { data: fresh } = await supabase.from('users').select('*').eq('email', fetchEmail).limit(1).maybeSingle()
+        if (fresh) {
+          setUsersRow(fresh)
+        } else {
+          setUsersRow((prev: any) => {
+            const base = prev && typeof prev === 'object' ? { ...(prev as any) } : {}
+            return {
+              ...base,
+              first_name: editFirstName,
+              last_name: editLastName,
+              title: editTitle,
+              phone: editPhone,
+              mobile: editMobile,
+              email: editEmail,
+              password: editPassword,
+            }
+          })
+        }
+      } catch {
+        setUsersRow((prev: any) => {
+          const base = prev && typeof prev === 'object' ? { ...(prev as any) } : {}
+          return {
+            ...base,
+            first_name: editFirstName,
+            last_name: editLastName,
+            title: editTitle,
+            phone: editPhone,
+            mobile: editMobile,
+            email: editEmail,
+            password: editPassword,
+          }
+        })
+      }
+
+      setUpdateAccountSuccess('Done')
+      if (profileFile) setProfileFile(null)
+    } catch (e: any) {
+      setUpdateAccountError(e?.message || 'Update failed')
+    } finally {
+      setUpdatingAccount(false)
+    }
+  }
 
   const displayRole = useMemo(() => {
     const r = (session?.role || adminUser?.role || '').toString().trim()
@@ -567,6 +724,21 @@ export default function AdminAccountPage() {
     }
   }, [licenseFile])
 
+  useEffect(() => {
+    if (!profileFile) {
+      if (profilePreviewUrl) URL.revokeObjectURL(profilePreviewUrl)
+      setProfilePreviewUrl(null)
+      return
+    }
+
+    const url = URL.createObjectURL(profileFile)
+    if (profilePreviewUrl) URL.revokeObjectURL(profilePreviewUrl)
+    setProfilePreviewUrl(url)
+    return () => {
+      URL.revokeObjectURL(url)
+    }
+  }, [profileFile])
+
   const displayRoleLabel = useMemo(() => {
     if (!isFromVerification && displayRole === 'STAFF') return `NOT VALIDATED ${displayRole}`
     return displayRole
@@ -580,13 +752,6 @@ export default function AdminAccountPage() {
             <h1 className="text-2xl font-bold text-slate-900">Account Settings</h1>
             <p className="text-sm text-slate-500 mt-1">Manage your admin session and verification details.</p>
           </div>
-          <button
-            type="button"
-            onClick={() => router.push('/admin')}
-            className="edc-btn-ghost text-sm"
-          >
-            Back to Dashboard
-          </button>
         </div>
       </div>
 
@@ -1059,13 +1224,49 @@ export default function AdminAccountPage() {
               </div>
             </div>
 
+            <div className="mt-5 flex flex-col sm:flex-row sm:items-center gap-4">
+              <div className="flex items-center gap-3">
+                <div className="h-12 w-12 rounded-full overflow-hidden border-2 border-black bg-white flex items-center justify-center">
+                  {profileImgSrc ? (
+                    <img
+                      src={profileImgSrc as string}
+                      alt="Profile"
+                      className="h-full w-full object-cover"
+                    />
+                  ) : (
+                    <span className="text-sm font-semibold text-slate-700">{String(session?.email || 'A').trim().charAt(0).toUpperCase()}</span>
+                  )}
+                </div>
+                <div className="min-w-0">
+                  <div className="text-sm font-semibold text-slate-800">Profile photo</div>
+                  <div className="text-xs text-slate-500">Upload a square photo for best results.</div>
+                </div>
+              </div>
+
+              <div className="flex-1" />
+
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="block w-full text-sm text-slate-600 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-slate-100 file:text-slate-700 hover:file:bg-slate-200"
+                  onChange={(e) => {
+                    setProfileFile(e.target.files?.[0] || null)
+                    setProfileUploadError('')
+                  }}
+                />
+              </div>
+            </div>
+
+            {profileUploadError ? <div className="mt-2 text-sm text-danger-600">{profileUploadError}</div> : null}
+
             {!showManageAccount ? (
               isFromVerification ? (
                 <div className="mt-6 grid grid-cols-1 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-slate-600 mb-1">Full name</label>
                     <input
-                      className="edc-input bg-slate-50"
+                      className="edc-input bg-white border border-black disabled:opacity-100 disabled:text-slate-900"
                       value={verification?.full_name || ''}
                       disabled
                     />
@@ -1074,7 +1275,7 @@ export default function AdminAccountPage() {
                   <div>
                     <label className="block text-sm font-medium text-slate-600 mb-1">Address</label>
                     <input
-                      className="edc-input bg-slate-50"
+                      className="edc-input bg-white border border-black disabled:opacity-100 disabled:text-slate-900"
                       value={verification?.address || ''}
                       disabled
                     />
@@ -1083,7 +1284,7 @@ export default function AdminAccountPage() {
                   <div>
                     <label className="block text-sm font-medium text-slate-600 mb-1">Driver license number</label>
                     <input
-                      className="edc-input bg-slate-50"
+                      className="edc-input bg-white border border-black disabled:opacity-100 disabled:text-slate-900"
                       value={verification?.license_number || ''}
                       disabled
                     />
@@ -1132,73 +1333,181 @@ export default function AdminAccountPage() {
                 {Object.entries(usersRow || {}).length ? (
                   Object.entries(usersRow || {})
                     .filter(([k]) => visibleUserFields.includes(k))
-                    .map(([key, value]) => (
-                      <div key={key}>
-                        <label className="block text-sm font-medium text-slate-600 mb-1">
-                          {String(key)
-                            .replace(/_/g, ' ')
-                            .replace(/\b\w/g, (c) => c.toUpperCase())}
-                        </label>
-                        {key === 'password' ? (
+                    .map(([key, value]) =>
+                      key === 'password' ? (
+                        <div key={key} className="contents">
+                          <div>
+                            <label className="block text-sm font-medium text-slate-600 mb-1">Password</label>
+                            <div className="relative">
+                              <input
+                                type={showPassword ? 'text' : 'password'}
+                                className="edc-input bg-white border border-black pr-11"
+                                value={editPassword}
+                                onChange={(e) => setEditPassword(e.target.value)}
+                              />
+                              <button
+                                type="button"
+                                onClick={() => setShowPassword((v) => !v)}
+                                className="absolute right-2 top-1/2 -translate-y-1/2 z-10 h-8 w-8 inline-flex items-center justify-center rounded-md text-slate-700 hover:text-slate-900 hover:bg-slate-100 transition"
+                                aria-label={showPassword ? 'Hide password' : 'Show password'}
+                                title={showPassword ? 'Hide password' : 'Show password'}
+                              >
+                                {showPassword ? (
+                                  <svg
+                                    className="h-4 w-4"
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    strokeWidth="2"
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                  >
+                                    <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" />
+                                    <circle cx="12" cy="12" r="3" />
+                                  </svg>
+                                ) : (
+                                  <svg
+                                    className="h-4 w-4"
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    strokeWidth="2"
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                  >
+                                    <path d="M10.733 5.08A10.744 10.744 0 0 1 12 5c6.5 0 10 7 10 7a18.16 18.16 0 0 1-1.67 2.68" />
+                                    <path d="M6.61 6.61A12.56 12.56 0 0 0 2 12s3.5 7 10 7c1.78 0 3.3-.33 4.6-.9" />
+                                    <path d="M8.71 8.71A3 3 0 0 0 12 15a3 3 0 0 0 3.29-3.29" />
+                                    <path d="M3 3l18 18" />
+                                  </svg>
+                                )}
+                              </button>
+                            </div>
+                          </div>
+
+                          <div>
+                            <label className="block text-sm font-medium text-slate-600 mb-1">&nbsp;</label>
+                            <button
+                              type="button"
+                              onClick={() => void handleUpdateAccount()}
+                              disabled={updatingAccount}
+                              className={
+                                updatingAccount
+                                  ? 'edc-btn-primary text-sm opacity-50 cursor-not-allowed'
+                                  : 'edc-btn-primary text-sm'
+                              }
+                            >
+                              {updatingAccount ? 'Updating…' : 'Update'}
+                            </button>
+                            {updateAccountSuccess ? <div className="mt-1 text-xs text-emerald-700">{updateAccountSuccess}</div> : null}
+                            {updateAccountError ? <div className="mt-1 text-xs text-danger-600">{updateAccountError}</div> : null}
+                          </div>
+                        </div>
+                      ) : (
+                        <div key={key}>
+                          <label className="block text-sm font-medium text-slate-600 mb-1">
+                            {String(key)
+                              .replace(/_/g, ' ')
+                              .replace(/\b\w/g, (c) => c.toUpperCase())}
+                          </label>
                           <input
-                            type={showPassword ? 'text' : 'password'}
-                            className="edc-input bg-slate-50"
-                            value={value == null ? '' : String(value)}
-                            disabled
-                          />
-                        ) : (
-                          <input
-                            className="edc-input bg-slate-50"
+                            className="edc-input bg-white border border-black"
+                            onChange={(e) => {
+                              const next = e.target.value
+                              if (key === 'first_name') setEditFirstName(next)
+                              else if (key === 'last_name') setEditLastName(next)
+                              else if (key === 'title') setEditTitle(next)
+                              else if (key === 'phone') setEditPhone(next)
+                              else if (key === 'mobile') setEditMobile(next)
+                              else if (key === 'email') setEditEmail(next)
+                            }}
                             value={
-                              value == null
-                                ? '—'
-                                : typeof value === 'boolean'
-                                  ? value
-                                    ? 'True'
-                                    : 'False'
-                                  : String(value)
+                              key === 'first_name'
+                                ? editFirstName
+                                : key === 'last_name'
+                                  ? editLastName
+                                  : key === 'title'
+                                    ? editTitle
+                                    : key === 'phone'
+                                      ? editPhone
+                                      : key === 'mobile'
+                                        ? editMobile
+                                        : key === 'email'
+                                          ? editEmail
+                                          : value == null
+                                            ? ''
+                                            : typeof value === 'boolean'
+                                              ? value
+                                                ? 'True'
+                                                : 'False'
+                                              : String(value)
                             }
-                            disabled
                           />
-                        )}
-                      </div>
-                    ))
+                        </div>
+                      )
+                    )
                 ) : (
                   <>
                     <div>
                       <label className="block text-sm font-medium text-slate-600 mb-1">Email</label>
-                      <input className="edc-input bg-slate-50" value={adminUser?.email || session?.email || ''} disabled />
+                      <input
+                        className="edc-input bg-white border border-black disabled:opacity-100 disabled:text-slate-900"
+                        value={adminUser?.email || session?.email || ''}
+                        disabled
+                      />
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-slate-600 mb-1">Role</label>
-                      <input className="edc-input bg-slate-50" value={adminUser?.role || displayRole} disabled />
+                      <input
+                        className="edc-input bg-white border border-black disabled:opacity-100 disabled:text-slate-900"
+                        value={adminUser?.role || displayRole}
+                        disabled
+                      />
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-slate-600 mb-1">Status</label>
                       <input
-                        className="edc-input bg-slate-50"
+                        className="edc-input bg-white border border-black disabled:opacity-100 disabled:text-slate-900"
                         value={adminUser ? (adminUser.is_active ? 'Active' : 'Inactive') : '—'}
                         disabled
                       />
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-slate-600 mb-1">Password</label>
-                      <input type={showPassword ? 'text' : 'password'} className="edc-input bg-slate-50" value="" disabled />
+                      <div className="relative">
+                        <input
+                          type={showPassword ? 'text' : 'password'}
+                          className="edc-input bg-white border border-black pr-11 disabled:opacity-100 disabled:text-slate-900"
+                          value=""
+                          disabled
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowPassword((v) => !v)}
+                          className="absolute right-2 top-1/2 -translate-y-1/2 z-10 h-8 w-8 inline-flex items-center justify-center rounded-md text-slate-700 hover:text-slate-900 hover:bg-slate-100 transition"
+                          aria-label={showPassword ? 'Hide password' : 'Show password'}
+                          title={showPassword ? 'Hide password' : 'Show password'}
+                        >
+                          {showPassword ? (
+                            <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" />
+                              <circle cx="12" cy="12" r="3" />
+                            </svg>
+                          ) : (
+                            <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M10.733 5.08A10.744 10.744 0 0 1 12 5c6.5 0 10 7 10 7a18.16 18.16 0 0 1-1.67 2.68" />
+                              <path d="M6.61 6.61A12.56 12.56 0 0 0 2 12s3.5 7 10 7c1.78 0 3.3-.33 4.6-.9" />
+                              <path d="M8.71 8.71A3 3 0 0 0 12 15a3 3 0 0 0 3.29-3.29" />
+                              <path d="M3 3l18 18" />
+                            </svg>
+                          )}
+                        </button>
+                      </div>
                     </div>
                   </>
                 )}
 
-                <div className="lg:col-span-4">
-                  <label className="inline-flex items-center gap-2 text-sm text-slate-600">
-                    <input
-                      type="checkbox"
-                      className="h-4 w-4"
-                      checked={showPassword}
-                      onChange={(e) => setShowPassword(e.target.checked)}
-                    />
-                    Show password
-                  </label>
-                </div>
+                <div className="lg:col-span-4" />
               </div>
             )}
 
