@@ -24,7 +24,7 @@ export default function AdminSettingsLayout({ children }: { children: ReactNode 
               return
             }
           } catch {
-            // ignore
+            //| ignore
           }
         }
         setIsVerified(window.localStorage.getItem('edc_account_verified') === 'true')
