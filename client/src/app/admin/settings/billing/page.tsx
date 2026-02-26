@@ -13,10 +13,46 @@ type BillingSection = 'Products & Services' | 'Transactions' | 'Payment Methods'
 function BillingPage() {
   const [section, setSection] = useState<BillingSection>('Products & Services')
 
+  const stripePaymentLink = String(process.env.NEXT_PUBLIC_STRIPE_PAYMENT_LINK || '').trim()
+
+  const [buying, setBuying] = useState<string>('')
+
   const products = useMemo(
-    () => [{ planName: 'Small Dealer Package', amount: '$99.00', created: 'Jul 21, 2023' }],
+    () => [
+      { key: 'small', planName: 'Small Dealer Package', amount: '$99.00' },
+      { key: 'full', planName: 'Full Dealer Package', amount: '$199.00' },
+    ],
     []
   )
+
+  const startCheckout = async (plan: string) => {
+    if (buying) return
+    setBuying(plan)
+    try {
+      const res = await fetch('/api/stripe/checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ plan }),
+      })
+
+      const json = await res.json().catch(() => null)
+      const url = String(json?.url || '').trim()
+      if (!res.ok || !url) {
+        const msg = String(json?.error || 'Unable to start Stripe checkout')
+        throw new Error(msg)
+      }
+
+      window.location.href = url
+    } catch (e: any) {
+      if (stripePaymentLink) {
+        window.location.href = stripePaymentLink
+        return
+      }
+      window.alert(String(e?.message || 'Unable to start Stripe checkout'))
+    } finally {
+      setBuying('')
+    }
+  }
 
   return (
     <div>
@@ -50,25 +86,42 @@ function BillingPage() {
           <div className="text-[11px] font-semibold text-slate-600">{section}</div>
 
           {section === 'Products & Services' ? (
-            <div className="mt-3 border border-slate-200/60 bg-white">
-              <div className="grid grid-cols-[1.8fr_1fr_1fr] border-b border-slate-200/60">
-                <div className="h-8 flex items-center justify-center text-[11px] font-semibold text-slate-600">
-                  PLAN NAME
+            <div className="mt-3 space-y-4">
+              <div className="border border-slate-200/60 bg-white">
+                <div className="grid grid-cols-[1.8fr_1fr_1fr] border-b border-slate-200/60">
+                  <div className="h-8 flex items-center justify-center text-[11px] font-semibold text-slate-600">
+                    PLAN NAME
+                  </div>
+                  <div className="h-8 flex items-center justify-center text-[11px] font-semibold text-slate-600">
+                    AMOUNT
+                  </div>
+                  <div className="h-8 flex items-center justify-center text-[11px] font-semibold text-slate-600">
+                    SUBSCRIPTION
+                  </div>
                 </div>
-                <div className="h-8 flex items-center justify-center text-[11px] font-semibold text-slate-600">
-                  AMOUNT
-                </div>
-                <div className="h-8 flex items-center justify-center text-[11px] font-semibold text-slate-600">
-                  CREATED
-                </div>
+                {products.map((p) => (
+                  <div key={p.planName} className="grid grid-cols-[1.8fr_1fr_1fr] border-b border-slate-100">
+                    <div className="h-10 flex items-center justify-center text-xs text-slate-700">{p.planName}</div>
+                    <div className="h-10 flex items-center justify-center text-xs text-slate-700">{p.amount}</div>
+                    <div className="h-10 flex items-center justify-center">
+                      <button
+                        type="button"
+                        disabled={!!buying}
+                        className={
+                          !!buying
+                            ? 'edc-btn-primary h-7 px-4 text-[11px] opacity-60 cursor-not-allowed'
+                            : 'edc-btn-primary h-7 px-4 text-[11px]'
+                        }
+                        onClick={() => {
+                          startCheckout(String((p as any)?.key || 'small'))
+                        }}
+                      >
+                        {buying === String((p as any)?.key || '') ? 'Loading…' : 'BUY'}
+                      </button>
+                    </div>
+                  </div>
+                ))}
               </div>
-              {products.map((p) => (
-                <div key={p.planName} className="grid grid-cols-[1.8fr_1fr_1fr] border-b border-slate-100">
-                  <div className="h-10 flex items-center justify-center text-xs text-slate-700">{p.planName}</div>
-                  <div className="h-10 flex items-center justify-center text-xs text-slate-700">{p.amount}</div>
-                  <div className="h-10 flex items-center justify-center text-xs text-slate-700">{p.created}</div>
-                </div>
-              ))}
             </div>
           ) : (
             <div className="mt-3 text-xs text-slate-400">No data.</div>
