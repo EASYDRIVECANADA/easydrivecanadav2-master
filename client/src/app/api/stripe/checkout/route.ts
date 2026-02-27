@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server'
 
 export const runtime = 'nodejs'
 
-type Plan = 'small' | 'full'
+type Plan = 'starter' | 'small' | 'full'
 
 export async function POST(req: Request) {
   try {
@@ -12,6 +12,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Missing STRIPE_SECRET_KEY' }, { status: 500 })
     }
 
+    const starterPrice = String(process.env.STRIPE_PRICE_ID_STARTER || '').trim()
     const smallPrice = String(process.env.STRIPE_PRICE_ID_SMALL || '').trim()
     const fullPrice = String(process.env.STRIPE_PRICE_ID_FULL || '').trim()
 
@@ -19,7 +20,7 @@ export async function POST(req: Request) {
     const plan = String(body?.plan || '').toLowerCase() as Plan
     const email = typeof body?.email === 'string' ? body.email.trim() : ''
 
-    const priceId = plan === 'full' ? fullPrice : plan === 'small' ? smallPrice : ''
+    const priceId = plan === 'full' ? fullPrice : plan === 'small' ? smallPrice : plan === 'starter' ? starterPrice : ''
     if (!priceId) {
       return NextResponse.json({ error: 'Missing price id for selected plan' }, { status: 400 })
     }
@@ -40,6 +41,14 @@ export async function POST(req: Request) {
       cancel_url: `${siteUrl}/admin/settings/billing?canceled=1`,
       customer_email: email || undefined,
       allow_promotion_codes: true,
+      metadata: {
+        plan,
+      },
+      subscription_data: {
+        metadata: {
+          plan,
+        },
+      },
     })
 
     return NextResponse.json({ url: session.url })

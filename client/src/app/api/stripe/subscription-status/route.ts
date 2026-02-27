@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server'
 
 export const runtime = 'nodejs'
 
-type Plan = 'small' | 'full'
+type Plan = 'starter' | 'small' | 'full'
 
 type PlanStatus = {
   active: boolean
@@ -17,6 +17,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Missing STRIPE_SECRET_KEY' }, { status: 500 })
     }
 
+    const starterPrice = String(process.env.STRIPE_PRICE_ID_STARTER || '').trim()
     const smallPrice = String(process.env.STRIPE_PRICE_ID_SMALL || '').trim()
     const fullPrice = String(process.env.STRIPE_PRICE_ID_FULL || '').trim()
 
@@ -32,6 +33,7 @@ export async function POST(req: Request) {
     const customer = customers.data?.[0]
     if (!customer?.id) {
       const empty: Record<Plan, PlanStatus> = {
+        starter: { active: false, validUntilIso: null },
         small: { active: false, validUntilIso: null },
         full: { active: false, validUntilIso: null },
       }
@@ -46,6 +48,7 @@ export async function POST(req: Request) {
     })
 
     const plans: Record<Plan, PlanStatus> = {
+      starter: { active: false, validUntilIso: null },
       small: { active: false, validUntilIso: null },
       full: { active: false, validUntilIso: null },
     }
@@ -94,12 +97,13 @@ export async function POST(req: Request) {
           if (!cur || validUntilIso > cur) plans[plan].validUntilIso = validUntilIso
         }
 
+        if (starterPrice && priceId === starterPrice) apply('starter')
         if (smallPrice && priceId === smallPrice) apply('small')
         if (fullPrice && priceId === fullPrice) apply('full')
       }
     }
 
-    const anyActive = plans.small.active || plans.full.active
+    const anyActive = plans.starter.active || plans.small.active || plans.full.active
     return NextResponse.json({ plans, anyActive })
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || 'Failed to read subscription status' }, { status: 500 })
