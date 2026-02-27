@@ -1,0 +1,82 @@
+import Stripe from 'stripe'
+import { NextResponse } from 'next/server'
+
+export const runtime = 'nodejs'
+
+type Plan = 'small' | 'full'
+
+type PlanStatus = {
+  active: boolean
+  validUntilIso: string | null
+}
+
+export async function POST(req: Request) {
+  try {
+    const secretKey = String(process.env.STRIPE_SECRET_KEY || '').trim()
+    if (!secretKey) {
+      return NextResponse.json({ error: 'Missing STRIPE_SECRET_KEY' }, { status: 500 })
+    }
+
+    const smallPrice = String(process.env.STRIPE_PRICE_ID_SMALL || '').trim()
+    const fullPrice = String(process.env.STRIPE_PRICE_ID_FULL || '').trim()
+
+    const { email } = (await req.json().catch(() => ({}))) as { email?: string }
+    const normalizedEmail = String(email || '').trim().toLowerCase()
+    if (!normalizedEmail) {
+      return NextResponse.json({ error: 'Missing email' }, { status: 400 })
+    }
+
+    const stripe = new Stripe(secretKey)
+
+    const customers = await stripe.customers.list({ email: normalizedEmail, limit: 1 })
+    const customer = customers.data?.[0]
+    if (!customer?.id) {
+      const empty: Record<Plan, PlanStatus> = {
+        small: { active: false, validUntilIso: null },
+        full: { active: false, validUntilIso: null },
+      }
+      return NextResponse.json({ plans: empty, anyActive: false })
+    }
+
+    const subs = await stripe.subscriptions.list({
+      customer: customer.id,
+      status: 'all',
+      limit: 100,
+      expand: ['data.items.data.price'],
+    })
+
+    const plans: Record<Plan, PlanStatus> = {
+      small: { active: false, validUntilIso: null },
+      full: { active: false, validUntilIso: null },
+    }
+
+    for (const sub of subs.data || []) {
+      const status = String(sub.status || '').toLowerCase()
+      const isActive = status === 'active' || status === 'trialing'
+      if (!isActive) continue
+
+      const periodEndSec = Number((sub as any)?.current_period_end ?? 0)
+      const validUntilIso = periodEndSec ? new Date(periodEndSec * 1000).toISOString() : null
+
+      for (const item of (sub.items?.data || []) as any[]) {
+        const priceId = String(item?.price?.id || '').trim()
+        if (!priceId) continue
+
+        const apply = (plan: Plan) => {
+          plans[plan].active = true
+          if (!validUntilIso) return
+          const cur = plans[plan].validUntilIso
+          if (!cur || validUntilIso > cur) plans[plan].validUntilIso = validUntilIso
+        }
+
+        if (smallPrice && priceId === smallPrice) apply('small')
+        if (fullPrice && priceId === fullPrice) apply('full')
+      }
+    }
+
+    const anyActive = plans.small.active || plans.full.active
+    return NextResponse.json({ plans, anyActive })
+  } catch (e: any) {
+    return NextResponse.json({ error: e?.message || 'Failed to read subscription status' }, { status: 500 })
+  }
+}

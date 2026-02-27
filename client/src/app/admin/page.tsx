@@ -211,7 +211,11 @@ export default function AdminPage() {
   const [dealsTotal, setDealsTotal] = useState<number | null>(null)
   const [dealsOpen, setDealsOpen] = useState<number | null>(null)
   const [dealsClosed, setDealsClosed] = useState<number | null>(null)
-  const [salesSeries, setSalesSeries] = useState<{ label: string; value: number }[]>([])
+  const [salesSeries, setSalesSeries] = useState<{ iso: string; label: string; value: number }[]>([])
+  const [salesDealsByDate, setSalesDealsByDate] = useState<
+    Record<string, { dealId: string; customer: string; vehicle: string; salesperson: string }[]>
+  >({})
+  const [selectedSalesIso, setSelectedSalesIso] = useState<string>('')
   const [inventoryVehicles, setInventoryVehicles] = useState<
     { id: string; year: string; make: string; model: string; stockNumber: string; createdAtIso: string }[]
   >([])
@@ -418,6 +422,8 @@ export default function AdminPage() {
             setDealsOpen(0)
             setDealsClosed(0)
             setSalesSeries([])
+        setSalesDealsByDate({})
+        setSelectedSalesIso('')
             setInventoryVehicles([])
             return
           }
@@ -491,31 +497,49 @@ export default function AdminPage() {
         salesStart.setHours(0, 0, 0, 0)
 
         const buckets: Record<string, number> = {}
+        const byDate: Record<string, { dealId: string; customer: string; vehicle: string; salesperson: string }[]> = {}
         for (let i = 0; i < 30; i++) {
           const d = new Date(salesStart)
           d.setDate(salesStart.getDate() + i)
           const key = d.toISOString().slice(0, 10)
           buckets[key] = 0
+          byDate[key] = []
         }
 
         for (const deal of closedDeals) {
           const customer = deal?.customer ?? {}
           const worksheet = deal?.worksheet ?? {}
-          const raw = String(customer?.dealdate ?? worksheet?.deal_date ?? deal?.dealDate ?? '').trim()
+          const delivery = deal?.delivery ?? {}
+          const raw = String(worksheet?.close_date ?? deal?.closeDate ?? customer?.dealdate ?? worksheet?.deal_date ?? deal?.dealDate ?? '').trim()
           if (!raw) continue
           const dt = new Date(raw)
           if (isNaN(dt.getTime())) continue
           const key = dt.toISOString().slice(0, 10)
-          if (key in buckets) buckets[key] += 1
+          if (key in buckets) {
+            buckets[key] += 1
+
+            const dealId = String(deal?.dealId ?? '').trim()
+            const custName = String(deal?.primaryCustomer ?? '').trim() || [customer?.firstname, customer?.lastname].filter(Boolean).join(' ')
+            const vehicle = String(deal?.vehicle ?? '').trim()
+            const salesperson = String(delivery?.salesperson ?? deal?.primarySalesperson ?? '').trim()
+            byDate[key].push({
+              dealId,
+              customer: custName || 'N/A',
+              vehicle: vehicle || 'N/A',
+              salesperson: salesperson || 'N/A',
+            })
+          }
         }
 
         const series = Object.entries(buckets)
           .sort((a, b) => a[0].localeCompare(b[0]))
           .map(([iso, value]) => {
             const dt = new Date(`${iso}T00:00:00`)
-            return { label: dt.toLocaleDateString('en-CA', { month: 'short', day: 'numeric' }), value }
+            return { iso, label: dt.toLocaleDateString('en-CA', { month: 'short', day: 'numeric' }), value }
           })
         setSalesSeries(series)
+        setSalesDealsByDate(byDate)
+        setSelectedSalesIso((prev) => (prev && prev in byDate ? prev : ''))
 
       } catch (e: any) {
         setStatsError(e?.message || 'Failed to load analytics')
@@ -675,8 +699,40 @@ export default function AdminPage() {
               </Link>
             </div>
 
-            <div className="mt-5">
-              <BarChart data={salesSeries} loading={statsLoading} />
+            <div className="mt-5 grid grid-cols-1 md:grid-cols-[1fr_280px] gap-4 items-start">
+              <BarChart
+                data={salesSeries}
+                loading={statsLoading}
+                selectedIso={selectedSalesIso}
+                onSelectIso={(iso) => setSelectedSalesIso(iso)}
+              />
+
+              <div className="h-36 rounded-xl bg-slate-50 border border-slate-200/60 p-3 overflow-hidden">
+                {selectedSalesIso ? (
+                  <>
+                    <div className="text-[11px] font-semibold text-slate-700">
+                      {selectedSalesIso}
+                    </div>
+                    <div className="mt-2 h-[92px] overflow-auto pr-1 space-y-2">
+                      {(salesDealsByDate[selectedSalesIso] || []).length ? (
+                        (salesDealsByDate[selectedSalesIso] || []).map((d) => (
+                          <div key={d.dealId || `${d.customer}-${d.vehicle}`} className="text-[11px] text-slate-600">
+                            <div className="font-semibold text-slate-800 truncate">{d.customer}</div>
+                            <div className="truncate">{d.vehicle}</div>
+                            <div className="text-slate-500 truncate">{d.salesperson}</div>
+                          </div>
+                        ))
+                      ) : (
+                        <div className="text-[11px] text-slate-500">No closed deals for this date.</div>
+                      )}
+                    </div>
+                  </>
+                ) : (
+                  <div className="h-full flex items-center justify-center text-xs text-slate-500 text-center px-2">
+                    Click a bar to view the closed deals for that close date.
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 
@@ -714,9 +770,13 @@ export default function AdminPage() {
 function BarChart({
   data,
   loading,
+  selectedIso,
+  onSelectIso,
 }: {
-  data: { label: string; value: number }[]
+  data: { iso: string; label: string; value: number }[]
   loading: boolean
+  selectedIso: string
+  onSelectIso: (iso: string) => void
 }) {
   const max = Math.max(1, ...data.map((d) => d.value))
   const safe = data.slice(-14)
@@ -738,12 +798,19 @@ function BarChart({
       <div className="h-full flex items-end gap-2">
         {safe.map((d) => {
           const hPct = Math.max(4, Math.round((d.value / max) * 100))
+          const isActive = selectedIso && d.iso === selectedIso
           return (
-            <div
-              key={d.label}
-              className="flex-1 rounded-md bg-navy-900/75"
+            <button
+              key={d.iso}
+              type="button"
+              className={
+                isActive
+                  ? 'flex-1 rounded-md bg-navy-900 cursor-pointer ring-2 ring-navy-900/30'
+                  : 'flex-1 rounded-md bg-navy-900/75 cursor-pointer'
+              }
               style={{ height: `${hPct}%` }}
               title={`${d.label}: ${d.value}`}
+              onClick={() => onSelectIso(d.iso)}
             />
           )
         })}

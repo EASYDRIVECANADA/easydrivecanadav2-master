@@ -1,6 +1,7 @@
+
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
 export default function SettingsBillingPage() {
   return (
@@ -10,12 +11,24 @@ export default function SettingsBillingPage() {
 
 type BillingSection = 'Products & Services' | 'Transactions' | 'Payment Methods'
 
+type PlanKey = 'small' | 'full'
+
+type PlanStatus = {
+  active: boolean
+  validUntilIso: string | null
+}
+
 function BillingPage() {
   const [section, setSection] = useState<BillingSection>('Products & Services')
 
   const stripePaymentLink = String(process.env.NEXT_PUBLIC_STRIPE_PAYMENT_LINK || '').trim()
 
   const [buying, setBuying] = useState<string>('')
+
+  const [planStatus, setPlanStatus] = useState<Record<PlanKey, PlanStatus>>({
+    small: { active: false, validUntilIso: null },
+    full: { active: false, validUntilIso: null },
+  })
 
   const products = useMemo(
     () => [
@@ -25,14 +38,81 @@ function BillingPage() {
     []
   )
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+
+    const readEmail = () => {
+      try {
+        const raw = window.localStorage.getItem('edc_admin_session')
+        if (!raw) return ''
+        const parsed = JSON.parse(raw) as { email?: string }
+        return String(parsed?.email || '').trim().toLowerCase()
+      } catch {
+        return ''
+      }
+    }
+
+    const email = readEmail()
+    if (!email) return
+
+    const run = async () => {
+      try {
+        const res = await fetch('/api/stripe/subscription-status', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email }),
+        })
+        const json = await res.json().catch(() => null)
+        const plans = (json?.plans || {}) as any
+        if (!res.ok) return
+
+        const next: Record<PlanKey, PlanStatus> = {
+          small: {
+            active: Boolean(plans?.small?.active),
+            validUntilIso: typeof plans?.small?.validUntilIso === 'string' ? plans.small.validUntilIso : null,
+          },
+          full: {
+            active: Boolean(plans?.full?.active),
+            validUntilIso: typeof plans?.full?.validUntilIso === 'string' ? plans.full.validUntilIso : null,
+          },
+        }
+        setPlanStatus(next)
+      } catch {
+        // ignore
+      }
+    }
+
+    void run()
+  }, [])
+
+  const formatValidUntil = (iso: string | null) => {
+    if (!iso) return 'Active'
+    const d = new Date(iso)
+    if (Number.isNaN(d.getTime())) return 'Active'
+    return `Valid until ${d.toLocaleDateString('en-CA', { year: 'numeric', month: 'short', day: 'numeric' })}`
+  }
+
   const startCheckout = async (plan: string) => {
     if (buying) return
     setBuying(plan)
     try {
+      let email = ''
+      try {
+        if (typeof window !== 'undefined') {
+          const raw = window.localStorage.getItem('edc_admin_session')
+          if (raw) {
+            const parsed = JSON.parse(raw) as { email?: string }
+            email = String(parsed?.email || '').trim().toLowerCase()
+          }
+        }
+      } catch {
+        email = ''
+      }
+
       const res = await fetch('/api/stripe/checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ plan }),
+        body: JSON.stringify({ plan, email }),
       })
 
       const json = await res.json().catch(() => null)
@@ -104,20 +184,26 @@ function BillingPage() {
                     <div className="h-10 flex items-center justify-center text-xs text-slate-700">{p.planName}</div>
                     <div className="h-10 flex items-center justify-center text-xs text-slate-700">{p.amount}</div>
                     <div className="h-10 flex items-center justify-center">
-                      <button
-                        type="button"
-                        disabled={!!buying}
-                        className={
-                          !!buying
-                            ? 'edc-btn-primary h-7 px-4 text-[11px] opacity-60 cursor-not-allowed'
-                            : 'edc-btn-primary h-7 px-4 text-[11px]'
-                        }
-                        onClick={() => {
-                          startCheckout(String((p as any)?.key || 'small'))
-                        }}
-                      >
-                        {buying === String((p as any)?.key || '') ? 'Loading…' : 'BUY'}
-                      </button>
+                      {planStatus[(p as any).key as PlanKey]?.active ? (
+                        <div className="text-[11px] font-semibold text-slate-600">
+                          {formatValidUntil(planStatus[(p as any).key as PlanKey]?.validUntilIso || null)}
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          disabled={!!buying}
+                          className={
+                            !!buying
+                              ? 'edc-btn-primary h-7 px-4 text-[11px] opacity-60 cursor-not-allowed'
+                              : 'edc-btn-primary h-7 px-4 text-[11px]'
+                          }
+                          onClick={() => {
+                            startCheckout(String((p as any)?.key || 'small'))
+                          }}
+                        >
+                          {buying === String((p as any)?.key || '') ? 'Loading…' : 'BUY'}
+                        </button>
+                      )}
                     </div>
                   </div>
                 ))}
