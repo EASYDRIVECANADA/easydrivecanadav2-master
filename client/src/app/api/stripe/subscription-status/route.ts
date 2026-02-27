@@ -55,8 +55,33 @@ export async function POST(req: Request) {
       const isActive = status === 'active' || status === 'trialing'
       if (!isActive) continue
 
-      const periodEndSec = Number((sub as any)?.current_period_end ?? 0)
-      const validUntilIso = periodEndSec ? new Date(periodEndSec * 1000).toISOString() : null
+      const rawCurrentPeriodEnd = Number((sub as any)?.current_period_end ?? 0)
+      const rawTrialEnd = Number((sub as any)?.trial_end ?? 0)
+      const rawCancelAt = Number((sub as any)?.cancel_at ?? 0)
+      const rawCurrentPeriodStart = Number((sub as any)?.current_period_start ?? 0)
+
+      let periodEndSec = Math.max(rawCurrentPeriodEnd, rawTrialEnd, rawCancelAt)
+
+      if (!periodEndSec && rawCurrentPeriodStart) {
+        const firstItem = ((sub.items?.data || []) as any[])[0]
+        const recurring = firstItem?.price?.recurring
+        const interval = String(recurring?.interval || '').toLowerCase()
+        const intervalCount = Number(recurring?.interval_count ?? 1) || 1
+
+        const startMs = rawCurrentPeriodStart * 1000
+        const d = new Date(startMs)
+        if (!Number.isNaN(d.getTime())) {
+          if (interval === 'day') d.setUTCDate(d.getUTCDate() + intervalCount)
+          else if (interval === 'week') d.setUTCDate(d.getUTCDate() + intervalCount * 7)
+          else if (interval === 'month') d.setUTCMonth(d.getUTCMonth() + intervalCount)
+          else if (interval === 'year') d.setUTCFullYear(d.getUTCFullYear() + intervalCount)
+
+          const computedSec = Math.floor(d.getTime() / 1000)
+          if (computedSec > 0) periodEndSec = computedSec
+        }
+      }
+
+      const validUntilIso = periodEndSec > 0 ? new Date(periodEndSec * 1000).toISOString() : null
 
       for (const item of (sub.items?.data || []) as any[]) {
         const priceId = String(item?.price?.id || '').trim()
