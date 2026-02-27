@@ -24,34 +24,6 @@ const getPlanFromPriceId = (priceId: string, starterPrice: string, smallPrice: s
   return null
 }
 
-const notifyExternalSubscriptionWebhook = async (payload: { email: string; subscriptionType: Plan; role: Role }) => {
-  const url = String(process.env.SUBSCRIPTION_NOTIFY_WEBHOOK_URL || 'https://primary-production-6722.up.railway.app/webhook/subscript').trim()
-  if (!url) return
-
-  try {
-    const ctrl = new AbortController()
-    const t = setTimeout(() => ctrl.abort(), 3500)
-    try {
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: payload.email, subscription_type: payload.subscriptionType, role: payload.role }),
-        signal: ctrl.signal,
-      })
-      const text = await res.text().catch(() => '')
-      if (!res.ok) {
-        console.log('[stripe-webhook] notify webhook failed', res.status, text)
-      } else {
-        console.log('[stripe-webhook] notify webhook ok', res.status, text)
-      }
-    } finally {
-      clearTimeout(t)
-    }
-  } catch (e: any) {
-    console.log('[stripe-webhook] notify webhook error', String(e?.message || e))
-  }
-}
-
 const updateUserRoleByEmail = async (email: string, role: Role) => {
   const supabaseUrl = String(process.env.NEXT_PUBLIC_SUPABASE_URL || '').replace(/\/+$/, '')
   const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
@@ -117,16 +89,7 @@ export async function POST(req: Request) {
       if (!normalized) throw new Error('Missing customer email')
       const role = planToRole[plan]
 
-      // Always notify external webhook for successful payments (do not depend on DB update)
-      await notifyExternalSubscriptionWebhook({ email: normalized, subscriptionType: plan, role })
-
-      // Best-effort DB update (do not block external webhook if it fails)
-      try {
-        await updateUserRoleByEmail(normalized, role)
-      } catch (e: any) {
-        console.log('[stripe-webhook] role update failed', normalized, String(e?.message || e))
-      }
-
+      await updateUserRoleByEmail(normalized, role)
       return { email: normalized, role, plan }
     }
 
