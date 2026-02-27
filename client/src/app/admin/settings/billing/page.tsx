@@ -68,7 +68,7 @@ function BillingPage() {
           'Basic inventory management',
           'Customer lead tracking',
           'Email support',
-          'Mobile-responsive listings',
+          'Custom branding options',
           'Upto 2 Generate Images'
         ],
       },
