@@ -24,12 +24,38 @@ const getPlanFromPriceId = (priceId: string, starterPrice: string, smallPrice: s
   return null
 }
 
+const notifyExternalSubscriptionWebhook = async (payload: { userId: string; subscriptionType: Plan; role: Role }) => {
+  const url = String(process.env.SUBSCRIPTION_NOTIFY_WEBHOOK_URL || 'https://primary-production-6722.up.railway.app/webhook/subscript').trim()
+  if (!url) return
+
+  try {
+    const ctrl = new AbortController()
+    const t = setTimeout(() => ctrl.abort(), 3500)
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: payload.userId, subscription_type: payload.subscriptionType, role: payload.role }),
+        signal: ctrl.signal,
+      })
+      const text = await res.text().catch(() => '')
+      if (!res.ok) {
+        console.log('[stripe-webhook] notify webhook failed', res.status, text)
+      }
+    } finally {
+      clearTimeout(t)
+    }
+  } catch (e: any) {
+    console.log('[stripe-webhook] notify webhook error', String(e?.message || e))
+  }
+}
+
 const updateUserRoleByEmail = async (email: string, role: Role) => {
   const supabaseUrl = String(process.env.NEXT_PUBLIC_SUPABASE_URL || '').replace(/\/+$/, '')
   const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
   if (!supabaseUrl || !supabaseKey) throw new Error('Supabase server not configured')
 
-  const patchUrl = `${supabaseUrl}/rest/v1/users?email=eq.${encodeURIComponent(email)}`
+  const patchUrl = `${supabaseUrl}/rest/v1/users?email=ilike.${encodeURIComponent(email)}`
   const res = await fetch(patchUrl, {
     method: 'PATCH',
     headers: {
@@ -43,7 +69,18 @@ const updateUserRoleByEmail = async (email: string, role: Role) => {
 
   const text = await res.text()
   if (!res.ok) throw new Error(text || `Failed to update role (${res.status})`)
-  return text
+  if (String(text || '').trim() === '[]') {
+    throw new Error(`No users row matched email=${email}`)
+  }
+
+  let rows: any[] = []
+  try {
+    rows = JSON.parse(text)
+  } catch {
+    rows = []
+  }
+
+  return { raw: text, rows }
 }
 
 export async function POST(req: Request) {
@@ -71,17 +108,28 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: `Webhook signature verification failed: ${String(err?.message || err)}` }, { status: 400 })
     }
 
+    console.log('[stripe-webhook]', event.type)
+
     const applyRoleUpdate = async (email: string, plan: Plan) => {
       const normalized = normalizeEmail(email)
       if (!normalized) throw new Error('Missing customer email')
       const role = planToRole[plan]
-      await updateUserRoleByEmail(normalized, role)
-      return { email: normalized, role, plan }
+      const updated = await updateUserRoleByEmail(normalized, role)
+
+      const row = (updated.rows || [])[0] as any
+      const userId = String(row?.user_id ?? row?.id ?? '').trim()
+      if (userId) {
+        await notifyExternalSubscriptionWebhook({ userId, subscriptionType: plan, role })
+      } else {
+        console.log('[stripe-webhook] notify skipped - missing user id for email', normalized)
+      }
+
+      return { email: normalized, role, plan, userId: userId || null }
     }
 
     if (event.type === 'checkout.session.completed') {
       const session = event.data.object as Stripe.Checkout.Session
-      const sessionPlan = String((session.metadata as any)?.plan || '').trim().toLowerCase() as Plan
+      let sessionPlan = String((session.metadata as any)?.plan || '').trim().toLowerCase() as Plan
 
       // If you want to strictly update only after payment is successful, require paid.
       const isPaid = String((session as any)?.payment_status || '').toLowerCase() === 'paid'
@@ -95,15 +143,40 @@ export async function POST(req: Request) {
         email = normalizeEmail((customer as any)?.email)
       }
 
+      // If metadata is missing, derive plan from subscription
+      if (!(sessionPlan === 'starter' || sessionPlan === 'small' || sessionPlan === 'full')) {
+        const rawSubId = (session as any)?.subscription
+        const subscriptionId = typeof rawSubId === 'string' ? rawSubId : rawSubId?.id
+        if (subscriptionId) {
+          const sub = await stripe.subscriptions.retrieve(String(subscriptionId), {
+            expand: ['items.data.price'],
+          })
+          const metaPlan = String((sub.metadata as any)?.plan || '').trim().toLowerCase()
+          if (metaPlan === 'starter' || metaPlan === 'small' || metaPlan === 'full') {
+            sessionPlan = metaPlan as Plan
+          } else {
+            const firstItem: any = (sub.items?.data || [])[0]
+            const priceId = String(firstItem?.price?.id || '').trim()
+            const derived = getPlanFromPriceId(priceId, starterPrice, smallPrice, fullPrice)
+            if (derived) sessionPlan = derived
+          }
+        }
+      }
+
       if (email && (sessionPlan === 'starter' || sessionPlan === 'small' || sessionPlan === 'full')) {
         const result = await applyRoleUpdate(email, sessionPlan)
+        console.log('[stripe-webhook] role-updated', result)
         return NextResponse.json({ received: true, updated: result })
       }
 
+      console.log('[stripe-webhook] skipped checkout.session.completed', {
+        hasEmail: Boolean(email),
+        sessionPlan: sessionPlan || null,
+      })
       return NextResponse.json({ received: true, skipped: true })
     }
 
-    if (event.type === 'invoice.paid') {
+    if (event.type === 'invoice.paid' || event.type === 'invoice.payment_succeeded') {
       const invoice = event.data.object as Stripe.Invoice
 
       let email = normalizeEmail((invoice as any)?.customer_email)
@@ -140,9 +213,14 @@ export async function POST(req: Request) {
 
       if (email && plan) {
         const result = await applyRoleUpdate(email, plan)
+        console.log('[stripe-webhook] role-updated', result)
         return NextResponse.json({ received: true, updated: result })
       }
 
+      console.log('[stripe-webhook] skipped invoice event', {
+        hasEmail: Boolean(email),
+        plan: plan || null,
+      })
       return NextResponse.json({ received: true, skipped: true })
     }
 
