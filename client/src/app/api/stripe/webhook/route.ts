@@ -24,7 +24,7 @@ const getPlanFromPriceId = (priceId: string, starterPrice: string, smallPrice: s
   return null
 }
 
-const notifyExternalSubscriptionWebhook = async (payload: { userId: string; subscriptionType: Plan; role: Role }) => {
+const notifyExternalSubscriptionWebhook = async (payload: { email: string; subscriptionType: Plan; role: Role }) => {
   const url = String(process.env.SUBSCRIPTION_NOTIFY_WEBHOOK_URL || 'https://primary-production-6722.up.railway.app/webhook/subscript').trim()
   if (!url) return
 
@@ -35,12 +35,14 @@ const notifyExternalSubscriptionWebhook = async (payload: { userId: string; subs
       const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ user_id: payload.userId, subscription_type: payload.subscriptionType, role: payload.role }),
+        body: JSON.stringify({ email: payload.email, subscription_type: payload.subscriptionType, role: payload.role }),
         signal: ctrl.signal,
       })
       const text = await res.text().catch(() => '')
       if (!res.ok) {
         console.log('[stripe-webhook] notify webhook failed', res.status, text)
+      } else {
+        console.log('[stripe-webhook] notify webhook ok', res.status, text)
       }
     } finally {
       clearTimeout(t)
@@ -114,17 +116,18 @@ export async function POST(req: Request) {
       const normalized = normalizeEmail(email)
       if (!normalized) throw new Error('Missing customer email')
       const role = planToRole[plan]
-      const updated = await updateUserRoleByEmail(normalized, role)
 
-      const row = (updated.rows || [])[0] as any
-      const userId = String(row?.user_id ?? row?.id ?? '').trim()
-      if (userId) {
-        await notifyExternalSubscriptionWebhook({ userId, subscriptionType: plan, role })
-      } else {
-        console.log('[stripe-webhook] notify skipped - missing user id for email', normalized)
+      // Always notify external webhook for successful payments (do not depend on DB update)
+      await notifyExternalSubscriptionWebhook({ email: normalized, subscriptionType: plan, role })
+
+      // Best-effort DB update (do not block external webhook if it fails)
+      try {
+        await updateUserRoleByEmail(normalized, role)
+      } catch (e: any) {
+        console.log('[stripe-webhook] role update failed', normalized, String(e?.message || e))
       }
 
-      return { email: normalized, role, plan, userId: userId || null }
+      return { email: normalized, role, plan }
     }
 
     if (event.type === 'checkout.session.completed') {
