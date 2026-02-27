@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabaseClient'
@@ -84,6 +84,8 @@ export default function AdminInventoryPage() {
   const [canAddVehicle, setCanAddVehicle] = useState(true)
   const [addGateLoading, setAddGateLoading] = useState(false)
   const [addGateReason, setAddGateReason] = useState('')
+  const [importing, setImporting] = useState(false)
+  const importInputRef = useRef<HTMLInputElement | null>(null)
   const [addFormData, setAddFormData] = useState({
     make: '',
     model: '',
@@ -955,21 +957,83 @@ export default function AdminInventoryPage() {
     })
   }
 
+  const handleImportClick = () => {
+    if (importing) return
+    importInputRef.current?.click()
+  }
+
+  const handleImportSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    // allow selecting same file again
+    e.target.value = ''
+    if (!file) return
+
+    setImporting(true)
+    try {
+      let email = ''
+      try {
+        const raw = typeof window !== 'undefined' ? window.localStorage.getItem('edc_admin_session') : null
+        const parsed = raw ? (JSON.parse(raw) as any) : null
+        email = String(parsed?.email || '').trim().toLowerCase()
+      } catch {
+        email = ''
+      }
+
+      const form = new FormData()
+      form.set('file', file)
+      if (email) form.set('email', email)
+
+      const res = await fetch('/api/import', {
+        method: 'POST',
+        body: form,
+      })
+      const json = await res.json().catch(() => null)
+
+      if (!res.ok) {
+        const msg = String(json?.error || 'Import failed')
+        const details = String(json?.details || '')
+        throw new Error(details ? `${msg}: ${details}` : msg)
+      }
+
+      openAlert('Import successful', 'Done')
+    } catch (err: any) {
+      openAlert('Import failed', String(err?.message || 'Failed to upload file'))
+    } finally {
+      setImporting(false)
+    }
+  }
+
   return (
     <div className="min-h-screen">
       {/* Header */}
       <div className="edc-page-header">
         <div className="flex justify-between items-center">
           <h1 className="text-2xl font-bold text-slate-900">Inventory Management</h1>
-          <button
-            type="button"
-            onClick={handleOpenAddModal}
-            disabled={!canAddVehicle || addGateLoading}
-            title={!canAddVehicle ? (addGateReason || 'Upgrade your account to add more vehicles.') : undefined}
-            className={`edc-btn-primary text-sm ${!canAddVehicle || addGateLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
-          >
-            + Add Vehicle
-          </button>
+          <div className="flex items-center gap-2">
+            <input
+              ref={importInputRef}
+              type="file"
+              className="hidden"
+              onChange={handleImportSelected}
+            />
+            <button
+              type="button"
+              onClick={handleImportClick}
+              disabled={importing}
+              className={`edc-btn-ghost text-sm ${importing ? 'opacity-50 cursor-not-allowed' : ''}`}
+            >
+              {importing ? 'Importing…' : 'Import File'}
+            </button>
+            <button
+              type="button"
+              onClick={handleOpenAddModal}
+              disabled={!canAddVehicle || addGateLoading}
+              title={!canAddVehicle ? (addGateReason || 'Upgrade your account to add more vehicles.') : undefined}
+              className={`edc-btn-primary text-sm ${!canAddVehicle || addGateLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
+            >
+              + Add Vehicle
+            </button>
+          </div>
         </div>
       </div>
 
@@ -1544,9 +1608,14 @@ export default function AdminInventoryPage() {
       </div>
 
       {modalOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center">
-          <div className="edc-overlay absolute inset-0" onClick={closeModal}></div>
-          <div className="edc-modal relative w-[92vw] max-w-md">
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center">
+          <button
+            type="button"
+            aria-label="Close"
+            className="edc-overlay z-[9998]"
+            onClick={closeModal}
+          />
+          <div className="edc-modal relative z-[9999] w-[92vw] max-w-md pointer-events-auto">
             <div className="px-5 py-4 border-b border-slate-100">
               <h3 className="text-base font-semibold text-slate-900">{modalTitle}</h3>
             </div>

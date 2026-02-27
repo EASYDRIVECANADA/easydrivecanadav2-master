@@ -18,13 +18,31 @@ export async function POST(req: Request) {
 
     const stripe = new Stripe(secretKey)
 
-    // Find customer by email
-    const customers = await stripe.customers.list({ email: normalizedEmail, limit: 1 })
-    const customer = customers.data?.[0]
-    
-    if (!customer?.id) {
+    // Find customer by email (there can be multiple)
+    const customers = await stripe.customers.list({ email: normalizedEmail, limit: 10 })
+    const candidates = customers.data || []
+    if (candidates.length === 0) {
       return NextResponse.json({ paymentMethods: [] })
     }
+
+    let customer: Stripe.Customer | null = null
+    for (const c of candidates) {
+      const defaultPmId = typeof c.invoice_settings?.default_payment_method === 'string'
+        ? c.invoice_settings.default_payment_method
+        : (c.invoice_settings?.default_payment_method as any)?.id || null
+      if (defaultPmId) {
+        customer = c
+        break
+      }
+
+      const probe = await stripe.paymentMethods.list({ customer: c.id, type: 'card', limit: 1 })
+      if (probe.data.length > 0) {
+        customer = c
+        break
+      }
+    }
+
+    if (!customer) customer = candidates[0] as Stripe.Customer
 
     // Fetch payment methods for this customer
     const paymentMethods = await stripe.paymentMethods.list({
