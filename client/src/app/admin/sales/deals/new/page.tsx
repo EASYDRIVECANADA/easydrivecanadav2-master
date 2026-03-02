@@ -389,7 +389,7 @@ function SalesNewDealPageContent() {
       const deposit = Number(w.deposit ?? 0)
       const downPayment = Number(w.down_payment ?? 0)
       const taxInsurance = Number(w.tax_on_insurance ?? 0)
-      const totalDue = subtotal2 - deposit - downPayment + taxInsurance
+      const totalDue = subtotal2 - deposit - downPayment - paymentsTotal + taxInsurance
 
       const fullName = [c.firstname, c.lastname].filter(Boolean).join(' ') || [c.first_name, c.last_name].filter(Boolean).join(' ') || ''
 
@@ -576,7 +576,7 @@ function SalesNewDealPageContent() {
       const deposit = Number(w.deposit ?? 0)
       const downPayment = Number(w.down_payment ?? 0)
       const taxInsurance = Number(w.tax_on_insurance ?? 0)
-      const totalDue = subtotal2 - deposit - downPayment + taxInsurance
+      const totalDue = subtotal2 - deposit - downPayment - paymentsTotal + taxInsurance
 
       const fullName = [c.firstname, c.lastname].filter(Boolean).join(' ') || [c.first_name, c.last_name].filter(Boolean).join(' ') || ''
 

@@ -388,9 +388,9 @@ export function renderBillOfSalePdf(
     ['Total Tax', fmtMoneyNoSign(data.totalTax)],
     ...(hasVal(data.licenseFee) ? [['License Fee', fmtMoneyNoSign(data.licenseFee)] as [string, string]] : []),
     ['Subtotal', fmtMoneyNoSign(data.subtotal2)],
-    ...(hasVal(data.deposit) ? [['Deposit(s)', fmtMoneyNoSign(data.deposit)] as [string, string]] : []),
-    ...(hasVal(data.downPayment) ? [['Down Payment (Payable on Delivery)', fmtMoneyNoSign(data.downPayment)] as [string, string]] : []),
-    ...(hasVal(data.paymentsTotal) ? [['Payments', fmtMoneyNoSign(data.paymentsTotal)] as [string, string]] : []),
+    ...(hasVal(data.deposit) ? [['Deposit(s)', '-' + fmtMoneyNoSign(data.deposit)] as [string, string]] : []),
+    ...(hasVal(data.downPayment) ? [['Down Payment (Payable on Delivery)', '-' + fmtMoneyNoSign(data.downPayment)] as [string, string]] : []),
+    ...(hasVal(data.paymentsTotal) ? [['Payments', '-' + fmtMoneyNoSign(data.paymentsTotal)] as [string, string]] : []),
     ...(hasVal(data.taxOnInsurance) ? [['Tax on Insurance', fmtMoneyNoSign(data.taxOnInsurance)] as [string, string]] : []),
   ]
 
@@ -401,16 +401,18 @@ export function renderBillOfSalePdf(
     doc.setTextColor(DARK)
     doc.text(label, stLabelEnd, stY + 11, { align: 'right' })
 
+    // Value (right-aligned to value column)
+    doc.setFont('helvetica', 'bold')
+    const displayValue = value.startsWith('-') ? '-$' + value.substring(1) : '$' + value
+
     // Dotted separator
     doc.setDrawColor(GRAY_LINE)
     doc.setLineWidth(0.3)
     doc.setLineDashPattern([1, 1], 0)
-    doc.line(stLabelEnd + 2, stY + 13, stValueEnd - doc.getTextWidth('$' + value) - 4, stY + 13)
+    doc.line(stLabelEnd + 2, stY + 13, stValueEnd - doc.getTextWidth(displayValue) - 4, stY + 13)
     doc.setLineDashPattern([], 0)
 
-    // Value (right-aligned to value column)
-    doc.setFont('helvetica', 'bold')
-    doc.text('$' + value, stValueEnd, stY + 11, { align: 'right' })
+    doc.text(displayValue, stValueEnd, stY + 11, { align: 'right' })
 
     stY += 14
   }
