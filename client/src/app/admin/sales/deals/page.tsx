@@ -544,8 +544,8 @@ export default function DealsPage() {
       {/* Delete confirmation modal */}
       {deleteTarget && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
-          <div className="edc-overlay absolute inset-0" onClick={() => !deleting && setDeleteTarget(null)} />
-          <div className="edc-modal relative w-full max-w-sm mx-4 p-6">
+          <div className="edc-overlay absolute inset-0 z-0" onClick={() => !deleting && setDeleteTarget(null)} />
+          <div className="edc-modal relative z-10 w-full max-w-sm mx-4 p-6">
               <div className="text-base font-semibold text-slate-900">Delete Deal</div>
               <div className="text-sm text-slate-500 mt-1">Are you sure you want to delete this deal?</div>
               <div className="mt-5 flex items-center justify-end gap-2">
