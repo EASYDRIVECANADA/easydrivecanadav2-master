@@ -63,7 +63,7 @@ export default function WorksheetTab({
   const [financeCommission, setFinanceCommission] = useState(d.finance_commission ?? '')
   const [commissionOpen, setCommissionOpen] = useState(false)
   const [feeSearch, setFeeSearch] = useState('')
-  const [fees, setFees] = useState<Array<{ id: string; name: string; desc?: string; amount: number; cost?: number }>>(() => {
+  const [fees, setFees] = useState<Array<{ id: string; name: string; desc?: string; amount: number; cost?: number; taxSelected?: Record<string, boolean>; taxOverride?: boolean; taxValues?: Record<string, string> }>>(() => {
     if (Array.isArray(d.fees))
       return d.fees.map((f: any) => ({
         id: f.id || `fee_${Date.now()}`,
@@ -71,6 +71,9 @@ export default function WorksheetTab({
         desc: f.desc || '',
         amount: Number(f.amount) || 0,
         cost: Number(f.cost) || 0,
+        taxSelected: f.taxSelected || { 'Default Tax 0 %': true },
+        taxOverride: f.taxOverride || false,
+        taxValues: f.taxValues || {},
       }))
     return []
   })
@@ -103,7 +106,7 @@ export default function WorksheetTab({
   const [editingPaymentId, setEditingPaymentId] = useState<string | null>(null)
   const [editingPaymentDraft, setEditingPaymentDraft] = useState<{ amount: string; type: string; desc: string } | null>(null)
   const [accessorySearch, setAccessorySearch] = useState('')
-  const [accessories, setAccessories] = useState<Array<{ id: string; name: string; desc?: string; price: number; cost?: number; vehicleType?: string }>>(() => {
+  const [accessories, setAccessories] = useState<Array<{ id: string; name: string; desc?: string; price: number; cost?: number; vehicleType?: string; taxSelected?: Record<string, boolean>; taxOverride?: boolean; taxValues?: Record<string, string> }>>(() => {
     if (Array.isArray(d.accessories))
       return d.accessories.map((a: any) => ({
         id: a.id || `acc_${Date.now()}`,
@@ -112,6 +115,9 @@ export default function WorksheetTab({
         price: Number(a.price) || 0,
         cost: Number(a.cost) || 0,
         vehicleType: a.vehicleType || a.vehicle_type || '',
+        taxSelected: a.taxSelected || { 'HST 13 %': true },
+        taxOverride: a.taxOverride || false,
+        taxValues: a.taxValues || {},
       }))
     return []
   })
@@ -129,7 +135,7 @@ export default function WorksheetTab({
   const accDetailsItem = useMemo(() => accessories.find((x) => x.id === accDetailsForId) || null, [accessories, accDetailsForId])
   const [warrantySearch, setWarrantySearch] = useState('')
   const [warranties, setWarranties] = useState<
-    Array<{ id: string; name: string; desc?: string; amount: number; cost?: number; duration?: string; distance?: string; isDealerGuaranty?: boolean }>
+    Array<{ id: string; name: string; desc?: string; amount: number; cost?: number; duration?: string; distance?: string; isDealerGuaranty?: boolean; taxSelected?: Record<string, boolean>; taxOverride?: boolean; taxValues?: Record<string, string> }>
   >(() => {
     if (Array.isArray(d.warranties))
       return d.warranties.map((w: any) => ({
@@ -141,6 +147,9 @@ export default function WorksheetTab({
         duration: w.duration || '',
         distance: w.distance || '',
         isDealerGuaranty: w.isDealerGuaranty === true || w.is_dealer_guaranty === true,
+        taxSelected: w.taxSelected || { 'HST 13 %': true },
+        taxOverride: w.taxOverride || false,
+        taxValues: w.taxValues || {},
       }))
     return []
   })
@@ -161,7 +170,7 @@ export default function WorksheetTab({
   const warDetailsItem = useMemo(() => warranties.find((x) => x.id === warDetailsForId) || null, [warranties, warDetailsForId])
   const [insuranceSearch, setInsuranceSearch] = useState('')
   const [insurances, setInsurances] = useState<
-    Array<{ id: string; name: string; desc?: string; amount: number; cost?: number; deductible?: string; duration?: string; type?: string }>
+    Array<{ id: string; name: string; desc?: string; amount: number; cost?: number; deductible?: string; duration?: string; type?: string; taxSelected?: Record<string, boolean>; taxOverride?: boolean; taxValues?: Record<string, string> }>
   >(() => {
     if (Array.isArray(d.insurances))
       return d.insurances.map((i: any) => ({
@@ -173,6 +182,9 @@ export default function WorksheetTab({
         deductible: String(i.deductible ?? i.insurance_deductible ?? '0'),
         duration: String(i.duration ?? i.insurance_duration ?? ''),
         type: String(i.type ?? i.insurance_type ?? ''),
+        taxSelected: i.taxSelected || { 'HST 13 %': true },
+        taxOverride: i.taxOverride || false,
+        taxValues: i.taxValues || {},
       }))
     return []
   })
@@ -197,6 +209,18 @@ export default function WorksheetTab({
   const insDetailsItem = useMemo(() => insurances.find((x) => x.id === insDetailsForId) || null, [insurances, insDetailsForId])
 
   const closeAllDetails = () => {
+    if (feeDetailsOpen && feeDetailsForId) {
+      setFees((prev) => prev.map((x) => (x.id === feeDetailsForId ? { ...x, taxSelected: feeTaxSelected, taxOverride: feeTaxOverride, taxValues: feeTaxValues } : x)))
+    }
+    if (accDetailsOpen && accDetailsForId) {
+      setAccessories((prev) => prev.map((x) => (x.id === accDetailsForId ? { ...x, taxSelected: accTaxSelected, taxOverride: accTaxOverride, taxValues: accTaxValues } : x)))
+    }
+    if (warDetailsOpen && warDetailsForId) {
+      setWarranties((prev) => prev.map((x) => (x.id === warDetailsForId ? { ...x, taxSelected: warTaxSelected, taxOverride: warTaxOverride, taxValues: warTaxValues } : x)))
+    }
+    if (insDetailsOpen && insDetailsForId) {
+      setInsurances((prev) => prev.map((x) => (x.id === insDetailsForId ? { ...x, taxSelected: insTaxSelected, taxOverride: insTaxOverride, taxValues: insTaxValues } : x)))
+    }
     setFeeDetailsOpen(false)
     setAccDetailsOpen(false)
     setWarDetailsOpen(false)
@@ -205,6 +229,12 @@ export default function WorksheetTab({
 
   const openFeeDetails = (id: string) => {
     closeAllDetails()
+    const item = fees.find((x) => x.id === id)
+    if (item) {
+      setFeeTaxSelected(item.taxSelected || { 'Default Tax 0 %': true })
+      setFeeTaxOverride(item.taxOverride || false)
+      setFeeTaxValues(item.taxValues || {})
+    }
     setFeeDetailsForId(id)
     setFeeDetailsOpen(true)
   }
@@ -213,6 +243,11 @@ export default function WorksheetTab({
     closeAllDetails()
     const item = accessories.find((x) => x.id === id)
     setAccVehicleType(String((item as any)?.vehicleType ?? ''))
+    if (item) {
+      setAccTaxSelected(item.taxSelected || { 'HST 13 %': true })
+      setAccTaxOverride(item.taxOverride || false)
+      setAccTaxValues(item.taxValues || {})
+    }
     setAccDetailsForId(id)
     setAccDetailsOpen(true)
   }
@@ -224,6 +259,11 @@ export default function WorksheetTab({
     setWarDuration(String((item as any)?.duration ?? ''))
     setWarDistance(String((item as any)?.distance ?? ''))
     setWarDealerGuaranty(Boolean((item as any)?.isDealerGuaranty ?? false))
+    if (item) {
+      setWarTaxSelected(item.taxSelected || { 'HST 13 %': true })
+      setWarTaxOverride(item.taxOverride || false)
+      setWarTaxValues(item.taxValues || {})
+    }
     setWarDetailsForId(id)
     setWarDetailsOpen(true)
   }
@@ -235,6 +275,11 @@ export default function WorksheetTab({
     setInsDeductible(String((item as any)?.deductible ?? '0'))
     setInsDuration(String((item as any)?.duration ?? ''))
     setInsType(String((item as any)?.type ?? ''))
+    if (item) {
+      setInsTaxSelected(item.taxSelected || { 'HST 13 %': true })
+      setInsTaxOverride(item.taxOverride || false)
+      setInsTaxValues(item.taxValues || {})
+    }
     setInsDetailsForId(id)
     setInsDetailsOpen(true)
   }
@@ -475,19 +520,8 @@ export default function WorksheetTab({
     return Math.max(0, parseMoney(purchasePrice) - parseMoney(discount))
   }, [purchasePrice, discount])
 
-  const netDifference = useMemo(() => Math.max(0, subtotal - parseMoney(tradeValue)), [subtotal, tradeValue])
-
   const tradeEquity = useMemo(() => parseMoney(actualCashValue) - parseMoney(tradeValue), [actualCashValue, tradeValue])
 
-  const computedTax = useMemo(() => netDifference * (taxRate / 100), [netDifference, taxRate])
-  const totalTax = taxOverride ? parseMoney(taxManual) : computedTax
-
-  const totalBalanceDue = useMemo(
-    () => netDifference + totalTax + parseMoney(licenseFee) + parseMoney(lienPayout) - tradeEquity,
-    [netDifference, totalTax, licenseFee, lienPayout, tradeEquity]
-  )
-
-  const financedAmount = useMemo(() => totalBalanceDue, [totalBalanceDue])
   const periodsPerYear = useMemo(() => {
     switch (paymentType) {
       case 'Weekly':
@@ -501,25 +535,20 @@ export default function WorksheetTab({
         return 12
     }
   }, [paymentType])
-  const financeCalc = useMemo(() => {
-    const P = financedAmount || 0
-    const termMonths = parseMoney(financeTermMonths)
-    const n = Math.max(1, Math.round((termMonths / 12) * periodsPerYear))
-    const apr = parseMoney(financeRate) / 100
-    const r = apr / periodsPerYear
-    if (n <= 0) return { payment: 0, interest: 0 }
-    let pmnt = 0
-    if (r > 0) {
-      pmnt = P * (r / (1 - Math.pow(1 + r, -n)))
-    } else {
-      pmnt = P / n
+
+  const computeItemTax = (amount: number, taxSelected: Record<string, boolean>, taxOverride: boolean, taxValues: Record<string, string>) => {
+    if (taxOverride) {
+      return Object.keys(taxSelected)
+        .filter((k) => taxSelected[k])
+        .reduce((sum, k) => sum + parseMoney(taxValues[k] || '0'), 0)
     }
-    const totalPaid = pmnt * n
-    const interest = Math.max(0, totalPaid - P)
-    return { payment: pmnt, interest }
-  }, [financedAmount, financeTermMonths, periodsPerYear, financeRate])
+    return Object.keys(taxSelected)
+      .filter((k) => taxSelected[k])
+      .reduce((sum, k) => sum + amount * getFeeTaxRate(k), 0)
+  }
 
   const feesTotal = useMemo(() => fees.reduce((s, f) => s + (Number(f.amount) || 0), 0), [fees])
+  const feesTaxTotal = useMemo(() => fees.reduce((s, f) => s + computeItemTax(Number(f.amount) || 0, f.taxSelected || {}, f.taxOverride || false, f.taxValues || {}), 0), [fees])
   const paymentsTotal = useMemo(() => payments.reduce((s, p) => s + (Number(p.amount) || 0), 0), [payments])
   const filteredFees = useMemo(
     () =>
@@ -554,8 +583,48 @@ export default function WorksheetTab({
     setEditingDraft(null)
   }
   const accessoriesTotal = useMemo(() => accessories.reduce((s, a) => s + (Number(a.price) || 0), 0), [accessories])
+  const accessoriesTaxTotal = useMemo(() => accessories.reduce((s, a) => s + computeItemTax(Number(a.price) || 0, a.taxSelected || {}, a.taxOverride || false, a.taxValues || {}), 0), [accessories])
   const warrantiesTotal = useMemo(() => warranties.reduce((s, w) => s + (Number(w.amount) || 0), 0), [warranties])
+  const warrantiesTaxTotal = useMemo(() => warranties.reduce((s, w) => s + computeItemTax(Number(w.amount) || 0, w.taxSelected || {}, w.taxOverride || false, w.taxValues || {}), 0), [warranties])
   const insurancesTotal = useMemo(() => insurances.reduce((s, i) => s + (Number(i.amount) || 0), 0), [insurances])
+  const insurancesTaxTotal = useMemo(() => insurances.reduce((s, i) => s + computeItemTax(Number(i.amount) || 0, i.taxSelected || {}, i.taxOverride || false, i.taxValues || {}), 0), [insurances])
+  
+  const netDifference = useMemo(() => {
+    // Net Difference includes fees in the taxable base (before HST calculation)
+    const baseAmount = subtotal - parseMoney(tradeValue) + feesTotal + accessoriesTotal + warrantiesTotal + insurancesTotal
+    return Math.max(0, baseAmount)
+  }, [subtotal, tradeValue, feesTotal, accessoriesTotal, warrantiesTotal, insurancesTotal])
+
+  const computedTax = useMemo(() => netDifference * (taxRate / 100), [netDifference, taxRate])
+  const totalTax = taxOverride ? parseMoney(taxManual) : computedTax
+
+  const totalBalanceDue = useMemo(() => {
+    const licenseAmount = licenseFee && licenseFee.trim() ? parseMoney(licenseFee) : 0
+    // Total = Net Difference (includes fees) + HST + License Fee + Lien - Trade Equity
+    // Fees are already in netDifference and taxed as part of vehicle HST, so don't add separate item taxes
+    return netDifference + totalTax + licenseAmount + parseMoney(lienPayout) - tradeEquity
+  }, [netDifference, totalTax, licenseFee, lienPayout, tradeEquity])
+
+  const financedAmount = useMemo(() => totalBalanceDue, [totalBalanceDue])
+
+  const financeCalc = useMemo(() => {
+    const P = financedAmount || 0
+    const termMonths = parseMoney(financeTermMonths)
+    const n = Math.max(1, Math.round((termMonths / 12) * periodsPerYear))
+    const apr = parseMoney(financeRate) / 100
+    const r = apr / periodsPerYear
+    if (n <= 0) return { payment: 0, interest: 0 }
+    let pmnt = 0
+    if (r > 0) {
+      pmnt = P * (r / (1 - Math.pow(1 + r, -n)))
+    } else {
+      pmnt = P / n
+    }
+    const totalPaid = pmnt * n
+    const interest = Math.max(0, totalPaid - P)
+    return { payment: pmnt, interest }
+  }, [financedAmount, financeTermMonths, periodsPerYear, financeRate])
+
   const filteredAccessories = useMemo(
     () =>
       accessories.filter((a) =>
@@ -673,6 +742,10 @@ export default function WorksheetTab({
         desc: norm(f.desc),
         cost: norm(String((f as any).cost ?? 0)),
         amount: norm(String(f.amount ?? 0)),
+        taxSelected: f.taxSelected || {},
+        taxOverride: f.taxOverride || false,
+        taxValues: f.taxValues || {},
+        taxAmount: norm(String(computeItemTax(Number(f.amount) || 0, f.taxSelected || {}, f.taxOverride || false, f.taxValues || {}))),
       })),
       accessories: (accessories || []).map((a) => ({
         id: norm(a.id),
@@ -681,6 +754,10 @@ export default function WorksheetTab({
         cost: norm(String((a as any).cost ?? 0)),
         vehicleType: norm(String((a as any).vehicleType ?? '')),
         price: norm(String(a.price ?? 0)),
+        taxSelected: a.taxSelected || {},
+        taxOverride: a.taxOverride || false,
+        taxValues: a.taxValues || {},
+        taxAmount: norm(String(computeItemTax(Number(a.price) || 0, a.taxSelected || {}, a.taxOverride || false, a.taxValues || {}))),
       })),
       warranties: (warranties || []).map((w) => ({
         id: norm(w.id),
@@ -691,6 +768,10 @@ export default function WorksheetTab({
         distance: norm(String((w as any).distance ?? '')),
         isDealerGuaranty: norm((w as any).isDealerGuaranty ?? false),
         amount: norm(String(w.amount ?? 0)),
+        taxSelected: w.taxSelected || {},
+        taxOverride: w.taxOverride || false,
+        taxValues: w.taxValues || {},
+        taxAmount: norm(String(computeItemTax(Number(w.amount) || 0, w.taxSelected || {}, w.taxOverride || false, w.taxValues || {}))),
       })),
       insurances: (insurances || []).map((i) => ({
         id: norm(i.id),
@@ -701,6 +782,10 @@ export default function WorksheetTab({
         duration: norm(String((i as any).duration ?? '')),
         type: norm(String((i as any).type ?? '')),
         amount: norm(String(i.amount ?? 0)),
+        taxSelected: i.taxSelected || {},
+        taxOverride: i.taxOverride || false,
+        taxValues: i.taxValues || {},
+        taxAmount: norm(String(computeItemTax(Number(i.amount) || 0, i.taxSelected || {}, i.taxOverride || false, i.taxValues || {}))),
       })),
       payments: (payments || []).map((p) => ({ id: norm(p.id), amount: norm(String(p.amount ?? 0)), type: norm(p.type), desc: norm(p.desc), category: norm(p.category) })),
 
@@ -709,13 +794,15 @@ export default function WorksheetTab({
           return {
             key: 'fees',
             label: 'Fees',
-            total: norm(String(feesTotal ?? 0)),
+            total: norm(String(feesTotal + feesTaxTotal)),
+            taxTotal: norm(String(feesTaxTotal)),
             rows: (fees || []).map((f) => ({
               id: norm(f.id),
               name: norm(f.name),
               desc: norm(f.desc),
               cost: norm(String((f as any).cost ?? 0)),
               amount: norm(String(f.amount ?? 0)),
+              taxAmount: norm(String(computeItemTax(Number(f.amount) || 0, f.taxSelected || {}, f.taxOverride || false, f.taxValues || {}))),
             })),
           }
         }
@@ -723,7 +810,8 @@ export default function WorksheetTab({
           return {
             key: 'accessories',
             label: 'Accessories',
-            total: norm(String(accessoriesTotal ?? 0)),
+            total: norm(String(accessoriesTotal + accessoriesTaxTotal)),
+            taxTotal: norm(String(accessoriesTaxTotal)),
             rows: (accessories || []).map((a) => ({
               id: norm(a.id),
               name: norm(a.name),
@@ -731,6 +819,7 @@ export default function WorksheetTab({
               cost: norm(String((a as any).cost ?? 0)),
               vehicleType: norm(String((a as any).vehicleType ?? '')),
               price: norm(String(a.price ?? 0)),
+              taxAmount: norm(String(computeItemTax(Number(a.price) || 0, a.taxSelected || {}, a.taxOverride || false, a.taxValues || {}))),
             })),
           }
         }
@@ -738,7 +827,8 @@ export default function WorksheetTab({
           return {
             key: 'warranties',
             label: 'Warranties',
-            total: norm(String(warrantiesTotal ?? 0)),
+            total: norm(String(warrantiesTotal + warrantiesTaxTotal)),
+            taxTotal: norm(String(warrantiesTaxTotal)),
             rows: (warranties || []).map((w) => ({
               id: norm(w.id),
               name: norm(w.name),
@@ -748,6 +838,7 @@ export default function WorksheetTab({
               distance: norm(String((w as any).distance ?? '')),
               isDealerGuaranty: norm((w as any).isDealerGuaranty ?? false),
               amount: norm(String(w.amount ?? 0)),
+              taxAmount: norm(String(computeItemTax(Number(w.amount) || 0, w.taxSelected || {}, w.taxOverride || false, w.taxValues || {}))),
             })),
           }
         }
@@ -755,7 +846,8 @@ export default function WorksheetTab({
           return {
             key: 'insurances',
             label: 'Insurances',
-            total: norm(String(insurancesTotal ?? 0)),
+            total: norm(String(insurancesTotal + insurancesTaxTotal)),
+            taxTotal: norm(String(insurancesTaxTotal)),
             rows: (insurances || []).map((i) => ({
               id: norm(i.id),
               name: norm(i.name),
@@ -765,6 +857,7 @@ export default function WorksheetTab({
               duration: norm(String((i as any).duration ?? '')),
               type: norm(String((i as any).type ?? '')),
               amount: norm(String(i.amount ?? 0)),
+              taxAmount: norm(String(computeItemTax(Number(i.amount) || 0, i.taxSelected || {}, i.taxOverride || false, i.taxValues || {}))),
             })),
           }
         }
@@ -1124,7 +1217,7 @@ export default function WorksheetTab({
           <svg className="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-2.21 0-4 1.343-4 3s1.79 3 4 3 4 1.343 4 3-1.79 3-4 3m0-12V4"/></svg>
           Fees
         </div>
-        <div className="h-6 px-2 rounded bg-green-600 text-white text-xs font-semibold flex items-center">Total: ${fmtMoney(feesTotal)}</div>
+        <div className="h-6 px-2 rounded bg-green-600 text-white text-xs font-semibold flex items-center">Total: ${fmtMoney(feesTotal + feesTaxTotal)}</div>
       </div>
       <div className="p-3">
         <div className="relative flex items-center">
@@ -1419,7 +1512,7 @@ export default function WorksheetTab({
           <svg className="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 7h6M9 12h6m-7 5h8"/></svg>
           Accessories
         </div>
-        <div className="h-6 px-2 rounded bg-green-600 text-white text-xs font-semibold flex items-center">Total: ${fmtMoney(accessoriesTotal)}</div>
+        <div className="h-6 px-2 rounded bg-green-600 text-white text-xs font-semibold flex items-center">Total: ${fmtMoney(accessoriesTotal + accessoriesTaxTotal)}</div>
       </div>
       <div className="p-3">
         <div className="relative flex items-center">
@@ -1526,7 +1619,7 @@ export default function WorksheetTab({
           <svg className="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4l8 4v6a8 8 0 11-16 0V8l8-4z"/></svg>
           Warranties
         </div>
-        <div className="h-6 px-2 rounded bg-green-600 text-white text-xs font-semibold flex items-center">Total: ${fmtMoney(warrantiesTotal)}</div>
+        <div className="h-6 px-2 rounded bg-green-600 text-white text-xs font-semibold flex items-center">Total: ${fmtMoney(warrantiesTotal + warrantiesTaxTotal)}</div>
       </div>
       <div className="p-3">
         <div className="relative flex items-center">
@@ -1633,7 +1726,7 @@ export default function WorksheetTab({
           <svg className="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.121 17.804A13.937 13.937 0 0112 15c2.5 0 4.847.655 6.879 1.804M15 10a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
           Insurances
         </div>
-        <div className="h-6 px-2 rounded bg-green-600 text-white text-xs font-semibold flex items-center">Total: ${fmtMoney(insurancesTotal)}</div>
+        <div className="h-6 px-2 rounded bg-green-600 text-white text-xs font-semibold flex items-center">Total: ${fmtMoney(insurancesTotal + insurancesTaxTotal)}</div>
       </div>
       <div className="p-3">
         <div className="relative flex items-center">

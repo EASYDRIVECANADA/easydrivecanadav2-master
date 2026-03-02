@@ -364,26 +364,28 @@ function SalesNewDealPageContent() {
       const price = Number(w.purchase_price ?? v.price ?? 0)
       const omvic = Number(w.omvic_fee ?? getOmvicFromFees(w.fees) ?? 0)
       const discount = Number(w.discount ?? 0)
-      const subtotal1 = price + omvic
-      const tradeValue = Number(w.trade_value ?? 0)
-      const lienPayout = Number(w.lien_payout ?? 0)
-      const netDiff = subtotal1 - discount - tradeValue + lienPayout
-      const taxRate = Number(w.tax_rate ?? 0.13)
-      const hst = netDiff * taxRate
-      const totalTax = hst
-      const licenseFee = Number(w.license_fee ?? 91)
 
       const sumItems = (raw: any, amtKey: string) => {
         const items = parseFeeItems(raw)
         return items.reduce((s: number, i: any) => s + (Number(i?.[amtKey] ?? 0) || 0), 0)
       }
-      const feesTotal = sumItems(w.fees, 'amount')
+      const allFeesTotal = sumItems(w.fees, 'amount')
+      const feesTotal = allFeesTotal - omvic
       const accessoriesTotal = sumItems(w.accessories, 'price')
       const warrantiesTotal = sumItems(w.warranties, 'amount')
       const insurancesTotal = sumItems(w.insurances, 'amount')
       const paymentsTotal = sumItems(w.payments, 'amount')
 
-      const subtotal2 = netDiff + totalTax + licenseFee + feesTotal + accessoriesTotal + warrantiesTotal + insurancesTotal + paymentsTotal
+      const subtotal1 = price - discount + omvic + feesTotal + accessoriesTotal + warrantiesTotal + insurancesTotal
+      const tradeValue = Number(w.trade_value ?? 0)
+      const lienPayout = Number(w.lien_payout ?? 0)
+      const netDiff = subtotal1 - tradeValue + lienPayout
+      const taxRate = Number(w.tax_rate ?? 0.13)
+      const hst = netDiff * taxRate
+      const totalTax = hst
+      const licenseFee = w.license_fee && String(w.license_fee).trim() ? Number(w.license_fee) : 0
+
+      const subtotal2 = netDiff + totalTax + licenseFee
       const deposit = Number(w.deposit ?? 0)
       const downPayment = Number(w.down_payment ?? 0)
       const taxInsurance = Number(w.tax_on_insurance ?? 0)
@@ -549,26 +551,28 @@ function SalesNewDealPageContent() {
       const price = Number(w.purchase_price ?? v.price ?? 0)
       const omvic = Number(w.omvic_fee ?? getOmvicFromFees(w.fees) ?? 0)
       const discount = Number(w.discount ?? 0)
-      const subtotal1 = price + omvic
-      const tradeValue = Number(w.trade_value ?? 0)
-      const lienPayout = Number(w.lien_payout ?? 0)
-      const netDiff = subtotal1 - discount - tradeValue + lienPayout
-      const taxRate = Number(w.tax_rate ?? 0.13)
-      const hst = netDiff * taxRate
-      const totalTax = hst
-      const licenseFee = Number(w.license_fee ?? 91)
 
       const sumItems = (raw: any, amtKey: string) => {
         const items = parseFeeItems(raw)
         return items.reduce((s: number, i: any) => s + (Number(i?.[amtKey] ?? 0) || 0), 0)
       }
-      const feesTotal = sumItems(w.fees, 'amount')
+      const allFeesTotal = sumItems(w.fees, 'amount')
+      const feesTotal = allFeesTotal - omvic
       const accessoriesTotal = sumItems(w.accessories, 'price')
       const warrantiesTotal = sumItems(w.warranties, 'amount')
       const insurancesTotal = sumItems(w.insurances, 'amount')
       const paymentsTotal = sumItems(w.payments, 'amount')
 
-      const subtotal2 = netDiff + totalTax + licenseFee + feesTotal + accessoriesTotal + warrantiesTotal + insurancesTotal + paymentsTotal
+      const subtotal1 = price - discount + omvic + feesTotal + accessoriesTotal + warrantiesTotal + insurancesTotal
+      const tradeValue = Number(w.trade_value ?? 0)
+      const lienPayout = Number(w.lien_payout ?? 0)
+      const netDiff = subtotal1 - tradeValue + lienPayout
+      const taxRate = Number(w.tax_rate ?? 0.13)
+      const hst = netDiff * taxRate
+      const totalTax = hst
+      const licenseFee = w.license_fee && String(w.license_fee).trim() ? Number(w.license_fee) : 0
+
+      const subtotal2 = netDiff + totalTax + licenseFee
       const deposit = Number(w.deposit ?? 0)
       const downPayment = Number(w.down_payment ?? 0)
       const taxInsurance = Number(w.tax_on_insurance ?? 0)
@@ -975,3 +979,7 @@ export default function SalesNewDealPage() {
     </Suspense>
   )
 }
+
+
+
+
