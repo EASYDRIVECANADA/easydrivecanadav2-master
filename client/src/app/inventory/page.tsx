@@ -26,6 +26,7 @@ interface Vehicle {
   images: string[]
   status: string
   inventoryType?: string
+  categories?: string
 }
 
 type SortOption =
@@ -141,7 +142,7 @@ export default function InventoryPage() {
       const { data, error } = await supabase
         .from('edc_vehicles')
         .select(
-          'id, stock_number, make, model, series, year, price, mileage, odometer, odometer_unit, fuel_type, transmission, body_style, exterior_color, city, province, status, inventory_type, features'
+          'id, stock_number, make, model, series, year, price, mileage, odometer, odometer_unit, fuel_type, transmission, body_style, exterior_color, city, province, status, inventory_type, features, categories'
         )
         .order('created_at', { ascending: false })
 
@@ -216,6 +217,7 @@ export default function InventoryPage() {
           images: await loadBucketImages(String(v.id)),
           status: v.status,
           inventoryType: v.inventory_type || '',
+          categories: v.categories || '',
         }))
       )
 
@@ -756,13 +758,44 @@ export default function InventoryPage() {
                         {(() => {
                           const rec = getVehicleHoldRecord(vehicle.id)
                           const isOnHold = rec?.status === 'ON_HOLD'
-                          return isOnHold ? (
-                            <div className="absolute top-4 left-4 z-10">
-                              <span className="inline-flex items-center rounded-full bg-amber-500/90 px-3 py-1 text-xs font-semibold text-white shadow">
-                                On Hold
-                              </span>
+
+                          const raw = String((vehicle as any)?.categories ?? '').trim()
+                          const hasCategory = !!raw
+                          if (!isOnHold && !hasCategory) return null
+
+                          let catLabel = raw
+                          let catClassName = 'bg-gray-900/80 text-white border border-white/20'
+                          if (hasCategory) {
+                            const v = raw.toLowerCase()
+                            if (v.includes('private')) {
+                              catLabel = 'Private'
+                              catClassName = 'bg-slate-900/85 text-white border border-white/20'
+                            } else if (v.includes('dealer')) {
+                              catLabel = 'Dealership'
+                              catClassName = 'bg-blue-600/90 text-white border border-white/20'
+                            } else if (v.includes('premier') || v.includes('premiere')) {
+                              catLabel = 'Premier'
+                              catClassName = 'bg-purple-600/90 text-white border border-white/20'
+                            } else if (v.includes('fleet')) {
+                              catLabel = 'Fleet Cars'
+                              catClassName = 'bg-emerald-600/90 text-white border border-white/20'
+                            }
+                          }
+
+                          return (
+                            <div className="absolute top-4 left-4 z-10 flex flex-col gap-2">
+                              {isOnHold ? (
+                                <span className="inline-flex items-center rounded-full bg-amber-500/90 px-3 py-1 text-xs font-semibold text-white shadow">
+                                  On Hold
+                                </span>
+                              ) : null}
+                              {hasCategory ? (
+                                <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold shadow backdrop-blur-sm ${catClassName}`}>
+                                  {catLabel}
+                                </span>
+                              ) : null}
                             </div>
-                          ) : null
+                          )
                         })()}
 
                         {vehicle.images && vehicle.images.length > 0 ? (

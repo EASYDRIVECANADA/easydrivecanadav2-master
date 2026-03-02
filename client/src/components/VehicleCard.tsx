@@ -13,6 +13,7 @@ interface Vehicle {
   transmission: string
   images: string[]
   inventoryType?: string
+  categories?: string
 }
 
 interface VehicleCardProps {
@@ -24,6 +25,26 @@ interface VehicleCardProps {
 export default function VehicleCard({ vehicle, hideFooter, onClick }: VehicleCardProps) {
   const [imageError, setImageError] = useState(false)
   const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'
+
+  const categoryBadge = (() => {
+    const raw = String((vehicle as any)?.categories ?? '').trim()
+    if (!raw) return null
+    const v = raw.toLowerCase()
+
+    if (v.includes('private')) {
+      return { label: 'Private', className: 'bg-slate-900/85 text-white border border-white/20' }
+    }
+    if (v.includes('dealer')) {
+      return { label: 'Dealership', className: 'bg-blue-600/90 text-white border border-white/20' }
+    }
+    if (v.includes('premier') || v.includes('premiere')) {
+      return { label: 'Premier', className: 'bg-purple-600/90 text-white border border-white/20' }
+    }
+    if (v.includes('fleet')) {
+      return { label: 'Fleet Cars', className: 'bg-emerald-600/90 text-white border border-white/20' }
+    }
+    return { label: raw, className: 'bg-gray-900/80 text-white border border-white/20' }
+  })()
 
   const toImageSrc = (value: string) => {
     const v = String(value || '').trim()
@@ -83,6 +104,14 @@ export default function VehicleCard({ vehicle, hideFooter, onClick }: VehicleCar
             </div>
           )}
           <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+
+          {categoryBadge ? (
+            <div className="absolute top-4 left-4 z-10">
+              <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold shadow backdrop-blur-sm ${categoryBadge.className}`}>
+                {categoryBadge.label}
+              </span>
+            </div>
+          ) : null}
           
           <div className="absolute top-4 right-4 price-tag">
             {formatPrice(vehicle.price)}

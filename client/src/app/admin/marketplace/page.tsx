@@ -26,6 +26,7 @@ type MarketVehicle = {
   features?: string[]
   collection?: string
   adDescription?: string
+  categories?: string
 }
 
 export default function MarketplacePage() {
@@ -189,6 +190,7 @@ export default function MarketplacePage() {
               features,
               collection: r.collection || r.inventory_type || '',
               adDescription: r.ad_description || '',
+              categories: r.categories || r.category || '',
             }
           })
         )

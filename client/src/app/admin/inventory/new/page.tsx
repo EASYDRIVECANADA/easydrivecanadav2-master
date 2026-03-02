@@ -315,7 +315,15 @@ export default function NewVehiclePage() {
         }
 
         if (!alive) return
-        if (!found) return
+        if (!found) {
+          stockAutofillRanRef.current = true
+          setFormData((prev: any) => {
+            const prevStock = String(prev?.stockNumber ?? '').trim()
+            if (prevStock) return prev
+            return { ...prev, stockNumber: '1000' }
+          })
+          return
+        }
 
         stockAutofillRanRef.current = true
         setFormData((prev: any) => {
@@ -357,6 +365,7 @@ export default function NewVehiclePage() {
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target
+    if (name === 'stockNumber') return
     setFormData({ ...formData, [name]: value })
   }
 
@@ -856,7 +865,7 @@ export default function NewVehiclePage() {
                   <label className="block text-sm text-gray-600 mb-1">Stock #</label>
                   <div className="relative">
                     <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">#</span>
-                    <input type="text" name="stockNumber" value={formData.stockNumber} onChange={handleChange} placeholder="1012" className="w-full border border-gray-300 rounded pl-8 pr-3 py-2 text-sm focus:ring-1 focus:ring-[#118df0] focus:border-[#118df0]" />
+                    <input type="text" name="stockNumber" value={formData.stockNumber} onChange={() => {}} disabled placeholder="1012" className="w-full border border-gray-300 rounded pl-8 pr-3 py-2 text-sm bg-gray-50 text-gray-700 cursor-not-allowed" />
                   </div>
                 </div>
                 <div>
