@@ -43,6 +43,8 @@ function BillingPage() {
   const stripePaymentLink = String(process.env.NEXT_PUBLIC_STRIPE_PAYMENT_LINK || '').trim()
 
   const [buying, setBuying] = useState<string>('')
+  const [buyingEsign, setBuyingEsign] = useState<string>('')
+  const [topUpModalOpen, setTopUpModalOpen] = useState(false)
   const [loadingTransactions, setLoadingTransactions] = useState(false)
   const [loadingPaymentMethods, setLoadingPaymentMethods] = useState(false)
 
@@ -59,51 +61,36 @@ function BillingPage() {
     () => [
       {
         key: 'starter',
-        planName: 'Starter Package',
-        amount: '$49.00',
-        period: '/month',
-        description: 'Perfect for small dealerships getting started',
+        planName: 'Private Seller',
+        amount: 'Free',
+        period: '',
+        description: 'Default account for private sellers — pay only when you post or promote',
         features: [
-          'Up to 10 vehicle listings',
-          'Basic inventory management',
-          'Customer lead tracking',
-          'Email support',
-          'Custom branding options',
-          'Upto 2 Generate Images'
+          '1st tier Free',
+          '1 Seller (single-user)',
+          'Basic listings & inquiries',
+          'Manual posting / pay-per-use publishing',
+          '$3 paid per use only',
+          'Standard support',
         ],
+        purchasable: false,
       },
       {
         key: 'small',
-        planName: 'Professional Package',
+        planName: 'Dealership',
         amount: '$99.00',
         period: '/month',
-        description: 'Ideal for growing dealerships',
+        description: 'Unlimited inventory for dealership operations with multi-user access',
         features: [
-          'Up to 100 vehicle listings',
+          'Unlimited cars',
+          '6 month Free Trial',
+          'Up to 5 Users',
           'Advanced inventory management',
-          'Deal worksheet & financing tools',
-          'Sales reports & analytics',
-          'Priority email support',
-          'Custom branding options',
-          'Upto 8 Generate Images'
+          'Lead tracking & customer management',
+          'Priority support',
         ],
         popular: true,
-      },
-      {
-        key: 'full',
-        planName: 'Enterprise Package',
-        amount: '$199.00',
-        period: '/month',
-        description: 'Complete solution for established dealers',
-        features: [
-          'Unlimited vehicle listings',
-          'Full CRM & deal management',
-          'Advanced analytics & reporting',
-          'Multi-user access & permissions',
-          'Dedicated account manager',
-          '24/7 priority support',
-          'Unlimited Generate Images'
-        ],
+        purchasable: true,
       },
     ],
     []
@@ -249,6 +236,106 @@ function BillingPage() {
     }
   }
 
+  const startEsignCheckout = async (tier: string) => {
+    if (buyingEsign) return
+    setBuyingEsign(tier)
+    try {
+      let email = ''
+      try {
+        if (typeof window !== 'undefined') {
+          const raw = window.localStorage.getItem('edc_admin_session')
+          if (raw) {
+            const parsed = JSON.parse(raw) as { email?: string }
+            email = String(parsed?.email || '').trim().toLowerCase()
+          }
+        }
+      } catch {
+        email = ''
+      }
+
+      const res = await fetch('/api/stripe/esignature-checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tier, email }),
+      })
+
+      const json = await res.json().catch(() => null)
+      const url = String(json?.url || '').trim()
+      if (!res.ok || !url) {
+        const msg = String(json?.error || 'Unable to start Stripe checkout')
+        throw new Error(msg)
+      }
+
+      window.location.href = url
+    } catch (e: any) {
+      if (stripePaymentLink) {
+        window.location.href = stripePaymentLink
+        return
+      }
+      window.alert(String(e?.message || 'Unable to start Stripe checkout'))
+    } finally {
+      setBuyingEsign('')
+    }
+  }
+
+  const topUpOptions = useMemo(
+    () => [
+      { label: '10', priceId: 'price_1T6YsuEMrH8YRtBa9x0Rk8Zp' },
+      { label: '20', priceId: 'price_1T6YtREMrH8YRtBa133BorNY' },
+      { label: '50', priceId: 'price_1T6YtfEMrH8YRtBabBs788gn' },
+      { label: '100', priceId: 'price_1T6YtsEMrH8YRtBaNwhyjg6p' },
+    ],
+    []
+  )
+
+  const startTopUpCheckout = async (priceId: string, label: string) => {
+    if (buyingEsign) return
+
+    if (!priceId) {
+      window.alert('Missing top up price')
+      return
+    }
+
+    setBuyingEsign(`topup_${label}`)
+    try {
+      let email = ''
+      try {
+        if (typeof window !== 'undefined') {
+          const raw = window.localStorage.getItem('edc_admin_session')
+          if (raw) {
+            const parsed = JSON.parse(raw) as { email?: string }
+            email = String(parsed?.email || '').trim().toLowerCase()
+          }
+        }
+      } catch {
+        email = ''
+      }
+
+      const res = await fetch('/api/stripe/topup-checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ price_id: priceId, email }),
+      })
+
+      const json = await res.json().catch(() => null)
+      const url = String(json?.url || '').trim()
+      if (!res.ok || !url) {
+        const msg = String(json?.error || 'Unable to start Stripe checkout')
+        throw new Error(msg)
+      }
+
+      window.location.href = url
+    } catch (e: any) {
+      if (stripePaymentLink) {
+        window.location.href = stripePaymentLink
+        return
+      }
+      window.alert(String(e?.message || 'Unable to start Stripe checkout'))
+    } finally {
+      setBuyingEsign('')
+    }
+  }
+
   return (
     <div className="min-h-screen bg-slate-900 relative overflow-hidden">
       {/* Background Image with Overlay */}
@@ -265,6 +352,29 @@ function BillingPage() {
       </div>
 
       <div className="flex relative z-10">
+        <div className="absolute right-6 top-6 z-[60] hidden md:block">
+          <div className="bg-white/10 backdrop-blur-xl rounded-xl shadow-lg border border-white/20 px-5 py-4 w-[320px]">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <div className="text-[10px] uppercase tracking-wider font-semibold text-slate-300">Load Balance</div>
+                <div className="text-2xl font-bold text-white mt-1">$0.00</div>
+                <div className="text-xs text-slate-300 mt-1">Use balance for pay‑per‑use e‑signature requests</div>
+              </div>
+            </div>
+
+            <div className="mt-4">
+              <button
+                type="button"
+                disabled={!!buyingEsign}
+                onClick={() => setTopUpModalOpen(true)}
+                className="w-full inline-flex items-center justify-center gap-2 px-4 py-2 bg-gradient-to-r from-emerald-600 to-green-500 text-white text-xs font-semibold rounded-lg shadow-lg shadow-emerald-500/30 hover:shadow-emerald-500/50 transform hover:-translate-y-0.5 transition-all duration-200 disabled:opacity-60 disabled:cursor-not-allowed disabled:transform-none"
+              >
+                Top Up
+              </button>
+            </div>
+          </div>
+        </div>
+
         {/* Sidebar Navigation */}
         <div className="w-56 min-h-screen border-r border-white/10 bg-slate-900/60 backdrop-blur-xl">
           <div className="p-4">
@@ -293,10 +403,56 @@ function BillingPage() {
 
         {/* Main Content */}
         <div className="flex-1">
+          {topUpModalOpen && (
+            <div className="fixed inset-0 z-[9999] flex items-center justify-center">
+              <button
+                type="button"
+                aria-label="Close"
+                className="edc-overlay z-[9998]"
+                onClick={() => setTopUpModalOpen(false)}
+              />
+              <div className="edc-modal relative z-[9999] w-[92vw] max-w-md pointer-events-auto">
+                <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between gap-4">
+                  <h3 className="text-base font-semibold text-slate-900">Top Up Balance</h3>
+                  <button
+                    type="button"
+                    className="p-2 rounded-lg hover:bg-slate-100"
+                    onClick={() => setTopUpModalOpen(false)}
+                    aria-label="Close"
+                  >
+                    <svg className="w-4 h-4 text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+                <div className="px-5 py-4">
+                  <div className="text-xs text-slate-600">Select an amount to top up:</div>
+                  <div className="mt-4 grid grid-cols-2 gap-3">
+                    {topUpOptions.map((opt) => {
+                      const loading = buyingEsign === `topup_${opt.label}`
+                      return (
+                        <button
+                          key={opt.label}
+                          type="button"
+                          disabled={!!buyingEsign}
+                          onClick={() => startTopUpCheckout(opt.priceId, opt.label)}
+                          className="inline-flex items-center justify-center gap-2 px-4 py-3 bg-gradient-to-r from-emerald-600 to-green-500 text-white text-sm font-semibold rounded-xl shadow-lg shadow-emerald-500/30 hover:shadow-emerald-500/50 transform hover:-translate-y-0.5 transition-all duration-200 disabled:opacity-60 disabled:cursor-not-allowed disabled:transform-none"
+                        >
+                          {loading ? 'Processing...' : `$${opt.label}`}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
           {section === 'Products & Services' ? (
             <div className="max-w-7xl mx-auto px-8 py-12">
               {/* Hero Section */}
-              <div className="text-center mb-16">
+              <div className="relative mb-16">
+                <div className="text-center">
                 <div className="inline-flex items-center gap-2 px-4 py-1.5 bg-gradient-to-r from-blue-500/20 to-blue-600/20 border border-blue-400/30 rounded-full mb-4 backdrop-blur-sm">
                   <div className="w-1.5 h-1.5 bg-blue-400 rounded-full animate-pulse shadow-lg shadow-blue-400/50" />
                   <span className="text-[10px] uppercase tracking-wider font-semibold text-blue-300">Subscription Plans</span>
@@ -307,14 +463,16 @@ function BillingPage() {
                 <p className="text-slate-300 text-lg max-w-2xl mx-auto drop-shadow-lg">
                   Unlock powerful dealership management tools with flexible pricing designed to scale with your business
                 </p>
+                </div>
               </div>
 
               {/* Pricing Cards */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
+              <div className="max-w-5xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-6 mb-12">
                 {products.map((plan) => {
                   const isActive = planStatus[plan.key as PlanKey]?.active
                   const isPurchasing = buying === plan.key
                   const isPopular = (plan as any).popular
+                  const isPurchasable = (plan as any).purchasable !== false
 
                   return (
                     <div
@@ -334,71 +492,82 @@ function BillingPage() {
                       )}
 
                       <div className="p-8">
-                        {/* Plan Header */}
-                        <div className="text-center mb-6">
-                          <h3 className="text-xl font-bold text-slate-900 mb-2">{plan.planName}</h3>
-                          <p className="text-xs text-slate-500 mb-4">{plan.description}</p>
-                          <div className="flex items-baseline justify-center gap-1">
-                            <span className="text-4xl font-bold text-slate-900">{plan.amount}</span>
-                            <span className="text-sm text-slate-500">{plan.period}</span>
-                          </div>
-                        </div>
-
-                        {/* Features List */}
-                        <div className="space-y-3 mb-8">
-                          {plan.features.map((feature, idx) => (
-                            <div key={idx} className="flex items-start gap-3">
-                              <div className="flex-shrink-0 w-5 h-5 rounded-full bg-gradient-to-br from-navy-900 to-navy-800 flex items-center justify-center mt-0.5">
-                                <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                                </svg>
-                              </div>
-                              <span className="text-sm text-slate-700 leading-relaxed">{feature}</span>
-                            </div>
-                          ))}
-                        </div>
-
-                        {/* CTA Button */}
-                        <div>
-                          {isActive ? (
-                            <div className="text-center">
-                              <div className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-green-50 to-emerald-50 rounded-lg border border-green-200">
-                                <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
-                                <span className="text-xs font-semibold text-green-700">Active Plan</span>
-                              </div>
-                              <div className="mt-3 text-xs text-slate-500">
-                                {formatValidUntil(planStatus[plan.key as PlanKey]?.validUntilIso || null)}
+                        <div className="grid grid-cols-1 md:grid-cols-[1fr,1.2fr] gap-8 items-start">
+                          <div>
+                            {/* Plan Header */}
+                            <div className="text-center md:text-left mb-6">
+                              <h3 className="text-xl font-bold text-slate-900 mb-2">{plan.planName}</h3>
+                              <p className="text-xs text-slate-500 mb-4">{plan.description}</p>
+                              <div className="flex items-baseline justify-center md:justify-start gap-1">
+                                <span className="text-4xl font-bold text-slate-900">{plan.amount}</span>
+                                <span className="text-sm text-slate-500">{plan.period}</span>
                               </div>
                             </div>
-                          ) : (
-                            <button
-                              type="button"
-                              disabled={!!buying}
-                              onClick={() => startCheckout(plan.key)}
-                              className={
-                                isPopular
-                                  ? 'w-full py-3 px-6 bg-gradient-to-r from-navy-900 to-navy-800 text-white font-semibold rounded-xl shadow-lg hover:shadow-xl transform hover:-translate-y-1 hover:scale-105 transition-all duration-200 disabled:opacity-60 disabled:cursor-not-allowed disabled:transform-none'
-                                  : 'w-full py-3 px-6 bg-slate-900 text-white font-semibold rounded-xl hover:bg-slate-800 shadow-md hover:shadow-lg transform hover:-translate-y-1 hover:scale-105 transition-all duration-200 disabled:opacity-60 disabled:cursor-not-allowed disabled:transform-none'
-                              }
-                            >
-                              {isPurchasing ? (
-                                <span className="inline-flex items-center gap-2">
-                                  <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
-                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                                  </svg>
-                                  Processing...
-                                </span>
+
+                            {/* CTA Button */}
+                            <div>
+                              {!isPurchasable ? (
+                                <div className="text-center md:text-left">
+                                  <div className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-slate-50 to-slate-100 rounded-lg border border-slate-200">
+                                    <div className="w-2 h-2 bg-slate-500 rounded-full" />
+                                    <span className="text-xs font-semibold text-slate-700">Default Account</span>
+                                  </div>
+                                </div>
+                              ) : isActive ? (
+                                <div className="text-center md:text-left">
+                                  <div className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-green-50 to-emerald-50 rounded-lg border border-green-200">
+                                    <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+                                    <span className="text-xs font-semibold text-green-700">Active Plan</span>
+                                  </div>
+                                  <div className="mt-3 text-xs text-slate-500">
+                                    {formatValidUntil(planStatus[plan.key as PlanKey]?.validUntilIso || null)}
+                                  </div>
+                                </div>
                               ) : (
-                                <span className="inline-flex items-center justify-center gap-2">
-                                  Get Started
-                                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
-                                  </svg>
-                                </span>
+                                <button
+                                  type="button"
+                                  disabled={!!buying}
+                                  onClick={() => startCheckout(plan.key)}
+                                  className={
+                                    isPopular
+                                      ? 'w-full py-3 px-6 bg-gradient-to-r from-navy-900 to-navy-800 text-white font-semibold rounded-xl shadow-lg hover:shadow-xl transform hover:-translate-y-1 hover:scale-105 transition-all duration-200 disabled:opacity-60 disabled:cursor-not-allowed disabled:transform-none'
+                                      : 'w-full py-3 px-6 bg-slate-900 text-white font-semibold rounded-xl hover:bg-slate-800 shadow-md hover:shadow-lg transform hover:-translate-y-1 hover:scale-105 transition-all duration-200 disabled:opacity-60 disabled:cursor-not-allowed disabled:transform-none'
+                                  }
+                                >
+                                  {isPurchasing ? (
+                                    <span className="inline-flex items-center gap-2">
+                                      <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                                      </svg>
+                                      Processing...
+                                    </span>
+                                  ) : (
+                                    <span className="inline-flex items-center justify-center gap-2">
+                                      Upgrade to Dealership
+                                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                                      </svg>
+                                    </span>
+                                  )}
+                                </button>
                               )}
-                            </button>
-                          )}
+                            </div>
+                          </div>
+
+                          {/* Features List */}
+                          <div className="space-y-3 md:mb-0 mb-8">
+                            {plan.features.map((feature, idx) => (
+                              <div key={idx} className="flex items-start gap-3">
+                                <div className="flex-shrink-0 w-5 h-5 rounded-full bg-gradient-to-br from-navy-900 to-navy-800 flex items-center justify-center mt-0.5">
+                                  <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                                  </svg>
+                                </div>
+                                <span className="text-sm text-slate-700 leading-relaxed">{feature}</span>
+                              </div>
+                            ))}
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -406,8 +575,81 @@ function BillingPage() {
                 })}
               </div>
 
+              <div className="mt-14">
+                <div className="text-center mb-6">
+                  <h2 className="text-2xl font-bold text-white drop-shadow-lg">E‑Signature Add‑Ons</h2>
+                  <p className="text-sm text-slate-300">Choose the best option for e‑signature requests</p>
+                </div>
+
+                <div className="bg-white/90 backdrop-blur-xl rounded-2xl shadow-2xl border border-white/20 overflow-hidden">
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead>
+                        <tr className="bg-gradient-to-r from-slate-50 to-slate-100 border-b border-slate-200">
+                          <th className="px-6 py-4 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">Plan</th>
+                          <th className="px-6 py-4 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">Includes</th>
+                          <th className="px-6 py-4 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">Price</th>
+                          <th className="px-6 py-4 text-right text-xs font-semibold text-slate-600 uppercase tracking-wider">Buy</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {[
+                          {
+                            tier: 'pay_per_use',
+                            name: 'Pay per Use',
+                            includes: 'E‑Signature requests billed per use',
+                            price: '$3.00',
+                          },
+                          {
+                            tier: 'upto_5',
+                            name: 'Up to 5 E‑Signatures',
+                            includes: 'Bundle of up to 5 e‑signature requests',
+                            price: '$14.99',
+                          },
+                          {
+                            tier: 'unlimited',
+                            name: 'Unlimited Requests',
+                            includes: 'Unlimited e‑signature requests',
+                            price: '$27.99',
+                          },
+                        ].map((row) => {
+                          const isPurchasing = buyingEsign === row.tier
+                          return (
+                            <tr key={row.tier} className="hover:bg-slate-50 transition-colors duration-150">
+                              <td className="px-6 py-4 text-sm font-semibold text-slate-900">{row.name}</td>
+                              <td className="px-6 py-4 text-sm text-slate-700">{row.includes}</td>
+                              <td className="px-6 py-4 text-sm font-semibold text-slate-900">{row.price}</td>
+                              <td className="px-6 py-4 text-right">
+                                <button
+                                  type="button"
+                                  disabled={!!buyingEsign}
+                                  onClick={() => startEsignCheckout(row.tier)}
+                                  className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-600 to-blue-500 text-white text-xs font-semibold rounded-lg shadow-lg shadow-blue-500/30 hover:shadow-blue-500/50 transform hover:-translate-y-0.5 transition-all duration-200 disabled:opacity-60 disabled:cursor-not-allowed disabled:transform-none"
+                                >
+                                  {isPurchasing ? (
+                                    <span className="inline-flex items-center gap-2">
+                                      <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                                      </svg>
+                                      Processing...
+                                    </span>
+                                  ) : (
+                                    'BUY'
+                                  )}
+                                </button>
+                              </td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+
               {/* Trust Badges */}
-              <div className="text-center">
+              <div className="text-center mt-10">
                 <div className="inline-flex items-center gap-8 px-8 py-4 bg-white/10 backdrop-blur-xl rounded-xl shadow-lg border border-white/20">
                   <div className="flex items-center gap-2">
                     <svg className="w-5 h-5 text-green-600" fill="currentColor" viewBox="0 0 24 24">
