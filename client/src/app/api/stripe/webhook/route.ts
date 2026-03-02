@@ -24,10 +24,15 @@ const getPlanFromPriceId = (priceId: string, starterPrice: string, smallPrice: s
   return null
 }
 
-const updateUserRoleByEmail = async (email: string, role: Role) => {
+const getSupabaseServerConfig = () => {
   const supabaseUrl = String(process.env.NEXT_PUBLIC_SUPABASE_URL || '').replace(/\/+$/, '')
   const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
   if (!supabaseUrl || !supabaseKey) throw new Error('Supabase server not configured')
+  return { supabaseUrl, supabaseKey }
+}
+
+const updateUserRoleByEmail = async (email: string, role: Role) => {
+  const { supabaseUrl, supabaseKey } = getSupabaseServerConfig()
 
   const patchUrl = `${supabaseUrl}/rest/v1/users?email=ilike.${encodeURIComponent(email)}`
   const res = await fetch(patchUrl, {
@@ -55,6 +60,57 @@ const updateUserRoleByEmail = async (email: string, role: Role) => {
   }
 
   return { raw: text, rows }
+}
+
+const getUserBalanceByEmail = async (email: string) => {
+  const { supabaseUrl, supabaseKey } = getSupabaseServerConfig()
+
+  const q = `${supabaseUrl}/rest/v1/users?select=id,email,balance&email=ilike.${encodeURIComponent(email)}&limit=1`
+  const res = await fetch(q, {
+    method: 'GET',
+    headers: {
+      apikey: supabaseKey,
+      Authorization: `Bearer ${supabaseKey}`,
+    },
+  })
+  const text = await res.text()
+  if (!res.ok) throw new Error(text || `Failed to read balance (${res.status})`)
+
+  let rows: any[] = []
+  try {
+    rows = JSON.parse(text)
+  } catch {
+    rows = []
+  }
+
+  const row = rows?.[0]
+  if (!row) throw new Error(`No users row matched email=${email}`)
+  const current = Number(row?.balance ?? 0)
+  return { id: String(row?.id || ''), email: String(row?.email || email), balance: Number.isFinite(current) ? current : 0 }
+}
+
+const setUserBalanceByEmail = async (email: string, balance: number) => {
+  const { supabaseUrl, supabaseKey } = getSupabaseServerConfig()
+  const patchUrl = `${supabaseUrl}/rest/v1/users?email=ilike.${encodeURIComponent(email)}`
+
+  const res = await fetch(patchUrl, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      apikey: supabaseKey,
+      Authorization: `Bearer ${supabaseKey}`,
+      Prefer: 'return=representation',
+    },
+    body: JSON.stringify({ balance: String(balance) }),
+  })
+
+  const text = await res.text()
+  if (!res.ok) throw new Error(text || `Failed to update balance (${res.status})`)
+  if (String(text || '').trim() === '[]') {
+    throw new Error(`No users row matched email=${email}`)
+  }
+
+  return text
 }
 
 export async function POST(req: Request) {
@@ -96,10 +152,12 @@ export async function POST(req: Request) {
     if (event.type === 'checkout.session.completed') {
       const session = event.data.object as Stripe.Checkout.Session
       let sessionPlan = String((session.metadata as any)?.plan || '').trim().toLowerCase() as Plan
+      const product = String((session.metadata as any)?.product || '').trim().toLowerCase()
 
       // If you want to strictly update only after payment is successful, require paid.
-      const isPaid = String((session as any)?.payment_status || '').toLowerCase() === 'paid'
-      if (!isPaid) {
+      const paymentStatus = String((session as any)?.payment_status || '').toLowerCase()
+      const isSettled = paymentStatus === 'paid' || paymentStatus === 'no_payment_required'
+      if (!isSettled) {
         return NextResponse.json({ received: true, skipped: true, reason: 'checkout.session.completed but not paid' })
       }
 
@@ -107,6 +165,26 @@ export async function POST(req: Request) {
       if (!email && session.customer) {
         const customer = (await stripe.customers.retrieve(String(session.customer))) as Stripe.Customer
         email = normalizeEmail((customer as any)?.email)
+      }
+
+      // Top up balance (pay-per-use)
+      if (product === 'topup') {
+        if (!email) throw new Error('Missing customer email')
+
+        const subtotalCents = Number((session as any)?.amount_subtotal ?? 0)
+        const totalCents = Number((session as any)?.amount_total ?? 0)
+        const creditCents = Number.isFinite(subtotalCents) && subtotalCents > 0 ? subtotalCents : totalCents
+        const amount = Number.isFinite(creditCents) ? creditCents / 100 : 0
+        if (!(amount > 0)) {
+          return NextResponse.json({ received: true, skipped: true, reason: 'topup settled but missing amount' })
+        }
+
+        const { balance: current } = await getUserBalanceByEmail(email)
+        const nextBalance = Number((current || 0) + amount)
+        await setUserBalanceByEmail(email, nextBalance)
+
+        console.log('[stripe-webhook] balance-topped-up', { email, amount, nextBalance, sessionId: session.id })
+        return NextResponse.json({ received: true, updated: { email, amount, balance: nextBalance } })
       }
 
       // If metadata is missing, derive plan from subscription

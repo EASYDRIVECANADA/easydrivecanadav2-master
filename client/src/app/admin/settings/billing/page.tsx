@@ -48,6 +48,8 @@ function BillingPage() {
   const [loadingTransactions, setLoadingTransactions] = useState(false)
   const [loadingPaymentMethods, setLoadingPaymentMethods] = useState(false)
 
+  const [balance, setBalance] = useState<number>(0)
+
   const [transactions, setTransactions] = useState<Transaction[]>([])
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([])
 
@@ -113,6 +115,41 @@ function BillingPage() {
     const email = readEmail()
     if (!email) return
 
+    const fetchPaymentMethods = async () => {
+      setLoadingPaymentMethods(true)
+      try {
+        const res = await fetch('/api/stripe/payment-methods', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email }),
+        })
+        const json = await res.json().catch(() => null)
+        if (res.ok && json?.paymentMethods) {
+          setPaymentMethods(json.paymentMethods)
+        }
+      } catch {
+        // ignore
+      } finally {
+        setLoadingPaymentMethods(false)
+      }
+    }
+
+    const fetchBalance = async () => {
+      try {
+        const res = await fetch('/api/users/balance', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email }),
+        })
+        const json = await res.json().catch(() => null)
+        if (!res.ok) return
+        const nextBalance = Number(json?.balance ?? 0)
+        setBalance(Number.isFinite(nextBalance) ? nextBalance : 0)
+      } catch {
+        // ignore
+      }
+    }
+
     const fetchSubscriptionStatus = async () => {
       try {
         const res = await fetch('/api/stripe/subscription-status', {
@@ -163,29 +200,107 @@ function BillingPage() {
       }
     }
 
-    const fetchPaymentMethods = async () => {
-      setLoadingPaymentMethods(true)
-      try {
-        const res = await fetch('/api/stripe/payment-methods', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email }),
-        })
-        const json = await res.json().catch(() => null)
-        if (res.ok && json?.paymentMethods) {
-          setPaymentMethods(json.paymentMethods)
-        }
-      } catch {
-        // ignore
-      } finally {
-        setLoadingPaymentMethods(false)
-      }
-    }
-
     void fetchSubscriptionStatus()
     void fetchTransactions()
     void fetchPaymentMethods()
+    void fetchBalance()
+
+    try {
+      const params = new URLSearchParams(window.location.search)
+      if (params.get('topup_success') === '1') {
+        const sessionId = String(params.get('session_id') || '').trim()
+        const confirm = async () => {
+          if (!sessionId) return
+          try {
+            await fetch('/api/stripe/topup-confirm', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ session_id: sessionId }),
+            })
+          } catch {
+            // ignore
+          }
+        }
+
+        setTimeout(() => {
+          void confirm().finally(() => {
+            void fetchBalance()
+          })
+        }, 600)
+
+        try {
+          params.delete('topup_success')
+          params.delete('session_id')
+          const next = params.toString()
+          const nextUrl = next ? `${window.location.pathname}?${next}` : window.location.pathname
+          window.history.replaceState({}, '', nextUrl)
+        } catch {
+          // ignore
+        }
+      }
+
+      if (params.get('pm_setup_success') === '1') {
+        setTimeout(() => {
+          void fetchPaymentMethods()
+        }, 800)
+
+        try {
+          params.delete('pm_setup_success')
+          params.delete('session_id')
+          const next = params.toString()
+          const nextUrl = next ? `${window.location.pathname}?${next}` : window.location.pathname
+          window.history.replaceState({}, '', nextUrl)
+        } catch {
+          // ignore
+        }
+      }
+    } catch {
+      // ignore
+    }
   }, [])
+
+  const startSetupPaymentMethod = async () => {
+    if (buyingEsign) return
+    setBuyingEsign('pm_setup')
+    try {
+      let email = ''
+      try {
+        if (typeof window !== 'undefined') {
+          const raw = window.localStorage.getItem('edc_admin_session')
+          if (raw) {
+            const parsed = JSON.parse(raw) as { email?: string }
+            email = String(parsed?.email || '').trim().toLowerCase()
+          }
+        }
+      } catch {
+        email = ''
+      }
+
+      const res = await fetch('/api/stripe/setup-payment-method', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      })
+      const json = await res.json().catch(() => null)
+      const url = String(json?.url || '').trim()
+      if (!res.ok || !url) {
+        const msg = String(json?.error || 'Unable to start payment method setup')
+        throw new Error(msg)
+      }
+
+      window.location.href = url
+    } catch (e: any) {
+      window.alert(String(e?.message || 'Unable to start payment method setup'))
+    } finally {
+      setBuyingEsign('')
+    }
+  }
+
+  const fmtMoney = (v: number) => {
+    const n = Number(v)
+    if (!Number.isFinite(n)) return '$0.00'
+    return '$' + n.toLocaleString('en-CA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  }
 
   const formatValidUntil = (iso: string | null) => {
     if (!iso) return 'Active'
@@ -357,7 +472,7 @@ function BillingPage() {
             <div className="flex items-start justify-between gap-4">
               <div>
                 <div className="text-[10px] uppercase tracking-wider font-semibold text-slate-300">Load Balance</div>
-                <div className="text-2xl font-bold text-white mt-1">$0.00</div>
+                <div className="text-2xl font-bold text-white mt-1">{fmtMoney(balance)}</div>
                 <div className="text-xs text-slate-300 mt-1">Use balance for pay‑per‑use e‑signature requests</div>
               </div>
             </div>
@@ -774,6 +889,8 @@ function BillingPage() {
                 </div>
                 <button
                   type="button"
+                  onClick={startSetupPaymentMethod}
+                  disabled={!!buyingEsign}
                   className="inline-flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-blue-600 to-blue-500 text-white text-sm font-semibold rounded-lg shadow-lg shadow-blue-500/30 hover:shadow-blue-500/50 transform hover:-translate-y-0.5 transition-all duration-200"
                 >
                   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
