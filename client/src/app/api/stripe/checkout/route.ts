@@ -13,7 +13,8 @@ export async function POST(req: Request) {
     }
 
     const starterPrice = String(process.env.STRIPE_PRICE_ID_STARTER || '').trim()
-    const smallPrice = String(process.env.STRIPE_PRICE_ID_SMALL || '').trim()
+    const dealershipPrice = String(process.env.STRIPE_PRICE_ID_DEALERSHIP || '').trim()
+    const smallPrice = dealershipPrice || String(process.env.STRIPE_PRICE_ID_SMALL || '').trim()
     const fullPrice = String(process.env.STRIPE_PRICE_ID_FULL || '').trim()
 
     const body = await req.json().catch(() => ({} as any))
@@ -33,6 +34,23 @@ export async function POST(req: Request) {
     }
 
     const stripe = new Stripe(secretKey)
+
+    // Subscription checkout requires a recurring price
+    try {
+      const price = await stripe.prices.retrieve(priceId)
+      const isRecurring = !!(price as any)?.recurring
+      if (!isRecurring) {
+        return NextResponse.json(
+          {
+            error:
+              'Selected price is not recurring. Create a monthly recurring Price in Stripe and set STRIPE_PRICE_ID_DEALERSHIP to that price id.',
+          },
+          { status: 400 }
+        )
+      }
+    } catch (e: any) {
+      return NextResponse.json({ error: e?.message || 'Unable to verify Stripe price' }, { status: 400 })
+    }
 
     const session = await stripe.checkout.sessions.create({
       mode: 'subscription',

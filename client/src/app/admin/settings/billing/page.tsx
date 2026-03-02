@@ -341,10 +341,6 @@ function BillingPage() {
 
       window.location.href = url
     } catch (e: any) {
-      if (stripePaymentLink) {
-        window.location.href = stripePaymentLink
-        return
-      }
       window.alert(String(e?.message || 'Unable to start Stripe checkout'))
     } finally {
       setBuying('')
@@ -383,10 +379,6 @@ function BillingPage() {
 
       window.location.href = url
     } catch (e: any) {
-      if (stripePaymentLink) {
-        window.location.href = stripePaymentLink
-        return
-      }
       window.alert(String(e?.message || 'Unable to start Stripe checkout'))
     } finally {
       setBuyingEsign('')
@@ -441,10 +433,6 @@ function BillingPage() {
 
       window.location.href = url
     } catch (e: any) {
-      if (stripePaymentLink) {
-        window.location.href = stripePaymentLink
-        return
-      }
       window.alert(String(e?.message || 'Unable to start Stripe checkout'))
     } finally {
       setBuyingEsign('')

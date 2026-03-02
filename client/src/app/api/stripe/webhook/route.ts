@@ -89,6 +89,47 @@ const getUserBalanceByEmail = async (email: string) => {
   return { id: String(row?.id || ''), email: String(row?.email || email), balance: Number.isFinite(current) ? current : 0 }
 }
 
+const getUserIdByEmail = async (email: string) => {
+  const { supabaseUrl, supabaseKey } = getSupabaseServerConfig()
+
+  const q = `${supabaseUrl}/rest/v1/users?select=user_id&email=ilike.${encodeURIComponent(email)}&limit=1`
+  const res = await fetch(q, {
+    method: 'GET',
+    headers: {
+      apikey: supabaseKey,
+      Authorization: `Bearer ${supabaseKey}`,
+    },
+  })
+  const text = await res.text()
+  if (!res.ok) throw new Error(text || `Failed to read user_id (${res.status})`)
+
+  let rows: any[] = []
+  try {
+    rows = JSON.parse(text)
+  } catch {
+    rows = []
+  }
+
+  const row = rows?.[0]
+  const userId = String(row?.user_id || '').trim()
+  if (!userId) throw new Error(`No users.user_id matched email=${email}`)
+  return userId
+}
+
+const sendDealershipBadgeWebhook = async (userId: string) => {
+  const uid = String(userId || '').trim()
+  if (!uid) throw new Error('Missing user_id for badge webhook')
+
+  const res = await fetch('https://primary-production-6722.up.railway.app/webhook/badge', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ user_id: uid, subscription: 'dealership' }),
+  })
+  const text = await res.text().catch(() => '')
+  if (!res.ok) throw new Error(text || `Badge webhook responded with ${res.status}`)
+  return text
+}
+
 const setUserBalanceByEmail = async (email: string, balance: number) => {
   const { supabaseUrl, supabaseKey } = getSupabaseServerConfig()
   const patchUrl = `${supabaseUrl}/rest/v1/users?email=ilike.${encodeURIComponent(email)}`
@@ -116,12 +157,13 @@ const setUserBalanceByEmail = async (email: string, balance: number) => {
 export async function POST(req: Request) {
   try {
     const secretKey = String(process.env.STRIPE_SECRET_KEY || '').trim()
-    const webhookSecret = String(process.env.STRIPE_WEBHOOK_SECRET || '').trim()
+    const webhookSecretRaw = String(process.env.STRIPE_WEBHOOK_SECRET || '').trim()
     if (!secretKey) return NextResponse.json({ error: 'Missing STRIPE_SECRET_KEY' }, { status: 500 })
-    if (!webhookSecret) return NextResponse.json({ error: 'Missing STRIPE_WEBHOOK_SECRET' }, { status: 500 })
+    if (!webhookSecretRaw) return NextResponse.json({ error: 'Missing STRIPE_WEBHOOK_SECRET' }, { status: 500 })
 
     const starterPrice = String(process.env.STRIPE_PRICE_ID_STARTER || '').trim()
-    const smallPrice = String(process.env.STRIPE_PRICE_ID_SMALL || '').trim()
+    const dealershipPrice = String(process.env.STRIPE_PRICE_ID_DEALERSHIP || '').trim()
+    const smallPrice = dealershipPrice || String(process.env.STRIPE_PRICE_ID_SMALL || '').trim()
     const fullPrice = String(process.env.STRIPE_PRICE_ID_FULL || '').trim()
 
     const stripe = new Stripe(secretKey)
@@ -129,13 +171,38 @@ export async function POST(req: Request) {
     const sig = req.headers.get('stripe-signature')
     if (!sig) return NextResponse.json({ error: 'Missing Stripe signature' }, { status: 400 })
 
-    const rawBody = await req.text()
+    const rawBody = Buffer.from(await req.arrayBuffer())
 
-    let event: Stripe.Event
+    const webhookSecrets = Array.from(
+      new Set(
+        webhookSecretRaw
+          .split(/[\s,]+/g)
+          .map((s) => s.trim())
+          .filter(Boolean)
+      )
+    )
+
+    let event: Stripe.Event | null = null
     try {
-      event = stripe.webhooks.constructEvent(rawBody, sig, webhookSecret)
+      let lastErr: any = null
+      for (const secret of webhookSecrets) {
+        try {
+          event = stripe.webhooks.constructEvent(rawBody, sig, secret)
+          lastErr = null
+          break
+        } catch (e: any) {
+          lastErr = e
+        }
+      }
+      if (!event) throw lastErr || new Error('Unable to verify webhook signature')
     } catch (err: any) {
-      return NextResponse.json({ error: `Webhook signature verification failed: ${String(err?.message || err)}` }, { status: 400 })
+      return NextResponse.json(
+        {
+          error: `Webhook signature verification failed: ${String(err?.message || err)}`,
+          hint: 'Check STRIPE_WEBHOOK_SECRET matches the signing secret for this endpoint (test vs live). You can provide multiple secrets separated by commas.'
+        },
+        { status: 400 }
+      )
     }
 
     console.log('[stripe-webhook]', event.type)
@@ -153,6 +220,12 @@ export async function POST(req: Request) {
       const session = event.data.object as Stripe.Checkout.Session
       let sessionPlan = String((session.metadata as any)?.plan || '').trim().toLowerCase() as Plan
       const product = String((session.metadata as any)?.product || '').trim().toLowerCase()
+
+      // For subscriptions, wait until invoice is paid before updating role.
+      const mode = String((session as any)?.mode || '').trim().toLowerCase()
+      if (mode === 'subscription') {
+        return NextResponse.json({ received: true, skipped: true, reason: 'subscription checkout completed; waiting for invoice.paid' })
+      }
 
       // If you want to strictly update only after payment is successful, require paid.
       const paymentStatus = String((session as any)?.payment_status || '').toLowerCase()
@@ -258,6 +331,23 @@ export async function POST(req: Request) {
       if (email && plan) {
         const result = await applyRoleUpdate(email, plan)
         console.log('[stripe-webhook] role-updated', result)
+
+        // Send badge webhook after successful Dealership payment
+        if (plan === 'small') {
+          let badgeSent = false
+          let badgeError: string | null = null
+          try {
+            const userId = await getUserIdByEmail(email)
+            await sendDealershipBadgeWebhook(userId)
+            badgeSent = true
+          } catch (e: any) {
+            badgeError = String(e?.message || e)
+            console.error('[stripe-webhook] badge webhook failed', badgeError)
+          }
+
+          return NextResponse.json({ received: true, updated: result, badge: { sent: badgeSent, error: badgeError } })
+        }
+
         return NextResponse.json({ received: true, updated: result })
       }
 
