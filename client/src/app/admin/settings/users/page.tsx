@@ -55,6 +55,7 @@ export default function SettingsUsersPage() {
   const router = useRouter()
   const [rows, setRows] = useState<AdminUserRow[]>([])
   const [loading, setLoading] = useState(true)
+  const [accountRole, setAccountRole] = useState<string>('')
   const [search, setSearch] = useState('')
   const [pageSize, setPageSize] = useState(5)
   const [scopedUserId, setScopedUserId] = useState<string | null>(null)
@@ -178,6 +179,11 @@ export default function SettingsUsersPage() {
     if (newUserTab !== 'password') return
     if (savingNewUser) return
     setPasswordError(null)
+
+    if (!editingUserId && !canAddMoreUsers) {
+      setPasswordError('User limit reached. Dealership accounts can create up to 5 additional users.')
+      return
+    }
 
     if (!firstName.trim()) {
       setPasswordError('First name is required.')
@@ -331,6 +337,14 @@ export default function SettingsUsersPage() {
 
       if (error) throw error
       setRows((data as any as AdminUserRow[]) || [])
+
+      try {
+        const { data: roleRow } = await supabase.from('users').select('role').eq('user_id', scopedUserId).limit(1).maybeSingle()
+        const r = String((roleRow as any)?.role || '').trim().toLowerCase()
+        setAccountRole(r)
+      } catch {
+        setAccountRole('')
+      }
     } catch {
       setRows([])
     } finally {
@@ -398,6 +412,14 @@ export default function SettingsUsersPage() {
 
     return [ownerRow, ...normalized]
   }, [rows, sessionEmail, sessionFullName])
+
+  const canAddMoreUsers = useMemo(() => {
+    const r = String(accountRole || '').trim().toLowerCase()
+    if (r === 'admin') return true
+    if (r !== 'dealership') return false
+    const additional = rows.length
+    return additional < 5
+  }, [accountRole, rows.length])
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -821,9 +843,15 @@ export default function SettingsUsersPage() {
           className="h-7 w-7 flex items-center justify-center text-slate-700 hover:text-slate-900"
           title="Add user"
           onClick={() => {
+            if (!canAddMoreUsers) {
+              setUserAddedMessage('User limit reached. Upgrade to Dealership to add up to 5 users.')
+              setUserAddedOpen(true)
+              return
+            }
             setNewUserTab('details')
             setNewUserOpen(true)
           }}
+          disabled={!canAddMoreUsers}
         >
           <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor">
             <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2" />

@@ -22,6 +22,7 @@ export default function ImagesTab({ vehicleId, images, onImagesUpdate }: ImagesT
   const [errorMsg, setErrorMsg] = useState<string>('')
   const [pendingImages, setPendingImages] = useState<PendingImage[]>([])
   const [generating, setGenerating] = useState(false)
+  const [accountRole, setAccountRole] = useState<string>('')
 
   const BUCKET = 'vehicle-photos'
 
@@ -99,6 +100,30 @@ export default function ImagesTab({ vehicleId, images, onImagesUpdate }: ImagesT
   useEffect(() => {
     refreshImagesFromBucket()
   }, [vehicleId])
+
+  useEffect(() => {
+    const loadRole = async () => {
+      try {
+        const raw = typeof window !== 'undefined' ? window.localStorage.getItem('edc_admin_session') : null
+        const parsed = raw ? (JSON.parse(raw) as any) : null
+        const sessionEmail = String(parsed?.email || '').trim().toLowerCase()
+        const sessionUserId = String(parsed?.user_id || '').trim()
+
+        const { data: byId } = sessionUserId
+          ? await supabase.from('users').select('role').eq('user_id', sessionUserId).maybeSingle()
+          : ({ data: null } as any)
+        const { data: byEmail } = !byId?.role && sessionEmail
+          ? await supabase.from('users').select('role').eq('email', sessionEmail).maybeSingle()
+          : ({ data: null } as any)
+
+        const r = String((byId as any)?.role ?? (byEmail as any)?.role ?? '').trim().toLowerCase()
+        setAccountRole(r)
+      } catch {
+        setAccountRole('')
+      }
+    }
+    void loadRole()
+  }, [])
 
   useEffect(() => {
     return () => {
@@ -211,6 +236,11 @@ export default function ImagesTab({ vehicleId, images, onImagesUpdate }: ImagesT
 
   const handleGenerateImage = async () => {
     if (generating) return
+    const r = String(accountRole || '').trim().toLowerCase()
+    if (!(r === 'dealership' || r === 'admin')) {
+      setErrorMsg('Upgrade required: AI image generation is available only for Dealership accounts.')
+      return
+    }
     setGenerating(true)
     setErrorMsg('')
     try {

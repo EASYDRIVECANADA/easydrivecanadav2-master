@@ -332,9 +332,20 @@ export default function AdminInventoryPage() {
         : ({ data: null } as any)
 
       const rawRole = String((uById as any)?.role ?? (uByEmail as any)?.role ?? '').trim().toLowerCase()
-      const role = rawRole === 'public' ? 'public' : rawRole === 'private' ? 'private' : rawRole === 'admin' ? 'admin' : ''
+      const role =
+        rawRole === 'public'
+          ? 'public'
+          : rawRole === 'private'
+            ? 'private'
+            : rawRole === 'admin'
+              ? 'admin'
+              : rawRole === 'dealership' || rawRole === 'dealer' || rawRole === 'dealership'
+                ? 'dealership'
+                : ''
 
       if (role === 'admin') return
+
+      if (role === 'dealership') return
 
       if (role !== 'private') return
 
