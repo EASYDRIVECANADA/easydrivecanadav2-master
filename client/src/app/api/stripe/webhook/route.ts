@@ -257,11 +257,43 @@ export async function POST(req: Request) {
           )
         }
 
-        const totalCents = Number((session as any)?.amount_total ?? 0)
+        // Stripe may deliver a "thin" Checkout Session in webhook payloads where amount_total is missing.
+        // In that case, retrieve the full session and/or payment_intent to get the actual paid amount.
+        const payloadAmountTotal = (session as any)?.amount_total
+        let amountTotalCents = Number(payloadAmountTotal ?? 0)
+        const sessionIdForAmount = String((session as any)?.id || '').trim()
+        let retrieveAttempted = false
+        let retrieveError: string | null = null
+        if (!(Number.isFinite(amountTotalCents) && amountTotalCents > 0) && sessionIdForAmount) {
+          retrieveAttempted = true
+          try {
+            const full = (await stripe.checkout.sessions.retrieve(sessionIdForAmount, {
+              expand: ['payment_intent'],
+            })) as any
+            amountTotalCents = Number(full?.amount_total ?? 0)
+
+            if (!(Number.isFinite(amountTotalCents) && amountTotalCents > 0)) {
+              const pi: any = full?.payment_intent
+              const fallback = Number(pi?.amount_received ?? pi?.amount ?? 0)
+              if (Number.isFinite(fallback) && fallback > 0) amountTotalCents = fallback
+            }
+          } catch (e: any) {
+            retrieveError = String(e?.message || e)
+          }
+        }
+
         // Credit exactly what was paid (after discounts / promotion codes).
-        const amount = Number.isFinite(totalCents) ? totalCents / 100 : 0
+        const amount = Number.isFinite(amountTotalCents) ? amountTotalCents / 100 : 0
         if (!(amount > 0)) {
-          return NextResponse.json({ received: true, skipped: true, reason: 'topup settled but missing amount' })
+          return NextResponse.json({
+            received: true,
+            skipped: true,
+            reason: 'topup settled but missing amount',
+            sessionId: sessionIdForAmount || null,
+            payloadAmountTotal: payloadAmountTotal ?? null,
+            retrieveAttempted,
+            retrieveError,
+          })
         }
 
         const nextBalance = Number(amount)
