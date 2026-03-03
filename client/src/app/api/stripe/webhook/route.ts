@@ -294,29 +294,14 @@ export async function POST(req: Request) {
 
         const sessionId = String((session as any)?.id || '').trim()
         const idempotencyKey = sessionId ? `topup:${sessionId}` : `event:${String((event as any)?.id || '').trim()}`
-        const idempotency = await markWebhookEventProcessed(idempotencyKey, event.type)
-        if (idempotency.alreadyProcessed) {
-          console.log('[stripe-webhook] topup-skip-duplicate', { key: idempotencyKey, durable: (idempotency as any).durable })
-          return NextResponse.json({ received: true, skipped: true, reason: 'duplicate' })
-        }
-
-        // Money-moving operation: require durable idempotency store.
-        if (!idempotency.ok || (idempotency as any).durable === false) {
-          return NextResponse.json(
-            {
-              error: 'Top up idempotency store unavailable. Create table stripe_webhook_events to prevent double credits.',
-              key: idempotencyKey,
-              details: (idempotency as any).error || null,
-            },
-            { status: 500 }
-          )
-        }
 
         // Stripe may deliver a "thin" Checkout Session in webhook payloads where amount_total is missing.
         // In that case, retrieve the full session and/or payment_intent to get the actual paid amount.
         const payloadAmountTotal = (session as any)?.amount_total
         let amountTotalCents = Number(payloadAmountTotal ?? 0)
         const sessionIdForAmount = String((session as any)?.id || '').trim()
+        const payloadMode = String((session as any)?.mode || '').trim().toLowerCase()
+        const payloadPaymentStatus = String((session as any)?.payment_status || '').trim().toLowerCase()
         let retrieveAttempted = false
         let retrieveError: string | null = null
         let lineItemsSumCents: number | null = null
@@ -324,6 +309,7 @@ export async function POST(req: Request) {
         let listLineItemsError: string | null = null
         let paymentIntentRetrieveAttempted = false
         let paymentIntentRetrieveError: string | null = null
+        const payloadPaymentIntent = (session as any)?.payment_intent ?? null
         if (!(Number.isFinite(amountTotalCents) && amountTotalCents > 0) && sessionIdForAmount) {
           retrieveAttempted = true
           try {
@@ -353,10 +339,16 @@ export async function POST(req: Request) {
 
               // Fallback to payment intent amount
               let pi: any = full?.payment_intent
-              if (typeof pi === 'string') {
+              const piId =
+                (typeof pi === 'string' ? pi : null) ||
+                (typeof pi?.id === 'string' ? pi.id : null) ||
+                (typeof payloadPaymentIntent === 'string' ? payloadPaymentIntent : null) ||
+                (typeof payloadPaymentIntent?.id === 'string' ? payloadPaymentIntent.id : null)
+
+              if (piId) {
                 paymentIntentRetrieveAttempted = true
                 try {
-                  pi = await stripe.paymentIntents.retrieve(pi)
+                  pi = await stripe.paymentIntents.retrieve(piId)
                 } catch (e: any) {
                   paymentIntentRetrieveError = String(e?.message || e)
                 }
@@ -373,20 +365,43 @@ export async function POST(req: Request) {
         // Credit exactly what was paid (after discounts / promotion codes).
         const amount = Number.isFinite(amountTotalCents) ? amountTotalCents / 100 : 0
         if (!(amount > 0)) {
-          return NextResponse.json({
-            received: true,
-            skipped: true,
-            reason: 'topup settled but missing amount',
-            sessionId: sessionIdForAmount || null,
-            payloadAmountTotal: payloadAmountTotal ?? null,
-            retrieveAttempted,
-            retrieveError,
-            lineItemsSumCents,
-            listLineItemsAttempted,
-            listLineItemsError,
-            paymentIntentRetrieveAttempted,
-            paymentIntentRetrieveError,
-          })
+          return NextResponse.json(
+            {
+              error: 'topup settled but missing amount',
+              sessionId: sessionIdForAmount || null,
+              payloadAmountTotal: payloadAmountTotal ?? null,
+              payloadMode,
+              payloadPaymentStatus,
+              payloadPaymentIntent,
+              retrieveAttempted,
+              retrieveError,
+              lineItemsSumCents,
+              listLineItemsAttempted,
+              listLineItemsError,
+              paymentIntentRetrieveAttempted,
+              paymentIntentRetrieveError,
+            },
+            { status: 500 }
+          )
+        }
+
+        // Only mark idempotency AFTER we have a valid amount (and we are about to persist).
+        const idempotency = await markWebhookEventProcessed(idempotencyKey, event.type)
+        if (idempotency.alreadyProcessed) {
+          console.log('[stripe-webhook] topup-skip-duplicate', { key: idempotencyKey, durable: (idempotency as any).durable })
+          return NextResponse.json({ received: true, skipped: true, reason: 'duplicate' })
+        }
+
+        // Money-moving operation: require durable idempotency store.
+        if (!idempotency.ok || (idempotency as any).durable === false) {
+          return NextResponse.json(
+            {
+              error: 'Top up idempotency store unavailable. Create table stripe_webhook_events to prevent double credits.',
+              key: idempotencyKey,
+              details: (idempotency as any).error || null,
+            },
+            { status: 500 }
+          )
         }
 
         const { balance: currentBalance } = await getUserBalanceByEmail(email)
