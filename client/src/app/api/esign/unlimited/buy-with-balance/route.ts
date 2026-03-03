@@ -82,7 +82,17 @@ export async function POST(request: Request) {
     }
 
     const now = Date.now()
-    const until = new Date(now + 30 * 24 * 60 * 60 * 1000)
+    let baseMs = now
+    try {
+      const current = wallet.esignUnlimitedUntil ? new Date(String(wallet.esignUnlimitedUntil)) : null
+      if (current && !Number.isNaN(current.getTime()) && current.getTime() > now) {
+        baseMs = current.getTime()
+      }
+    } catch {
+      baseMs = now
+    }
+
+    const until = new Date(baseMs + 30 * 24 * 60 * 60 * 1000)
     const untilIso = until.toISOString()
 
     const nextBalance = Number(wallet.balance) - cost
