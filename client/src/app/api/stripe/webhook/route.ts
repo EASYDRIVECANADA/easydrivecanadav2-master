@@ -310,13 +310,24 @@ export async function POST(req: Request) {
         let paymentIntentRetrieveAttempted = false
         let paymentIntentRetrieveError: string | null = null
         const payloadPaymentIntent = (session as any)?.payment_intent ?? null
+        let retrievedAmountTotalCents: number | null = null
+        let retrievedAmountSubtotalCents: number | null = null
+        let lineItemsCount: number | null = null
         if (!(Number.isFinite(amountTotalCents) && amountTotalCents > 0) && sessionIdForAmount) {
           retrieveAttempted = true
           try {
             const full = (await stripe.checkout.sessions.retrieve(sessionIdForAmount, {
               expand: ['payment_intent'],
             })) as any
-            amountTotalCents = Number(full?.amount_total ?? 0)
+            retrievedAmountTotalCents = Number(full?.amount_total ?? 0)
+            retrievedAmountSubtotalCents = Number(full?.amount_subtotal ?? 0)
+
+            // Prefer amount_total, then amount_subtotal
+            amountTotalCents = Number(retrievedAmountTotalCents ?? 0)
+            if (!(Number.isFinite(amountTotalCents) && amountTotalCents > 0)) {
+              const sub = Number(retrievedAmountSubtotalCents ?? 0)
+              if (Number.isFinite(sub) && sub > 0) amountTotalCents = sub
+            }
 
             if (!(Number.isFinite(amountTotalCents) && amountTotalCents > 0)) {
               // Prefer explicit line items list (more reliable than expand).
@@ -324,18 +335,23 @@ export async function POST(req: Request) {
               try {
                 const items = await stripe.checkout.sessions.listLineItems(sessionIdForAmount, { limit: 100 })
                 const li = items?.data
-                if (Array.isArray(li) && li.length > 0) {
-                  const sum = li.reduce((acc: number, item: any) => {
-                    const v = Number(item?.amount_total ?? item?.amount_subtotal ?? 0)
-                    return acc + (Number.isFinite(v) ? v : 0)
-                  }, 0)
-                  if (Number.isFinite(sum) && sum > 0) lineItemsSumCents = sum
+                if (Array.isArray(li)) {
+                  lineItemsCount = li.length
+                  if (li.length > 0) {
+                    const sum = li.reduce((acc: number, item: any) => {
+                      const v = Number(item?.amount_total ?? item?.amount_subtotal ?? 0)
+                      return acc + (Number.isFinite(v) ? v : 0)
+                    }, 0)
+                    if (Number.isFinite(sum)) lineItemsSumCents = sum
+                  }
                 }
               } catch (e: any) {
                 listLineItemsError = String(e?.message || e)
               }
 
-              if (lineItemsSumCents && lineItemsSumCents > 0) amountTotalCents = lineItemsSumCents
+              if (Number.isFinite(Number(lineItemsSumCents)) && Number(lineItemsSumCents) > 0) {
+                amountTotalCents = Number(lineItemsSumCents)
+              }
 
               // Fallback to payment intent amount
               let pi: any = full?.payment_intent
@@ -364,6 +380,20 @@ export async function POST(req: Request) {
 
         // Credit exactly what was paid (after discounts / promotion codes).
         const amount = Number.isFinite(amountTotalCents) ? amountTotalCents / 100 : 0
+        if (amount === 0) {
+          return NextResponse.json({
+            received: true,
+            skipped: true,
+            reason: 'topup_amount_zero',
+            sessionId: sessionIdForAmount || null,
+            payloadAmountTotal: payloadAmountTotal ?? null,
+            retrievedAmountTotalCents,
+            retrievedAmountSubtotalCents,
+            lineItemsCount,
+            lineItemsSumCents,
+          })
+        }
+
         if (!(amount > 0)) {
           return NextResponse.json(
             {
@@ -375,6 +405,9 @@ export async function POST(req: Request) {
               payloadPaymentIntent,
               retrieveAttempted,
               retrieveError,
+              retrievedAmountTotalCents,
+              retrievedAmountSubtotalCents,
+              lineItemsCount,
               lineItemsSumCents,
               listLineItemsAttempted,
               listLineItemsError,
