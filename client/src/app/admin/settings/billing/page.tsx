@@ -99,6 +99,12 @@ function BillingPage() {
   )
 
   useEffect(() => {
+    if (section !== 'Products & Services' && topUpModalOpen) {
+      setTopUpModalOpen(false)
+    }
+  }, [section, topUpModalOpen])
+
+  useEffect(() => {
     if (typeof window === 'undefined') return
 
     const readEmail = () => {
@@ -455,28 +461,30 @@ function BillingPage() {
       </div>
 
       <div className="flex relative z-10">
-        <div className="absolute right-6 top-6 z-[60] hidden md:block">
-          <div className="bg-white/10 backdrop-blur-xl rounded-xl shadow-lg border border-white/20 px-5 py-4 w-[320px]">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <div className="text-[10px] uppercase tracking-wider font-semibold text-slate-300">Load Balance</div>
-                <div className="text-2xl font-bold text-white mt-1">{fmtMoney(balance)}</div>
-                <div className="text-xs text-slate-300 mt-1">Use balance for pay‑per‑use e‑signature requests</div>
+        {section === 'Products & Services' && (
+          <div className="absolute right-6 top-6 z-[60] hidden md:block">
+            <div className="bg-white/10 backdrop-blur-xl rounded-xl shadow-lg border border-white/20 px-5 py-4 w-[320px]">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <div className="text-[10px] uppercase tracking-wider font-semibold text-slate-300">Load Balance</div>
+                  <div className="text-2xl font-bold text-white mt-1">{fmtMoney(balance)}</div>
+                  <div className="text-xs text-slate-300 mt-1">Use balance for pay‑per‑use e‑signature requests</div>
+                </div>
+              </div>
+
+              <div className="mt-4">
+                <button
+                  type="button"
+                  disabled={!!buyingEsign}
+                  onClick={() => setTopUpModalOpen(true)}
+                  className="w-full inline-flex items-center justify-center gap-2 px-4 py-2 bg-gradient-to-r from-emerald-600 to-green-500 text-white text-xs font-semibold rounded-lg shadow-lg shadow-emerald-500/30 hover:shadow-emerald-500/50 transform hover:-translate-y-0.5 transition-all duration-200 disabled:opacity-60 disabled:cursor-not-allowed disabled:transform-none"
+                >
+                  Top Up
+                </button>
               </div>
             </div>
-
-            <div className="mt-4">
-              <button
-                type="button"
-                disabled={!!buyingEsign}
-                onClick={() => setTopUpModalOpen(true)}
-                className="w-full inline-flex items-center justify-center gap-2 px-4 py-2 bg-gradient-to-r from-emerald-600 to-green-500 text-white text-xs font-semibold rounded-lg shadow-lg shadow-emerald-500/30 hover:shadow-emerald-500/50 transform hover:-translate-y-0.5 transition-all duration-200 disabled:opacity-60 disabled:cursor-not-allowed disabled:transform-none"
-              >
-                Top Up
-              </button>
-            </div>
           </div>
-        </div>
+        )}
 
         {/* Sidebar Navigation */}
         <div className="w-56 min-h-screen border-r border-white/10 bg-slate-900/60 backdrop-blur-xl">
