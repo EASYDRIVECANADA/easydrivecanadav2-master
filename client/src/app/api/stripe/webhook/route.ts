@@ -109,6 +109,61 @@ const updateUserRoleByEmail = async (email: string, role: Role) => {
   return { raw: text, rows }
 }
 
+const getUserBalanceByEmail = async (email: string) => {
+  const { supabaseUrl, supabaseKey } = getSupabaseServerConfig()
+
+  const q = `${supabaseUrl}/rest/v1/users?select=id,email,balance&email=eq.${encodeURIComponent(email)}&limit=1`
+  const res = await fetch(q, {
+    method: 'GET',
+    headers: {
+      apikey: supabaseKey,
+      Authorization: `Bearer ${supabaseKey}`,
+    },
+  })
+  const text = await res.text()
+  if (!res.ok) throw new Error(text || `Failed to read balance (${res.status})`)
+
+  let rows: any[] = []
+  try {
+    rows = JSON.parse(text)
+  } catch {
+    rows = []
+  }
+
+  const row = rows?.[0]
+  if (!row) throw new Error(`No users row matched email=${email}`)
+  const current = Number(row?.balance ?? 0)
+  return {
+    id: String(row?.id || ''),
+    email: String(row?.email || email),
+    balance: Number.isFinite(current) ? current : 0,
+  }
+}
+
+const setUserBalanceByEmail = async (email: string, balance: number) => {
+  const { supabaseUrl, supabaseKey } = getSupabaseServerConfig()
+  const patchUrl = `${supabaseUrl}/rest/v1/users?email=eq.${encodeURIComponent(email)}`
+
+  const res = await fetch(patchUrl, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      apikey: supabaseKey,
+      Authorization: `Bearer ${supabaseKey}`,
+      Prefer: 'return=representation',
+    },
+    body: JSON.stringify({ balance: String(balance) }),
+  })
+
+  const text = await res.text()
+  if (!res.ok) throw new Error(text || `Failed to update balance (${res.status})`)
+  if (String(text || '').trim() === '[]') {
+    throw new Error(`No users row matched email=${email}`)
+  }
+
+  return text
+}
+
 const getUserIdByEmail = async (email: string) => {
   const { supabaseUrl, supabaseKey } = getSupabaseServerConfig()
 
@@ -264,15 +319,30 @@ export async function POST(req: Request) {
         const sessionIdForAmount = String((session as any)?.id || '').trim()
         let retrieveAttempted = false
         let retrieveError: string | null = null
+        let lineItemsSumCents: number | null = null
         if (!(Number.isFinite(amountTotalCents) && amountTotalCents > 0) && sessionIdForAmount) {
           retrieveAttempted = true
           try {
             const full = (await stripe.checkout.sessions.retrieve(sessionIdForAmount, {
-              expand: ['payment_intent'],
+              expand: ['payment_intent', 'line_items'],
             })) as any
             amountTotalCents = Number(full?.amount_total ?? 0)
 
+            try {
+              const li = full?.line_items?.data
+              if (Array.isArray(li) && li.length > 0) {
+                const sum = li.reduce((acc: number, item: any) => {
+                  const v = Number(item?.amount_total ?? item?.amount_subtotal ?? 0)
+                  return acc + (Number.isFinite(v) ? v : 0)
+                }, 0)
+                if (Number.isFinite(sum) && sum > 0) lineItemsSumCents = sum
+              }
+            } catch {
+              lineItemsSumCents = null
+            }
+
             if (!(Number.isFinite(amountTotalCents) && amountTotalCents > 0)) {
+              if (lineItemsSumCents && lineItemsSumCents > 0) amountTotalCents = lineItemsSumCents
               const pi: any = full?.payment_intent
               const fallback = Number(pi?.amount_received ?? pi?.amount ?? 0)
               if (Number.isFinite(fallback) && fallback > 0) amountTotalCents = fallback
@@ -296,7 +366,9 @@ export async function POST(req: Request) {
           })
         }
 
-        const nextBalance = Number(amount)
+        const { balance: currentBalance } = await getUserBalanceByEmail(email)
+        const nextBalance = Number(currentBalance) + Number(amount)
+        await setUserBalanceByEmail(email, nextBalance)
 
         console.log('[stripe-webhook] balance-topped-up', { email, amount, nextBalance, sessionId: session.id })
         return NextResponse.json({ received: true, balance: nextBalance })
