@@ -11,7 +11,7 @@ const getSupabaseServerConfig = () => {
 
 const getUserWalletByEmail = async (email: string) => {
   const { supabaseUrl, supabaseKey } = getSupabaseServerConfig()
-  const q = `${supabaseUrl}/rest/v1/users?select=id,email,balance,esign_credits&email=eq.${encodeURIComponent(email)}&limit=1`
+  const q = `${supabaseUrl}/rest/v1/users?select=id,email,balance,esign_credits,esign_unlimited_until&email=eq.${encodeURIComponent(email)}&limit=1`
   const res = await fetch(q, {
     method: 'GET',
     headers: {
@@ -31,11 +31,13 @@ const getUserWalletByEmail = async (email: string) => {
   if (!row) throw new Error(`No users row matched email=${email}`)
   const balance = Number(row?.balance ?? 0)
   const credits = Number((row as any)?.esign_credits ?? 0)
+  const unlimitedUntil = (row as any)?.esign_unlimited_until ?? null
   return {
     id: String(row?.id || ''),
     email: String(row?.email || email),
     balance: Number.isFinite(balance) ? balance : 0,
     esignCredits: Number.isFinite(credits) ? credits : 0,
+    esignUnlimitedUntil: unlimitedUntil as any,
   }
 }
 
@@ -76,6 +78,41 @@ export async function POST(request: Request) {
     if (senderEmail) {
       try {
         const wallet = await getUserWalletByEmail(senderEmail)
+
+        try {
+          const until = wallet?.esignUnlimitedUntil ? new Date(String(wallet.esignUnlimitedUntil)) : null
+          if (until && !Number.isNaN(until.getTime()) && until.getTime() > Date.now()) {
+            // Unlimited active; do not consume credits or charge wallet.
+            const form = new FormData()
+            form.append('email', email)
+            if (dealId) form.append('dealId', dealId)
+            if (link) form.append('link', link)
+            form.append('file', file, fileName || (file as any)?.name || 'Bill_of_Sale.pdf')
+            if (fileB64) form.append('file_b64', fileB64)
+            if (fileName) form.append('file_name', fileName)
+
+            const res = await fetch('https://primary-production-6722.up.railway.app/webhook/email', {
+              method: 'POST',
+              body: form,
+            })
+
+            const text = await res.text().catch(() => '')
+            const contentType = res.headers.get('content-type') || ''
+
+            if (contentType.includes('application/json')) {
+              try {
+                return NextResponse.json(JSON.parse(text || '{}'), { status: res.status })
+              } catch {
+                return NextResponse.json({ raw: text }, { status: res.status })
+              }
+            }
+
+            return new NextResponse(text, { status: res.status })
+          }
+        } catch {
+          // ignore parse errors; fall back to credits/balance charging
+        }
+
         if (wallet.esignCredits > 0) {
           await updateUserWalletByEmail(senderEmail, { esign_credits: wallet.esignCredits - 1 })
         } else {

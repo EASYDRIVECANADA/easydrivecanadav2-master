@@ -306,6 +306,44 @@ function BillingPage() {
     }
   }
 
+  const buyEsignUnlimitedWithBalance = async () => {
+    if (buyingEsign) return
+    setBuyingEsign('unlimited_balance')
+    try {
+      let email = ''
+      try {
+        if (typeof window !== 'undefined') {
+          const raw = window.localStorage.getItem('edc_admin_session')
+          if (raw) {
+            const parsed = JSON.parse(raw) as { email?: string }
+            email = String(parsed?.email || '').trim().toLowerCase()
+          }
+        }
+      } catch {
+        email = ''
+      }
+
+      const res = await fetch('/api/esign/unlimited/buy-with-balance', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      })
+      const json = await res.json().catch(() => null)
+      if (!res.ok) {
+        const msg = String(json?.error || 'Unable to buy Unlimited with balance')
+        throw new Error(msg)
+      }
+
+      const nextBalance = Number(json?.balance ?? balance)
+      if (Number.isFinite(nextBalance)) setBalance(nextBalance)
+      window.alert('Unlimited E‑Signature activated for 30 days.')
+    } catch (e: any) {
+      window.alert(String(e?.message || 'Unable to buy Unlimited with balance'))
+    } finally {
+      setBuyingEsign('')
+    }
+  }
+
   const buyEsignBundleWithBalance = async () => {
     if (buyingEsign) return
     setBuyingEsign('upto_5_balance')
@@ -779,6 +817,17 @@ function BillingPage() {
                                       type="button"
                                       disabled={!!buyingEsign}
                                       onClick={buyEsignBundleWithBalance}
+                                      className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-slate-900 text-white text-xs font-semibold rounded-lg shadow-md hover:bg-slate-800 disabled:opacity-60 disabled:cursor-not-allowed"
+                                    >
+                                      Pay with Balance
+                                    </button>
+                                  ) : null}
+
+                                  {row.tier === 'unlimited' ? (
+                                    <button
+                                      type="button"
+                                      disabled={!!buyingEsign}
+                                      onClick={buyEsignUnlimitedWithBalance}
                                       className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-slate-900 text-white text-xs font-semibold rounded-lg shadow-md hover:bg-slate-800 disabled:opacity-60 disabled:cursor-not-allowed"
                                     >
                                       Pay with Balance

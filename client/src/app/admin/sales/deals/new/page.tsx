@@ -63,6 +63,74 @@ function SalesNewDealPageContent() {
   const [emailLoading, setEmailLoading] = useState(false)
   const printMenuRef = useRef<HTMLDivElement>(null)
 
+  const [esignModalOpen, setEsignModalOpen] = useState(false)
+  const [esignModalTitle, setEsignModalTitle] = useState('')
+  const [esignModalBody, setEsignModalBody] = useState('')
+  const [esignModalBlocking, setEsignModalBlocking] = useState(false)
+  const esignModalResolverRef = useRef<((v: boolean) => void) | null>(null)
+
+  const openEsignModal = (opts: { title: string; body: string; blocking: boolean }) => {
+    setEsignModalTitle(opts.title)
+    setEsignModalBody(opts.body)
+    setEsignModalBlocking(opts.blocking)
+    setEsignModalOpen(true)
+  }
+
+  const confirmEsignChargeIfNeeded = async (senderEmail: string) => {
+    try {
+      if (!senderEmail) return true
+      const res = await fetch('/api/esign/wallet', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: senderEmail }),
+      })
+      const json = await res.json().catch(() => null)
+      if (!res.ok) throw new Error(String(json?.error || 'Unable to check E‑Signature credits'))
+
+      const credits = Number(json?.esign_credits ?? 0)
+      const balance = Number(json?.balance ?? 0)
+      const unlimitedUntilRaw = (json as any)?.esign_unlimited_until ?? null
+      const safeCredits = Number.isFinite(credits) ? credits : 0
+      const safeBalance = Number.isFinite(balance) ? balance : 0
+
+      try {
+        const until = unlimitedUntilRaw ? new Date(String(unlimitedUntilRaw)) : null
+        if (until && !Number.isNaN(until.getTime()) && until.getTime() > Date.now()) {
+          return true
+        }
+      } catch {
+        // ignore
+      }
+
+      if (safeCredits > 0) return true
+
+      if (safeBalance < 3) {
+        openEsignModal({
+          title: 'No E‑Signature Credits',
+          body: `You have 0 E‑Signature credits and your Load Balance is too low to send this request. Please top up your balance or buy the bundle.`,
+          blocking: true,
+        })
+        return false
+      }
+
+      return await new Promise<boolean>((resolve) => {
+        esignModalResolverRef.current = resolve
+        openEsignModal({
+          title: 'No E‑Signature Credits',
+          body: `You have 0 E‑Signature credits. Sending this request will charge $3.00 from your Load Balance. Do you want to continue?`,
+          blocking: false,
+        })
+      })
+    } catch (e) {
+      openEsignModal({
+        title: 'E‑Signature Error',
+        body: String((e as any)?.message || e || 'Unable to check E‑Signature credits.'),
+        blocking: true,
+      })
+      return false
+    }
+  }
+
   // Track whether auto-save has fired for showroom prefill
   const autoSaveRan = useRef(false)
   const [autoSavedVehicles, setAutoSavedVehicles] = useState(false)
@@ -493,6 +561,22 @@ function SalesNewDealPageContent() {
     if (emailLoading) return
     setEmailLoading(true)
     try {
+      let senderEmail = ''
+      try {
+        if (typeof window !== 'undefined') {
+          const raw = window.localStorage.getItem('edc_admin_session')
+          if (raw) {
+            const parsed = JSON.parse(raw) as { email?: string }
+            senderEmail = String(parsed?.email || '').trim().toLowerCase()
+          }
+        }
+      } catch {
+        senderEmail = ''
+      }
+
+      const okToSend = await confirmEsignChargeIfNeeded(senderEmail)
+      if (!okToSend) return
+
       const res = await fetch(`/api/deals/${encodeURIComponent(dealId)}`)
       const deal = res.ok ? await res.json() : null
       const c = deal?.customer || {}
@@ -662,19 +746,6 @@ function SalesNewDealPageContent() {
           return null
         }
       })()
-
-      let senderEmail = ''
-      try {
-        if (typeof window !== 'undefined') {
-          const raw = window.localStorage.getItem('edc_admin_session')
-          if (raw) {
-            const parsed = JSON.parse(raw) as { email?: string }
-            senderEmail = String(parsed?.email || '').trim().toLowerCase()
-          }
-        }
-      } catch {
-        senderEmail = ''
-      }
 
       const formData = new FormData()
       formData.append('email', toEmail)
@@ -974,6 +1045,89 @@ function SalesNewDealPageContent() {
                 className="w-full h-full rounded border border-gray-200 bg-white"
                 title="Bill of Sale Preview"
               />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {esignModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <button
+            type="button"
+            aria-label="Close"
+            className="absolute inset-0 bg-black/40"
+            onClick={() => {
+              if (esignModalBlocking) {
+                setEsignModalOpen(false)
+                return
+              }
+              const r = esignModalResolverRef.current
+              esignModalResolverRef.current = null
+              setEsignModalOpen(false)
+              if (r) r(false)
+            }}
+          />
+          <div className="relative w-full max-w-md rounded-xl bg-white shadow-xl border border-gray-200">
+            <div className="px-5 py-4 border-b border-gray-200 flex items-center justify-between gap-3">
+              <div className="text-sm font-semibold text-gray-900">{esignModalTitle}</div>
+              <button
+                type="button"
+                className="text-gray-500 hover:text-gray-700 text-lg"
+                onClick={() => {
+                  if (esignModalBlocking) {
+                    setEsignModalOpen(false)
+                    return
+                  }
+                  const r = esignModalResolverRef.current
+                  esignModalResolverRef.current = null
+                  setEsignModalOpen(false)
+                  if (r) r(false)
+                }}
+                aria-label="Close"
+              >
+                &times;
+              </button>
+            </div>
+            <div className="px-5 py-4">
+              <div className="text-sm text-gray-700">{esignModalBody}</div>
+              <div className="mt-5 flex items-center justify-end gap-2">
+                {esignModalBlocking ? (
+                  <button
+                    type="button"
+                    className="h-9 px-4 rounded bg-[#118df0] text-white text-sm font-semibold hover:bg-[#0d6ebd]"
+                    onClick={() => setEsignModalOpen(false)}
+                  >
+                    OK
+                  </button>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      className="h-9 px-4 rounded bg-white border border-gray-200 text-gray-700 text-sm font-semibold hover:bg-gray-50"
+                      onClick={() => {
+                        const r = esignModalResolverRef.current
+                        esignModalResolverRef.current = null
+                        setEsignModalOpen(false)
+                        if (r) r(false)
+                      }}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      className="h-9 px-4 rounded bg-[#118df0] text-white text-sm font-semibold hover:bg-[#0d6ebd]"
+                      onClick={() => {
+                        const r = esignModalResolverRef.current
+                        esignModalResolverRef.current = null
+                        setEsignModalOpen(false)
+                        if (r) r(true)
+                      }}
+                    >
+                      Continue
+                    </button>
+                  </>
+                )}
+              </div>
             </div>
           </div>
         </div>
