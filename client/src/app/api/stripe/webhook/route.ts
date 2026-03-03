@@ -320,30 +320,48 @@ export async function POST(req: Request) {
         let retrieveAttempted = false
         let retrieveError: string | null = null
         let lineItemsSumCents: number | null = null
+        let listLineItemsAttempted = false
+        let listLineItemsError: string | null = null
+        let paymentIntentRetrieveAttempted = false
+        let paymentIntentRetrieveError: string | null = null
         if (!(Number.isFinite(amountTotalCents) && amountTotalCents > 0) && sessionIdForAmount) {
           retrieveAttempted = true
           try {
             const full = (await stripe.checkout.sessions.retrieve(sessionIdForAmount, {
-              expand: ['payment_intent', 'line_items'],
+              expand: ['payment_intent'],
             })) as any
             amountTotalCents = Number(full?.amount_total ?? 0)
 
-            try {
-              const li = full?.line_items?.data
-              if (Array.isArray(li) && li.length > 0) {
-                const sum = li.reduce((acc: number, item: any) => {
-                  const v = Number(item?.amount_total ?? item?.amount_subtotal ?? 0)
-                  return acc + (Number.isFinite(v) ? v : 0)
-                }, 0)
-                if (Number.isFinite(sum) && sum > 0) lineItemsSumCents = sum
-              }
-            } catch {
-              lineItemsSumCents = null
-            }
-
             if (!(Number.isFinite(amountTotalCents) && amountTotalCents > 0)) {
+              // Prefer explicit line items list (more reliable than expand).
+              listLineItemsAttempted = true
+              try {
+                const items = await stripe.checkout.sessions.listLineItems(sessionIdForAmount, { limit: 100 })
+                const li = items?.data
+                if (Array.isArray(li) && li.length > 0) {
+                  const sum = li.reduce((acc: number, item: any) => {
+                    const v = Number(item?.amount_total ?? item?.amount_subtotal ?? 0)
+                    return acc + (Number.isFinite(v) ? v : 0)
+                  }, 0)
+                  if (Number.isFinite(sum) && sum > 0) lineItemsSumCents = sum
+                }
+              } catch (e: any) {
+                listLineItemsError = String(e?.message || e)
+              }
+
               if (lineItemsSumCents && lineItemsSumCents > 0) amountTotalCents = lineItemsSumCents
-              const pi: any = full?.payment_intent
+
+              // Fallback to payment intent amount
+              let pi: any = full?.payment_intent
+              if (typeof pi === 'string') {
+                paymentIntentRetrieveAttempted = true
+                try {
+                  pi = await stripe.paymentIntents.retrieve(pi)
+                } catch (e: any) {
+                  paymentIntentRetrieveError = String(e?.message || e)
+                }
+              }
+
               const fallback = Number(pi?.amount_received ?? pi?.amount ?? 0)
               if (Number.isFinite(fallback) && fallback > 0) amountTotalCents = fallback
             }
@@ -363,6 +381,11 @@ export async function POST(req: Request) {
             payloadAmountTotal: payloadAmountTotal ?? null,
             retrieveAttempted,
             retrieveError,
+            lineItemsSumCents,
+            listLineItemsAttempted,
+            listLineItemsError,
+            paymentIntentRetrieveAttempted,
+            paymentIntentRetrieveError,
           })
         }
 
