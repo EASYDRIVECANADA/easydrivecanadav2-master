@@ -15,12 +15,10 @@ const planToRole: Record<Plan, Role> = {
 
 const normalizeEmail = (email: unknown) => String(email || '').trim().toLowerCase()
 
-const getPlanFromPriceId = (priceId: string, starterPrice: string, smallPrice: string, fullPrice: string): Plan | null => {
+const getPlanFromPriceId = (priceId: string, smallPrice: string): Plan | null => {
   const pid = String(priceId || '').trim()
   if (!pid) return null
-  if (starterPrice && pid === starterPrice) return 'starter'
   if (smallPrice && pid === smallPrice) return 'small'
-  if (fullPrice && pid === fullPrice) return 'full'
   return null
 }
 
@@ -31,10 +29,59 @@ const getSupabaseServerConfig = () => {
   return { supabaseUrl, supabaseKey }
 }
 
+const processedWebhookEvents = new Set<string>()
+
+const markWebhookEventProcessed = async (key: string, type: string) => {
+  const id = String(key || '').trim()
+  if (!id) return { ok: false, alreadyProcessed: false, reason: 'missing_event_id' }
+
+  // In-memory fallback (helps in dev; not durable across deploys/instances)
+  if (processedWebhookEvents.has(id)) {
+    return { ok: true, alreadyProcessed: true, durable: false }
+  }
+
+  try {
+    const { supabaseUrl, supabaseKey } = getSupabaseServerConfig()
+    const url = `${supabaseUrl}/rest/v1/stripe_webhook_events?on_conflict=id`
+
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: supabaseKey,
+        Authorization: `Bearer ${supabaseKey}`,
+        Prefer: 'resolution=ignore-duplicates,return=representation',
+      },
+      body: JSON.stringify([{ id, type }]),
+    })
+
+    const text = await res.text().catch(() => '')
+    if (res.status === 409) {
+      processedWebhookEvents.add(id)
+      return { ok: true, alreadyProcessed: true, durable: true }
+    }
+    if (!res.ok) {
+      // If table doesn't exist or permissions, do NOT treat idempotency as safe.
+      // We'll rely on caller to "fail closed" for money-moving operations.
+      processedWebhookEvents.add(id)
+      return { ok: false, alreadyProcessed: false, durable: false, error: text || `status=${res.status}` }
+    }
+
+    // If we inserted a row, Supabase returns [] when ignored; representation when inserted.
+    const trimmed = String(text || '').trim()
+    const inserted = trimmed && trimmed !== '[]'
+    processedWebhookEvents.add(id)
+    return { ok: true, alreadyProcessed: !inserted, durable: true }
+  } catch (e: any) {
+    processedWebhookEvents.add(id)
+    return { ok: false, alreadyProcessed: false, durable: false, error: String(e?.message || e) }
+  }
+}
+
 const updateUserRoleByEmail = async (email: string, role: Role) => {
   const { supabaseUrl, supabaseKey } = getSupabaseServerConfig()
 
-  const patchUrl = `${supabaseUrl}/rest/v1/users?email=ilike.${encodeURIComponent(email)}`
+  const patchUrl = `${supabaseUrl}/rest/v1/users?email=eq.${encodeURIComponent(email)}`
   const res = await fetch(patchUrl, {
     method: 'PATCH',
     headers: {
@@ -62,37 +109,10 @@ const updateUserRoleByEmail = async (email: string, role: Role) => {
   return { raw: text, rows }
 }
 
-const getUserBalanceByEmail = async (email: string) => {
-  const { supabaseUrl, supabaseKey } = getSupabaseServerConfig()
-
-  const q = `${supabaseUrl}/rest/v1/users?select=id,email,balance&email=ilike.${encodeURIComponent(email)}&limit=1`
-  const res = await fetch(q, {
-    method: 'GET',
-    headers: {
-      apikey: supabaseKey,
-      Authorization: `Bearer ${supabaseKey}`,
-    },
-  })
-  const text = await res.text()
-  if (!res.ok) throw new Error(text || `Failed to read balance (${res.status})`)
-
-  let rows: any[] = []
-  try {
-    rows = JSON.parse(text)
-  } catch {
-    rows = []
-  }
-
-  const row = rows?.[0]
-  if (!row) throw new Error(`No users row matched email=${email}`)
-  const current = Number(row?.balance ?? 0)
-  return { id: String(row?.id || ''), email: String(row?.email || email), balance: Number.isFinite(current) ? current : 0 }
-}
-
 const getUserIdByEmail = async (email: string) => {
   const { supabaseUrl, supabaseKey } = getSupabaseServerConfig()
 
-  const q = `${supabaseUrl}/rest/v1/users?select=user_id&email=ilike.${encodeURIComponent(email)}&limit=1`
+  const q = `${supabaseUrl}/rest/v1/users?select=user_id&email=eq.${encodeURIComponent(email)}&limit=1`
   const res = await fetch(q, {
     method: 'GET',
     headers: {
@@ -130,30 +150,6 @@ const sendDealershipBadgeWebhook = async (userId: string) => {
   return text
 }
 
-const setUserBalanceByEmail = async (email: string, balance: number) => {
-  const { supabaseUrl, supabaseKey } = getSupabaseServerConfig()
-  const patchUrl = `${supabaseUrl}/rest/v1/users?email=ilike.${encodeURIComponent(email)}`
-
-  const res = await fetch(patchUrl, {
-    method: 'PATCH',
-    headers: {
-      'Content-Type': 'application/json',
-      apikey: supabaseKey,
-      Authorization: `Bearer ${supabaseKey}`,
-      Prefer: 'return=representation',
-    },
-    body: JSON.stringify({ balance: String(balance) }),
-  })
-
-  const text = await res.text()
-  if (!res.ok) throw new Error(text || `Failed to update balance (${res.status})`)
-  if (String(text || '').trim() === '[]') {
-    throw new Error(`No users row matched email=${email}`)
-  }
-
-  return text
-}
-
 export async function POST(req: Request) {
   try {
     const secretKey = String(process.env.STRIPE_SECRET_KEY || '').trim()
@@ -161,10 +157,7 @@ export async function POST(req: Request) {
     if (!secretKey) return NextResponse.json({ error: 'Missing STRIPE_SECRET_KEY' }, { status: 500 })
     if (!webhookSecretRaw) return NextResponse.json({ error: 'Missing STRIPE_WEBHOOK_SECRET' }, { status: 500 })
 
-    const starterPrice = String(process.env.STRIPE_PRICE_ID_STARTER || '').trim()
-    const dealershipPrice = String(process.env.STRIPE_PRICE_ID_DEALERSHIP || '').trim()
-    const smallPrice = dealershipPrice || String(process.env.STRIPE_PRICE_ID_SMALL || '').trim()
-    const fullPrice = String(process.env.STRIPE_PRICE_ID_FULL || '').trim()
+    const smallPrice = String(process.env.STRIPE_PRICE_ID_DEALERSHIP || '').trim()
 
     const stripe = new Stripe(secretKey)
 
@@ -244,20 +237,37 @@ export async function POST(req: Request) {
       if (product === 'topup') {
         if (!email) throw new Error('Missing customer email')
 
-        const subtotalCents = Number((session as any)?.amount_subtotal ?? 0)
+        const sessionId = String((session as any)?.id || '').trim()
+        const idempotencyKey = sessionId ? `topup:${sessionId}` : `event:${String((event as any)?.id || '').trim()}`
+        const idempotency = await markWebhookEventProcessed(idempotencyKey, event.type)
+        if (idempotency.alreadyProcessed) {
+          console.log('[stripe-webhook] topup-skip-duplicate', { key: idempotencyKey, durable: (idempotency as any).durable })
+          return NextResponse.json({ received: true, skipped: true, reason: 'duplicate' })
+        }
+
+        // Money-moving operation: require durable idempotency store.
+        if (!idempotency.ok || (idempotency as any).durable === false) {
+          return NextResponse.json(
+            {
+              error: 'Top up idempotency store unavailable. Create table stripe_webhook_events to prevent double credits.',
+              key: idempotencyKey,
+              details: (idempotency as any).error || null,
+            },
+            { status: 500 }
+          )
+        }
+
         const totalCents = Number((session as any)?.amount_total ?? 0)
-        const creditCents = Number.isFinite(subtotalCents) && subtotalCents > 0 ? subtotalCents : totalCents
-        const amount = Number.isFinite(creditCents) ? creditCents / 100 : 0
+        // Credit exactly what was paid (after discounts / promotion codes).
+        const amount = Number.isFinite(totalCents) ? totalCents / 100 : 0
         if (!(amount > 0)) {
           return NextResponse.json({ received: true, skipped: true, reason: 'topup settled but missing amount' })
         }
 
-        const { balance: current } = await getUserBalanceByEmail(email)
-        const nextBalance = Number((current || 0) + amount)
-        await setUserBalanceByEmail(email, nextBalance)
+        const nextBalance = Number(amount)
 
         console.log('[stripe-webhook] balance-topped-up', { email, amount, nextBalance, sessionId: session.id })
-        return NextResponse.json({ received: true, updated: { email, amount, balance: nextBalance } })
+        return NextResponse.json({ received: true, balance: nextBalance })
       }
 
       // If metadata is missing, derive plan from subscription
@@ -274,7 +284,7 @@ export async function POST(req: Request) {
           } else {
             const firstItem: any = (sub.items?.data || [])[0]
             const priceId = String(firstItem?.price?.id || '').trim()
-            const derived = getPlanFromPriceId(priceId, starterPrice, smallPrice, fullPrice)
+            const derived = getPlanFromPriceId(priceId, smallPrice)
             if (derived) sessionPlan = derived
           }
         }
@@ -317,7 +327,7 @@ export async function POST(req: Request) {
         if (!plan) {
           const firstItem: any = (sub.items?.data || [])[0]
           const priceId = String(firstItem?.price?.id || '').trim()
-          plan = getPlanFromPriceId(priceId, starterPrice, smallPrice, fullPrice)
+          plan = getPlanFromPriceId(priceId, smallPrice)
         }
       }
 
@@ -325,7 +335,7 @@ export async function POST(req: Request) {
       if (!plan) {
         const firstLine: any = (invoice.lines?.data || [])[0]
         const priceId = String(firstLine?.price?.id || '').trim()
-        plan = getPlanFromPriceId(priceId, starterPrice, smallPrice, fullPrice)
+        plan = getPlanFromPriceId(priceId, smallPrice)
       }
 
       if (email && plan) {

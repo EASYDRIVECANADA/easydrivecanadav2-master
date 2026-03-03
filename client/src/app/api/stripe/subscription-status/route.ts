@@ -17,9 +17,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Missing STRIPE_SECRET_KEY' }, { status: 500 })
     }
 
-    const starterPrice = String(process.env.STRIPE_PRICE_ID_STARTER || '').trim()
-    const smallPrice = String(process.env.STRIPE_PRICE_ID_SMALL || '').trim()
-    const fullPrice = String(process.env.STRIPE_PRICE_ID_FULL || '').trim()
+    const smallPrice = String(process.env.STRIPE_PRICE_ID_DEALERSHIP || '').trim()
 
     const { email } = (await req.json().catch(() => ({}))) as { email?: string }
     const normalizedEmail = String(email || '').trim().toLowerCase()
@@ -97,9 +95,7 @@ export async function POST(req: Request) {
           if (!cur || validUntilIso > cur) plans[plan].validUntilIso = validUntilIso
         }
 
-        if (starterPrice && priceId === starterPrice) apply('starter')
         if (smallPrice && priceId === smallPrice) apply('small')
-        if (fullPrice && priceId === fullPrice) apply('full')
       }
     }
 

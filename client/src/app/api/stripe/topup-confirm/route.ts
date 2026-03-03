@@ -12,58 +12,6 @@ const getSupabaseServerConfig = () => {
 
 const normalizeEmail = (email: unknown) => String(email || '').trim().toLowerCase()
 
-const getUserBalanceByEmail = async (email: string) => {
-  const { supabaseUrl, supabaseKey } = getSupabaseServerConfig()
-
-  const q = `${supabaseUrl}/rest/v1/users?select=id,email,balance&email=ilike.${encodeURIComponent(email)}&limit=1`
-  const res = await fetch(q, {
-    method: 'GET',
-    headers: {
-      apikey: supabaseKey,
-      Authorization: `Bearer ${supabaseKey}`,
-    },
-  })
-  const text = await res.text()
-  if (!res.ok) throw new Error(text || `Failed to read balance (${res.status})`)
-
-  let rows: any[] = []
-  try {
-    rows = JSON.parse(text)
-  } catch {
-    rows = []
-  }
-
-  const row = rows?.[0]
-  if (!row) throw new Error(`No users row matched email=${email}`)
-
-  const current = Number(row?.balance ?? 0)
-  return { id: String(row?.id || ''), email: String(row?.email || email), balance: Number.isFinite(current) ? current : 0 }
-}
-
-const setUserBalanceByEmail = async (email: string, balance: number) => {
-  const { supabaseUrl, supabaseKey } = getSupabaseServerConfig()
-  const patchUrl = `${supabaseUrl}/rest/v1/users?email=ilike.${encodeURIComponent(email)}`
-
-  const res = await fetch(patchUrl, {
-    method: 'PATCH',
-    headers: {
-      'Content-Type': 'application/json',
-      apikey: supabaseKey,
-      Authorization: `Bearer ${supabaseKey}`,
-      Prefer: 'return=representation',
-    },
-    body: JSON.stringify({ balance: String(balance) }),
-  })
-
-  const text = await res.text()
-  if (!res.ok) throw new Error(text || `Failed to update balance (${res.status})`)
-  if (String(text || '').trim() === '[]') {
-    throw new Error(`No users row matched email=${email}`)
-  }
-
-  return text
-}
-
 export async function POST(req: Request) {
   try {
     const secretKey = String(process.env.STRIPE_SECRET_KEY || '').trim()
@@ -105,11 +53,10 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: 'Topup amount is 0' }, { status: 400 })
     }
 
-    const { balance: current } = await getUserBalanceByEmail(email)
-    const nextBalance = Number((current || 0) + amount)
-    await setUserBalanceByEmail(email, nextBalance)
-
-    return NextResponse.json({ ok: true, email, amount, balance: nextBalance })
+    // IMPORTANT: Do not mutate balance here.
+    // Balance is credited in the Stripe webhook handler (checkout.session.completed with metadata.product=topup).
+    // This endpoint exists only to verify the Checkout Session and allow the client to refresh UI safely.
+    return NextResponse.json({ ok: true, email, amount })
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: e?.message || 'Failed to confirm topup' }, { status: 500 })
   }

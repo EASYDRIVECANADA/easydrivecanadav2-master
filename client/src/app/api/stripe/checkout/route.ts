@@ -12,18 +12,16 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Missing STRIPE_SECRET_KEY' }, { status: 500 })
     }
 
-    const starterPrice = String(process.env.STRIPE_PRICE_ID_STARTER || '').trim()
     const dealershipPrice = String(process.env.STRIPE_PRICE_ID_DEALERSHIP || '').trim()
-    const smallPrice = dealershipPrice || String(process.env.STRIPE_PRICE_ID_SMALL || '').trim()
-    const fullPrice = String(process.env.STRIPE_PRICE_ID_FULL || '').trim()
+    const smallPrice = dealershipPrice
 
     const body = await req.json().catch(() => ({} as any))
     const plan = String(body?.plan || '').toLowerCase() as Plan
     const email = typeof body?.email === 'string' ? body.email.trim() : ''
 
-    const priceId = plan === 'full' ? fullPrice : plan === 'small' ? smallPrice : plan === 'starter' ? starterPrice : ''
+    const priceId = plan === 'small' ? smallPrice : ''
     if (!priceId) {
-      return NextResponse.json({ error: 'Missing price id for selected plan' }, { status: 400 })
+      return NextResponse.json({ error: 'Selected plan is not purchasable' }, { status: 400 })
     }
 
     const siteUrlFromEnv = String(process.env.NEXT_PUBLIC_SITE_URL || '').trim().replace(/\/$/, '')

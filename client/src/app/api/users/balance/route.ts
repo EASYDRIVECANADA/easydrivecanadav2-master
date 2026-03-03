@@ -12,7 +12,7 @@ export async function POST(request: Request) {
     const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
     if (!supabaseUrl || !supabaseKey) return NextResponse.json({ ok: false, error: 'Server not configured' }, { status: 500 })
 
-    const q = `${supabaseUrl}/rest/v1/users?select=email,balance&email=ilike.${encodeURIComponent(email)}&limit=1`
+    const q = `${supabaseUrl}/rest/v1/users?select=email,balance&email=eq.${encodeURIComponent(email)}&limit=1`
     const res = await fetch(q, {
       method: 'GET',
       headers: {

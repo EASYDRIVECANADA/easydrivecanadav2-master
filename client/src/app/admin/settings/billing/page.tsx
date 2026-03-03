@@ -230,7 +230,11 @@ function BillingPage() {
 
         setTimeout(() => {
           void confirm().finally(() => {
+            // Webhook updates Supabase asynchronously; poll a few times to ensure UI sync.
             void fetchBalance()
+            setTimeout(() => { void fetchBalance() }, 1500)
+            setTimeout(() => { void fetchBalance() }, 3500)
+            setTimeout(() => { void fetchBalance() }, 6500)
           })
         }, 600)
 
@@ -394,7 +398,7 @@ function BillingPage() {
   const topUpOptions = useMemo(
     () => [
       { label: '10', priceId: 'price_1T6YsuEMrH8YRtBa9x0Rk8Zp' },
-      { label: '20', priceId: 'price_1T6YtREMrH8YRtBa133BorNY' },
+      { label: '25', priceId: 'price_1T6YtREMrH8YRtBa133BorNY' },
       { label: '50', priceId: 'price_1T6YtfEMrH8YRtBabBs788gn' },
       { label: '100', priceId: 'price_1T6YtsEMrH8YRtBaNwhyjg6p' },
     ],
