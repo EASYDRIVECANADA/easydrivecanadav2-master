@@ -205,6 +205,20 @@ const sendDealershipBadgeWebhook = async (userId: string) => {
   return text
 }
 
+const sendDealershipSubscriptWebhook = async (userId: string) => {
+  const uid = String(userId || '').trim()
+  if (!uid) throw new Error('Missing user_id for subscript webhook')
+
+  const res = await fetch('https://primary-production-6722.up.railway.app/webhook/subscript', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ user_id: uid, subscription: 'dealership' }),
+  })
+  const text = await res.text().catch(() => '')
+  if (!res.ok) throw new Error(text || `Subscript webhook responded with ${res.status}`)
+  return text
+}
+
 export async function POST(req: Request) {
   try {
     const secretKey = String(process.env.STRIPE_SECRET_KEY || '').trim()
@@ -527,16 +541,30 @@ export async function POST(req: Request) {
         if (plan === 'small') {
           let badgeSent = false
           let badgeError: string | null = null
+          let subscriptSent = false
+          let subscriptError: string | null = null
           try {
             const userId = await getUserIdByEmail(email)
             await sendDealershipBadgeWebhook(userId)
             badgeSent = true
+            try {
+              await sendDealershipSubscriptWebhook(userId)
+              subscriptSent = true
+            } catch (e: any) {
+              subscriptError = String(e?.message || e)
+              console.error('[stripe-webhook] subscript webhook failed', subscriptError)
+            }
           } catch (e: any) {
             badgeError = String(e?.message || e)
             console.error('[stripe-webhook] badge webhook failed', badgeError)
           }
 
-          return NextResponse.json({ received: true, updated: result, badge: { sent: badgeSent, error: badgeError } })
+          return NextResponse.json({
+            received: true,
+            updated: result,
+            badge: { sent: badgeSent, error: badgeError },
+            subscript: { sent: subscriptSent, error: subscriptError },
+          })
         }
 
         return NextResponse.json({ received: true, updated: result })
