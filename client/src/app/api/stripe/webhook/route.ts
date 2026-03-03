@@ -284,10 +284,72 @@ export async function POST(req: Request) {
       let sessionPlan = String((session.metadata as any)?.plan || '').trim().toLowerCase() as Plan
       const product = String((session.metadata as any)?.product || '').trim().toLowerCase()
 
-      // For subscriptions, wait until invoice is paid before updating role.
       const mode = String((session as any)?.mode || '').trim().toLowerCase()
       if (mode === 'subscription') {
-        return NextResponse.json({ received: true, skipped: true, reason: 'subscription checkout completed; waiting for invoice.paid' })
+        // For subscriptions (including free trials), update once the subscription exists and is active/trialing.
+        let email = normalizeEmail((session as any)?.customer_details?.email || session.customer_email)
+        if (!email && session.customer) {
+          const customer = (await stripe.customers.retrieve(String(session.customer))) as Stripe.Customer
+          email = normalizeEmail((customer as any)?.email)
+        }
+
+        // If metadata is missing, derive plan from subscription
+        if (!(sessionPlan === 'starter' || sessionPlan === 'small' || sessionPlan === 'full')) {
+          const rawSubId = (session as any)?.subscription
+          const subscriptionId = typeof rawSubId === 'string' ? rawSubId : rawSubId?.id
+          if (subscriptionId) {
+            const sub = await stripe.subscriptions.retrieve(String(subscriptionId), {
+              expand: ['items.data.price'],
+            })
+            const metaPlan = String((sub.metadata as any)?.plan || '').trim().toLowerCase()
+            if (metaPlan === 'starter' || metaPlan === 'small' || metaPlan === 'full') {
+              sessionPlan = metaPlan as Plan
+            } else {
+              const firstItem: any = (sub.items?.data || [])[0]
+              const priceId = String(firstItem?.price?.id || '').trim()
+              const derived = getPlanFromPriceId(priceId, smallPrice)
+              if (derived) sessionPlan = derived
+            }
+          }
+        }
+
+        if (email && (sessionPlan === 'starter' || sessionPlan === 'small' || sessionPlan === 'full')) {
+          const result = await applyRoleUpdate(email, sessionPlan)
+          console.log('[stripe-webhook] role-updated', result)
+
+          if (sessionPlan === 'small') {
+            let badgeSent = false
+            let badgeError: string | null = null
+            let subscriptSent = false
+            let subscriptError: string | null = null
+            try {
+              const userId = await getUserIdByEmail(email)
+              await sendDealershipBadgeWebhook(userId)
+              badgeSent = true
+              try {
+                await sendDealershipSubscriptWebhook(userId)
+                subscriptSent = true
+              } catch (e: any) {
+                subscriptError = String(e?.message || e)
+                console.error('[stripe-webhook] subscript webhook failed', subscriptError)
+              }
+            } catch (e: any) {
+              badgeError = String(e?.message || e)
+              console.error('[stripe-webhook] badge webhook failed', badgeError)
+            }
+
+            return NextResponse.json({
+              received: true,
+              updated: result,
+              badge: { sent: badgeSent, error: badgeError },
+              subscript: { sent: subscriptSent, error: subscriptError },
+            })
+          }
+
+          return NextResponse.json({ received: true, updated: result })
+        }
+
+        return NextResponse.json({ received: true, skipped: true, reason: 'subscription checkout completed but missing email/plan' })
       }
 
       // If you want to strictly update only after payment is successful, require paid.
