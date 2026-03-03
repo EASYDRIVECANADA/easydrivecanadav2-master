@@ -12,9 +12,21 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Missing STRIPE_SECRET_KEY' }, { status: 500 })
     }
 
-    const pricePayPerUse = String(process.env.STRIPE_PRICE_ID_ESIGN_PAY_PER_USE || '').trim()
-    const priceUpto5 = String(process.env.STRIPE_PRICE_ID_ESIGN_UPTO_5 || '').trim()
-    const priceUnlimited = String(process.env.STRIPE_PRICE_ID_ESIGN_UNLIMITED || '').trim()
+    const pricePayPerUse = String(
+      (process.env as any).STRIPE_PRICE_ID_ESIGN_PER_USE ||
+        process.env.STRIPE_PRICE_ID_ESIGN_PAY_PER_USE ||
+        (process.env as any)['STRIPE_PRICE_ID_E-SIGN_PER_USE'] ||
+        ''
+    ).trim()
+    const priceUpto5 = String(
+      (process.env as any).STRIPE_PRICE_ID_ESIGN_BUNDLE ||
+        process.env.STRIPE_PRICE_ID_ESIGN_UPTO_5 ||
+        (process.env as any)['STRIPE_PRICE_ID_E-SIGN_BUNDLE'] ||
+        ''
+    ).trim()
+    const priceUnlimited = String(
+      process.env.STRIPE_PRICE_ID_ESIGN_UNLIMITED || (process.env as any)['STRIPE_PRICE_ID_E-SIGN_UNLIMITED'] || ''
+    ).trim()
 
     const body = await req.json().catch(() => ({} as any))
     const tier = String(body?.tier || '').toLowerCase() as Tier
