@@ -5,11 +5,11 @@ export const runtime = 'nodejs'
 
 type Plan = 'starter' | 'small' | 'full'
 
-type Role = 'STARTER' | 'PROFESSIONAL' | 'ENTERPRISE'
+type Role = string
 
 const planToRole: Record<Plan, Role> = {
   starter: 'STARTER',
-  small: 'PROFESSIONAL',
+  small: 'DEALERSHIP',
   full: 'ENTERPRISE',
 }
 
@@ -275,7 +275,8 @@ export async function POST(req: Request) {
       const role = planToRole[plan]
 
       await updateUserRoleByEmail(normalized, role)
-      return { email: normalized, role, plan }
+      const planLabel = plan === 'small' ? 'dealership' : plan
+      return { email: normalized, role, plan: planLabel }
     }
 
     if (event.type === 'checkout.session.completed') {
