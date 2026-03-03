@@ -59,7 +59,7 @@ export async function POST(req: Request) {
       success_url: `${siteUrl}/admin/settings/billing?topup_success=1&session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${siteUrl}/admin/settings/billing?topup_canceled=1`,
       customer_email: email || undefined,
-      allow_promotion_codes: false,
+      allow_promotion_codes: true,
       metadata: {
         product: 'topup',
         price_id: priceId,

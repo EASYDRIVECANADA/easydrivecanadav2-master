@@ -381,17 +381,22 @@ export async function POST(req: Request) {
         // Credit exactly what was paid (after discounts / promotion codes).
         const amount = Number.isFinite(amountTotalCents) ? amountTotalCents / 100 : 0
         if (amount === 0) {
-          return NextResponse.json({
-            received: true,
-            skipped: true,
-            reason: 'topup_amount_zero',
-            sessionId: sessionIdForAmount || null,
-            payloadAmountTotal: payloadAmountTotal ?? null,
-            retrievedAmountTotalCents,
-            retrievedAmountSubtotalCents,
-            lineItemsCount,
-            lineItemsSumCents,
-          })
+          // Fully discounted (voucher) payments can legitimately be $0. Mark idempotency so retries don't loop,
+          // but do not modify balance.
+          const idempotency = await markWebhookEventProcessed(idempotencyKey, event.type)
+          if (!idempotency.ok || (idempotency as any).durable === false) {
+            return NextResponse.json(
+              {
+                error: 'Top up idempotency store unavailable. Create table stripe_webhook_events to prevent double credits.',
+                key: idempotencyKey,
+                details: (idempotency as any).error || null,
+              },
+              { status: 500 }
+            )
+          }
+
+          const { balance } = await getUserBalanceByEmail(email)
+          return NextResponse.json({ balance })
         }
 
         if (!(amount > 0)) {
@@ -422,7 +427,8 @@ export async function POST(req: Request) {
         const idempotency = await markWebhookEventProcessed(idempotencyKey, event.type)
         if (idempotency.alreadyProcessed) {
           console.log('[stripe-webhook] topup-skip-duplicate', { key: idempotencyKey, durable: (idempotency as any).durable })
-          return NextResponse.json({ received: true, skipped: true, reason: 'duplicate' })
+          const { balance } = await getUserBalanceByEmail(email)
+          return NextResponse.json({ balance })
         }
 
         // Money-moving operation: require durable idempotency store.
@@ -442,7 +448,7 @@ export async function POST(req: Request) {
         await setUserBalanceByEmail(email, nextBalance)
 
         console.log('[stripe-webhook] balance-topped-up', { email, amount, nextBalance, sessionId: session.id })
-        return NextResponse.json({ received: true, balance: nextBalance })
+        return NextResponse.json({ balance: nextBalance })
       }
 
       // If metadata is missing, derive plan from subscription
