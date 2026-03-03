@@ -306,6 +306,44 @@ function BillingPage() {
     }
   }
 
+  const buyEsignBundleWithBalance = async () => {
+    if (buyingEsign) return
+    setBuyingEsign('upto_5_balance')
+    try {
+      let email = ''
+      try {
+        if (typeof window !== 'undefined') {
+          const raw = window.localStorage.getItem('edc_admin_session')
+          if (raw) {
+            const parsed = JSON.parse(raw) as { email?: string }
+            email = String(parsed?.email || '').trim().toLowerCase()
+          }
+        }
+      } catch {
+        email = ''
+      }
+
+      const res = await fetch('/api/esign/buy-with-balance', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tier: 'upto_5', email }),
+      })
+      const json = await res.json().catch(() => null)
+      if (!res.ok) {
+        const msg = String(json?.error || 'Unable to buy bundle with balance')
+        throw new Error(msg)
+      }
+
+      const nextBalance = Number(json?.balance ?? balance)
+      if (Number.isFinite(nextBalance)) setBalance(nextBalance)
+      window.alert('Bundle purchased. 5 E‑Signature credits added.')
+    } catch (e: any) {
+      window.alert(String(e?.message || 'Unable to buy bundle with balance'))
+    } finally {
+      setBuyingEsign('')
+    }
+  }
+
   const fmtMoney = (v: number) => {
     const n = Number(v)
     if (!Number.isFinite(n)) return '$0.00'
@@ -735,24 +773,37 @@ function BillingPage() {
                               <td className="px-6 py-4 text-sm text-slate-700">{row.includes}</td>
                               <td className="px-6 py-4 text-sm font-semibold text-slate-900">{row.price}</td>
                               <td className="px-6 py-4 text-right">
-                                <button
-                                  type="button"
-                                  disabled={!!buyingEsign}
-                                  onClick={() => startEsignCheckout(row.tier)}
-                                  className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-600 to-blue-500 text-white text-xs font-semibold rounded-lg shadow-lg shadow-blue-500/30 hover:shadow-blue-500/50 transform hover:-translate-y-0.5 transition-all duration-200 disabled:opacity-60 disabled:cursor-not-allowed disabled:transform-none"
-                                >
-                                  {isPurchasing ? (
-                                    <span className="inline-flex items-center gap-2">
-                                      <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
-                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                                      </svg>
-                                      Processing...
-                                    </span>
-                                  ) : (
-                                    'BUY'
-                                  )}
-                                </button>
+                                <div className="flex items-center justify-end gap-2">
+                                  {row.tier === 'upto_5' ? (
+                                    <button
+                                      type="button"
+                                      disabled={!!buyingEsign}
+                                      onClick={buyEsignBundleWithBalance}
+                                      className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-slate-900 text-white text-xs font-semibold rounded-lg shadow-md hover:bg-slate-800 disabled:opacity-60 disabled:cursor-not-allowed"
+                                    >
+                                      Pay with Balance
+                                    </button>
+                                  ) : null}
+
+                                  <button
+                                    type="button"
+                                    disabled={!!buyingEsign}
+                                    onClick={() => startEsignCheckout(row.tier)}
+                                    className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-600 to-blue-500 text-white text-xs font-semibold rounded-lg shadow-lg shadow-blue-500/30 hover:shadow-blue-500/50 transform hover:-translate-y-0.5 transition-all duration-200 disabled:opacity-60 disabled:cursor-not-allowed disabled:transform-none"
+                                  >
+                                    {isPurchasing ? (
+                                      <span className="inline-flex items-center gap-2">
+                                        <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                                        </svg>
+                                        Processing...
+                                      </span>
+                                    ) : (
+                                      'BUY'
+                                    )}
+                                  </button>
+                                </div>
                               </td>
                             </tr>
                           )

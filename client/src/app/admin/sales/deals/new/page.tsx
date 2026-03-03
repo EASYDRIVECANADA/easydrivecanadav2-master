@@ -663,8 +663,22 @@ function SalesNewDealPageContent() {
         }
       })()
 
+      let senderEmail = ''
+      try {
+        if (typeof window !== 'undefined') {
+          const raw = window.localStorage.getItem('edc_admin_session')
+          if (raw) {
+            const parsed = JSON.parse(raw) as { email?: string }
+            senderEmail = String(parsed?.email || '').trim().toLowerCase()
+          }
+        }
+      } catch {
+        senderEmail = ''
+      }
+
       const formData = new FormData()
       formData.append('email', toEmail)
+      if (senderEmail) formData.append('sender_email', senderEmail)
       formData.append('dealId', String(dealId || ''))
       if (signatureLink) formData.append('link', signatureLink)
       formData.append('file', blob, fileName)
