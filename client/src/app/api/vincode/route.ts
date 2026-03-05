@@ -5,23 +5,18 @@ export const runtime = 'nodejs'
 export async function POST(request: Request) {
   try {
     const body = await request.json().catch(() => ({}))
-    const { vin } = body || {}
+    const { vin, debug } = body || {}
 
     if (!vin || typeof vin !== 'string' || vin.trim().length < 5) {
       return NextResponse.json({ error: 'Invalid VIN' }, { status: 400 })
     }
 
     // Read secrets from environment to keep them off the client
-    const apiKey =
-      process.env.VIN_API_KEY ||
-      process.env.VINCARIO_API_KEY ||
-      process.env.NEXT_PUBLIC_VIN_API_KEY ||
-      ''
-    const secretKey =
-      process.env.VIN_SECRET_KEY ||
-      process.env.VINCARIO_SECRET_KEY ||
-      ''
-    const opId = 'decode'
+    const apiKey = String(
+      process.env.VINCARIO_API_KEY || process.env.VIN_API_KEY || process.env.NEXT_PUBLIC_VIN_API_KEY || ''
+    ).trim()
+    const secretKey = String(process.env.VINCARIO_SECRET_KEY || process.env.VIN_SECRET_KEY || '').trim()
+    const opId = String(process.env.VINCARIO_OPERATION_ID || 'decode').trim() || 'decode'
 
     // CONTROL_SUM = first 10 chars of SHA1(UPPER(VIN) + '|' + opId + '|' + apiKey + '|' + secretKey)
     const upperVin = vin.trim().toUpperCase()
@@ -31,6 +26,19 @@ export async function POST(request: Request) {
     const hasher = crypto.createHash('sha1')
     hasher.update(`${upperVin}|${opId}|${apiKey}|${secretKey}`)
     const controlSum = hasher.digest('hex').substring(0, 10)
+
+    if (debug) {
+      return NextResponse.json({
+        ok: true,
+        vin: upperVin,
+        opId,
+        CONTROL_SUM: controlSum,
+        apiKeyLen: apiKey.length,
+        secretKeyLen: secretKey.length,
+        apiKeyLast4: apiKey.slice(-4),
+        secretKeyLast4: secretKey.slice(-4),
+      })
+    }
 
     const payload = { vin: upperVin, CONTROL_SUM: controlSum }
     console.log('[vincode] sending payload -> webhook:', payload)
