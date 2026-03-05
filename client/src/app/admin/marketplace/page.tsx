@@ -40,6 +40,7 @@ export default function MarketplacePage() {
 
   const [make, setMake] = useState('')
   const [collection, setCollection] = useState('')
+  const [category, setCategory] = useState('')
   const [bodyStyle, setBodyStyle] = useState('')
   const [exteriorColor, setExteriorColor] = useState('')
   const [feature, setFeature] = useState('')
@@ -211,6 +212,7 @@ export default function MarketplacePage() {
     const noFilters =
       !make &&
       !collection &&
+      !category &&
       !bodyStyle &&
       !exteriorColor &&
       !feature &&
@@ -228,12 +230,14 @@ export default function MarketplacePage() {
     } else {
       const m = make.trim()
       const c = collection.trim()
+      const cat = category.trim().toLowerCase()
       const bs = bodyStyle.trim()
       const ec = exteriorColor.trim()
       const ft = feature.trim()
 
       if (m) rows = rows.filter((v) => (v.make || '').trim() === m)
       if (c) rows = rows.filter((v) => ((v.collection || '').trim()) === c)
+      if (cat) rows = rows.filter((v) => String((v as any)?.categories || '').toLowerCase().includes(cat))
       if (bs) rows = rows.filter((v) => ((v.bodyStyle || '').trim()) === bs)
       if (ec) rows = rows.filter((v) => ((v.exteriorColor || '').trim()) === ec)
       if (ft) rows = rows.filter((v) => (v.features || []).includes(ft))
@@ -257,7 +261,7 @@ export default function MarketplacePage() {
     if (sort === 'price_asc') rows.sort((a, b) => a.price - b.price)
     if (sort === 'price_desc') rows.sort((a, b) => b.price - a.price)
     return rows
-  }, [vehicles, make, collection, bodyStyle, exteriorColor, feature, minPrice, maxPrice, minYear, maxYear, sort])
+  }, [vehicles, make, collection, category, bodyStyle, exteriorColor, feature, minPrice, maxPrice, minYear, maxYear, sort])
 
   const unique = (arr: (string | undefined)[]) => Array.from(new Set(arr.filter(Boolean))) as string[]
   const makes = unique(vehicles.map((v) => v.make))
@@ -279,6 +283,7 @@ export default function MarketplacePage() {
               onClick={() => {
                 setMake('')
                 setCollection('')
+                setCategory('')
                 setBodyStyle('')
                 setExteriorColor('')
                 setFeature('')
@@ -309,6 +314,16 @@ export default function MarketplacePage() {
                 {collections.map((c) => (
                   <option key={c} value={c}>{c}</option>
                 ))}
+              </select>
+            </div>
+            <div>
+              <div className="text-xs font-semibold text-slate-500 mb-1">Category</div>
+              <select value={category} onChange={(e) => setCategory(e.target.value)} className="edc-input text-sm">
+                <option value="">All Categories</option>
+                <option value="fleet">Fleet</option>
+                <option value="dealer">Dealership</option>
+                <option value="premier">Premier</option>
+                <option value="private">Private</option>
               </select>
             </div>
             <div>

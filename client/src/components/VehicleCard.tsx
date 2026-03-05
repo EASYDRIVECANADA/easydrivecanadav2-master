@@ -32,18 +32,18 @@ export default function VehicleCard({ vehicle, hideFooter, onClick }: VehicleCar
     const v = raw.toLowerCase()
 
     if (v.includes('private')) {
-      return { label: 'Private', className: 'bg-slate-900/85 text-white border border-white/20' }
+      return { label: 'Private', src: '/images/Private.png' }
     }
     if (v.includes('dealer')) {
-      return { label: 'Dealership', className: 'bg-blue-600/90 text-white border border-white/20' }
+      return { label: 'Dealership', src: '/images/Dealership.png' }
     }
     if (v.includes('premier') || v.includes('premiere')) {
-      return { label: 'Premier', className: 'bg-purple-600/90 text-white border border-white/20' }
+      return { label: 'Premier', src: '/images/Premier.png' }
     }
     if (v.includes('fleet')) {
-      return { label: 'Fleet Cars', className: 'bg-emerald-600/90 text-white border border-white/20' }
+      return { label: 'Fleet Cars', src: '/images/Fleet%20Cars.png' }
     }
-    return { label: raw, className: 'bg-gray-900/80 text-white border border-white/20' }
+    return null
   })()
 
   const toImageSrc = (value: string) => {
@@ -107,9 +107,7 @@ export default function VehicleCard({ vehicle, hideFooter, onClick }: VehicleCar
 
           {categoryBadge ? (
             <div className="absolute top-4 left-4 z-10">
-              <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold shadow backdrop-blur-sm ${categoryBadge.className}`}>
-                {categoryBadge.label}
-              </span>
+              <img src={categoryBadge.src} alt={categoryBadge.label} className="h-20 w-auto max-w-none" />
             </div>
           ) : null}
           

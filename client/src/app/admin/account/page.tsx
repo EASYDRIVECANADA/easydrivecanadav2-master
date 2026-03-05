@@ -745,17 +745,26 @@ export default function AdminAccountPage() {
   }, [displayRole, isFromVerification])
 
   return (
-    <div className="min-h-screen">
-      <div className="edc-page-header">
-        <div className="flex items-center justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-bold text-slate-900">Account Settings</h1>
-            <p className="text-sm text-slate-500 mt-1">Manage your admin session and verification details.</p>
+    <div
+      className="min-h-screen relative"
+      style={{
+        backgroundImage: "linear-gradient(rgba(0,0,0,0.22), rgba(0,0,0,0.22)), url('/images/Background.png')",
+        backgroundSize: 'cover',
+        backgroundPosition: 'center top',
+        backgroundRepeat: 'no-repeat',
+      }}
+    >
+      <div className="relative z-10">
+        <div className="px-6 py-5 bg-transparent">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <h1 className="text-2xl font-bold text-white drop-shadow-[0_2px_8px_rgba(0,0,0,0.55)]">Account Settings</h1>
+              <p className="text-sm text-white/90 mt-1 drop-shadow-[0_2px_8px_rgba(0,0,0,0.55)]">Manage your admin session and verification details.</p>
+            </div>
           </div>
         </div>
-      </div>
 
-      <div className="px-6 py-6">
+        <div className="px-6 py-6">
         {validationModalOpen ? (
           <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4" role="dialog" aria-modal="true">
             <button
@@ -1195,7 +1204,7 @@ export default function AdminAccountPage() {
             <div className="p-4 rounded-xl border border-red-200 bg-red-50 text-danger-600 text-sm">{error}</div>
           ) : null}
 
-          <div className="mt-4 edc-card p-6">
+          <div className="mt-4 p-6 rounded-2xl border border-white/30 bg-white/55 backdrop-blur-md shadow-[0_18px_50px_rgba(0,0,0,0.22)]">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
               <div>
                 <div className="text-sm font-semibold text-slate-800">Profile</div>
@@ -1535,6 +1544,7 @@ export default function AdminAccountPage() {
             ) : null}
           </div>
         </div>
+      </div>
       </div>
     </div>
   )

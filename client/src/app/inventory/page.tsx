@@ -764,21 +764,21 @@ export default function InventoryPage() {
                           if (!isOnHold && !hasCategory) return null
 
                           let catLabel = raw
-                          let catClassName = 'bg-gray-900/80 text-white border border-white/20'
+                          let catSrc = ''
                           if (hasCategory) {
                             const v = raw.toLowerCase()
                             if (v.includes('private')) {
                               catLabel = 'Private'
-                              catClassName = 'bg-slate-900/85 text-white border border-white/20'
+                              catSrc = '/images/Private.png'
                             } else if (v.includes('dealer')) {
                               catLabel = 'Dealership'
-                              catClassName = 'bg-blue-600/90 text-white border border-white/20'
+                              catSrc = '/images/Delearship.png'
                             } else if (v.includes('premier') || v.includes('premiere')) {
                               catLabel = 'Premier'
-                              catClassName = 'bg-purple-600/90 text-white border border-white/20'
+                              catSrc = '/images/Premier.png'
                             } else if (v.includes('fleet')) {
                               catLabel = 'Fleet Cars'
-                              catClassName = 'bg-emerald-600/90 text-white border border-white/20'
+                              catSrc = '/images/Fleet%20Cars.png'
                             }
                           }
 
@@ -790,9 +790,11 @@ export default function InventoryPage() {
                                 </span>
                               ) : null}
                               {hasCategory ? (
-                                <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold shadow backdrop-blur-sm ${catClassName}`}>
-                                  {catLabel}
-                                </span>
+                                catSrc ? (
+                                  <img src={catSrc} alt={catLabel} className="h-14 w-auto max-w-none" />
+                                ) : (
+                                  <span className="text-xs font-semibold text-white">{catLabel}</span>
+                                )
                               ) : null}
                             </div>
                           )
