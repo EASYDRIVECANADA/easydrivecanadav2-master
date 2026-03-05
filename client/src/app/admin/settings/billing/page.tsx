@@ -701,7 +701,7 @@ function BillingPage() {
                                 <div className="text-center md:text-left">
                                   <div className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-slate-50 to-slate-100 rounded-lg border border-slate-200">
                                     <div className="w-2 h-2 bg-slate-500 rounded-full" />
-                                    <span className="text-xs font-semibold text-slate-700">Default Account</span>
+                                    <span className="text-xs font-semibold text-slate-700">Active</span>
                                   </div>
                                 </div>
                               ) : isActive ? (

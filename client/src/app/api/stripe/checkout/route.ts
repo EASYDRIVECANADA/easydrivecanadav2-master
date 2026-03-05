@@ -53,12 +53,13 @@ export async function POST(req: Request) {
     const session = await stripe.checkout.sessions.create({
       mode: 'subscription',
       line_items: [{ price: priceId, quantity: 1 }],
-      success_url: `${siteUrl}/admin/settings/billing?success=1&session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${siteUrl}/admin/settings/billing?canceled=1`,
+      success_url: `${siteUrl}/admin/billing?success=1&session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${siteUrl}/admin/billing?canceled=1`,
       customer_email: email || undefined,
       allow_promotion_codes: true,
       metadata: {
         plan,
+        email,
       },
       subscription_data: {
         trial_period_days: 180,

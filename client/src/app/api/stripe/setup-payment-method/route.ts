@@ -30,8 +30,8 @@ export async function POST(req: Request) {
       customer_email: email || undefined,
       customer_creation: 'always',
       payment_method_types: ['card'],
-      success_url: `${siteUrl}/admin/settings/billing?pm_setup_success=1&session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${siteUrl}/admin/settings/billing?pm_setup_canceled=1`,
+      success_url: `${siteUrl}/admin/billing?pm_setup_success=1&session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${siteUrl}/admin/billing?pm_setup_canceled=1`,
       metadata: {
         product: 'pm_setup',
       },

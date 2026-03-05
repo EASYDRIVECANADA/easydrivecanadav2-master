@@ -58,7 +58,6 @@ export default function AdminSettingsLayout({ children }: { children: ReactNode 
         { key: 'users', label: 'Users', href: '/admin/settings/users' },
         { key: 'presets', label: 'Presets', href: '/admin/settings/presets' },
         { key: 'integrations', label: 'Integrations', href: '/admin/settings/integrations' },
-        { key: 'billing', label: 'Billing', href: '/admin/settings/billing' },
       ],
     []
   )
@@ -69,7 +68,6 @@ export default function AdminSettingsLayout({ children }: { children: ReactNode 
     if (p.includes('/admin/settings/users')) return 'users'
     if (p.includes('/admin/settings/presets')) return 'presets'
     if (p.includes('/admin/settings/integrations')) return 'integrations'
-    if (p.includes('/admin/settings/billing')) return 'billing'
     return 'dealership'
   }, [pathname])
 
@@ -137,14 +135,15 @@ export default function AdminSettingsLayout({ children }: { children: ReactNode 
                   ) : null}
                   {t.key === 'integrations' ? (
                     <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                      <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M10 13a5 5 0 007.07 0l1.41-1.41a5 5 0 00-7.07-7.07L10 4" />
-                      <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M14 11a5 5 0 01-7.07 0L5.52 9.59a5 5 0 017.07-7.07L14 4" />
-                    </svg>
-                  ) : null}
-                  {t.key === 'billing' ? (
-                    <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                      <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M12 1v22" />
-                      <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M17 5H9.5a3.5 3.5 0 000 7H14a3.5 3.5 0 010 7H6" />
+                      <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M10 12a2 2 0 104 0 2 2 0 00-4 0z" />
+                      <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M12 2v2" />
+                      <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M12 20v2" />
+                      <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M2 12h2" />
+                      <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M20 12h2" />
+                      <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M4.93 4.93l1.41 1.41" />
+                      <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M17.66 17.66l1.41 1.41" />
+                      <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M4.93 19.07l1.41-1.41" />
+                      <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M17.66 6.34l1.41-1.41" />
                     </svg>
                   ) : null}
                   <span>{t.label}</span>
