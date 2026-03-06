@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 interface VehicleFormData {
   id?: string
@@ -72,6 +72,12 @@ export default function VehicleDetailsTab({ formData, onChange, onFormDataChange
   const [sendingVin, setSendingVin] = useState(false)
   const [vinPrefilled, setVinPrefilled] = useState(false)
   const [lastVinSent, setLastVinSent] = useState<string>('')
+  const [vinConfirmOpen, setVinConfirmOpen] = useState(false)
+  const [vinConfirmDontShow, setVinConfirmDontShow] = useState(false)
+  const [vinConfirmBalance, setVinConfirmBalance] = useState<number | null>(null)
+  const [vinInsufficientOpen, setVinInsufficientOpen] = useState(false)
+  const [vinInsufficientMessage, setVinInsufficientMessage] = useState('')
+  const vinConfirmActionRef = useRef<null | (() => Promise<void>)>(null)
 
   useEffect(() => {
     if (!formData?.vin || formData.vin !== lastVinSent) {
@@ -91,88 +97,124 @@ export default function VehicleDetailsTab({ formData, onChange, onFormDataChange
     }
 
     try {
-      setSendingVin(true)
-      const res = await fetch('/api/vincode', {
+      let email = ''
+      try {
+        if (typeof window !== 'undefined') {
+          const raw = window.localStorage.getItem('edc_admin_session')
+          if (raw) {
+            const parsed = JSON.parse(raw) as { email?: string }
+            email = String(parsed?.email || '').trim().toLowerCase()
+          }
+        }
+      } catch {
+        email = ''
+      }
+
+      if (!email) throw new Error('Missing email')
+
+      const cost = 0.5
+      const shouldSkipConfirm = (() => {
+        try {
+          return typeof window !== 'undefined' && window.localStorage.getItem('edc_skip_vincode_confirm') === '1'
+        } catch {
+          return false
+        }
+      })()
+
+      const balRes = await fetch('/api/users/balance', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ vin: String(formData.vin).trim() }),
+        body: JSON.stringify({ email }),
       })
-
-      if (!res.ok) {
-        const text = await res.text().catch(() => '')
-        throw new Error(text || `Webhook responded with ${res.status}`)
+      const balJson = await balRes.json().catch(() => null)
+      const balance = Number((balJson as any)?.balance ?? 0)
+      if (!Number.isFinite(balance) || balance < cost) {
+        setVinInsufficientMessage(`Insufficient Load Balance. You need $0.50 to decode this VIN, but your balance is $${Number.isFinite(balance) ? balance.toFixed(2) : '0.00'}.`)
+        setVinInsufficientOpen(true)
+        return
       }
 
-      const json = await res.json().catch(() => null)
-      console.log('[vin+][edit-details] webhook response:', json)
+      const runDecode = async () => {
+        setSendingVin(true)
+        try {
+          const res = await fetch('/api/vincode', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ vin: String(formData.vin).trim(), email }),
+          })
 
-      const first: any = Array.isArray(json) ? (json[0] || {}) : (json || {})
-      const decode = Array.isArray(first.decode) ? first.decode : []
-      const byLabel = (label: string) => decode.find((d: any) => d?.label === label)?.value
-      const flatGet = (key: string) => {
-        const entries = Object.entries(first || {}).map(([k, v]) => [String(k).trim().toLowerCase(), v] as const)
-        const want = key.trim().toLowerCase()
-        const hit = entries.find(([k]) => k === want)
-        return hit ? hit[1] : undefined
+          if (!res.ok) {
+            const text = await res.text().catch(() => '')
+            throw new Error(text || `Webhook responded with ${res.status}`)
+          }
+
+          const json = await res.json().catch(() => null)
+          console.log('[vin+][edit-details] webhook response:', json)
+
+          const first: any = Array.isArray(json) ? (json[0] || {}) : (json || {})
+          const decode = Array.isArray(first.decode) ? first.decode : []
+          const byLabel = (label: string) => decode.find((d: any) => d?.label === label)?.value
+          const flatGet = (key: string) => {
+            const entries = Object.entries(first || {}).map(([k, v]) => [String(k).trim().toLowerCase(), v] as const)
+            const want = key.trim().toLowerCase()
+            const hit = entries.find(([k]) => k === want)
+            return hit ? hit[1] : undefined
+          }
+
+          const mapBodyToBodyStyle = (val: string | undefined) => {
+            if (!val) return ''
+            const s = String(val).toLowerCase()
+            if (s.includes('pickup')) return 'Truck'
+            if (s.includes('suv')) return 'SUV'
+            if (s.includes('truck')) return 'Truck'
+            if (s.includes('coupe')) return 'Coupe'
+            if (s.includes('hatch')) return 'Hatchback'
+            if (s.includes('wagon')) return 'Wagon'
+            if (s.includes('van')) return 'Van'
+            if (s.includes('convertible')) return 'Convertible'
+            if (s.includes('sedan')) return 'Sedan'
+            return ''
+          }
+
+          const mapDrive = (val: string | undefined) => {
+            if (!val) return ''
+            const s = String(val).toLowerCase()
+            if (s.includes('4')) return '4WD'
+            if (s.includes('awd')) return 'AWD'
+            if (s.includes('fwd')) return 'FWD'
+            if (s.includes('rwd')) return 'RWD'
+            return ''
+          }
+
+          onFormDataChange({
+            make: String(byLabel('Make') ?? flatGet('make') ?? formData.make ?? ''),
+            model: String(byLabel('Model') ?? flatGet('model') ?? formData.model ?? ''),
+            year: Number(byLabel('Model Year') ?? byLabel('Year') ?? flatGet('year') ?? formData.year ?? 0) || formData.year,
+            trim: String(byLabel('Trim') ?? flatGet('trim') ?? formData.trim ?? ''),
+            bodyStyle: mapBodyToBodyStyle(String(byLabel('Body') ?? flatGet('body') ?? flatGet('bodystyle') ?? '')) || formData.bodyStyle || '',
+            drivetrain: mapDrive(String(byLabel('Drive') ?? byLabel('Drive Type') ?? flatGet('drivetrain') ?? flatGet('drive') ?? '')) || formData.drivetrain || '',
+            fuelType: String(byLabel('Fuel Type') ?? flatGet('fuel type') ?? flatGet('fueltype') ?? formData.fuelType ?? ''),
+          })
+          setVinPrefilled(true)
+          setLastVinSent(String(formData.vin).trim())
+        } finally {
+          setSendingVin(false)
+        }
       }
 
-      const mapBodyToBodyStyle = (val: string | undefined) => {
-        if (!val) return ''
-        const s = String(val).toLowerCase()
-        if (s.includes('pickup')) return 'Truck'
-        if (s.includes('suv')) return 'SUV'
-        if (s.includes('truck')) return 'Truck'
-        if (s.includes('coupe')) return 'Coupe'
-        if (s.includes('hatch')) return 'Hatchback'
-        if (s.includes('wagon')) return 'Wagon'
-        if (s.includes('van')) return 'Van'
-        if (s.includes('convertible')) return 'Convertible'
-        if (s.includes('sedan')) return 'Sedan'
-        return ''
+      if (shouldSkipConfirm) {
+        await runDecode()
+        return
       }
 
-      const mapDrive = (val: string | undefined) => {
-        if (!val) return ''
-        const s = String(val).toUpperCase()
-        if (s.includes('4WD') || s.includes('4X4')) return '4WD'
-        if (s.includes('AWD')) return 'AWD'
-        if (s.includes('RWD')) return 'RWD'
-        if (s.includes('FWD')) return 'FWD'
-        return ''
+      setVinConfirmBalance(balance)
+      setVinConfirmDontShow(false)
+      vinConfirmActionRef.current = async () => {
+        await runDecode()
       }
-
-      const make = byLabel('Make') || flatGet('make') || ''
-      const model = byLabel('Model') || flatGet('model') || ''
-      const year = byLabel('Model Year') || flatGet('year') || ''
-      const body = byLabel('Body') || flatGet('body style') || flatGet('body') || ''
-      const trim = byLabel('Trim') || flatGet('trim') || ''
-      const drive = byLabel('Drive') || flatGet('drivetrain') || ''
-      const cylinders = byLabel('Engine Cylinders') || flatGet('cylinders') || ''
-      const fuelPrimary = byLabel('Fuel Type - Primary') || flatGet('fuel type') || ''
-      const transmission = byLabel('Transmission') || flatGet('transmission') || ''
-      const doors = byLabel('Number of Doors') || flatGet('doors') || ''
-      const engine = byLabel('Engine Model') || flatGet('engine') || ''
-
-      onFormDataChange({
-        make: String(make || formData.make || ''),
-        model: String(model || formData.model || ''),
-        year: Number(year) || formData.year,
-        bodyStyle: mapBodyToBodyStyle(String(body)) || formData.bodyStyle,
-        drivetrain: mapDrive(String(drive)) || formData.drivetrain,
-        fuelType: String(fuelPrimary || formData.fuelType || ''),
-        transmission: String(transmission || formData.transmission || ''),
-        trim: String(trim || formData.trim || ''),
-        doors: String(doors || formData.doors || ''),
-        cylinders: String(cylinders || formData.cylinders || ''),
-        engine: String(engine || formData.engine || ''),
-        stockNumber: String(flatGet('stock number (unit id)') || formData.stockNumber || ''),
-      })
-
-      setVinPrefilled(true)
-      setLastVinSent(String(formData.vin).trim())
-    } catch (err) {
-      console.error('Error sending VIN webhook:', err)
-      alert('Failed to send VIN. Please try again.')
+      setVinConfirmOpen(true)
+    } catch (e: any) {
+      alert(e?.message || 'Failed to send VIN.')
     } finally {
       setSendingVin(false)
     }
@@ -180,6 +222,90 @@ export default function VehicleDetailsTab({ formData, onChange, onFormDataChange
 
   return (
     <form onSubmit={onSubmit} className="bg-white rounded-xl shadow p-6">
+      {vinConfirmOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true">
+          <div className="absolute inset-0 bg-navy-900/60 backdrop-blur-sm" onMouseDown={() => setVinConfirmOpen(false)} />
+          <div className="edc-modal w-full max-w-md relative z-10" onMouseDown={(e) => e.stopPropagation()}>
+            <div className="h-11 px-4 border-b border-slate-200/60 flex items-center justify-between">
+              <div className="text-sm font-semibold text-slate-800">Vincode Decode</div>
+              <button type="button" className="h-8 w-8 flex items-center justify-center" onClick={() => setVinConfirmOpen(false)}>
+                <span className="text-xl leading-none text-slate-400">×</span>
+              </button>
+            </div>
+            <div className="p-4 text-sm text-slate-700">
+              <div>This action will decode the VIN using Load Balance.</div>
+              <div className="mt-2 font-semibold text-slate-900">Cost: $0.50</div>
+              {vinConfirmBalance != null ? (
+                <div className="mt-1 text-xs text-slate-500">Your balance: ${vinConfirmBalance.toFixed(2)}</div>
+              ) : null}
+              <div className="mt-4 flex items-center gap-2">
+                <input
+                  id="vincodeDontShowEdit"
+                  type="checkbox"
+                  checked={vinConfirmDontShow}
+                  onChange={(e) => setVinConfirmDontShow(e.target.checked)}
+                  className="h-4 w-4"
+                />
+                <label htmlFor="vincodeDontShowEdit" className="text-xs text-slate-600">
+                  Don’t show again
+                </label>
+              </div>
+            </div>
+            <div className="h-12 px-4 border-t border-slate-200/60 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                className="h-9 px-4 rounded-lg bg-slate-100 text-slate-700 text-sm font-semibold"
+                onClick={() => setVinConfirmOpen(false)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="h-9 px-4 rounded-lg bg-[#118df0] text-white text-sm font-semibold disabled:opacity-60"
+                disabled={sendingVin}
+                onClick={async () => {
+                  const fn = vinConfirmActionRef.current
+                  setVinConfirmOpen(false)
+                  if (!fn) return
+                  try {
+                    if (vinConfirmDontShow) {
+                      try {
+                        if (typeof window !== 'undefined') window.localStorage.setItem('edc_skip_vincode_confirm', '1')
+                      } catch {}
+                    }
+                    await fn()
+                  } catch (err: any) {
+                    alert(err?.message || 'Failed to decode VIN')
+                  }
+                }}
+              >
+                {sendingVin ? 'Processing…' : 'Confirm'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {vinInsufficientOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true">
+          <div className="absolute inset-0 bg-navy-900/60 backdrop-blur-sm" onMouseDown={() => setVinInsufficientOpen(false)} />
+          <div className="edc-modal w-full max-w-md relative z-10" onMouseDown={(e) => e.stopPropagation()}>
+            <div className="h-11 px-4 border-b border-slate-200/60 flex items-center justify-between">
+              <div className="text-sm font-semibold text-slate-800">Insufficient Balance</div>
+              <button type="button" className="h-8 w-8 flex items-center justify-center" onClick={() => setVinInsufficientOpen(false)}>
+                <span className="text-xl leading-none text-slate-400">×</span>
+              </button>
+            </div>
+            <div className="p-4 text-sm text-slate-700">{vinInsufficientMessage || 'Insufficient Load Balance.'}</div>
+            <div className="h-12 px-4 border-t border-slate-200/60 flex items-center justify-end gap-2">
+              <button type="button" className="edc-btn-primary h-9 px-4 text-sm" onClick={() => setVinInsufficientOpen(false)}>
+                OK
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       <div className="space-y-6">
         {/* Top Row: Toggles */}
         <div className="flex justify-end items-center gap-6 mb-4">

@@ -201,6 +201,12 @@ export default function VehiclesTab({
   const [showSavedModal, setShowSavedModal] = useState(false)
   const [showSaveErrorModal, setShowSaveErrorModal] = useState(false)
   const [saveErrorModalMessage, setSaveErrorModalMessage] = useState<string | null>(null)
+  const [vinConfirmOpen, setVinConfirmOpen] = useState(false)
+  const [vinConfirmDontShow, setVinConfirmDontShow] = useState(false)
+  const [vinConfirmBalance, setVinConfirmBalance] = useState<number | null>(null)
+  const [vinInsufficientOpen, setVinInsufficientOpen] = useState(false)
+  const [vinInsufficientMessage, setVinInsufficientMessage] = useState('')
+  const vinConfirmActionRef = useRef<null | (() => Promise<void>)>(null)
   const [hasBeenSaved, setHasBeenSaved] = useState(() => Array.isArray(initialData) && initialData.length > 0)
   const [lastSaveWasUpdate, setLastSaveWasUpdate] = useState(false)
   const formMode: 'create' | 'edit' = hasBeenSaved || (Array.isArray(initialData) && initialData.length > 0) ? 'edit' : 'create'
@@ -505,22 +511,63 @@ export default function VehiclesTab({
         setAddDecodeError('Enter a VIN to decode')
         return
       }
-      setAddDecodeLoading(true)
 
       const user_id = await getWebhookUserId().catch(() => null)
 
-      const res = await fetch('/api/vincode', {
+      let email = ''
+      try {
+        if (typeof window !== 'undefined') {
+          const raw = window.localStorage.getItem('edc_admin_session')
+          if (raw) {
+            const parsed = JSON.parse(raw) as { email?: string }
+            email = String(parsed?.email || '').trim().toLowerCase()
+          }
+        }
+      } catch {
+        email = ''
+      }
+
+      if (!email) throw new Error('Missing email')
+
+      const cost = 0.5
+      const shouldSkipConfirm = (() => {
+        try {
+          return typeof window !== 'undefined' && window.localStorage.getItem('edc_skip_vincode_confirm') === '1'
+        } catch {
+          return false
+        }
+      })()
+
+      const balRes = await fetch('/api/users/balance', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ vin: vin.toUpperCase(), user_id: user_id || null }),
+        body: JSON.stringify({ email }),
       })
-      if (!res.ok) {
-        const errorText = await res.text().catch(() => '')
-        console.error('[Add Decode] Error response:', errorText)
-        throw new Error(`Decode failed (${res.status})`)
+      const balJson = await balRes.json().catch(() => null)
+      const balance = Number((balJson as any)?.balance ?? 0)
+      if (!Number.isFinite(balance) || balance < cost) {
+        setVinInsufficientMessage(
+          `Insufficient Load Balance. You need $0.50 to decode this VIN, but your balance is $${Number.isFinite(balance) ? balance.toFixed(2) : '0.00'}.`
+        )
+        setVinInsufficientOpen(true)
+        return
       }
-      const data = await res.json()
-      console.log('[Add Decode] Webhook response:', data)
+
+      const runDecode = async () => {
+        setAddDecodeLoading(true)
+        try {
+          const res = await fetch('/api/vincode', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ vin: vin.toUpperCase(), user_id: user_id || null, email }),
+          })
+          if (!res.ok) {
+            const errorText = await res.text().catch(() => '')
+            console.error('[Add Decode] Error response:', errorText)
+            throw new Error(`Decode failed (${res.status})`)
+          }
+          const data = await res.json()
+          console.log('[Add Decode] Webhook response:', data)
       
       // Handle different response formats
       let vehicleData = null
@@ -556,10 +603,24 @@ export default function VehiclesTab({
         exteriorColour: vehicleData['Exterior Color'] || p.exteriorColour,
       }))
       console.log('[Add Decode] Form updated successfully')
+        } finally {
+          setAddDecodeLoading(false)
+        }
+      }
+
+      if (shouldSkipConfirm) {
+        await runDecode()
+        return
+      }
+
+      setVinConfirmBalance(balance)
+      setVinConfirmDontShow(false)
+      vinConfirmActionRef.current = async () => {
+        await runDecode()
+      }
+      setVinConfirmOpen(true)
     } catch (e: any) {
       setAddDecodeError(e?.message || 'Failed to decode VIN')
-    } finally {
-      setAddDecodeLoading(false)
     }
   }
 
@@ -571,22 +632,63 @@ export default function VehiclesTab({
         setTradeDecodeError('Enter a VIN to decode')
         return
       }
-      setTradeDecodeLoading(true)
 
       const user_id = await getWebhookUserId().catch(() => null)
 
-      const res = await fetch('/api/vincode', {
+      let email = ''
+      try {
+        if (typeof window !== 'undefined') {
+          const raw = window.localStorage.getItem('edc_admin_session')
+          if (raw) {
+            const parsed = JSON.parse(raw) as { email?: string }
+            email = String(parsed?.email || '').trim().toLowerCase()
+          }
+        }
+      } catch {
+        email = ''
+      }
+
+      if (!email) throw new Error('Missing email')
+
+      const cost = 0.5
+      const shouldSkipConfirm = (() => {
+        try {
+          return typeof window !== 'undefined' && window.localStorage.getItem('edc_skip_vincode_confirm') === '1'
+        } catch {
+          return false
+        }
+      })()
+
+      const balRes = await fetch('/api/users/balance', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ vin: vin.toUpperCase(), user_id: user_id || null }),
+        body: JSON.stringify({ email }),
       })
-      if (!res.ok) {
-        const errorText = await res.text().catch(() => '')
-        console.error('[Trade Decode] Error response:', errorText)
-        throw new Error(`Decode failed (${res.status})`)
+      const balJson = await balRes.json().catch(() => null)
+      const balance = Number((balJson as any)?.balance ?? 0)
+      if (!Number.isFinite(balance) || balance < cost) {
+        setVinInsufficientMessage(
+          `Insufficient Load Balance. You need $0.50 to decode this VIN, but your balance is $${Number.isFinite(balance) ? balance.toFixed(2) : '0.00'}.`
+        )
+        setVinInsufficientOpen(true)
+        return
       }
-      const data = await res.json()
-      console.log('[Trade Decode] Webhook response:', data)
+
+      const runDecode = async () => {
+        setTradeDecodeLoading(true)
+        try {
+          const res = await fetch('/api/vincode', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ vin: vin.toUpperCase(), user_id: user_id || null, email }),
+          })
+          if (!res.ok) {
+            const errorText = await res.text().catch(() => '')
+            console.error('[Trade Decode] Error response:', errorText)
+            throw new Error(`Decode failed (${res.status})`)
+          }
+          const data = await res.json()
+          console.log('[Trade Decode] Webhook response:', data)
       
       // Handle different response formats
       let vehicleData = null
@@ -621,10 +723,24 @@ export default function VehiclesTab({
         colour: vehicleData['Exterior Color'] || p.colour,
       }))
       console.log('[Trade Decode] Form updated successfully')
+        } finally {
+          setTradeDecodeLoading(false)
+        }
+      }
+
+      if (shouldSkipConfirm) {
+        await runDecode()
+        return
+      }
+
+      setVinConfirmBalance(balance)
+      setVinConfirmDontShow(false)
+      vinConfirmActionRef.current = async () => {
+        await runDecode()
+      }
+      setVinConfirmOpen(true)
     } catch (e: any) {
       setTradeDecodeError(e?.message || 'Failed to decode VIN')
-    } finally {
-      setTradeDecodeLoading(false)
     }
   }
 
@@ -1127,6 +1243,92 @@ export default function VehiclesTab({
 
   return (
     <div className="w-full">
+      {vinConfirmOpen ? (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4" role="dialog" aria-modal="true">
+          <div className="absolute inset-0 bg-navy-900/60 backdrop-blur-sm" onMouseDown={() => setVinConfirmOpen(false)} />
+          <div className="edc-modal w-full max-w-md relative z-10" onMouseDown={(e) => e.stopPropagation()}>
+            <div className="h-11 px-4 border-b border-slate-200/60 flex items-center justify-between">
+              <div className="text-sm font-semibold text-slate-800">Vincode Decode</div>
+              <button type="button" className="h-8 w-8 flex items-center justify-center" onClick={() => setVinConfirmOpen(false)}>
+                <span className="text-xl leading-none text-slate-400">×</span>
+              </button>
+            </div>
+            <div className="p-4 text-sm text-slate-700">
+              <div>This action will decode the VIN using Load Balance.</div>
+              <div className="mt-2 font-semibold text-slate-900">Cost: $0.50</div>
+              {vinConfirmBalance != null ? (
+                <div className="mt-1 text-xs text-slate-500">Your balance: ${vinConfirmBalance.toFixed(2)}</div>
+              ) : null}
+              <div className="mt-4 flex items-center gap-2">
+                <input
+                  id="vincodeDontShowDeals"
+                  type="checkbox"
+                  checked={vinConfirmDontShow}
+                  onChange={(e) => setVinConfirmDontShow(e.target.checked)}
+                  className="h-4 w-4"
+                />
+                <label htmlFor="vincodeDontShowDeals" className="text-xs text-slate-600">
+                  Don’t show again
+                </label>
+              </div>
+            </div>
+            <div className="h-12 px-4 border-t border-slate-200/60 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                className="h-9 px-4 rounded-lg bg-slate-100 text-slate-700 text-sm font-semibold"
+                onClick={() => setVinConfirmOpen(false)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="h-9 px-4 rounded-lg bg-[#118df0] text-white text-sm font-semibold disabled:opacity-60"
+                disabled={addDecodeLoading || tradeDecodeLoading}
+                onClick={async () => {
+                  const fn = vinConfirmActionRef.current
+                  setVinConfirmOpen(false)
+                  if (!fn) return
+                  try {
+                    if (vinConfirmDontShow) {
+                      try {
+                        if (typeof window !== 'undefined') window.localStorage.setItem('edc_skip_vincode_confirm', '1')
+                      } catch {}
+                    }
+                    await fn()
+                  } catch (err: any) {
+                    const msg = err?.message || 'Failed to decode VIN'
+                    setAddDecodeError(msg)
+                    setTradeDecodeError(msg)
+                  }
+                }}
+              >
+                {addDecodeLoading || tradeDecodeLoading ? 'Processing…' : 'Confirm'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {vinInsufficientOpen ? (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4" role="dialog" aria-modal="true">
+          <div className="absolute inset-0 bg-navy-900/60 backdrop-blur-sm" onMouseDown={() => setVinInsufficientOpen(false)} />
+          <div className="edc-modal w-full max-w-md relative z-10" onMouseDown={(e) => e.stopPropagation()}>
+            <div className="h-11 px-4 border-b border-slate-200/60 flex items-center justify-between">
+              <div className="text-sm font-semibold text-slate-800">Insufficient Balance</div>
+              <button type="button" className="h-8 w-8 flex items-center justify-center" onClick={() => setVinInsufficientOpen(false)}>
+                <span className="text-xl leading-none text-slate-400">×</span>
+              </button>
+            </div>
+            <div className="p-4 text-sm text-slate-700">{vinInsufficientMessage || 'Insufficient Load Balance.'}</div>
+            <div className="h-12 px-4 border-t border-slate-200/60 flex items-center justify-end gap-2">
+              <button type="button" className="edc-btn-primary h-9 px-4 text-sm" onClick={() => setVinInsufficientOpen(false)}>
+                OK
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       {showSavedModal ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
           <div className="w-[92vw] max-w-md rounded-lg bg-white shadow-xl border border-gray-100 p-5">

@@ -2,13 +2,69 @@ import { NextResponse } from 'next/server'
 import crypto from 'crypto'
 export const runtime = 'nodejs'
 
+const normalizeEmail = (email: unknown) => String(email || '').trim().toLowerCase()
+
+const getSupabaseServerConfig = () => {
+  const supabaseUrl = String(process.env.NEXT_PUBLIC_SUPABASE_URL || '').replace(/\/+$/, '')
+  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  if (!supabaseUrl || !supabaseKey) throw new Error('Supabase server not configured')
+  return { supabaseUrl, supabaseKey }
+}
+
+const readUserBalance = async (email: string) => {
+  const { supabaseUrl, supabaseKey } = getSupabaseServerConfig()
+  const q = `${supabaseUrl}/rest/v1/users?select=email,balance&email=eq.${encodeURIComponent(email)}&limit=1`
+  const res = await fetch(q, {
+    method: 'GET',
+    headers: {
+      apikey: supabaseKey,
+      Authorization: `Bearer ${supabaseKey}`,
+    },
+  })
+  const text = await res.text().catch(() => '')
+  if (!res.ok) throw new Error(text || `Failed to fetch balance (${res.status})`)
+  let rows: any[] = []
+  try {
+    rows = JSON.parse(text)
+  } catch {
+    rows = []
+  }
+  const row = rows?.[0]
+  if (!row) throw new Error(`No users row matched email=${email}`)
+  const balance = Number(row?.balance ?? 0)
+  return { email: String(row?.email ?? email), balance: Number.isFinite(balance) ? balance : 0 }
+}
+
+const updateUserBalance = async (email: string, nextBalance: number) => {
+  const { supabaseUrl, supabaseKey } = getSupabaseServerConfig()
+  const patchUrl = `${supabaseUrl}/rest/v1/users?email=eq.${encodeURIComponent(email)}`
+  const res = await fetch(patchUrl, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      apikey: supabaseKey,
+      Authorization: `Bearer ${supabaseKey}`,
+      Prefer: 'return=representation',
+    },
+    body: JSON.stringify({ balance: nextBalance }),
+  })
+  const text = await res.text().catch(() => '')
+  if (!res.ok) throw new Error(text || `Failed to update user balance (${res.status})`)
+  if (String(text || '').trim() === '[]') throw new Error(`No users row matched email=${email}`)
+}
+
 export async function POST(request: Request) {
   try {
     const body = await request.json().catch(() => ({}))
     const { vin, debug } = body || {}
+    const email = normalizeEmail((body as any)?.email)
 
     if (!vin || typeof vin !== 'string' || vin.trim().length < 5) {
       return NextResponse.json({ error: 'Invalid VIN' }, { status: 400 })
+    }
+
+    if (!debug && !email) {
+      return NextResponse.json({ error: 'Missing email' }, { status: 400 })
     }
 
     // Read secrets from environment to keep them off the client
@@ -40,6 +96,19 @@ export async function POST(request: Request) {
       })
     }
 
+    const cost = 0.5
+    const wallet = await readUserBalance(email)
+    if (wallet.balance < cost) {
+      return NextResponse.json(
+        {
+          error: 'Insufficient Load Balance for VIN decode ($0.50 required).',
+          balance: wallet.balance,
+          required: cost,
+        },
+        { status: 402 }
+      )
+    }
+
     const payload = { vin: upperVin, CONTROL_SUM: controlSum }
     console.log('[vincode] sending payload -> webhook:', payload)
 
@@ -69,6 +138,14 @@ export async function POST(request: Request) {
       const text = await res.text().catch(() => '')
       return text ? { raw: text } : { ok: true }
     })
+
+    try {
+      const nextBalance = Number(wallet.balance) - cost
+      await updateUserBalance(email, nextBalance)
+    } catch (e) {
+      console.error('[vincode] failed to deduct balance', e)
+    }
+
     return NextResponse.json(json)
   } catch (err) {
     console.error('vincode proxy error', err)

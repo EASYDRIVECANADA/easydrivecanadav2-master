@@ -21,6 +21,12 @@ export default function NewVehiclePage() {
   const [showUpgradeModal, setShowUpgradeModal] = useState(false)
   const [gatingError, setGatingError] = useState('')
   const stockAutofillRanRef = useRef(false)
+  const [vinConfirmOpen, setVinConfirmOpen] = useState(false)
+  const [vinConfirmDontShow, setVinConfirmDontShow] = useState(false)
+  const [vinConfirmBalance, setVinConfirmBalance] = useState<number | null>(null)
+  const [vinInsufficientOpen, setVinInsufficientOpen] = useState(false)
+  const [vinInsufficientMessage, setVinInsufficientMessage] = useState('')
+  const vinConfirmActionRef = useRef<null | (() => Promise<void>)>(null)
   const [formData, setFormData] = useState({
     make: '',
     model: '',
@@ -369,6 +375,10 @@ export default function NewVehiclePage() {
     setFormData({ ...formData, [name]: value })
   }
 
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+  }
+
   // Removed tab locking - allow free navigation even if saves fail
 
   const handleSendVin = async () => {
@@ -377,300 +387,222 @@ export default function NewVehiclePage() {
       return
     }
     try {
-      setSendingVin(true)
       const user_id = webhookUserId ?? (await getWebhookUserId())
-      const res = await fetch('/api/vincode', {
+
+      let email = ''
+      try {
+        if (typeof window !== 'undefined') {
+          const raw = window.localStorage.getItem('edc_admin_session')
+          if (raw) {
+            const parsed = JSON.parse(raw) as { email?: string }
+            email = String(parsed?.email || '').trim().toLowerCase()
+          }
+        }
+      } catch {
+        email = ''
+      }
+
+      if (!email) throw new Error('Missing email')
+
+      const cost = 0.5
+      const shouldSkipConfirm = (() => {
+        try {
+          return typeof window !== 'undefined' && window.localStorage.getItem('edc_skip_vincode_confirm') === '1'
+        } catch {
+          return false
+        }
+      })()
+
+      const balRes = await fetch('/api/users/balance', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          user_id,
-          vin: String(formData.vin).trim(),
-        }),
+        body: JSON.stringify({ email }),
       })
-      if (!res.ok) {
-        const text = await res.text().catch(() => '')
-        throw new Error(text || `Webhook responded with ${res.status}`)
+      const balJson = await balRes.json().catch(() => null)
+      const balance = Number((balJson as any)?.balance ?? 0)
+      if (!Number.isFinite(balance) || balance < cost) {
+        setVinInsufficientMessage(`Insufficient Load Balance. You need $0.50 to decode this VIN, but your balance is $${Number.isFinite(balance) ? balance.toFixed(2) : '0.00'}.`)
+        setVinInsufficientOpen(true)
+        return
       }
-      const json = await res.json().catch(() => null)
-      console.log('[vin+][new-page] webhook response:', json)
-      const first: any = Array.isArray(json) ? (json[0] || {}) : (json || {})
-      const decode = Array.isArray(first.decode) ? first.decode : []
-      const byLabel = (label: string) => decode.find((d: any) => d?.label === label)?.value
-      const flatGet = (key: string) => {
-        const entries = Object.entries(first || {}).map(([k, v]) => [String(k).trim().toLowerCase(), v] as const)
-        const want = key.trim().toLowerCase()
-        const hit = entries.find(([k]) => k === want)
-        return hit ? hit[1] : undefined
-      }
-      const mapBodyToBodyStyle = (val: string | undefined) => {
-        if (!val) return ''
-        const s = String(val).toLowerCase()
-        if (s.includes('pickup')) return 'Truck'
-        if (s.includes('suv')) return 'SUV'
-        if (s.includes('truck')) return 'Truck'
-        if (s.includes('coupe')) return 'Coupe'
-        if (s.includes('hatch')) return 'Hatchback'
-        if (s.includes('wagon')) return 'Wagon'
-        if (s.includes('van')) return 'Van'
-        if (s.includes('convertible')) return 'Convertible'
-        if (s.includes('sedan')) return 'Sedan'
-        return ''
-      }
-      const mapDrive = (val: string | undefined) => {
-        if (!val) return ''
-        const s = String(val).toUpperCase()
-        if (s.includes('4WD') || s.includes('4X4')) return '4WD'
-        if (s.includes('AWD')) return 'AWD'
-        if (s.includes('RWD')) return 'RWD'
-        if (s.includes('FWD')) return 'FWD'
-        return ''
-      }
-      const make = byLabel('Make') || flatGet('make') || ''
-      const model = byLabel('Model') || flatGet('model') || ''
-      const year = byLabel('Model Year') || flatGet('year') || flatGet('year ') || ''
-      const body = byLabel('Body') || flatGet('body style') || ''
-      const trim = byLabel('Trim') || flatGet('trim') || ''
-      const drive = byLabel('Drive') || flatGet('drivetrain') || ''
-      const cylinders = byLabel('Engine Cylinders') || flatGet('cylinders') || flatGet(' cylinders') || ''
-      const fuelPrimary = byLabel('Fuel Type - Primary') || flatGet('fuel type') || ''
-      const transmission = byLabel('Transmission') || flatGet('transmission') || ''
-      const doors = byLabel('Number of Doors') || flatGet('doors') || ''
-      const engine = byLabel('Engine Model') || flatGet('engine') || ''
 
-      setFormData((prev: any) => ({
-        ...prev,
-        make: String(make || prev.make || ''),
-        model: String(model || prev.model || ''),
-        year: Number(year) || prev.year,
-        bodyStyle: mapBodyToBodyStyle(String(body)) || prev.bodyStyle,
-        drivetrain: mapDrive(String(drive)) || prev.drivetrain,
-        fuelType: String(fuelPrimary || prev.fuelType || ''),
-        transmission: String(transmission || prev.transmission || ''),
-        trim: String(trim || prev.trim || ''),
-        doors: String(doors || prev.doors || ''),
-        cylinders: String(cylinders || (prev as any).cylinders || ''),
-        engine: String(engine || (prev as any).engine || ''),
-        stockNumber: String(flatGet('stock number (unit id)') || prev.stockNumber || ''),
-      }))
-      console.log('[vin+][new-page] parsed:', { make, model, year, body, drive, fuelPrimary, transmission, trim, doors, cylinders, engine })
-      console.log('[vin+][new-page] formData updated')
-      setVinPrefilled(true)
-      setLastVinSent(String(formData.vin).trim())
-    } catch (err) {
-      console.error('Error sending VIN webhook:', err)
-      alert('Failed to send VIN. Please try again.')
+      const runDecode = async () => {
+        setSendingVin(true)
+        try {
+          const res = await fetch('/api/vincode', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              user_id,
+              email,
+              vin: String(formData.vin).trim(),
+            }),
+          })
+          if (!res.ok) {
+            const text = await res.text().catch(() => '')
+            throw new Error(text || `Webhook responded with ${res.status}`)
+          }
+          const json = await res.json().catch(() => null)
+          console.log('[vin+][new-page] webhook response:', json)
+          const first: any = Array.isArray(json) ? (json[0] || {}) : (json || {})
+          const decode = Array.isArray(first.decode) ? first.decode : []
+          const byLabel = (label: string) => decode.find((d: any) => d?.label === label)?.value
+          const flatGet = (key: string) => {
+            const entries = Object.entries(first || {}).map(([k, v]) => [String(k).trim().toLowerCase(), v] as const)
+            const want = key.trim().toLowerCase()
+            const hit = entries.find(([k]) => k === want)
+            return hit ? hit[1] : undefined
+          }
+          const mapBodyToBodyStyle = (val: string | undefined) => {
+            if (!val) return ''
+            const s = String(val).toLowerCase()
+            if (s.includes('pickup')) return 'Truck'
+            if (s.includes('suv')) return 'SUV'
+            if (s.includes('truck')) return 'Truck'
+            if (s.includes('coupe')) return 'Coupe'
+            if (s.includes('hatch')) return 'Hatchback'
+            if (s.includes('wagon')) return 'Wagon'
+            if (s.includes('van')) return 'Van'
+            if (s.includes('convertible')) return 'Convertible'
+            if (s.includes('sedan')) return 'Sedan'
+            return ''
+          }
+          const mapDrive = (val: string | undefined) => {
+            if (!val) return ''
+            const s = String(val).toUpperCase()
+            if (s.includes('4WD') || s.includes('4X4')) return '4WD'
+            if (s.includes('AWD')) return 'AWD'
+            if (s.includes('RWD')) return 'RWD'
+            if (s.includes('FWD')) return 'FWD'
+            return ''
+          }
+          const make = byLabel('Make') || flatGet('make') || ''
+          const model = byLabel('Model') || flatGet('model') || ''
+          const year = byLabel('Model Year') || flatGet('year') || flatGet('year ') || ''
+          const body = byLabel('Body') || flatGet('body style') || ''
+          const trim = byLabel('Trim') || flatGet('trim') || ''
+          const drive = byLabel('Drive') || flatGet('drivetrain') || ''
+          const cylinders = byLabel('Engine Cylinders') || flatGet('cylinders') || flatGet(' cylinders') || ''
+          const fuelPrimary = byLabel('Fuel Type - Primary') || flatGet('fuel type') || ''
+          const transmission = byLabel('Transmission') || flatGet('transmission') || ''
+          const doors = byLabel('Number of Doors') || flatGet('doors') || ''
+          const engine = byLabel('Engine Model') || flatGet('engine') || ''
+
+          setFormData((prev: any) => ({
+            ...prev,
+            make: String(make || prev.make || ''),
+            model: String(model || prev.model || ''),
+            year: Number(year) || prev.year,
+            bodyStyle: mapBodyToBodyStyle(String(body)) || prev.bodyStyle,
+            drivetrain: mapDrive(String(drive)) || prev.drivetrain,
+            fuelType: String(fuelPrimary || prev.fuelType || ''),
+            transmission: String(transmission || prev.transmission || ''),
+            trim: String(trim || prev.trim || ''),
+            doors: String(doors || prev.doors || ''),
+            cylinders: String(cylinders || (prev as any).cylinders || ''),
+            engine: String(engine || (prev as any).engine || ''),
+            stockNumber: String(flatGet('stock number (unit id)') || prev.stockNumber || ''),
+          }))
+          setVinPrefilled(true)
+          setLastVinSent(String(formData.vin).trim())
+        } finally {
+          setSendingVin(false)
+        }
+      }
+
+      if (shouldSkipConfirm) {
+        await runDecode()
+        return
+      }
+
+      setVinConfirmBalance(balance)
+      setVinConfirmDontShow(false)
+      vinConfirmActionRef.current = async () => {
+        await runDecode()
+      }
+      setVinConfirmOpen(true)
+    } catch (e: any) {
+      setError(e?.message || 'Failed to send VIN')
     } finally {
       setSendingVin(false)
     }
   }
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setSubmitting(true)
-    setError('')
-    setGatingError('')
-
-    try {
-      const sessionStr = typeof window !== 'undefined' ? window.localStorage.getItem('edc_admin_session') : null
-      const parsedSession = sessionStr ? (JSON.parse(sessionStr) as any) : null
-      const sessionEmail = String(parsedSession?.email || '').trim().toLowerCase()
-
-      let effectiveUserId = String(webhookUserId ?? (await getWebhookUserId()) ?? '').trim()
-      let isAdmin = false
-
-      try {
-        const { data: byId } = effectiveUserId
-          ? await supabase.from('users').select('user_id, role').eq('user_id', effectiveUserId).maybeSingle()
-          : ({ data: null } as any)
-        const { data: byEmail } = !byId?.role && sessionEmail
-          ? await supabase.from('users').select('user_id, role').eq('email', sessionEmail).maybeSingle()
-          : ({ data: null } as any)
-
-        const roleRaw = String((byId as any)?.role ?? (byEmail as any)?.role ?? '').trim().toLowerCase()
-        isAdmin = roleRaw === 'admin'
-        if (!effectiveUserId) {
-          const uid = String((byId as any)?.user_id ?? (byEmail as any)?.user_id ?? '').trim()
-          if (uid) effectiveUserId = uid
-        }
-      } catch {
-        // ignore
-      }
-
-      if (!effectiveUserId && !isAdmin) {
-        setError('Missing user session. Please re-login.')
-        return
-      }
-
-      // Upload gating: role=private allows only 1 vehicle insert; role=public allows multiple
-      try {
-        if (!isAdmin) {
-          const { data: uById, error: userErrById } = effectiveUserId
-            ? await supabase.from('users').select('role').eq('user_id', effectiveUserId).maybeSingle()
-            : ({ data: null, error: null } as any)
-
-          const { data: uByEmail } = !uById?.role && sessionEmail
-            ? await supabase.from('users').select('role').eq('email', sessionEmail).maybeSingle()
-            : ({ data: null } as any)
-
-          if (userErrById) {
-            const msg = String((userErrById as any)?.message || '').toLowerCase()
-            if (msg.includes("does not exist") || msg.includes('column')) {
-              setGatingError('Unable to check account role. Please contact support.')
-            }
-          }
-
-          const rawRole = String((uById as any)?.role ?? (uByEmail as any)?.role ?? '').trim().toLowerCase()
-          const role = rawRole === 'public' ? 'public' : rawRole === 'private' ? 'private' : rawRole === 'admin' ? 'admin' : ''
-
-          if (role === 'admin') {
-            // admin: no upload restrictions
-            // continue
-          }
-
-          if (role === 'private') {
-          const { count, error: countErr } = await supabase
-            .from('edc_vehicles')
-            .select('id', { count: 'exact', head: true })
-            .eq('user_id', effectiveUserId)
-
-          if (countErr) {
-            const msg = String((countErr as any)?.message || '')
-            setGatingError(msg ? `Unable to check upload limit: ${msg}` : 'Unable to check upload limit.')
-            return
-          }
-
-          if ((count || 0) >= 1) {
-            setShowUpgradeModal(true)
-            return
-          }
-          }
-        }
-      } catch (gErr: any) {
-        const msg = String(gErr?.message || '').trim()
-        setGatingError(msg || 'Unable to check upload limit.')
-        return
-      }
-
-      const formatDbError = (err: any) => {
-        if (!err) return ''
-        const parts: string[] = []
-        if (typeof err.message === 'string' && err.message.trim()) parts.push(err.message.trim())
-        if (typeof err.details === 'string' && err.details.trim()) parts.push(err.details.trim())
-        if (typeof err.hint === 'string' && err.hint.trim()) parts.push(err.hint.trim())
-        if (typeof err.code === 'string' && err.code.trim()) parts.push(`code: ${err.code.trim()}`)
-        return parts.filter(Boolean).join(' | ')
-      }
-
-      const payload = {
-        ...formData,
-        price: parseFloat(formData.price.toString()),
-        mileage: parseInt(formData.mileage.toString()),
-        year: parseInt(formData.year.toString()),
-        features: formData.features.split(',').map((f) => f.trim()).filter(Boolean),
-      }
-
-      // Webhook for Add (must return "done" before continuing)
-      try {
-        const webhookBody = Object.fromEntries(
-          Object.entries(formData).map(([k, v]) => {
-            if (typeof v === 'string') {
-              const trimmed = v.trim()
-              return [k, trimmed === '' ? null : trimmed]
-            }
-            return [k, v]
-          })
-        )
-
-        ;(webhookBody as any).user_id = effectiveUserId || null
-
-        ;(webhookBody as any).ad_description = String((formData as any).adDescription ?? '').trim() === ''
-          ? null
-          : String((formData as any).adDescription)
-        delete (webhookBody as any).adDescription
-
-        ;(webhookBody as any).price = String(formData.price ?? '').trim() === '' ? null : Number(formData.price)
-        ;(webhookBody as any).mileage = String(formData.mileage ?? '').trim() === '' ? null : Number(formData.mileage)
-        ;(webhookBody as any).odometer = String((formData as any).odometer ?? '').trim() === '' ? null : Number((formData as any).odometer)
-        ;(webhookBody as any).year = String(formData.year ?? '').trim() === '' ? null : Number(formData.year)
-        ;(webhookBody as any).features = String(formData.features ?? '').trim() === ''
-          ? null
-          : String(formData.features)
-            .split(',')
-            .map((f) => f.trim())
-            .filter(Boolean)
-
-        const webhookRes = await fetch('/api/inventory-add', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(webhookBody),
-        })
-
-        const webhookText = await webhookRes.text().catch(() => '')
-        if (!webhookRes.ok) {
-          throw new Error(webhookText || `Webhook responded with ${webhookRes.status}`)
-        }
-        if (!String(webhookText).toLowerCase().includes('done')) {
-          throw new Error(webhookText || 'Webhook did not return done')
-        }
-      } catch (err: any) {
-        const msg = typeof err?.message === 'string' && err.message.trim() ? err.message.trim() : ''
-        const isDuplicateVin =
-          msg.toLowerCase().includes('duplicate key value violates unique constraint') ||
-          msg.toLowerCase().includes('edc_vehicles_vin_key')
-
-        if (!isDuplicateVin) {
-          setError(msg ? `Webhook failed: ${msg}` : 'Webhook failed')
-        }
-        return
-      }
-
-      const vinForLookup = String(formData.vin || '').trim().toUpperCase()
-      if (!vinForLookup) {
-        setError('Webhook succeeded but VIN is empty; unable to find created vehicle in Supabase.')
-        return
-      }
-
-      const { data: created, error: lookupError } = await supabase
-        .from('edc_vehicles')
-        .select('id')
-        .eq('vin', vinForLookup)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle()
-
-      if (lookupError || !created?.id) {
-        const detail = formatDbError(lookupError)
-        setError(detail ? `Webhook returned done, but could not find the created vehicle: ${detail}` : 'Webhook returned done, but could not find the created vehicle in Supabase.')
-        return
-      }
-
-      setCreatedVehicleId(created.id)
-      setActiveTab('disclosures')
-    } catch (err: any) {
-      const msg = typeof err?.message === 'string' && err.message.trim() ? err.message.trim() : ''
-      setError(msg ? `Unable to create vehicle: ${msg}` : 'Unable to create vehicle. Please try again.')
-    } finally {
-      setSubmitting(false)
-    }
-  }
-
   return (
-    <div className="min-h-screen bg-gray-100">
-      {showUpgradeModal ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div className="absolute inset-0 bg-black/40" onClick={() => setShowUpgradeModal(false)} />
-          <div className="relative w-[92%] max-w-md rounded-xl bg-white p-6 shadow-lg">
-            <div className="text-lg font-semibold text-slate-900">Upgrade required</div>
-            <div className="mt-2 text-sm text-slate-600">
-              Your account is set to <span className="font-semibold">private</span>, which allows only one inventory upload.
-              Please upgrade to a <span className="font-semibold">dealership account</span> to upload more vehicles.
+    <div className="min-h-screen bg-gray-50">
+      {vinConfirmOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true">
+          <div className="absolute inset-0 bg-navy-900/60 backdrop-blur-sm" onMouseDown={() => setVinConfirmOpen(false)} />
+          <div className="edc-modal w-full max-w-md relative z-10" onMouseDown={(e) => e.stopPropagation()}>
+            <div className="h-11 px-4 border-b border-slate-200/60 flex items-center justify-between">
+              <div className="text-sm font-semibold text-slate-800">Vincode Decode</div>
+              <button type="button" className="h-8 w-8 flex items-center justify-center" onClick={() => setVinConfirmOpen(false)}>
+                <span className="text-xl leading-none text-slate-400">×</span>
+              </button>
             </div>
-            <div className="mt-6 flex justify-end gap-2">
+            <div className="p-4 text-sm text-slate-700">
+              <div>This action will decode the VIN using Load Balance.</div>
+              <div className="mt-2 font-semibold text-slate-900">Cost: $0.50</div>
+              {vinConfirmBalance != null ? (
+                <div className="mt-1 text-xs text-slate-500">Your balance: ${vinConfirmBalance.toFixed(2)}</div>
+              ) : null}
+              <div className="mt-4 flex items-center gap-2">
+                <input
+                  id="vincodeDontShowNewInv"
+                  type="checkbox"
+                  checked={vinConfirmDontShow}
+                  onChange={(e) => setVinConfirmDontShow(e.target.checked)}
+                  className="h-4 w-4"
+                />
+                <label htmlFor="vincodeDontShowNewInv" className="text-xs text-slate-600">
+                  Don’t show again
+                </label>
+              </div>
+            </div>
+            <div className="h-12 px-4 border-t border-slate-200/60 flex items-center justify-end gap-2">
+              <button type="button" className="h-9 px-4 rounded-lg bg-slate-100 text-slate-700 text-sm font-semibold" onClick={() => setVinConfirmOpen(false)}>
+                Cancel
+              </button>
               <button
                 type="button"
-                className="px-4 py-2 rounded-lg border border-slate-200 bg-white text-slate-700"
-                onClick={() => setShowUpgradeModal(false)}
+                className="h-9 px-4 rounded-lg bg-[#118df0] text-white text-sm font-semibold disabled:opacity-60"
+                disabled={sendingVin}
+                onClick={async () => {
+                  const fn = vinConfirmActionRef.current
+                  setVinConfirmOpen(false)
+                  if (!fn) return
+                  try {
+                    if (vinConfirmDontShow) {
+                      try {
+                        if (typeof window !== 'undefined') window.localStorage.setItem('edc_skip_vincode_confirm', '1')
+                      } catch {}
+                    }
+                    await fn()
+                  } catch (err: any) {
+                    setError(err?.message || 'Failed to decode VIN')
+                  }
+                }}
               >
+                {sendingVin ? 'Processing…' : 'Confirm'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {vinInsufficientOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true">
+          <div className="absolute inset-0 bg-navy-900/60 backdrop-blur-sm" onMouseDown={() => setVinInsufficientOpen(false)} />
+          <div className="edc-modal w-full max-w-md relative z-10" onMouseDown={(e) => e.stopPropagation()}>
+            <div className="h-11 px-4 border-b border-slate-200/60 flex items-center justify-between">
+              <div className="text-sm font-semibold text-slate-800">Insufficient Balance</div>
+              <button type="button" className="h-8 w-8 flex items-center justify-center" onClick={() => setVinInsufficientOpen(false)}>
+                <span className="text-xl leading-none text-slate-400">×</span>
+              </button>
+            </div>
+            <div className="p-4 text-sm text-slate-700">{vinInsufficientMessage || 'Insufficient Load Balance.'}</div>
+            <div className="h-12 px-4 border-t border-slate-200/60 flex items-center justify-end gap-2">
+              <button type="button" className="edc-btn-primary h-9 px-4 text-sm" onClick={() => setVinInsufficientOpen(false)}>
                 OK
               </button>
             </div>
@@ -678,17 +610,14 @@ export default function NewVehiclePage() {
         </div>
       ) : null}
 
-      {/* Header */}
       <div className="bg-white shadow">
-        <div className="w-full px-4 sm:px-6 lg:px-8 py-4">
-          <div className="flex items-center justify-between">
-            <h1 className="text-2xl font-bold text-gray-900">Add New Vehicle</h1>
-            <Link
-              href="/admin/inventory"
-              className="px-4 py-2 border border-gray-300 rounded-lg font-medium hover:bg-gray-50 transition-colors"
-            >
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="py-6">
+            <Link href="/admin/inventory" className="text-[#118df0] hover:underline">
               ← Back to Inventory
             </Link>
+            <h1 className="text-3xl font-bold text-gray-900 mt-2">Add New Vehicle</h1>
+            <p className="mt-2 text-gray-600">Create a new inventory listing</p>
           </div>
         </div>
       </div>
