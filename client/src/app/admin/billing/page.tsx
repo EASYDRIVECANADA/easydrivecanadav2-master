@@ -1,7 +1,7 @@
 'use client'
 
-import SettingsBillingPage from '../settings/billing/page'
+import { BillingPage } from '../settings/billing/page'
 
 export default function BillingStandalonePage() {
-  return <SettingsBillingPage />
+  return <BillingPage />
 }

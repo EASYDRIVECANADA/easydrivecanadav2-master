@@ -2,10 +2,17 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import { useRouter } from 'next/navigation'
 
 export default function SettingsBillingPage() {
+  const router = useRouter()
+
+  useEffect(() => {
+    router.replace('/admin/billing')
+  }, [router])
+
   return (
-    <BillingPage />
+    null
   )
 }
 
@@ -37,7 +44,7 @@ type PlanStatus = {
   validUntilIso: string | null
 }
 
-function BillingPage() {
+export function BillingPage() {
   const [section, setSection] = useState<BillingSection>('Products & Services')
 
   const stripePaymentLink = String(process.env.NEXT_PUBLIC_STRIPE_PAYMENT_LINK || '').trim()
@@ -69,7 +76,7 @@ function BillingPage() {
         description: 'Default account for private sellers — pay only when you post or promote',
         features: [
           '1st tier Free',
-          '1 Seller (single-user)',
+          'Up to 2 Users',
           'Basic listings & inquiries',
           'Manual posting / pay-per-use publishing',
           '$3 paid per use only',

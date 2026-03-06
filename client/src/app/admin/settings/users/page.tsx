@@ -61,6 +61,7 @@ export default function SettingsUsersPage() {
   const [scopedUserId, setScopedUserId] = useState<string | null>(null)
   const [userAddedOpen, setUserAddedOpen] = useState(false)
   const [userAddedMessage, setUserAddedMessage] = useState('User information added')
+  const [upgradeModalOpen, setUpgradeModalOpen] = useState(false)
   const [sessionEmail, setSessionEmail] = useState<string | null>(null)
   const [sessionFullName, setSessionFullName] = useState<string | null>(null)
   const [editingUserId, setEditingUserId] = useState<string | null>(null)
@@ -116,6 +117,10 @@ export default function SettingsUsersPage() {
     setConfirmPassword('')
     setPasswordError(null)
     setSavingNewUser(false)
+  }
+
+  const closeUpgradeModal = () => {
+    setUpgradeModalOpen(false)
   }
 
   const nullIfEmpty = (v: string) => {
@@ -181,7 +186,11 @@ export default function SettingsUsersPage() {
     setPasswordError(null)
 
     if (!editingUserId && !canAddMoreUsers) {
-      setPasswordError('User limit reached. Dealership accounts can create up to 5 additional users.')
+      const r = String(accountRole || '').trim().toLowerCase()
+      const msg = r === 'dealership'
+        ? 'User limit reached. Dealership accounts can create up to 5 additional users.'
+        : 'User limit reached. Private Seller accounts can create 1 additional user.'
+      setPasswordError(msg)
       return
     }
 
@@ -413,13 +422,32 @@ export default function SettingsUsersPage() {
     return [ownerRow, ...normalized]
   }, [rows, sessionEmail, sessionFullName])
 
+  const ownerEmailForLimit = useMemo(() => {
+    const e1 = String(sessionEmail || '').trim().toLowerCase()
+    if (e1) return e1
+    try {
+      if (typeof window === 'undefined') return ''
+      const raw = window.localStorage.getItem('edc_admin_session')
+      if (!raw) return ''
+      const parsed = JSON.parse(raw) as { email?: string }
+      return String(parsed?.email || '').trim().toLowerCase()
+    } catch {
+      return ''
+    }
+  }, [sessionEmail])
+
   const canAddMoreUsers = useMemo(() => {
     const r = String(accountRole || '').trim().toLowerCase()
     if (r === 'admin') return true
-    if (r !== 'dealership') return false
-    const additional = rows.length
-    return additional < 5
-  }, [accountRole, rows.length])
+    const additional = rows.filter((u) => {
+      const email = String(u.email || '').trim().toLowerCase()
+      if (!email) return true
+      if (ownerEmailForLimit && email === ownerEmailForLimit) return false
+      return true
+    }).length
+    if (r === 'dealership') return additional < 5
+    return additional < 1
+  }, [accountRole, ownerEmailForLimit, rows])
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -505,6 +533,38 @@ export default function SettingsUsersPage() {
             <div className="h-12 px-4 border-t border-slate-200/60 flex items-center justify-end">
               <button type="button" className="edc-btn-primary h-8 px-4 text-xs" onClick={() => setUserAddedOpen(false)}>
                 OK
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {upgradeModalOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center" role="dialog" aria-modal="true">
+          <div className="absolute inset-0 bg-navy-900/60 backdrop-blur-sm" onMouseDown={closeUpgradeModal} />
+          <div className="edc-modal w-[420px] relative z-10" onMouseDown={(e) => e.stopPropagation()}>
+            <div className="h-11 px-4 border-b border-slate-200/60 flex items-center justify-between">
+              <div className="text-sm font-semibold text-slate-800">Upgrade Required</div>
+              <button type="button" className="h-8 w-8 flex items-center justify-center" onClick={closeUpgradeModal}>
+                <span className="text-xl leading-none text-slate-400">×</span>
+              </button>
+            </div>
+            <div className="p-4 text-xs text-slate-600">
+              You reached the user limit for Private Seller accounts. Upgrade to a Dealership account to add more users.
+            </div>
+            <div className="h-12 px-4 border-t border-slate-200/60 flex items-center justify-end gap-2">
+              <button type="button" className="edc-btn-secondary h-8 px-4 text-xs" onClick={closeUpgradeModal}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="edc-btn-primary h-8 px-4 text-xs"
+                onClick={() => {
+                  closeUpgradeModal()
+                  router.push('/admin/billing')
+                }}
+              >
+                Upgrade
               </button>
             </div>
           </div>
@@ -840,18 +900,27 @@ export default function SettingsUsersPage() {
       <div className="flex items-center justify-between gap-4 py-2">
         <button
           type="button"
-          className="h-7 w-7 flex items-center justify-center text-slate-700 hover:text-slate-900"
+          className={
+            canAddMoreUsers
+              ? 'h-7 w-7 flex items-center justify-center text-slate-700 hover:text-slate-900'
+              : 'h-7 w-7 flex items-center justify-center text-slate-400 cursor-not-allowed'
+          }
           title="Add user"
           onClick={() => {
             if (!canAddMoreUsers) {
-              setUserAddedMessage('User limit reached. Upgrade to Dealership to add up to 5 users.')
+              const r = String(accountRole || '').trim().toLowerCase()
+              if (r !== 'dealership' && r !== 'admin') {
+                setUpgradeModalOpen(true)
+                return
+              }
+              const msg = 'User limit reached. Dealership accounts can create up to 5 additional users.'
+              setUserAddedMessage(msg)
               setUserAddedOpen(true)
               return
             }
             setNewUserTab('details')
             setNewUserOpen(true)
           }}
-          disabled={!canAddMoreUsers}
         >
           <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor">
             <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2" />
