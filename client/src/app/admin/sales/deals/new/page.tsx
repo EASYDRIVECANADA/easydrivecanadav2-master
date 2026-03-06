@@ -51,6 +51,7 @@ function SalesNewDealPageContent() {
   const [vehiclePrefill, setVehiclePrefill] = useState<any>(null)
   const [vehiclePrefillLoading, setVehiclePrefillLoading] = useState(false)
   const [prefillLoading, setPrefillLoading] = useState(false)
+  const [dealHasSignature, setDealHasSignature] = useState(false)
 
   // Print dropdown & Documents Preview modal
   const [showPrintMenu, setShowPrintMenu] = useState(false)
@@ -201,6 +202,7 @@ function SalesNewDealPageContent() {
       const data = await res.json()
       if (data.error) throw new Error(data.error)
       setPrefill(data)
+      setDealHasSignature(Boolean(data?.customer?.signature))
       // Set top-level fields from customer data
       const c = data.customer
       if (c) {
@@ -383,7 +385,7 @@ function SalesNewDealPageContent() {
       const vRaw = deal?.vehicles?.[0] || {}
       const vp = vehiclePrefill?.vehicle || {}
       // edc_deals_vehicles stores vehicle info in selected_* columns (or camelCase variants)
-      const sv = vRaw.selectedVehicle || vRaw  // webhook may nest under selectedVehicle
+      const sv = vRaw.selectedVehicle || vRaw
       const v = {
         stock_number: sv.selected_stock_number ?? sv.stockNumber ?? sv.stock_number ?? vp.stock_number ?? '',
         year: sv.selected_year ?? sv.year ?? vp.year ?? '',
@@ -787,6 +789,12 @@ function SalesNewDealPageContent() {
   return (
     <div className="w-full min-h-[calc(100vh-64px)] bg-gradient-to-b from-[#f6f7f9] to-[#e9eaee]">
       <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
+        {dealHasSignature ? (
+          <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            Already have signature.
+          </div>
+        ) : null}
+
         <div className="flex items-start justify-between gap-4">
           <div>
             <div className="text-sm font-semibold text-gray-900">Retail/Wholesale</div>
@@ -842,7 +850,7 @@ function SalesNewDealPageContent() {
                 className="h-9 px-3 rounded bg-[#118df0] text-white text-sm font-semibold hover:bg-[#0d6ebd] flex items-center gap-1 disabled:opacity-50"
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>
-                {emailLoading ? 'Sending...' : 'Email'}
+                {emailLoading ? 'Sending...' : 'Request Signature'}
               </button>
               <div className="relative" ref={printMenuRef}>
                 <div className="flex">
