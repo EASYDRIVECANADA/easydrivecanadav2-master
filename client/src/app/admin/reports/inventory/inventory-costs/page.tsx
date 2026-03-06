@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
 type Row = {
   id: string
@@ -21,50 +21,40 @@ export default function InventoryCostsPage() {
   const [query, setQuery] = useState('')
   const [perPage, setPerPage] = useState('50')
 
-  const rows = useMemo<Row[]>(
-    () => [
-      {
-        id: 'ic_1',
-        date: 'Jan 14, 2026',
-        name: 'Windshield',
-        description: '-',
-        vehicle: 'Stock # 1000 2011 Toyota Sienna : 5TDZK3DC2BS153048',
-        invoice: '1000',
-        vendor: "ANDY'S AUTO GLASS",
-        subtotal: 320,
-        hst13: 41.6,
-        exempt0: 0,
-        total: 361.6,
-      },
-      {
-        id: 'ic_2',
-        date: 'Jan 14, 2026',
-        name: 'Tires',
-        description: 'Used Winter Tires',
-        vehicle: 'Stock # 1000 2011 Toyota Sienna : 5TDZK3DC2BS153048',
-        invoice: '1000',
-        vendor: 'Tire Truck',
-        subtotal: 280,
-        hst13: 36.4,
-        exempt0: 0,
-        total: 316.4,
-      },
-      {
-        id: 'ic_3',
-        date: 'Dec 10, 2025',
-        name: 'Mechanical Parts',
-        description: '-',
-        vehicle: 'Stock # 1007 2016 Nissan Pathfinder : 5N1AR2MM4GC606768',
-        invoice: '01005',
-        vendor: "Mark's Parts",
-        subtotal: 475,
-        hst13: 61.75,
-        exempt0: 0,
-        total: 536.75,
-      },
-    ],
-    []
-  )
+  const [rows, setRows] = useState<Row[]>([])
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    const run = async () => {
+      try {
+        setLoading(true)
+        setError(null)
+
+        const qs = new URLSearchParams()
+        if (status) qs.set('status', status)
+        if (perPage) qs.set('perPage', perPage)
+
+        const res = await fetch(`/api/reports/inventory/inventory-costs?${qs.toString()}`, {
+          cache: 'no-store',
+        })
+        const json = await res.json().catch(() => null)
+        if (!res.ok || !json?.ok) {
+          throw new Error(String(json?.error || `Failed to load inventory costs (${res.status})`))
+        }
+
+        const r = Array.isArray(json?.rows) ? (json.rows as Row[]) : []
+        setRows(r)
+      } catch (e: any) {
+        setError(e?.message || 'Failed to load inventory costs')
+        setRows([])
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    void run()
+  }, [perPage, status])
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -83,7 +73,7 @@ export default function InventoryCostsPage() {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold text-slate-900">Inventory Costs</h1>
-            <p className="text-sm text-slate-500 mt-0.5">Mock data only (UI design)</p>
+            <p className="text-sm text-slate-500 mt-0.5">Inventory cost entries</p>
           </div>
           <div className="text-sm text-slate-500">Grand Total: <span className="font-semibold text-slate-700">${grand.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>
         </div>
@@ -137,6 +127,18 @@ export default function InventoryCostsPage() {
         </div>
 
         <div className="edc-card mt-4 overflow-hidden">
+          {error ? (
+            <div className="p-4">
+              <div className="text-sm text-danger-600">{error}</div>
+            </div>
+          ) : null}
+
+          {loading ? (
+            <div className="p-4">
+              <div className="text-sm text-slate-500">Loading...</div>
+            </div>
+          ) : null}
+
           <div className="overflow-x-auto">
             <table className="edc-table min-w-max">
               <thead>

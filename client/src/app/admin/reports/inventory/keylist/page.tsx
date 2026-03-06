@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
 type Row = {
   id: string
@@ -27,59 +27,43 @@ export default function KeylistPage() {
   const [to, setTo] = useState('2026-01-31')
   const [query, setQuery] = useState('')
 
-  const rows = useMemo<Row[]>(
-    () => [
-      {
-        id: 'k_1',
-        year: '2010',
-        model: 'Forester',
-        colour: 'Red',
-        bodyStyle: 'Body Style',
-        keyNumber: 6,
-        cyl: 4,
-        odometer: '229,192 kms',
-        price: 1800,
-        stockNumber: '1011',
-        type: 'N/A',
-        cert: 'As-Is',
-        status: 'Sold',
-        date: 'Jan 3, 2026',
-      },
-      {
-        id: 'k_2',
-        year: '2018',
-        model: 'Model 3',
-        colour: 'White',
-        bodyStyle: 'Sedan',
-        keyNumber: 6,
-        cyl: 0,
-        odometer: '205,128 kms',
-        price: 18950,
-        stockNumber: '1010',
-        type: 'Car',
-        cert: 'Certified',
-        status: 'In Stock',
-        date: 'Jan 4, 2026',
-      },
-      {
-        id: 'k_3',
-        year: '2017',
-        model: 'Jetta',
-        colour: 'Blue',
-        bodyStyle: 'Sedan',
-        keyNumber: 4,
-        cyl: 4,
-        odometer: '177,741 kms',
-        price: 14995,
-        stockNumber: '1008',
-        type: 'Car',
-        cert: 'Certified',
-        status: 'Deal Pending',
-        date: 'Dec 10, 2025',
-      },
-    ],
-    []
-  )
+  const [rows, setRows] = useState<Row[]>([])
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    const run = async () => {
+      try {
+        setLoading(true)
+        setError(null)
+
+        const qs = new URLSearchParams()
+        if (from) qs.set('from', from)
+        if (to) qs.set('to', to)
+        if (typeFilter) qs.set('type', typeFilter)
+        if (statusFilter) qs.set('status', statusFilter)
+        if (certFilter) qs.set('cert', certFilter)
+
+        const res = await fetch(`/api/reports/inventory/keylist?${qs.toString()}`, {
+          cache: 'no-store',
+        })
+        const json = await res.json().catch(() => null)
+        if (!res.ok || !json?.ok) {
+          throw new Error(String(json?.error || `Failed to load keylist (${res.status})`))
+        }
+
+        const r = Array.isArray(json?.rows) ? (json.rows as Row[]) : []
+        setRows(r)
+      } catch (e: any) {
+        setError(e?.message || 'Failed to load keylist')
+        setRows([])
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    void run()
+  }, [certFilter, from, statusFilter, to, typeFilter])
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -96,7 +80,7 @@ export default function KeylistPage() {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold text-slate-900">Keylist</h1>
-            <p className="text-sm text-slate-500 mt-0.5">Mock data only (UI design)</p>
+            <p className="text-sm text-slate-500 mt-0.5">Inventory key list</p>
           </div>
           <button type="button" className="edc-btn-primary text-sm">Export</button>
         </div>
@@ -152,6 +136,18 @@ export default function KeylistPage() {
         </div>
 
         <div className="edc-card mt-4 overflow-hidden">
+          {error ? (
+            <div className="p-4">
+              <div className="text-sm text-danger-600">{error}</div>
+            </div>
+          ) : null}
+
+          {loading ? (
+            <div className="p-4">
+              <div className="text-sm text-slate-500">Loading...</div>
+            </div>
+          ) : null}
+
           <div className="overflow-x-auto">
             <table className="edc-table min-w-max">
               <thead>

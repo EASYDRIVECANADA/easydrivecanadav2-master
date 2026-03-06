@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
 type Row = {
   id: string
@@ -26,62 +26,41 @@ export default function GarageRegisterPage() {
   const [perPage, setPerPage] = useState('150')
   const [query, setQuery] = useState('')
 
-  const rows = useMemo<Row[]>(
-    () => [
-      {
-        id: 'gr_1',
-        purchasedFromName: 'Owais Ahmed',
-        purchasedFromAddress: '99 Margrove Ave Ottawa ON K1T 3Y1',
-        plateNo: 'CWS854',
-        odometerReading: '229,192 kms',
-        make: 'Subaru',
-        model: 'Forester',
-        stockNumber: '1011',
-        serialNo: 'JF2SHCDC3AH774666',
-        colour: 'Red',
-        dateInStock: 'Jan 5, 2026',
-        inConsignment: '',
-        dateOut: 'Jan 5, 2026',
-        soldToName: 'Sarif Uddin Bhuiyan',
-        soldToAddress: '43 Queen Mary St Ottawa ON K1V 1H4',
-      },
-      {
-        id: 'gr_2',
-        purchasedFromName: 'Adesa Ottawa',
-        purchasedFromAddress: '1771 Burton Rd Ottawa ON K0A 1H0',
-        plateNo: '205128',
-        odometerReading: '205,128 kms',
-        make: 'Tesla',
-        model: 'Model 3',
-        stockNumber: '1010',
-        serialNo: '5YJ3E1EBXJF080845',
-        colour: 'White',
-        dateInStock: 'Jan 4, 2026',
-        inConsignment: '',
-        dateOut: '',
-        soldToName: '',
-        soldToAddress: '',
-      },
-      {
-        id: 'gr_3',
-        purchasedFromName: 'OPENLANE Canada',
-        purchasedFromAddress: '370 King St W, Toronto ON M5V 1J9',
-        plateNo: '177741',
-        odometerReading: '177,741 kms',
-        make: 'Volkswagen',
-        model: 'Jetta',
-        stockNumber: '1008',
-        serialNo: '3VWB67AJ8HM378317',
-        colour: 'Blue',
-        dateInStock: 'Dec 10, 2025',
-        inConsignment: 'In for sale working on consignment',
-        dateOut: '',
-        soldToName: '',
-        soldToAddress: '',
-      },
-    ],
-    []
-  )
+  const [rows, setRows] = useState<Row[]>([])
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    const run = async () => {
+      try {
+        setLoading(true)
+        setError(null)
+
+        const qs = new URLSearchParams()
+        if (status) qs.set('status', status)
+        if (filterType) qs.set('filterType', filterType)
+        if (perPage) qs.set('perPage', perPage)
+
+        const res = await fetch(`/api/reports/inventory/garage-register?${qs.toString()}`, {
+          cache: 'no-store',
+        })
+        const json = await res.json().catch(() => null)
+        if (!res.ok || !json?.ok) {
+          throw new Error(String(json?.error || `Failed to load garage register (${res.status})`))
+        }
+
+        const r = Array.isArray(json?.rows) ? (json.rows as Row[]) : []
+        setRows(r)
+      } catch (e: any) {
+        setError(e?.message || 'Failed to load garage register')
+        setRows([])
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    void run()
+  }, [filterType, perPage, status])
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -96,7 +75,7 @@ export default function GarageRegisterPage() {
     <div className="min-h-screen">
       <div className="edc-page-header">
         <h1 className="text-2xl font-bold text-slate-900">Garage Register</h1>
-        <p className="text-sm text-slate-500 mt-0.5">Mock data only (UI design)</p>
+        <p className="text-sm text-slate-500 mt-0.5">Garage register entries</p>
       </div>
 
       <div className="px-6 py-6">
@@ -149,6 +128,18 @@ export default function GarageRegisterPage() {
         </div>
 
         <div className="edc-card mt-4 overflow-hidden">
+          {error ? (
+            <div className="p-4">
+              <div className="text-sm text-danger-600">{error}</div>
+            </div>
+          ) : null}
+
+          {loading ? (
+            <div className="p-4">
+              <div className="text-sm text-slate-500">Loading...</div>
+            </div>
+          ) : null}
+
           <div className="overflow-x-auto">
             <table className="edc-table min-w-max">
               <thead>

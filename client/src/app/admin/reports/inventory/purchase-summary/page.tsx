@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
 type Row = {
   id: string
@@ -24,56 +24,41 @@ export default function PurchaseSummaryPage() {
   const [from, setFrom] = useState('2026-01-01')
   const [to, setTo] = useState('2026-01-31')
 
-  const rows = useMemo<Row[]>(
-    () => [
-      {
-        id: 'ps_1',
-        vehicle: 'Stock#1011 - 2010 Subaru Forester 2.5X Limited',
-        purchasedFrom: 'Owais Ahmed',
-        auction: 'N/A',
-        purchasedDate: 'Jan 6, 2026',
-        purchasedPrice: 3800,
-        actualCashValue: 0,
-        discount: 0,
-        hst13: 0,
-        taxOverride: 0,
-        gst5: 0,
-        qst9975: 0,
-        taxExempt0: 0,
-      },
-      {
-        id: 'ps_2',
-        vehicle: 'Stock#1008 - 2017 Volkswagen Jetta 1.4 TSI Wolfsburg Edition - Manual',
-        purchasedFrom: 'Adesa Ottawa',
-        auction: 'Adesa Ottawa',
-        purchasedDate: 'Jun 12, 2025',
-        purchasedPrice: 2294.55,
-        actualCashValue: 0,
-        discount: 0,
-        hst13: 0,
-        taxOverride: 0,
-        gst5: 0,
-        qst9975: 0,
-        taxExempt0: 0,
-      },
-      {
-        id: 'ps_3',
-        vehicle: 'Stock#1003 - 2017 Kia Sorento LX FWD',
-        purchasedFrom: 'Adesa Ottawa',
-        auction: 'Adesa Ottawa',
-        purchasedDate: 'Apr 2, 2025',
-        purchasedPrice: 6945.55,
-        actualCashValue: 0,
-        discount: 0,
-        hst13: 0,
-        taxOverride: 0,
-        gst5: 0,
-        qst9975: 0,
-        taxExempt0: 0,
-      },
-    ],
-    []
-  )
+  const [rows, setRows] = useState<Row[]>([])
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    const run = async () => {
+      try {
+        setLoading(true)
+        setError(null)
+
+        const qs = new URLSearchParams()
+        if (from) qs.set('from', from)
+        if (to) qs.set('to', to)
+        if (status) qs.set('status', status)
+
+        const res = await fetch(`/api/reports/inventory/purchase-summary?${qs.toString()}`, {
+          cache: 'no-store',
+        })
+        const json = await res.json().catch(() => null)
+        if (!res.ok || !json?.ok) {
+          throw new Error(String(json?.error || `Failed to load purchase summary (${res.status})`))
+        }
+
+        const r = Array.isArray(json?.rows) ? (json.rows as Row[]) : []
+        setRows(r)
+      } catch (e: any) {
+        setError(e?.message || 'Failed to load purchase summary')
+        setRows([])
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    void run()
+  }, [from, status, to])
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -95,7 +80,7 @@ export default function PurchaseSummaryPage() {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold text-slate-900">Inventory Purchase Summary</h1>
-            <p className="text-sm text-slate-500 mt-0.5">Mock data only (UI design)</p>
+            <p className="text-sm text-slate-500 mt-0.5">Purchase entries</p>
           </div>
           <div className="text-sm text-slate-500">Total: <span className="font-semibold text-slate-700">${total.toLocaleString()}</span></div>
         </div>
@@ -151,6 +136,18 @@ export default function PurchaseSummaryPage() {
         </div>
 
         <div className="edc-card mt-4 overflow-hidden">
+          {error ? (
+            <div className="p-4">
+              <div className="text-sm text-danger-600">{error}</div>
+            </div>
+          ) : null}
+
+          {loading ? (
+            <div className="p-4">
+              <div className="text-sm text-slate-500">Loading...</div>
+            </div>
+          ) : null}
+
           <div className="overflow-x-auto">
             <table className="edc-table min-w-max">
               <thead>

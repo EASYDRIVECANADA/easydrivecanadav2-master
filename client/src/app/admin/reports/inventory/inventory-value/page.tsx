@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
 type Row = {
   id: string
@@ -33,86 +33,40 @@ export default function InventoryValuePage() {
   const [status, setStatus] = useState('In Stock, Sold, Deal Pending In Trade, In Stock (No Deal)')
   const [valueOn, setValueOn] = useState('2026-01-15')
 
-  const rows = useMemo<Row[]>(
-    () => [
-      {
-        id: 'iv_1',
-        stock: '1010',
-        year: '2018',
-        make: 'Tesla',
-        model: 'Model 3',
-        trim: 'LONG RANGE AWD',
-        vin: '5YJ3E1EBXJF080845',
-        dealId: '01/04/2026',
-        inStockDate: '01/04/2026',
-        closeDate: 'N/A',
-        currentStatus: 'In Stock',
-        vehiclePurchasePrice: 25067.6,
-        actualCashValue: 0,
-        costs: 0,
-        defaultTaxRate: '0%',
-        qst9975: 0,
-        gst5: 0,
-        hst13: 0,
-        tax: 0,
-        totalTax: 0,
-        totalInvested: 25067.6,
-        dii: '',
-        listPrice: 0,
-      },
-      {
-        id: 'iv_2',
-        stock: '1008',
-        year: '2017',
-        make: 'Volkswagen',
-        model: 'Jetta',
-        trim: '1.4 TSI WOLFSBURG EDITION - MANUAL',
-        vin: '3VWB67AJ8HM378317',
-        dealId: '402476',
-        inStockDate: '12/10/2025',
-        closeDate: 'N/A',
-        currentStatus: 'Deal Pending',
-        vehiclePurchasePrice: 2294.55,
-        actualCashValue: 0,
-        costs: 733.23,
-        defaultTaxRate: '0%',
-        qst9975: 0,
-        gst5: 0,
-        hst13: 0,
-        tax: 0,
-        totalTax: 0,
-        totalInvested: 3027.78,
-        dii: '',
-        listPrice: 9995,
-      },
-      {
-        id: 'iv_3',
-        stock: '1011',
-        year: '2010',
-        make: 'Subaru',
-        model: 'Forester',
-        trim: '2.5X Limited',
-        vin: 'JF2SHCDC3AH774666',
-        dealId: '401233',
-        inStockDate: '01/05/2026',
-        closeDate: '01/06/2026',
-        currentStatus: 'Sold',
-        vehiclePurchasePrice: 3800,
-        actualCashValue: 0,
-        costs: 0,
-        defaultTaxRate: '0%',
-        qst9975: 0,
-        gst5: 0,
-        hst13: 0,
-        tax: 0,
-        totalTax: 0,
-        totalInvested: 3800,
-        dii: '',
-        listPrice: 6995,
-      },
-    ],
-    []
-  )
+  const [rows, setRows] = useState<Row[]>([])
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    const run = async () => {
+      try {
+        setLoading(true)
+        setError(null)
+
+        const qs = new URLSearchParams()
+        if (status) qs.set('status', status)
+        if (valueOn) qs.set('valueOn', valueOn)
+
+        const res = await fetch(`/api/reports/inventory/inventory-value?${qs.toString()}`, {
+          cache: 'no-store',
+        })
+        const json = await res.json().catch(() => null)
+        if (!res.ok || !json?.ok) {
+          throw new Error(String(json?.error || `Failed to load inventory value (${res.status})`))
+        }
+
+        const r = Array.isArray(json?.rows) ? (json.rows as Row[]) : []
+        setRows(r)
+      } catch (e: any) {
+        setError(e?.message || 'Failed to load inventory value')
+        setRows([])
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    void run()
+  }, [status, valueOn])
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -179,6 +133,18 @@ export default function InventoryValuePage() {
         </div>
 
         <div className="edc-card mt-4 overflow-hidden">
+          {error ? (
+            <div className="p-4">
+              <div className="text-sm text-danger-600">{error}</div>
+            </div>
+          ) : null}
+
+          {loading ? (
+            <div className="p-4">
+              <div className="text-sm text-slate-500">Loading...</div>
+            </div>
+          ) : null}
+
           <div className="overflow-x-auto">
             <table className="edc-table min-w-max">
               <thead>
@@ -237,7 +203,7 @@ export default function InventoryValuePage() {
               </tbody>
             </table>
           </div>
-          <div className="px-6 py-3 text-xs text-slate-500 border-t border-slate-100">Value Date: {valueOn} (mock)</div>
+          <div className="px-6 py-3 text-xs text-slate-500 border-t border-slate-100">Value Date: {valueOn}</div>
         </div>
       </div>
     </div>
