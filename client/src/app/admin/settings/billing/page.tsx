@@ -44,7 +44,7 @@ type PlanStatus = {
   validUntilIso: string | null
 }
 
-export function BillingPage() {
+function BillingPage() {
   const [section, setSection] = useState<BillingSection>('Products & Services')
 
   const stripePaymentLink = String(process.env.NEXT_PUBLIC_STRIPE_PAYMENT_LINK || '').trim()
