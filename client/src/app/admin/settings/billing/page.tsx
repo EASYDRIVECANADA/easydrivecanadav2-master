@@ -910,6 +910,40 @@ export function BillingPage() {
                 </div>
               </div>
 
+              <div className="mt-10">
+                <div className="text-center mb-6">
+                  <h2 className="text-2xl font-bold text-white drop-shadow-lg">Generate Image Add‑Ons</h2>
+                  <p className="text-sm text-slate-300">Image generation is billed per use</p>
+                </div>
+
+                <div className="bg-white/90 backdrop-blur-xl rounded-2xl shadow-2xl border border-white/20 overflow-hidden">
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead>
+                        <tr className="bg-gradient-to-r from-slate-50 to-slate-100 border-b border-slate-200">
+                          <th className="px-6 py-4 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">Plan</th>
+                          <th className="px-6 py-4 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">Includes</th>
+                          <th className="px-6 py-4 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">Price</th>
+                          <th className="px-6 py-4 text-right text-xs font-semibold text-slate-600 uppercase tracking-wider">Buy</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        <tr className="hover:bg-slate-50 transition-colors duration-150">
+                          <td className="px-6 py-4 text-sm font-semibold text-slate-900">Generate Image</td>
+                          <td className="px-6 py-4 text-sm text-slate-700">Image generation billed per use</td>
+                          <td className="px-6 py-4 text-sm font-semibold text-slate-900">$0.50</td>
+                          <td className="px-6 py-4 text-right">
+                            <span className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
+                              Per use
+                            </span>
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+
               {/* Trust Badges */}
               <div className="text-center mt-10">
                 <div className="inline-flex items-center gap-8 px-8 py-4 bg-white/10 backdrop-blur-xl rounded-xl shadow-lg border border-white/20">

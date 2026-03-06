@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 
 interface ImagesTabProps {
@@ -23,6 +23,13 @@ export default function ImagesTab({ vehicleId, images, onImagesUpdate }: ImagesT
   const [pendingImages, setPendingImages] = useState<PendingImage[]>([])
   const [generating, setGenerating] = useState(false)
   const [accountRole, setAccountRole] = useState<string>('')
+
+  const [genConfirmOpen, setGenConfirmOpen] = useState(false)
+  const [genInsufficientOpen, setGenInsufficientOpen] = useState(false)
+  const [genInsufficientMessage, setGenInsufficientMessage] = useState('')
+  const [genDontShowAgain, setGenDontShowAgain] = useState(false)
+  const [genBalance, setGenBalance] = useState<number | null>(null)
+  const genConfirmActionRef = useRef<(() => void) | null>(null)
 
   const BUCKET = 'vehicle-photos'
 
@@ -236,39 +243,172 @@ export default function ImagesTab({ vehicleId, images, onImagesUpdate }: ImagesT
 
   const handleGenerateImage = async () => {
     if (generating) return
-    const r = String(accountRole || '').trim().toLowerCase()
-    if (!(r === 'dealership' || r === 'admin')) {
-      setErrorMsg('Upgrade required: AI image generation is available only for Dealership accounts.')
+    setErrorMsg('')
+
+    let sessionEmail = ''
+    try {
+      if (typeof window !== 'undefined') {
+        const raw = window.localStorage.getItem('edc_admin_session')
+        if (raw) {
+          const parsed = JSON.parse(raw) as { email?: string }
+          sessionEmail = String(parsed?.email || '').trim().toLowerCase()
+        }
+      }
+    } catch {
+      sessionEmail = ''
+    }
+
+    if (!sessionEmail) {
+      setErrorMsg('Missing email. Please sign in again.')
       return
     }
-    setGenerating(true)
-    setErrorMsg('')
-    try {
-      const { data, error } = await supabase.from('edc_vehicles').select('*').eq('id', vehicleId).maybeSingle()
-      if (error) throw error
 
-      const res = await fetch('/api/generate', {
+    const skipConfirm = (() => {
+      try {
+        if (typeof window === 'undefined') return false
+        return window.localStorage.getItem('edc_skip_generate_image_confirm') === '1'
+      } catch {
+        return false
+      }
+    })()
+
+    const cost = 0.5
+    try {
+      const balRes = await fetch('/api/users/balance', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ vehicleId, vehicle: data ?? null }),
+        body: JSON.stringify({ email: sessionEmail }),
       })
+      const balJson = await balRes.json().catch(() => null)
+      if (!balRes.ok || !balJson?.ok) throw new Error(String(balJson?.error || 'Unable to check balance'))
 
-      const text = await res.text().catch(() => '')
-      if (!res.ok) throw new Error(text || `Webhook responded with ${res.status}`)
+      const balance = Number(balJson?.balance ?? 0)
+      const safeBalance = Number.isFinite(balance) ? balance : 0
+      setGenBalance(safeBalance)
 
-      setGenerating(false)
-      await refreshImagesFromBucket()
-    } catch (error) {
-      const msg = error instanceof Error ? error.message : String(error)
-      setErrorMsg(msg || 'Error generating image')
-      console.error('Error generating image:', error)
-    } finally {
-      setGenerating(false)
+      if (safeBalance < cost) {
+        setGenInsufficientMessage('Insufficient Load Balance. $0.50 required to generate an image.')
+        setGenInsufficientOpen(true)
+        return
+      }
+    } catch (e) {
+      setErrorMsg(String((e as any)?.message || e || 'Unable to check balance'))
+      return
     }
+
+    const runGenerate = async () => {
+      if (generating) return
+      setGenerating(true)
+      setErrorMsg('')
+      try {
+        const { data, error } = await supabase.from('edc_vehicles').select('*').eq('id', vehicleId).maybeSingle()
+        if (error) throw error
+
+        const res = await fetch('/api/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ vehicleId, vehicle: data ?? null, email: sessionEmail }),
+        })
+
+        const text = await res.text().catch(() => '')
+        if (!res.ok) throw new Error(text || `Webhook responded with ${res.status}`)
+
+        await refreshImagesFromBucket()
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : String(error)
+        setErrorMsg(msg || 'Error generating image')
+        console.error('Error generating image:', error)
+      } finally {
+        setGenerating(false)
+      }
+    }
+
+    if (skipConfirm) {
+      await runGenerate()
+      return
+    }
+
+    genConfirmActionRef.current = () => {
+      void runGenerate()
+    }
+    setGenDontShowAgain(false)
+    setGenConfirmOpen(true)
   }
 
   return (
     <div className="bg-white rounded-xl shadow p-6">
+      {genConfirmOpen ? (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4" role="dialog" aria-modal="true">
+          <div className="absolute inset-0 bg-navy-900/60 backdrop-blur-sm" onMouseDown={() => setGenConfirmOpen(false)} />
+          <div className="edc-modal w-full max-w-md relative z-10" onMouseDown={(e) => e.stopPropagation()}>
+            <div className="h-11 px-4 border-b border-slate-200/60 flex items-center justify-between">
+              <div className="text-sm font-semibold text-slate-800">Generate Image</div>
+              <button type="button" className="h-8 w-8 flex items-center justify-center" onClick={() => setGenConfirmOpen(false)}>
+                <span className="text-xl leading-none text-slate-400">×</span>
+              </button>
+            </div>
+            <div className="p-4 text-sm text-slate-700">
+              <div>This action will generate an image using Load Balance.</div>
+              <div className="mt-2">Cost: <span className="font-semibold">$0.50</span></div>
+              <div className="text-xs text-slate-500 mt-1">Your balance: {genBalance === null ? '—' : `$${genBalance.toFixed(2)}`}</div>
+              <label className="mt-3 flex items-center gap-2 text-xs text-slate-600">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4"
+                  checked={genDontShowAgain}
+                  onChange={(e) => setGenDontShowAgain(e.target.checked)}
+                />
+                Don't show again
+              </label>
+            </div>
+            <div className="h-12 px-4 border-t border-slate-200/60 flex items-center justify-end gap-2">
+              <button type="button" className="edc-btn-secondary h-8 px-4 text-xs" onClick={() => setGenConfirmOpen(false)}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="edc-btn-primary h-8 px-4 text-xs"
+                disabled={generating}
+                onClick={() => {
+                  if (genDontShowAgain) {
+                    try {
+                      if (typeof window !== 'undefined') window.localStorage.setItem('edc_skip_generate_image_confirm', '1')
+                    } catch {
+                      // ignore
+                    }
+                  }
+                  setGenConfirmOpen(false)
+                  genConfirmActionRef.current?.()
+                  genConfirmActionRef.current = null
+                }}
+              >
+                {generating ? 'Processing…' : 'Confirm'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {genInsufficientOpen ? (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4" role="dialog" aria-modal="true">
+          <div className="absolute inset-0 bg-navy-900/60 backdrop-blur-sm" onMouseDown={() => setGenInsufficientOpen(false)} />
+          <div className="edc-modal w-full max-w-md relative z-10" onMouseDown={(e) => e.stopPropagation()}>
+            <div className="h-11 px-4 border-b border-slate-200/60 flex items-center justify-between">
+              <div className="text-sm font-semibold text-slate-800">Insufficient Balance</div>
+              <button type="button" className="h-8 w-8 flex items-center justify-center" onClick={() => setGenInsufficientOpen(false)}>
+                <span className="text-xl leading-none text-slate-400">×</span>
+              </button>
+            </div>
+            <div className="p-4 text-sm text-slate-700">{genInsufficientMessage || 'Insufficient Load Balance.'}</div>
+            <div className="h-12 px-4 border-t border-slate-200/60 flex items-center justify-end">
+              <button type="button" className="edc-btn-primary h-8 px-4 text-xs" onClick={() => setGenInsufficientOpen(false)}>
+                OK
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       <h2 className="text-lg font-semibold text-gray-900 mb-4">Vehicle Images</h2>
 
       <style jsx>{`
