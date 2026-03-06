@@ -18,12 +18,13 @@ export async function POST(req: Request) {
     const b64 = Buffer.from(ab).toString('base64')
 
     let userId = ''
+    let role = ''
     if (email) {
       try {
         const supabaseUrl = String(process.env.NEXT_PUBLIC_SUPABASE_URL || '').replace(/\/+$/, '')
         const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
         if (supabaseUrl && supabaseKey) {
-          const q = `${supabaseUrl}/rest/v1/users?select=id,user_id&email=ilike.${encodeURIComponent(email)}&limit=1`
+          const q = `${supabaseUrl}/rest/v1/users?select=id,user_id,role&email=ilike.${encodeURIComponent(email)}&limit=1`
           const r = await fetch(q, {
             method: 'GET',
             headers: {
@@ -41,16 +42,19 @@ export async function POST(req: Request) {
             }
             const row = rows?.[0]
             userId = String(row?.user_id ?? row?.id ?? '').trim()
+            role = String(row?.role ?? '').trim()
           }
         }
       } catch {
         userId = ''
+        role = ''
       }
     }
 
     const payload = {
       email: email || undefined,
       user_id: userId || undefined,
+      role: role || undefined,
       filename: file.name || undefined,
       mime_type: file.type || undefined,
       file_b64: b64,
