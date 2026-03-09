@@ -214,6 +214,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
       { href: '/admin/inventory', label: 'Inventory', icon: 'car', disabled: !isVerified },
       { href: '/admin/sales', label: 'Sales', icon: 'dollar' },
       { href: '/admin/billing', label: 'Billing', icon: 'dollar', disabled: !isVerified },
+      { href: '/admin/esignature', label: 'E-Signature', icon: 'pen', disabled: !isVerified },
       { href: '/admin', label: 'Service', icon: 'wrench', disabled: !isVerified },
       { href: '/admin/reports', label: 'Reports', icon: 'file', disabled: !isVerified },
     ],
@@ -764,6 +765,13 @@ function Icon({ name }: { name: string }) {
     return (
       <svg className={cls} fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h7l5 5v11a2 2 0 01-2 2z" />
+      </svg>
+    )
+  }
+  if (name === 'pen') {
+    return (
+      <svg className={cls} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
       </svg>
     )
   }

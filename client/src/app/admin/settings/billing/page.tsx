@@ -2,18 +2,9 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { useRouter } from 'next/navigation'
 
 export default function SettingsBillingPage() {
-  const router = useRouter()
-
-  useEffect(() => {
-    router.replace('/admin/billing')
-  }, [router])
-
-  return (
-    null
-  )
+  return <BillingPage />
 }
 
 type BillingSection = 'Products & Services' | 'Transactions' | 'Payment Methods'
