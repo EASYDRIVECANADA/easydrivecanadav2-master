@@ -28,7 +28,7 @@ type PaymentMethod = {
   is_default: boolean
 }
 
-type PlanKey = 'starter' | 'small' | 'full'
+type PlanKey = 'starter' | 'small' | 'medium' | 'large'
 
 type PlanStatus = {
   active: boolean
@@ -54,7 +54,8 @@ function BillingPage() {
   const [planStatus, setPlanStatus] = useState<Record<PlanKey, PlanStatus>>({
     starter: { active: false, validUntilIso: null },
     small: { active: false, validUntilIso: null },
-    full: { active: false, validUntilIso: null },
+    medium: { active: false, validUntilIso: null },
+    large: { active: false, validUntilIso: null },
   })
 
   const products = useMemo(
@@ -70,27 +71,62 @@ function BillingPage() {
           'Up to 2 Users',
           'Basic listings & inquiries',
           'Manual posting / pay-per-use publishing',
-          '$3 paid per use only',
           'Standard support',
         ],
         purchasable: false,
+        icon: 'user',
       },
       {
         key: 'small',
-        planName: 'Dealership',
-        amount: '$99.00',
-        period: '/month',
-        description: 'Unlimited inventory for dealership operations with multi-user access',
+        planName: 'Small Dealership',
+        amount: '$79',
+        period: '/mo',
+        billedNote: 'Billed Monthly',
+        description: 'Plan made for small sized car dealerships',
         features: [
-          'Unlimited cars',
-          '6 month Free Trial',
-          'Up to 5 Users',
-          'Advanced inventory management',
-          'Lead tracking & customer management',
-          'Priority support',
+          '1-2 users',
+          'Under 50 vehicles in inventory',
+          'Under 50 deals per month',
+          '1 hour of online training included',
+        ],
+        purchasable: true,
+        icon: 'gauge-small',
+        cancelNote: '30 day cancellation notice required',
+      },
+      {
+        key: 'medium',
+        planName: 'Medium Dealership',
+        amount: '$129',
+        period: '/mo',
+        billedNote: 'Billed Monthly',
+        description: 'Plan made for medium sized car dealerships',
+        features: [
+          'Up to 5 included users',
+          'Under 100 vehicles',
+          'Under 100 deals per month',
+          '1.5 hours of online training included',
         ],
         popular: true,
         purchasable: true,
+        icon: 'gauge-medium',
+        cancelNote: '30 day cancellation notice required',
+      },
+      {
+        key: 'large',
+        planName: 'Large Dealership',
+        amount: '$169',
+        period: '/mo',
+        billedNote: 'Billed Monthly',
+        description: 'Plan made for large sized car dealerships',
+        features: [
+          'Up to 10 included users',
+          'Under 300 vehicles',
+          'Under 300 deals per month',
+          '2 hours of online training included',
+        ],
+        purchasable: true,
+        icon: 'gauge-large',
+        cancelNote: '30 day cancellation notice required',
       },
     ],
     []
@@ -174,9 +210,13 @@ function BillingPage() {
             active: Boolean(plans?.small?.active),
             validUntilIso: typeof plans?.small?.validUntilIso === 'string' ? plans.small.validUntilIso : null,
           },
-          full: {
-            active: Boolean(plans?.full?.active),
-            validUntilIso: typeof plans?.full?.validUntilIso === 'string' ? plans.full.validUntilIso : null,
+          medium: {
+            active: Boolean(plans?.medium?.active),
+            validUntilIso: typeof plans?.medium?.validUntilIso === 'string' ? plans.medium.validUntilIso : null,
+          },
+          large: {
+            active: Boolean(plans?.large?.active),
+            validUntilIso: typeof plans?.large?.validUntilIso === 'string' ? plans.large.validUntilIso : null,
           },
         }
         setPlanStatus(next)
@@ -655,109 +695,193 @@ function BillingPage() {
                 </div>
               </div>
 
-              {/* Pricing Cards */}
-              <div className="max-w-5xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-6 mb-12">
-                {products.map((plan) => {
+              {/* Pricing Cards - 4 columns with animations */}
+              <div className="max-w-7xl mx-auto grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 mb-12">
+                {products.map((plan, planIdx) => {
                   const isActive = planStatus[plan.key as PlanKey]?.active
                   const isPurchasing = buying === plan.key
                   const isPopular = (plan as any).popular
                   const isPurchasable = (plan as any).purchasable !== false
+                  const billedNote = (plan as any).billedNote
+                  const cancelNote = (plan as any).cancelNote
+                  const isFree = plan.key === 'starter'
 
                   return (
                     <div
                       key={plan.key}
                       className={
                         isPopular
-                          ? 'relative bg-white/95 backdrop-blur-xl rounded-2xl shadow-2xl shadow-blue-500/20 border-2 border-blue-500 transform scale-105 z-10 transition-all duration-300 hover:shadow-blue-500/40 hover:scale-110'
-                          : 'relative bg-white/90 backdrop-blur-xl rounded-2xl shadow-xl border border-white/20 hover:shadow-2xl transition-all duration-300 hover:scale-105 hover:border-blue-400/40'
+                          ? 'group relative bg-gradient-to-br from-white via-blue-50/30 to-white rounded-2xl shadow-2xl shadow-blue-500/20 border-2 border-blue-500 transform lg:scale-105 z-10 transition-all duration-500 hover:shadow-blue-500/40 hover:scale-110 animate-fade-in-up'
+                          : 'group relative bg-white rounded-2xl shadow-xl border border-slate-200 hover:shadow-2xl transition-all duration-500 hover:border-blue-300 hover:scale-105 animate-fade-in-up'
                       }
+                      style={{ animationDelay: `${planIdx * 100}ms` }}
                     >
+                      {/* Shine effect on hover */}
+                      <div className="absolute inset-0 rounded-2xl overflow-hidden pointer-events-none">
+                        <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000" />
+                      </div>
+
                       {isPopular && (
-                        <div className="absolute -top-4 left-1/2 -translate-x-1/2">
-                          <div className="px-4 py-1 bg-gradient-to-r from-navy-900 to-navy-800 text-white text-[10px] uppercase tracking-wider font-bold rounded-full shadow-lg">
-                            Most Popular
+                        <div className="absolute -top-3 left-1/2 -translate-x-1/2 z-20 animate-bounce-slow">
+                          <div className="px-4 py-1 bg-gradient-to-r from-blue-600 to-blue-500 text-white text-[10px] uppercase tracking-wider font-bold rounded-full shadow-lg shadow-blue-500/50">
+                            <span className="inline-flex items-center gap-1">
+                              <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                                <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+                              </svg>
+                              Most Popular
+                            </span>
                           </div>
                         </div>
                       )}
 
-                      <div className="p-8">
-                        <div className="grid grid-cols-1 md:grid-cols-[1fr,1.2fr] gap-8 items-start">
-                          <div>
-                            {/* Plan Header */}
-                            <div className="text-center md:text-left mb-6">
-                              <h3 className="text-xl font-bold text-slate-900 mb-2">{plan.planName}</h3>
-                              <p className="text-xs text-slate-500 mb-4">{plan.description}</p>
-                              <div className="flex items-baseline justify-center md:justify-start gap-1">
-                                <span className="text-4xl font-bold text-slate-900">{plan.amount}</span>
-                                <span className="text-sm text-slate-500">{plan.period}</span>
-                              </div>
+                      <div className="p-6 text-center relative">
+                        {/* Gauge Icon with animation */}
+                        <div className="flex justify-center mb-4">
+                          {isFree ? (
+                            <div className="relative w-14 h-8 transition-transform duration-300 group-hover:scale-110">
+                              <svg viewBox="0 0 60 35" className="w-full h-full">
+                                <path d="M5 30 A25 25 0 0 1 55 30" fill="none" stroke="#e5e7eb" strokeWidth="6" strokeLinecap="round" />
+                                <path
+                                  d="M5 30 A25 25 0 0 1 55 30"
+                                  fill="none"
+                                  stroke="#93c5fd"
+                                  strokeWidth="6"
+                                  strokeLinecap="round"
+                                  strokeDasharray="0 100"
+                                  className="transition-all duration-500"
+                                />
+                                <line
+                                  x1="30" y1="28"
+                                  x2="18" y2="22"
+                                  stroke="#94a3b8" strokeWidth="2" strokeLinecap="round"
+                                  className="transition-all duration-500"
+                                />
+                                <circle cx="30" cy="28" r="3" fill="#94a3b8" />
+                              </svg>
                             </div>
+                          ) : (
+                            <div className="relative w-14 h-8 transition-transform duration-300 group-hover:scale-110">
+                              <svg viewBox="0 0 60 35" className="w-full h-full">
+                                <path d="M5 30 A25 25 0 0 1 55 30" fill="none" stroke="#e5e7eb" strokeWidth="6" strokeLinecap="round" />
+                                <path 
+                                  d="M5 30 A25 25 0 0 1 55 30" 
+                                  fill="none" 
+                                  stroke={plan.key === 'small' ? '#3b82f6' : plan.key === 'medium' ? '#2563eb' : '#1d4ed8'} 
+                                  strokeWidth="6" 
+                                  strokeLinecap="round"
+                                  strokeDasharray={plan.key === 'small' ? '25 100' : plan.key === 'medium' ? '50 100' : '75 100'}
+                                  className="transition-all duration-500"
+                                />
+                                <line 
+                                  x1="30" y1="28" 
+                                  x2={plan.key === 'small' ? '18' : plan.key === 'medium' ? '30' : '42'} 
+                                  y2={plan.key === 'small' ? '15' : plan.key === 'medium' ? '8' : '15'} 
+                                  stroke="#1f2937" strokeWidth="2" strokeLinecap="round" 
+                                  className="transition-all duration-500"
+                                />
+                                <circle cx="30" cy="28" r="3" fill="#1f2937" />
+                              </svg>
+                            </div>
+                          )}
+                        </div>
 
-                            {/* CTA Button */}
-                            <div>
-                              {!isPurchasable ? (
-                                <div className="text-center md:text-left">
-                                  <div className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-slate-50 to-slate-100 rounded-lg border border-slate-200">
-                                    <div className="w-2 h-2 bg-slate-500 rounded-full" />
-                                    <span className="text-xs font-semibold text-slate-700">Active</span>
-                                  </div>
-                                </div>
-                              ) : isActive ? (
-                                <div className="text-center md:text-left">
-                                  <div className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-green-50 to-emerald-50 rounded-lg border border-green-200">
-                                    <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
-                                    <span className="text-xs font-semibold text-green-700">Active Plan</span>
-                                  </div>
-                                  <div className="mt-3 text-xs text-slate-500">
-                                    {formatValidUntil(planStatus[plan.key as PlanKey]?.validUntilIso || null)}
-                                  </div>
-                                </div>
-                              ) : (
-                                <button
-                                  type="button"
-                                  disabled={!!buying}
-                                  onClick={() => startCheckout(plan.key)}
-                                  className={
-                                    isPopular
-                                      ? 'w-full py-3 px-6 bg-gradient-to-r from-navy-900 to-navy-800 text-white font-semibold rounded-xl shadow-lg hover:shadow-xl transform hover:-translate-y-1 hover:scale-105 transition-all duration-200 disabled:opacity-60 disabled:cursor-not-allowed disabled:transform-none'
-                                      : 'w-full py-3 px-6 bg-slate-900 text-white font-semibold rounded-xl hover:bg-slate-800 shadow-md hover:shadow-lg transform hover:-translate-y-1 hover:scale-105 transition-all duration-200 disabled:opacity-60 disabled:cursor-not-allowed disabled:transform-none'
-                                  }
-                                >
-                                  {isPurchasing ? (
-                                    <span className="inline-flex items-center gap-2">
-                                      <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
-                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                                      </svg>
-                                      Processing...
-                                    </span>
-                                  ) : (
-                                    <span className="inline-flex items-center justify-center gap-2">
-                                      Upgrade to Dealership
-                                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
-                                      </svg>
-                                    </span>
-                                  )}
-                                </button>
-                              )}
-                            </div>
+                        {/* Plan Label */}
+                        <div className="text-[10px] uppercase tracking-wider font-semibold text-slate-400 mb-2">
+                          {isFree ? 'PRIVATE SELLER' : plan.key === 'small' ? 'SMALL DEALER' : plan.key === 'medium' ? 'MEDIUM DEALER' : 'LARGE DEALER'}
+                        </div>
+
+                        {/* Price with animation */}
+                        <div className="mb-1 transition-transform duration-300 group-hover:scale-105">
+                          <span className="text-3xl font-bold bg-gradient-to-r from-slate-900 via-blue-900 to-slate-900 bg-clip-text text-transparent">{plan.amount}</span>
+                          {plan.period && <span className="text-slate-500 text-sm">{plan.period}</span>}
+                        </div>
+
+                        {/* Billed Note */}
+                        {billedNote && (
+                          <div className="text-[11px] text-blue-600 font-medium mb-3">{billedNote}</div>
+                        )}
+
+                        {/* Description */}
+                        <p className="text-sm text-slate-600 font-medium mb-4 min-h-[40px]">
+                          {isFree ? 'Default account for private sellers' : (
+                            <>Plan made for <span className={plan.key === 'small' ? 'text-slate-900 font-bold' : plan.key === 'medium' ? 'text-blue-600 font-bold' : 'text-blue-700 font-bold'}>{plan.key}</span> sized car dealerships</>
+                          )}
+                        </p>
+
+                        {/* Divider with gradient */}
+                        <div className="relative my-4">
+                          <div className="absolute inset-0 flex items-center">
+                            <div className="w-full border-t border-slate-100" />
                           </div>
-
-                          {/* Features List */}
-                          <div className="space-y-3 md:mb-0 mb-8">
-                            {plan.features.map((feature, idx) => (
-                              <div key={idx} className="flex items-start gap-3">
-                                <div className="flex-shrink-0 w-5 h-5 rounded-full bg-gradient-to-br from-navy-900 to-navy-800 flex items-center justify-center mt-0.5">
-                                  <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                                  </svg>
-                                </div>
-                                <span className="text-sm text-slate-700 leading-relaxed">{feature}</span>
-                              </div>
-                            ))}
+                          <div className="relative flex justify-center">
+                            <div className="w-2 h-2 rounded-full bg-gradient-to-r from-blue-400 to-blue-600" />
                           </div>
                         </div>
+
+                        {/* Features List with stagger animation */}
+                        <div className="space-y-2 text-left mb-6 min-h-[120px]">
+                          {plan.features.map((feature, idx) => (
+                            <div 
+                              key={idx} 
+                              className="flex items-center gap-2 text-sm text-slate-600 transition-all duration-300 hover:translate-x-1"
+                              style={{ animationDelay: `${(planIdx * 100) + (idx * 50)}ms` }}
+                            >
+                              <div className="flex-shrink-0 w-5 h-5 rounded-full bg-gradient-to-br from-blue-100 to-blue-200 flex items-center justify-center">
+                                <svg className="w-3 h-3 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                                </svg>
+                              </div>
+                              <span>{feature}</span>
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* CTA Button with enhanced styling */}
+                        <div>
+                          {!isPurchasable ? (
+                            <div className="inline-flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-slate-100 to-slate-200 rounded-full border border-slate-300 shadow-sm">
+                              <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+                              <span className="text-xs font-semibold text-slate-700">Active</span>
+                            </div>
+                          ) : isActive ? (
+                            <div>
+                              <div className="inline-flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-green-50 to-emerald-50 rounded-full border border-green-300 shadow-sm">
+                                <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+                                <span className="text-xs font-semibold text-green-700">Active Plan</span>
+                              </div>
+                              <div className="mt-2 text-xs text-slate-500">
+                                {formatValidUntil(planStatus[plan.key as PlanKey]?.validUntilIso || null)}
+                              </div>
+                            </div>
+                          ) : (
+                            <button
+                              type="button"
+                              disabled={!!buying}
+                              onClick={() => startCheckout(plan.key)}
+                              className="relative w-full py-3 px-6 bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-700 hover:to-blue-600 text-white font-semibold rounded-full shadow-lg shadow-blue-500/40 hover:shadow-blue-500/60 transform hover:-translate-y-1 hover:scale-105 transition-all duration-300 disabled:opacity-60 disabled:cursor-not-allowed disabled:transform-none overflow-hidden group"
+                            >
+                              <span className="relative z-10">
+                                {isPurchasing ? (
+                                  <span className="inline-flex items-center justify-center gap-2">
+                                    <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                                    </svg>
+                                    Processing...
+                                  </span>
+                                ) : (
+                                  'Subscribe'
+                                )}
+                              </span>
+                              <div className="absolute inset-0 bg-gradient-to-r from-blue-400 to-blue-300 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+                            </button>
+                          )}
+                        </div>
+
+                        {/* Cancel Note */}
+                        {cancelNote && (
+                          <div className="mt-4 text-[10px] text-slate-400">{cancelNote}</div>
+                        )}
                       </div>
                     </div>
                   )
