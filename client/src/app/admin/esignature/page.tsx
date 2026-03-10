@@ -36,6 +36,14 @@ export default function ESignaturePage() {
   const [error, setError] = useState<string | null>(null)
   const [uploading, setUploading] = useState(false)
   const [sendingRequest, setSendingRequest] = useState<string | null>(null)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false)
+  const [deleteTarget, setDeleteTarget] = useState<Document | null>(null)
+  const [sendModalOpen, setSendModalOpen] = useState(false)
+  const [sendTarget, setSendTarget] = useState<Document | null>(null)
+  const [sendResultModalOpen, setSendResultModalOpen] = useState(false)
+  const [sendResultOk, setSendResultOk] = useState<boolean>(true)
+  const [sendResultMessage, setSendResultMessage] = useState('')
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [isSuccessModalOpen, setIsSuccessModalOpen] = useState(false)
   const [uploadFile, setUploadFile] = useState<File | null>(null)
@@ -250,19 +258,24 @@ export default function ESignaturePage() {
 
   const handleSendSignatureRequest = async (doc: Document) => {
     if (!doc.recipient) {
-      alert('No recipient email found for this document')
+      setSendResultOk(false)
+      setSendResultMessage('No recipient email found for this document')
+      setSendResultModalOpen(true)
       return
     }
 
-    if (!confirm(`Send signature request to ${doc.recipientName || doc.recipient}?`)) {
-      return
-    }
+    setSendTarget(doc)
+    setSendModalOpen(true)
+  }
+
+  const handleConfirmSendRequest = async () => {
+    if (!sendTarget) return
+    const doc = sendTarget
 
     setSendingRequest(doc.id)
     try {
       const toEmail = String(doc.recipient || '').trim().toLowerCase()
 
-      // Fetch the signature record (document_file)
       const sigRes = await fetch(`/api/esignature/signature/${encodeURIComponent(doc.id)}`, { cache: 'no-store' })
       if (!sigRes.ok) {
         throw new Error('Failed to load signature record')
@@ -272,12 +285,10 @@ export default function ESignaturePage() {
         throw new Error('No document file found in signature record')
       }
 
-      // Fetch the fields for this document
       const fieldsRes = await fetch(`/api/esignature/fields?dealId=${encodeURIComponent(doc.id)}`, { cache: 'no-store' })
       const fieldsJson = fieldsRes.ok ? await fieldsRes.json().catch(() => null) : null
       const fields: EsignField[] = Array.isArray(fieldsJson?.fields) ? fieldsJson.fields : []
 
-      // Generate the signature link with email as query param
       const signatureLink = (() => {
         try {
           if (typeof window === 'undefined') return ''
@@ -288,7 +299,6 @@ export default function ESignaturePage() {
         }
       })()
 
-      // POST to the webhook
       const payload = {
         id: doc.id,
         email: toEmail,
@@ -311,9 +321,15 @@ export default function ESignaturePage() {
         throw new Error(t || `Webhook failed (${sendRes.status})`)
       }
 
-      alert('Signature request sent successfully!')
+      setSendResultOk(true)
+      setSendResultMessage('Signature request sent successfully!')
+      setSendResultModalOpen(true)
+      setSendModalOpen(false)
+      setSendTarget(null)
     } catch (e: any) {
-      alert(`Failed to send signature request: ${e?.message || 'Unknown error'}`)
+      setSendResultOk(false)
+      setSendResultMessage(`Failed to send signature request: ${e?.message || 'Unknown error'}`)
+      setSendResultModalOpen(true)
     } finally {
       setSendingRequest(null)
     }
@@ -501,6 +517,35 @@ export default function ESignaturePage() {
 
   const handleEditDeal = (dealId: string) => {
     router.push(`/admin/esignature/prepare/${encodeURIComponent(dealId)}`)
+  }
+
+  const handleDeleteDocument = async (doc: Document) => {
+    setDeleteTarget(doc)
+    setDeleteModalOpen(true)
+  }
+
+  const handleConfirmDelete = async () => {
+    if (!deleteTarget) return
+
+    setDeletingId(deleteTarget.id)
+    try {
+      const res = await fetch(`/api/esignature/signature/${encodeURIComponent(deleteTarget.id)}/delete`, {
+        method: 'DELETE',
+      })
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error(data.error || `Failed to delete (${res.status})`)
+      }
+
+      setDocuments((prev) => prev.filter((d) => d.id !== deleteTarget.id))
+      setDeleteModalOpen(false)
+      setDeleteTarget(null)
+    } catch (err: any) {
+      alert(`Failed to delete document: ${err?.message || 'Unknown error'}`)
+    } finally {
+      setDeletingId(null)
+    }
   }
 
   const filteredDocuments = useMemo(() => {
@@ -827,6 +872,24 @@ export default function ESignaturePage() {
                               )}
                             </button>
                           )}
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteDocument(doc)}
+                            disabled={deletingId === doc.id}
+                            className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            title={deletingId === doc.id ? 'Deleting...' : 'Delete Document'}
+                          >
+                            {deletingId === doc.id ? (
+                              <svg className="w-5 h-5 animate-spin" viewBox="0 0 24 24" fill="none">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V2C6.477 2 2 6.477 2 12h2z" />
+                              </svg>
+                            ) : (
+                              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                              </svg>
+                            )}
+                          </button>
                         </div>
                       </td>
                     </tr>
@@ -1046,6 +1109,113 @@ export default function ESignaturePage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {sendModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div
+            className="absolute inset-0 bg-black/40"
+            onClick={() => {
+              if (sendingRequest) return
+              setSendModalOpen(false)
+              setSendTarget(null)
+            }}
+          />
+          <div className="relative w-full max-w-md rounded-2xl border border-slate-200 bg-white shadow-2xl overflow-hidden">
+            <div className="px-6 py-4 border-b border-slate-200">
+              <div className="text-lg font-bold text-slate-900">Send signature request?</div>
+              <div className="mt-1 text-sm text-slate-600 break-words">
+                Send signature request to <span className="font-semibold">{sendTarget?.recipientName || sendTarget?.recipient}</span>?
+              </div>
+            </div>
+            <div className="px-6 py-4 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  if (sendingRequest) return
+                  setSendModalOpen(false)
+                  setSendTarget(null)
+                }}
+                disabled={!!sendingRequest}
+                className="h-10 px-4 rounded-lg bg-slate-100 text-slate-700 text-sm font-semibold hover:bg-slate-200 border border-slate-200 disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmSendRequest}
+                disabled={!!sendingRequest}
+                className="h-10 px-5 rounded-lg bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                {sendingRequest ? 'Sending...' : 'Send'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {sendResultModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setSendResultModalOpen(false)} />
+          <div className="relative w-full max-w-md rounded-xl border border-slate-200 bg-white shadow-2xl p-6">
+            <div className={`text-lg font-bold ${sendResultOk ? 'text-green-600' : 'text-red-600'}`}>
+              {sendResultOk ? '✓ Success' : '✗ Error'}
+            </div>
+            <div className="mt-2 text-sm text-slate-600 break-words whitespace-pre-wrap">{sendResultMessage}</div>
+            <div className="mt-4 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setSendResultModalOpen(false)}
+                className="h-9 px-6 rounded-full bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700"
+              >
+                OK
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {deleteModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div
+            className="absolute inset-0 bg-black/40"
+            onClick={() => {
+              if (deletingId) return
+              setDeleteModalOpen(false)
+              setDeleteTarget(null)
+            }}
+          />
+          <div className="relative w-full max-w-md rounded-2xl border border-slate-200 bg-white shadow-2xl overflow-hidden">
+            <div className="px-6 py-4 border-b border-slate-200">
+              <div className="text-lg font-bold text-slate-900">Delete document?</div>
+              <div className="mt-1 text-sm text-slate-600 break-words">
+                Are you sure you want to delete <span className="font-semibold">{deleteTarget?.title || 'this document'}</span>? This action cannot be undone.
+              </div>
+            </div>
+            <div className="px-6 py-4 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  if (deletingId) return
+                  setDeleteModalOpen(false)
+                  setDeleteTarget(null)
+                }}
+                disabled={!!deletingId}
+                className="h-10 px-4 rounded-lg bg-slate-100 text-slate-700 text-sm font-semibold hover:bg-slate-200 border border-slate-200 disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDelete}
+                disabled={!!deletingId}
+                className="h-10 px-5 rounded-lg bg-red-600 text-white text-sm font-semibold hover:bg-red-700 disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                {deletingId ? 'Deleting...' : 'Delete'}
+              </button>
+            </div>
           </div>
         </div>
       )}

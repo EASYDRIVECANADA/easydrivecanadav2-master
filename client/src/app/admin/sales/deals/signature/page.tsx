@@ -89,8 +89,16 @@ const fieldTypeLabels: Record<FieldType, string> = {
 function DealsSignaturePageInner() {
   const searchParams = useSearchParams()
   
-  // Get email from query string - format: ?email@example.com
+  // Support two flows:
+  // 1. dealId flow (from Deals table): ?dealId=227
+  // 2. email flow (from E-Signature tab): ?email@example.com
+  const dealId = useMemo(() => {
+    return searchParams.get('dealId') || ''
+  }, [searchParams])
+
   const recipientEmail = useMemo(() => {
+    // If dealId is present, don't use email flow
+    if (searchParams.get('dealId')) return ''
     const raw = searchParams.toString()
     // The email is the first key (before any =)
     const firstKey = raw.split('=')[0] || raw.split('&')[0] || ''
@@ -120,16 +128,53 @@ function DealsSignaturePageInner() {
   const [docMime, setDocMime] = useState<string | null>(null)
   const [pdfDataUrl, setPdfDataUrl] = useState<string | null>(null)
 
+  const [dealData, setDealData] = useState<any>(null)
+
   const title = useMemo(() => {
+    if (dealId) return `E-Signature Request`
     if (recipientEmail) return `E-Signature Request`
     return 'Signature'
-  }, [recipientEmail])
+  }, [dealId, recipientEmail])
 
-  // Load signature record by email
+  // Load document - supports both dealId flow and email flow
   useEffect(() => {
     const loadDocument = async () => {
+      // Flow 1: dealId from Deals table
+      if (dealId) {
+        try {
+          setLoading(true)
+          setError(null)
+          setPageImages([])
+
+          // Fetch deal data
+          const dealRes = await fetch(`/api/deals/${encodeURIComponent(dealId)}`, { cache: 'no-store' })
+          if (!dealRes.ok) {
+            throw new Error('Failed to load deal data')
+          }
+          const data = await dealRes.json()
+          if (!data) {
+            throw new Error('No deal data found')
+          }
+
+          setDealData(data)
+          setSigRecord({ id: dealId, deal_id: dealId, ...data })
+
+          // For dealId flow, we generate the Bill of Sale PDF dynamically
+          // Set docMime to trigger PDF generation in the next effect
+          setDocMime('application/pdf')
+          // We'll generate the PDF in a separate effect
+
+          setLoading(false)
+        } catch (e: any) {
+          setError(e?.message || 'Failed to load deal')
+          setLoading(false)
+        }
+        return
+      }
+
+      // Flow 2: email from E-Signature tab
       if (!recipientEmail) {
-        setError('No recipient email provided')
+        setError('No recipient email or deal ID provided')
         setLoading(false)
         return
       }
@@ -175,7 +220,97 @@ function DealsSignaturePageInner() {
     }
 
     loadDocument()
-  }, [recipientEmail])
+  }, [dealId, recipientEmail])
+
+  // Generate Bill of Sale PDF for dealId flow
+  useEffect(() => {
+    const generateBillOfSalePdf = async () => {
+      if (!dealId || !dealData) return
+      if (pdfDataUrl) return // Already have PDF
+
+      try {
+        const { jsPDF } = await import('jspdf')
+        const { renderBillOfSalePdf } = await import('../new/billOfSalePdf')
+
+        const c = dealData.customer || {}
+        const vRaw = dealData.vehicles?.[0] || {}
+        const sv = vRaw.selectedVehicle || vRaw
+        const w = dealData.worksheet || {}
+        const d = dealData.delivery || {}
+
+        const billData = {
+          dealDate: c.created_at ? new Date(c.created_at).toLocaleDateString('en-CA', { year: 'numeric', month: 'short', day: 'numeric' }) : '',
+          invoiceNumber: String(dealId || ''),
+          fullName: [c.firstname, c.lastname].filter(Boolean).join(' ') || 'Unknown',
+          phone: c.phone ?? '',
+          mobile: c.mobile ?? '',
+          email: String(c.email ?? '').trim().toLowerCase(),
+          address: c.street_address ?? c.streetaddress ?? '',
+          city: c.city ?? '',
+          province: c.province ?? 'ON',
+          postalCode: c.postal_code ?? c.postalcode ?? '',
+          driversLicense: c.drivers_license ?? c.driverslicense ?? '',
+          insuranceCompany: c.insurance_company ?? c.insurancecompany ?? '',
+          policyNumber: c.policy_number ?? c.policynumber ?? '',
+          policyExpiry: c.policy_expiry ?? c.policyexpiry ?? '',
+          stockNumber: String(sv.selected_stock_number ?? sv.stockNumber ?? sv.stock_number ?? ''),
+          year: String(sv.selected_year ?? sv.year ?? ''),
+          make: String(sv.selected_make ?? sv.make ?? ''),
+          model: String(sv.selected_model ?? sv.model ?? ''),
+          trim: String(sv.selected_trim ?? sv.trim ?? ''),
+          colour: String(sv.selected_exterior_color ?? sv.exteriorColor ?? sv.exterior_color ?? ''),
+          keyNumber: '',
+          vin: String(sv.selected_vin ?? sv.vin ?? ''),
+          odometerStatus: String(sv.selected_status ?? sv.status ?? 'Used'),
+          odometer: sv.selected_odometer ?? sv.odometer ? `${Number(sv.selected_odometer ?? sv.odometer).toLocaleString()} ${String(sv.selected_odometer_unit ?? sv.odometerUnit ?? sv.odometer_unit ?? 'kms')}` : '',
+          serviceDate: '',
+          deliveryDate: d.delivery_date ?? '',
+          vehiclePrice: String(w.vehicle_price ?? w.purchase_price ?? sv.price ?? 0),
+          omvicFee: String(w.omvic_fee ?? 10),
+          subtotal1: String(w.subtotal ?? 0),
+          netDifference: String(w.net_difference ?? 0),
+          hstOnNetDifference: String(w.hst_on_net ?? 0),
+          totalTax: String(w.total_tax ?? 0),
+          licenseFee: String(w.license_fee ?? 0),
+          feesTotal: String(w.fees_total ?? 0),
+          accessoriesTotal: String(w.accessories_total ?? 0),
+          warrantiesTotal: String(w.warranty_total ?? 0),
+          insurancesTotal: String(w.insurance_total ?? 0),
+          paymentsTotal: String(w.payments_total ?? 0),
+          subtotal2: String(w.subtotal_2 ?? 0),
+          deposit: String(w.deposit ?? 0),
+          downPayment: String(w.down_payment ?? 0),
+          taxOnInsurance: String(w.tax_on_insurance ?? 0),
+          totalBalanceDue: String(w.balance_due ?? w.total_due ?? 0),
+          extendedWarranty: 'DECLINED',
+          commentsHtml: dealData.disclosures?.disclosures_html ?? '',
+          purchaserName: [c.firstname, c.lastname].filter(Boolean).join(' ') || '',
+          purchaserSignatureB64: undefined,
+          salesperson: d.salesperson ?? '',
+          salespersonRegNo: '4782496',
+          acceptorName: d.approved_by ?? 'Syed Islam',
+          acceptorRegNo: '4782496',
+        }
+
+        const pdf = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'letter' })
+        renderBillOfSalePdf(pdf, billData, { pageStart: 1, totalPages: 3 })
+
+        // Convert PDF to data URL
+        const pdfBlob = pdf.output('blob')
+        const reader = new FileReader()
+        reader.onload = () => {
+          const dataUrl = reader.result as string
+          setPdfDataUrl(dataUrl)
+        }
+        reader.readAsDataURL(pdfBlob)
+      } catch (e: any) {
+        console.error('Failed to generate Bill of Sale PDF:', e)
+        setError('Failed to generate document')
+      }
+    }
+
+    generateBillOfSalePdf()
+  }, [dealId, dealData, pdfDataUrl])
 
   // Render PDF pages to images
   useEffect(() => {
