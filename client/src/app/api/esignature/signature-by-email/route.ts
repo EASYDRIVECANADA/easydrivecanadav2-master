@@ -1,15 +1,17 @@
 import { NextResponse } from 'next/server'
 
-const baseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-const apiKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
+export const fetchCache = 'force-no-store'
+
+const baseUrl = (process.env.NEXT_PUBLIC_SUPABASE_URL || '').replace(/\/+$/, '')
+const apiKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 
 export async function GET(request: Request) {
   try {
-    if (!baseUrl) {
-      return NextResponse.json({ error: 'Missing SUPABASE_URL' }, { status: 500 })
-    }
-    if (!apiKey) {
-      return NextResponse.json({ error: 'Missing SUPABASE_SERVICE_ROLE_KEY' }, { status: 500 })
+    if (!baseUrl || !apiKey) {
+      console.error('[signature-by-email] Missing env vars:', { baseUrl: !!baseUrl, apiKey: !!apiKey })
+      return NextResponse.json({ error: 'Server configuration error' }, { status: 500 })
     }
 
     const url = new URL(request.url)
@@ -19,15 +21,21 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'Missing email parameter' }, { status: 400 })
     }
 
-    // Query signature table by email, get the most recent one
-    const queryUrl = `${baseUrl}/rest/v1/signature?email=eq.${encodeURIComponent(email)}&order=created_at.desc&limit=1`
+    const normalizedEmail = email.trim().toLowerCase()
+    console.log('[signature-by-email] Looking for email:', normalizedEmail)
+
+    // Query signature table by email (case-insensitive), get the most recent one
+    // Using ilike for case-insensitive matching
+    const queryUrl = `${baseUrl}/rest/v1/signature?email=ilike.${encodeURIComponent(normalizedEmail)}&order=created_at.desc&limit=1`
 
     const res = await fetch(queryUrl, {
+      method: 'GET',
       headers: {
-        apikey: apiKey,
-        Authorization: `Bearer ${apiKey}`,
+        'apikey': apiKey,
+        'Authorization': `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
       },
+      cache: 'no-store',
     })
 
     if (!res.ok) {
@@ -37,13 +45,16 @@ export async function GET(request: Request) {
     }
 
     const records = await res.json()
+    console.log('[signature-by-email] Found records:', records?.length || 0)
 
     if (!records || records.length === 0) {
       return NextResponse.json({ error: 'No signature request found for this email' }, { status: 404 })
     }
 
     // Return the first (most recent) record
-    return NextResponse.json(records[0])
+    return NextResponse.json(records[0], {
+      headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0' },
+    })
   } catch (err: any) {
     console.error('[signature-by-email] Error:', err)
     return NextResponse.json({ error: err?.message || 'Internal server error' }, { status: 500 })
