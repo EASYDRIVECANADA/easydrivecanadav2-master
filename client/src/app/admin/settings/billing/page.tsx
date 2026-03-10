@@ -67,6 +67,8 @@ function BillingPage() {
         period: '',
         description: 'Default account for private sellers — pay only when you post or promote',
         features: [
+          '1-2 users',
+          'Under 1 vehicles in inventory',
           'Basic listings & inquiries',
           'Manual posting / pay-per-use publishing',
           'Standard support',
@@ -82,7 +84,7 @@ function BillingPage() {
         billedNote: 'Billed Monthly',
         description: 'Plan made for small sized car dealerships',
         features: [
-          '1-2 users',
+          '1-3 users',
           'Under 50 vehicles in inventory',
           'Under 50 deals per month',
           '1 hour of online training included',
