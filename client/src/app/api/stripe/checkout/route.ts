@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server'
 
 export const runtime = 'nodejs'
 
-type Plan = 'starter' | 'small' | 'full'
+type Plan = 'starter' | 'small' | 'medium' | 'large'
 
 export async function POST(req: Request) {
   try {
@@ -12,16 +12,21 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Missing STRIPE_SECRET_KEY' }, { status: 500 })
     }
 
-    const dealershipPrice = String(process.env.STRIPE_PRICE_ID_DEALERSHIP || '').trim()
-    const smallPrice = dealershipPrice
+    const smallPrice = String(process.env.STRIPE_PRICE_ID_SMALL_DEALERSHIP || '').trim()
+    const mediumPrice = String(process.env.STRIPE_PRICE_ID_MEDIUM_DEALERSHIP || '').trim()
+    const largePrice = String(process.env.STRIPE_PRICE_ID_LARGE_DEALERSHIP || '').trim()
 
     const body = await req.json().catch(() => ({} as any))
     const plan = String(body?.plan || '').toLowerCase() as Plan
     const email = typeof body?.email === 'string' ? body.email.trim() : ''
 
-    const priceId = plan === 'small' ? smallPrice : ''
+    let priceId = ''
+    if (plan === 'small') priceId = smallPrice
+    else if (plan === 'medium') priceId = mediumPrice
+    else if (plan === 'large') priceId = largePrice
+    
     if (!priceId) {
-      return NextResponse.json({ error: 'Selected plan is not purchasable' }, { status: 400 })
+      return NextResponse.json({ error: 'Selected plan is not purchasable or missing Stripe Price ID' }, { status: 400 })
     }
 
     const siteUrlFromEnv = String(process.env.NEXT_PUBLIC_SITE_URL || '').trim().replace(/\/$/, '')
@@ -62,7 +67,6 @@ export async function POST(req: Request) {
         email,
       },
       subscription_data: {
-        trial_period_days: 180,
         metadata: {
           plan,
         },

@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server'
 
 export const runtime = 'nodejs'
 
-type Plan = 'starter' | 'small' | 'full'
+type Plan = 'starter' | 'small' | 'medium' | 'large'
 
 type PlanStatus = {
   active: boolean
@@ -17,7 +17,9 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Missing STRIPE_SECRET_KEY' }, { status: 500 })
     }
 
-    const smallPrice = String(process.env.STRIPE_PRICE_ID_DEALERSHIP || '').trim()
+    const smallPrice = String(process.env.STRIPE_PRICE_ID_SMALL_DEALERSHIP || '').trim()
+    const mediumPrice = String(process.env.STRIPE_PRICE_ID_MEDIUM_DEALERSHIP || '').trim()
+    const largePrice = String(process.env.STRIPE_PRICE_ID_LARGE_DEALERSHIP || '').trim()
 
     const { email } = (await req.json().catch(() => ({}))) as { email?: string }
     const normalizedEmail = String(email || '').trim().toLowerCase()
@@ -33,7 +35,8 @@ export async function POST(req: Request) {
       const empty: Record<Plan, PlanStatus> = {
         starter: { active: false, validUntilIso: null },
         small: { active: false, validUntilIso: null },
-        full: { active: false, validUntilIso: null },
+        medium: { active: false, validUntilIso: null },
+        large: { active: false, validUntilIso: null },
       }
       return NextResponse.json({ plans: empty, anyActive: false })
     }
@@ -48,7 +51,8 @@ export async function POST(req: Request) {
     const plans: Record<Plan, PlanStatus> = {
       starter: { active: false, validUntilIso: null },
       small: { active: false, validUntilIso: null },
-      full: { active: false, validUntilIso: null },
+      medium: { active: false, validUntilIso: null },
+      large: { active: false, validUntilIso: null },
     }
 
     for (const sub of subs.data || []) {
@@ -96,10 +100,12 @@ export async function POST(req: Request) {
         }
 
         if (smallPrice && priceId === smallPrice) apply('small')
+        else if (mediumPrice && priceId === mediumPrice) apply('medium')
+        else if (largePrice && priceId === largePrice) apply('large')
       }
     }
 
-    const anyActive = plans.starter.active || plans.small.active || plans.full.active
+    const anyActive = plans.starter.active || plans.small.active || plans.medium.active || plans.large.active
     return NextResponse.json({ plans, anyActive })
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || 'Failed to read subscription status' }, { status: 500 })

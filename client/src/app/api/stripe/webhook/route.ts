@@ -3,22 +3,25 @@ import { NextResponse } from 'next/server'
 
 export const runtime = 'nodejs'
 
-type Plan = 'starter' | 'small' | 'full'
+type Plan = 'starter' | 'small' | 'medium' | 'large'
 
 type Role = string
 
 const planToRole: Record<Plan, Role> = {
   starter: 'STARTER',
-  small: 'DEALERSHIP',
-  full: 'ENTERPRISE',
+  small: 'small dealership',
+  medium: 'medium dealership',
+  large: 'large dealership',
 }
 
 const normalizeEmail = (email: unknown) => String(email || '').trim().toLowerCase()
 
-const getPlanFromPriceId = (priceId: string, smallPrice: string): Plan | null => {
+const getPlanFromPriceId = (priceId: string, smallPrice: string, mediumPrice: string, largePrice: string): Plan | null => {
   const pid = String(priceId || '').trim()
   if (!pid) return null
   if (smallPrice && pid === smallPrice) return 'small'
+  if (mediumPrice && pid === mediumPrice) return 'medium'
+  if (largePrice && pid === largePrice) return 'large'
   return null
 }
 
@@ -226,7 +229,15 @@ export async function POST(req: Request) {
     if (!secretKey) return NextResponse.json({ error: 'Missing STRIPE_SECRET_KEY' }, { status: 500 })
     if (!webhookSecretRaw) return NextResponse.json({ error: 'Missing STRIPE_WEBHOOK_SECRET' }, { status: 500 })
 
-    const smallPrice = String(process.env.STRIPE_PRICE_ID_DEALERSHIP || '').trim()
+    const smallPrice = String(process.env.STRIPE_PRICE_ID_SMALL_DEALERSHIP || '').trim()
+    const mediumPrice = String(process.env.STRIPE_PRICE_ID_MEDIUM_DEALERSHIP || '').trim()
+    const largePrice = String(process.env.STRIPE_PRICE_ID_LARGE_DEALERSHIP || '').trim()
+
+    console.log('[stripe-webhook] Price IDs loaded:', {
+      small: smallPrice ? `${smallPrice.substring(0, 15)}...` : 'MISSING',
+      medium: mediumPrice ? `${mediumPrice.substring(0, 15)}...` : 'MISSING',
+      large: largePrice ? `${largePrice.substring(0, 15)}...` : 'MISSING',
+    })
 
     const stripe = new Stripe(secretKey)
 
@@ -275,14 +286,15 @@ export async function POST(req: Request) {
       const role = planToRole[plan]
 
       await updateUserRoleByEmail(normalized, role)
-      const planLabel = plan === 'small' ? 'dealership' : plan
-      return { email: normalized, role, plan: planLabel }
+      return { email: normalized, role, plan }
     }
 
     if (event.type === 'checkout.session.completed') {
       const session = event.data.object as Stripe.Checkout.Session
       let sessionPlan = String((session.metadata as any)?.plan || '').trim().toLowerCase() as Plan
       const product = String((session.metadata as any)?.product || '').trim().toLowerCase()
+
+      console.log('[stripe-webhook] session.metadata.plan:', sessionPlan)
 
       const mode = String((session as any)?.mode || '').trim().toLowerCase()
       if (mode === 'subscription') {
@@ -293,31 +305,76 @@ export async function POST(req: Request) {
           email = normalizeEmail((customer as any)?.email)
         }
 
-        // If metadata is missing, derive plan from subscription
-        if (!(sessionPlan === 'starter' || sessionPlan === 'small' || sessionPlan === 'full')) {
+        // Try to get plan from session line_items first (most reliable)
+        if (!(sessionPlan === 'starter' || sessionPlan === 'small' || sessionPlan === 'medium' || sessionPlan === 'large')) {
+          try {
+            const sessionWithLineItems = await stripe.checkout.sessions.retrieve(session.id, {
+              expand: ['line_items.data.price.product'],
+            })
+            const firstLineItem: any = sessionWithLineItems.line_items?.data?.[0]
+            if (firstLineItem) {
+              const priceId = String(firstLineItem?.price?.id || '').trim()
+              console.log('[stripe-webhook] line_items priceId:', priceId)
+              const derived = getPlanFromPriceId(priceId, smallPrice, mediumPrice, largePrice)
+              if (derived) {
+                sessionPlan = derived
+                console.log('[stripe-webhook] detected from line_items priceId:', sessionPlan)
+              } else {
+                // Try product description from line items
+                const productName = String(firstLineItem?.price?.product?.name || firstLineItem?.description || '').toLowerCase()
+                console.log('[stripe-webhook] line_items product name:', productName)
+                if (productName.includes('small')) sessionPlan = 'small'
+                else if (productName.includes('medium') || productName.includes('meduim')) sessionPlan = 'medium'
+                else if (productName.includes('large')) sessionPlan = 'large'
+                console.log('[stripe-webhook] detected from line_items product name:', sessionPlan)
+              }
+            }
+          } catch (e: any) {
+            console.error('[stripe-webhook] failed to retrieve line_items:', e.message)
+          }
+        }
+
+        // If still not found, derive plan from subscription
+        if (!(sessionPlan === 'starter' || sessionPlan === 'small' || sessionPlan === 'medium' || sessionPlan === 'large')) {
+          console.log('[stripe-webhook] session plan not valid, checking subscription metadata')
           const rawSubId = (session as any)?.subscription
           const subscriptionId = typeof rawSubId === 'string' ? rawSubId : rawSubId?.id
           if (subscriptionId) {
             const sub = await stripe.subscriptions.retrieve(String(subscriptionId), {
-              expand: ['items.data.price'],
+              expand: ['items.data.price', 'items.data.price.product'],
             })
             const metaPlan = String((sub.metadata as any)?.plan || '').trim().toLowerCase()
-            if (metaPlan === 'starter' || metaPlan === 'small' || metaPlan === 'full') {
+            console.log('[stripe-webhook] subscription.metadata.plan:', metaPlan)
+            if (metaPlan === 'starter' || metaPlan === 'small' || metaPlan === 'medium' || metaPlan === 'large') {
               sessionPlan = metaPlan as Plan
             } else {
               const firstItem: any = (sub.items?.data || [])[0]
               const priceId = String(firstItem?.price?.id || '').trim()
-              const derived = getPlanFromPriceId(priceId, smallPrice)
-              if (derived) sessionPlan = derived
+              console.log('[stripe-webhook] checking priceId:', priceId, 'against', { smallPrice, mediumPrice, largePrice })
+              const derived = getPlanFromPriceId(priceId, smallPrice, mediumPrice, largePrice)
+              console.log('[stripe-webhook] derived plan from priceId:', derived)
+              if (derived) {
+                sessionPlan = derived
+              } else {
+                // Fallback: detect from product description
+                const productDescription = String(firstItem?.price?.product?.description || firstItem?.price?.product?.name || '').toLowerCase()
+                console.log('[stripe-webhook] trying to detect from product description:', productDescription)
+                if (productDescription.includes('small')) sessionPlan = 'small'
+                else if (productDescription.includes('medium') || productDescription.includes('meduim')) sessionPlan = 'medium'
+                else if (productDescription.includes('large')) sessionPlan = 'large'
+                console.log('[stripe-webhook] detected from description:', sessionPlan)
+              }
             }
           }
         }
 
-        if (email && (sessionPlan === 'starter' || sessionPlan === 'small' || sessionPlan === 'full')) {
+        console.log('[stripe-webhook] final sessionPlan:', sessionPlan, 'role will be:', planToRole[sessionPlan])
+
+        if (email && (sessionPlan === 'starter' || sessionPlan === 'small' || sessionPlan === 'medium' || sessionPlan === 'large')) {
           const result = await applyRoleUpdate(email, sessionPlan)
           console.log('[stripe-webhook] role-updated', result)
 
-          if (sessionPlan === 'small') {
+          if (sessionPlan === 'small' || sessionPlan === 'medium' || sessionPlan === 'large') {
             let badgeSent = false
             let badgeError: string | null = null
             let subscriptSent = false
@@ -529,7 +586,7 @@ export async function POST(req: Request) {
       }
 
       // If metadata is missing, derive plan from subscription
-      if (!(sessionPlan === 'starter' || sessionPlan === 'small' || sessionPlan === 'full')) {
+      if (!(sessionPlan === 'starter' || sessionPlan === 'small' || sessionPlan === 'medium' || sessionPlan === 'large')) {
         const rawSubId = (session as any)?.subscription
         const subscriptionId = typeof rawSubId === 'string' ? rawSubId : rawSubId?.id
         if (subscriptionId) {
@@ -537,18 +594,18 @@ export async function POST(req: Request) {
             expand: ['items.data.price'],
           })
           const metaPlan = String((sub.metadata as any)?.plan || '').trim().toLowerCase()
-          if (metaPlan === 'starter' || metaPlan === 'small' || metaPlan === 'full') {
+          if (metaPlan === 'starter' || metaPlan === 'small' || metaPlan === 'medium' || metaPlan === 'large') {
             sessionPlan = metaPlan as Plan
           } else {
             const firstItem: any = (sub.items?.data || [])[0]
             const priceId = String(firstItem?.price?.id || '').trim()
-            const derived = getPlanFromPriceId(priceId, smallPrice)
+            const derived = getPlanFromPriceId(priceId, smallPrice, mediumPrice, largePrice)
             if (derived) sessionPlan = derived
           }
         }
       }
 
-      if (email && (sessionPlan === 'starter' || sessionPlan === 'small' || sessionPlan === 'full')) {
+      if (email && (sessionPlan === 'starter' || sessionPlan === 'small' || sessionPlan === 'medium' || sessionPlan === 'large')) {
         const result = await applyRoleUpdate(email, sessionPlan)
         console.log('[stripe-webhook] role-updated', result)
         return NextResponse.json({ received: true, updated: result })
@@ -577,15 +634,23 @@ export async function POST(req: Request) {
       const subscriptionId = typeof rawSub === 'string' ? rawSub : rawSub?.id
       if (subscriptionId) {
         const sub = await stripe.subscriptions.retrieve(String(subscriptionId), {
-          expand: ['items.data.price'],
+          expand: ['items.data.price', 'items.data.price.product'],
         })
         const metaPlan = String((sub.metadata as any)?.plan || '').trim().toLowerCase()
-        if (metaPlan === 'starter' || metaPlan === 'small' || metaPlan === 'full') plan = metaPlan as Plan
+        if (metaPlan === 'starter' || metaPlan === 'small' || metaPlan === 'medium' || metaPlan === 'large') plan = metaPlan as Plan
 
         if (!plan) {
           const firstItem: any = (sub.items?.data || [])[0]
           const priceId = String(firstItem?.price?.id || '').trim()
-          plan = getPlanFromPriceId(priceId, smallPrice)
+          plan = getPlanFromPriceId(priceId, smallPrice, mediumPrice, largePrice)
+          
+          // Fallback: detect from product description
+          if (!plan) {
+            const productDescription = String(firstItem?.price?.product?.description || firstItem?.price?.product?.name || '').toLowerCase()
+            if (productDescription.includes('small')) plan = 'small'
+            else if (productDescription.includes('medium') || productDescription.includes('meduim')) plan = 'medium'
+            else if (productDescription.includes('large')) plan = 'large'
+          }
         }
       }
 
@@ -593,7 +658,7 @@ export async function POST(req: Request) {
       if (!plan) {
         const firstLine: any = (invoice.lines?.data || [])[0]
         const priceId = String(firstLine?.price?.id || '').trim()
-        plan = getPlanFromPriceId(priceId, smallPrice)
+        plan = getPlanFromPriceId(priceId, smallPrice, mediumPrice, largePrice)
       }
 
       if (email && plan) {
@@ -601,7 +666,7 @@ export async function POST(req: Request) {
         console.log('[stripe-webhook] role-updated', result)
 
         // Send badge webhook after successful Dealership payment
-        if (plan === 'small') {
+        if (plan === 'small' || plan === 'medium' || plan === 'large') {
           let badgeSent = false
           let badgeError: string | null = null
           let subscriptSent = false

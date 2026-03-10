@@ -67,8 +67,6 @@ function BillingPage() {
         period: '',
         description: 'Default account for private sellers — pay only when you post or promote',
         features: [
-          '1st tier Free',
-          'Up to 2 Users',
           'Basic listings & inquiries',
           'Manual posting / pay-per-use publishing',
           'Standard support',
@@ -705,6 +703,8 @@ function BillingPage() {
                   const billedNote = (plan as any).billedNote
                   const cancelNote = (plan as any).cancelNote
                   const isFree = plan.key === 'starter'
+                  const hasPaidActive =
+                    Boolean(planStatus.small.active) || Boolean(planStatus.medium.active) || Boolean(planStatus.large.active)
 
                   return (
                     <div
@@ -839,10 +839,12 @@ function BillingPage() {
                         {/* CTA Button with enhanced styling */}
                         <div>
                           {!isPurchasable ? (
-                            <div className="inline-flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-slate-100 to-slate-200 rounded-full border border-slate-300 shadow-sm">
-                              <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
-                              <span className="text-xs font-semibold text-slate-700">Active</span>
-                            </div>
+                            isFree && hasPaidActive ? null : (
+                              <div className="inline-flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-slate-100 to-slate-200 rounded-full border border-slate-300 shadow-sm">
+                                <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+                                <span className="text-xs font-semibold text-slate-700">Active</span>
+                              </div>
+                            )
                           ) : isActive ? (
                             <div>
                               <div className="inline-flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-green-50 to-emerald-50 rounded-full border border-green-300 shadow-sm">
