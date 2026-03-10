@@ -1,9 +1,15 @@
 'use client'
 
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { useParams, useRouter } from 'next/navigation'
+import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import jsPDF from 'jspdf'
 import { renderBillOfSalePdf, type BillOfSaleData } from '../../../sales/deals/new/billOfSalePdf'
+
+declare global {
+  interface Window {
+    pdfjsLib?: any
+  }
+}
 
 type FieldType = 'signature' | 'initial' | 'stamp' | 'dateSigned' | 'name' | 'company' | 'title' | 'text' | 'checkbox'
 type Field = { id: string; type: FieldType; x: number; y: number; width: number; height: number; page: number; value?: string }
@@ -39,11 +45,115 @@ const FieldIcon = ({ type }: { type: FieldType }) => {
 const SNAP_THRESHOLD = 6
 const PAGE_WIDTH = 816
 const PAGE_HEIGHT = 1056
-const TOTAL_PAGES = 3
+const PDF_RENDER_QUALITY = 4
+const DEFAULT_TOTAL_PAGES = 3
+
+ const detectMimeFromBase64 = (b64: string): string | null => {
+   const s = String(b64 || '').trim()
+   if (!s) return null
+   if (s.startsWith('data:')) {
+     const m = s.match(/^data:([^;]+);base64,/i)
+     return m?.[1] || null
+   }
+   if (s.startsWith('JVBERi0')) return 'application/pdf'
+   if (s.startsWith('iVBORw0')) return 'image/png'
+   if (s.startsWith('/9j/')) return 'image/jpeg'
+   if (s.startsWith('R0lGOD')) return 'image/gif'
+   if (s.startsWith('UklGR')) return 'image/webp'
+   return null
+ }
+
+ const normalizeToDataUrl = (value: string, fallbackMime: string): { url: string; mime: string } | null => {
+   const raw = String(value || '').trim()
+   if (!raw) return null
+   if (raw.startsWith('http://') || raw.startsWith('https://')) return { url: raw, mime: fallbackMime }
+   if (raw.startsWith('data:')) {
+     const mime = detectMimeFromBase64(raw) || fallbackMime
+     return { url: raw, mime }
+   }
+   const mime = detectMimeFromBase64(raw) || fallbackMime
+   return { url: `data:${mime};base64,${raw}`, mime }
+ }
+
+ const getPdfPageCountFromDataUrl = (dataUrl: string): number => {
+   try {
+     const raw = String(dataUrl || '').trim()
+     const m = raw.match(/^data:application\/pdf;base64,(.*)$/i)
+     const b64 = m?.[1]
+     if (!b64) return 1
+
+     // Decode base64 -> binary string (fast enough for typical PDFs)
+     const binary = atob(b64)
+
+     // Heuristic page count: count occurrences of "/Type /Page" but exclude "/Type /Pages"
+     const matches = binary.match(/\/Type\s*\/Page(?!s)\b/g)
+     const count = matches?.length || 0
+
+     // Fallback to 1 if we couldn't detect
+     return count > 0 ? count : 1
+   } catch {
+     return 1
+   }
+ }
+
+ const loadPdfJsFromCdn = (): Promise<any> => {
+   if (typeof window === 'undefined') return Promise.reject(new Error('No window'))
+   if (window.pdfjsLib) return Promise.resolve(window.pdfjsLib)
+
+   return new Promise((resolve, reject) => {
+     const existing = document.querySelector('script[data-pdfjs="true"]') as HTMLScriptElement | null
+     if (existing) {
+       if (window.pdfjsLib) {
+         resolve(window.pdfjsLib)
+         return
+       }
+       const onLoad = () => window.pdfjsLib ? resolve(window.pdfjsLib) : reject(new Error('PDF.js failed to load'))
+       existing.addEventListener('load', onLoad, { once: true })
+       existing.addEventListener('error', () => reject(new Error('PDF.js failed to load')), { once: true })
+       return
+     }
+
+     const script = document.createElement('script')
+     script.dataset.pdfjs = 'true'
+     script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js'
+     script.async = true
+     script.onload = () => {
+       if (!window.pdfjsLib) {
+         console.error('[PDF.js] pdfjsLib not found after script load')
+         reject(new Error('PDF.js failed to load'))
+         return
+       }
+       try {
+         window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'
+       } catch (e) {
+         console.error('[PDF.js] Failed to set worker:', e)
+       }
+       console.log('[PDF.js] Loaded successfully')
+       resolve(window.pdfjsLib)
+     }
+     script.onerror = (e) => {
+       console.error('[PDF.js] Script load error:', e)
+       reject(new Error('PDF.js failed to load'))
+     }
+     document.head.appendChild(script)
+   })
+ }
+
+ const pdfDataUrlToBytes = (dataUrl: string): Uint8Array | null => {
+   const raw = String(dataUrl || '').trim()
+   const m = raw.match(/^data:application\/pdf;base64,(.*)$/i)
+   const b64 = m?.[1]
+   if (!b64) return null
+   const binary = atob(b64)
+   const bytes = new Uint8Array(binary.length)
+   for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+   return bytes
+ }
 
 export default function PrepareDocumentPage() {
   const params = useParams()
   const router = useRouter()
+  const searchParams = useSearchParams()
   const dealId = params?.dealId as string
   const containerRef = useRef<HTMLDivElement>(null)
 
@@ -60,6 +170,22 @@ export default function PrepareDocumentPage() {
   const [showGrid, setShowGrid] = useState(false)
   const [draggedSidebarType, setDraggedSidebarType] = useState<FieldType | null>(null)
   const [, forceRender] = useState(0)
+  const [totalPages, setTotalPages] = useState(DEFAULT_TOTAL_PAGES)
+  const [docMime, setDocMime] = useState<string | null>(null)
+  const [pageImages, setPageImages] = useState<string[]>([])
+  const [renderFailed, setRenderFailed] = useState(false)
+
+  const [actionModalOpen, setActionModalOpen] = useState(false)
+  const [actionModalOk, setActionModalOk] = useState<boolean>(true)
+  const [actionModalTitle, setActionModalTitle] = useState('')
+  const [actionModalMessage, setActionModalMessage] = useState('')
+
+  const openActionModal = useCallback((ok: boolean, title: string, message: string) => {
+    setActionModalOk(ok)
+    setActionModalTitle(title)
+    setActionModalMessage(message)
+    setActionModalOpen(true)
+  }, [])
 
   // History for undo/redo
   const historyRef = useRef<Field[][]>([[]])
@@ -130,7 +256,7 @@ export default function PrepareDocumentPage() {
         let snapX: number | undefined
         let snapY: number | undefined
         if (field) {
-          const maxY = PAGE_HEIGHT * TOTAL_PAGES - field.height
+          const maxY = PAGE_HEIGHT * totalPages - field.height
           newY = Math.min(newY, Math.max(maxY, 0))
           for (const o of others) {
             const oDocY = getDocY(o)
@@ -192,7 +318,7 @@ export default function PrepareDocumentPage() {
           const next = prev.map(f => {
             if (f.id !== ir.fieldId) return f
             const rawPage = Math.floor(ir.origY / PAGE_HEIGHT) + 1
-            const page = Math.min(Math.max(rawPage, 1), TOTAL_PAGES)
+            const page = Math.min(Math.max(rawPage, 1), totalPages)
             const y = ir.origY - (page - 1) * PAGE_HEIGHT
             return { ...f, x: ir.origX, y: Math.max(0, y), page }
           })
@@ -209,7 +335,7 @@ export default function PrepareDocumentPage() {
           const next = prev.map(f => {
             if (f.id !== ir.fieldId) return f
             const rawPage = Math.floor(fy / PAGE_HEIGHT) + 1
-            const page = Math.min(Math.max(rawPage, 1), TOTAL_PAGES)
+            const page = Math.min(Math.max(rawPage, 1), totalPages)
             const y = fy - (page - 1) * PAGE_HEIGHT
             return { ...f, x: fx, y: Math.max(0, y), page, width: fw, height: fh }
           })
@@ -273,11 +399,57 @@ export default function PrepareDocumentPage() {
       try {
         setLoading(true)
         setError(null)
+        setPageImages([])
 
+        // First, try to load from signature table (new upload flow)
+        const sigRes = await fetch(`/api/esignature/signature/${encodeURIComponent(dealId)}`, { cache: 'no-store' })
+        if (sigRes.ok) {
+          const sigData = await sigRes.json()
+          console.log('[Load] sigData:', { hasDocFile: !!sigData?.document_file, docFileLen: sigData?.document_file?.length })
+          if (sigData && sigData.document_file) {
+            // This is a signature table record with an uploaded document
+            setDealData({ signature: sigData })
+
+            const normalized = normalizeToDataUrl(String(sigData.document_file || ''), 'application/pdf')
+            console.log('[Load] normalized:', { url: normalized?.url?.substring(0, 60), mime: normalized?.mime })
+            if (!normalized) throw new Error('Missing document_file')
+
+            setDocMime(normalized.mime)
+            setPdfDataUrl(normalized.url)
+            console.log('[Load] Set pdfDataUrl and docMime')
+
+            // If it's a PDF, detect page count and render all pages.
+            if (normalized.mime === 'application/pdf') {
+              const pages = getPdfPageCountFromDataUrl(normalized.url)
+              setTotalPages(pages)
+              setPdfPageUrls(Array.from({ length: pages }, () => normalized.url))
+            } else {
+              // images
+              setTotalPages(1)
+              setPdfPageUrls([normalized.url])
+            }
+            
+            // Load any saved fields for this signature record
+            const fieldsRes = await fetch(`/api/esignature/fields?dealId=${encodeURIComponent(dealId)}`)
+            if (fieldsRes.ok) {
+              const fieldsData = await fieldsRes.json()
+              if (fieldsData.fields) {
+                setFields(fieldsData.fields)
+                historyRef.current = [fieldsData.fields]
+                historyIdxRef.current = 0
+              }
+            }
+            
+            setLoading(false)
+            return
+          }
+        }
+
+        // Fallback: Try to load from deals table (old flow)
         const dealRes = await fetch(`/api/deals/${encodeURIComponent(dealId)}`, { cache: 'no-store' })
-        if (!dealRes.ok) throw new Error(`Failed to load deal (${dealRes.status})`)
+        if (!dealRes.ok) throw new Error(`Failed to load document (${dealRes.status})`)
         const deal = await dealRes.json()
-        if (!deal || deal?.error) throw new Error(String(deal?.error || 'Failed to load deal'))
+        if (!deal || deal?.error) throw new Error(String(deal?.error || 'Failed to load document'))
 
         const c = deal?.customer || {}
         const vRaw = deal?.vehicles?.[0] || {}
@@ -407,6 +579,9 @@ export default function PrepareDocumentPage() {
         }
 
         setDealData(deal)
+        setDocMime('application/pdf')
+        setTotalPages(DEFAULT_TOTAL_PAGES)
+        setPageImages([])
 
         const pdf = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'letter' })
         renderBillOfSalePdf(pdf, billData, { pageStart: 1, totalPages: 3 })
@@ -415,7 +590,7 @@ export default function PrepareDocumentPage() {
 
         // Build isolated single-page previews to avoid iframe #page rendering full document repeatedly
         const pageUrls: string[] = []
-        for (let pageNo = 1; pageNo <= TOTAL_PAGES; pageNo++) {
+        for (let pageNo = 1; pageNo <= totalPages; pageNo++) {
           const pagePdf = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'letter' })
           renderBillOfSalePdf(pagePdf, billData, { pageStart: 1, totalPages: 3 })
           for (let i = pagePdf.getNumberOfPages(); i >= 1; i--) {
@@ -443,6 +618,73 @@ export default function PrepareDocumentPage() {
 
     if (dealId) loadDocument()
   }, [dealId])
+
+  // Render PDF pages to plain images (DocuSign-like) to avoid embedded PDF viewer UI.
+  useEffect(() => {
+    const run = async () => {
+      try {
+        setRenderFailed(false)
+        console.log('[PDF Render] Starting...', { pdfDataUrl: pdfDataUrl?.substring(0, 50), docMime })
+        if (!pdfDataUrl) {
+          console.log('[PDF Render] No pdfDataUrl')
+          return
+        }
+        if (docMime !== 'application/pdf') {
+          console.log('[PDF Render] Not a PDF:', docMime)
+          return
+        }
+
+        const bytes = pdfDataUrlToBytes(pdfDataUrl)
+        if (!bytes) {
+          console.log('[PDF Render] Failed to convert to bytes')
+          setRenderFailed(true)
+          return
+        }
+        console.log('[PDF Render] Bytes length:', bytes.length)
+
+        const pdfjs = await loadPdfJsFromCdn()
+        console.log('[PDF Render] PDF.js loaded')
+        
+        const doc = await pdfjs.getDocument({ data: bytes }).promise
+        const pages = Number(doc?.numPages || 1) || 1
+        console.log('[PDF Render] Document loaded, pages:', pages)
+        setTotalPages(pages)
+
+        const rendered: string[] = []
+        for (let pageNo = 1; pageNo <= pages; pageNo++) {
+          console.log('[PDF Render] Rendering page', pageNo)
+          const page = await doc.getPage(pageNo)
+          const viewport0 = page.getViewport({ scale: 1 })
+          const scaleToWidth = PAGE_WIDTH / viewport0.width
+          const viewport = page.getViewport({ scale: scaleToWidth * PDF_RENDER_QUALITY })
+
+          const canvas = document.createElement('canvas')
+          const ctx = canvas.getContext('2d')
+          if (!ctx) {
+            console.log('[PDF Render] No canvas context for page', pageNo)
+            rendered.push('')
+            continue
+          }
+
+          canvas.width = Math.floor(viewport.width)
+          canvas.height = Math.floor(viewport.height)
+
+          await page.render({ canvasContext: ctx, viewport, background: 'white' }).promise
+          rendered.push(canvas.toDataURL('image/png'))
+          console.log('[PDF Render] Page', pageNo, 'rendered')
+        }
+
+        console.log('[PDF Render] All pages rendered:', rendered.length)
+        setPageImages(rendered.filter(Boolean))
+      } catch (e: any) {
+        console.error('[PDF Render] Error:', e?.message || e)
+        setRenderFailed(true)
+        setPageImages([])
+      }
+    }
+
+    run()
+  }, [pdfDataUrl, docMime])
 
   // Start drag on a placed field (GPU-accelerated)
   const startFieldDrag = (e: React.MouseEvent, field: Field, el: HTMLElement) => {
@@ -476,7 +718,7 @@ export default function PrepareDocumentPage() {
     const scale = zoom / 100
     const x = (e.clientX - rect.left) / scale
     const docY = (e.clientY - rect.top) / scale
-    const page = Math.min(Math.max(Math.floor(docY / PAGE_HEIGHT) + 1, 1), TOTAL_PAGES)
+    const page = Math.min(Math.max(Math.floor(docY / PAGE_HEIGHT) + 1, 1), totalPages)
     const y = docY - (page - 1) * PAGE_HEIGHT
     const cfg = FIELD_TYPES.find(f => f.type === draggedSidebarType)!
     const newField: Field = { id: `f-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, type: draggedSidebarType, x, y, width: cfg.defaultW, height: cfg.defaultH, page }
@@ -513,87 +755,55 @@ export default function PrepareDocumentPage() {
   const handleDownload = async () => {
     setDownloading(true)
     try {
-      // Create PDF with same dimensions as the preview
-      const pdf = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'letter' })
-
-      // First, render the Bill of Sale content
-      if (dealData) {
-        const c = dealData.customer || {}
-        const vRaw = dealData.vehicles?.[0] || {}
-        const sv = vRaw.selectedVehicle || vRaw
-        const w = dealData.worksheet || {}
-        const d = dealData.delivery || {}
-
-        const billData: BillOfSaleData = {
-          dealDate: c.created_at ? new Date(c.created_at).toLocaleDateString('en-CA', { year: 'numeric', month: 'short', day: 'numeric' }) : '',
-          invoiceNumber: String(dealId || ''),
-          fullName: [c.firstname, c.lastname].filter(Boolean).join(' ') || 'Unknown',
-          phone: c.phone ?? '',
-          mobile: c.mobile ?? '',
-          email: String(c.email ?? '').trim().toLowerCase(),
-          address: c.street_address ?? c.streetaddress ?? '',
-          city: c.city ?? '',
-          province: c.province ?? 'ON',
-          postalCode: c.postal_code ?? c.postalcode ?? '',
-          driversLicense: c.drivers_license ?? c.driverslicense ?? '',
-          insuranceCompany: c.insurance_company ?? c.insurancecompany ?? '',
-          policyNumber: c.policy_number ?? c.policynumber ?? '',
-          policyExpiry: c.policy_expiry ?? c.policyexpiry ?? '',
-          stockNumber: String(sv.selected_stock_number ?? sv.stockNumber ?? sv.stock_number ?? ''),
-          year: String(sv.selected_year ?? sv.year ?? ''),
-          make: String(sv.selected_make ?? sv.make ?? ''),
-          model: String(sv.selected_model ?? sv.model ?? ''),
-          trim: String(sv.selected_trim ?? sv.trim ?? ''),
-          colour: String(sv.selected_exterior_color ?? sv.exteriorColor ?? sv.exterior_color ?? ''),
-          keyNumber: '',
-          vin: String(sv.selected_vin ?? sv.vin ?? ''),
-          odometerStatus: String(sv.selected_status ?? sv.status ?? 'Used'),
-          odometer: sv.selected_odometer ?? sv.odometer ? `${Number(sv.selected_odometer ?? sv.odometer).toLocaleString()} ${String(sv.selected_odometer_unit ?? sv.odometerUnit ?? sv.odometer_unit ?? 'kms')}` : '',
-          serviceDate: '',
-          deliveryDate: d.delivery_date ?? '',
-          vehiclePrice: String(w.vehicle_price ?? w.purchase_price ?? sv.price ?? 0),
-          omvicFee: String(w.omvic_fee ?? 10),
-          subtotal1: String(w.subtotal ?? 0),
-          netDifference: String(w.net_difference ?? 0),
-          hstOnNetDifference: String(w.hst_on_net ?? 0),
-          totalTax: String(w.total_tax ?? 0),
-          licenseFee: String(w.license_fee ?? 0),
-          feesTotal: String(w.fees_total ?? 0),
-          accessoriesTotal: String(w.accessories_total ?? 0),
-          warrantiesTotal: String(w.warranty_total ?? 0),
-          insurancesTotal: String(w.insurance_total ?? 0),
-          paymentsTotal: String(w.payments_total ?? 0),
-          subtotal2: String(w.subtotal_2 ?? 0),
-          deposit: String(w.deposit ?? 0),
-          downPayment: String(w.down_payment ?? 0),
-          taxOnInsurance: String(w.tax_on_insurance ?? 0),
-          totalBalanceDue: String(w.balance_due ?? w.total_due ?? 0),
-          extendedWarranty: 'DECLINED',
-          commentsHtml: dealData.disclosures?.disclosures_html ?? '',
-          purchaserName: [c.firstname, c.lastname].filter(Boolean).join(' ') || '',
-          purchaserSignatureB64: undefined,
-          salesperson: d.salesperson ?? '',
-          salespersonRegNo: '4782496',
-          acceptorName: d.approved_by ?? 'Syed Islam',
-          acceptorRegNo: '4782496',
-        }
-        renderBillOfSalePdf(pdf, billData, { pageStart: 1, totalPages: 3 })
+      // Use the actual rendered page images (from the uploaded document_file) instead of generating a new Bill of Sale
+      if (!pageImages || pageImages.length === 0) {
+        throw new Error('No document pages available to download')
       }
 
-      // Now overlay all fields on page 1
-      const c = dealData?.customer || {}
-      const fullName = [c.firstname, c.lastname].filter(Boolean).join(' ') || ''
-      const initials = [c.firstname?.[0], c.lastname?.[0]].filter(Boolean).join('').toUpperCase() || 'DS'
-      const signature = String(c.signature ?? '').trim()
+      // Create PDF with letter size dimensions
+      const pdf = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'letter' })
+      const pdfW = pdf.internal.pageSize.getWidth()   // 612
+      const pdfH = pdf.internal.pageSize.getHeight()  // 792
 
+      // Add each page image to the PDF
+      for (let i = 0; i < pageImages.length; i++) {
+        if (i > 0) pdf.addPage()
+        const imgData = pageImages[i]
+        if (imgData) {
+          pdf.addImage(imgData, 'PNG', 0, 0, pdfW, pdfH)
+        }
+      }
+
+      // Get signature data for field overlays
+      const sigData = (dealData as any)?.signature
+      const c = dealData?.customer || {}
+      const fullName =
+        String(sigData?.full_name ?? '').trim() ||
+        [c.firstname, c.lastname].filter(Boolean).join(' ') ||
+        String(sigData?.email ?? '').trim() ||
+        ''
+      const initials = fullName ? fullName.split(' ').map((n: string) => n[0]).join('').toUpperCase() : 'DS'
+      const signature = String(sigData?.signature_image ?? c.signature ?? '').trim()
+      const signedAtRaw = String(sigData?.signed_at ?? sigData?.updated_at ?? sigData?.created_at ?? '').trim()
+      const signedDate = (() => {
+        try {
+          if (!signedAtRaw) return ''
+          const d = new Date(signedAtRaw)
+          if (Number.isNaN(d.getTime())) return ''
+          return d.toLocaleDateString('en-CA')
+        } catch {
+          return ''
+        }
+      })()
+
+      // Scale factors from preview (816x1056) to PDF (612x792)
+      const xScale = pdfW / PAGE_WIDTH
+      const yScale = pdfH / PAGE_HEIGHT
+
+      // Overlay fields on their respective pages
       fields.forEach(field => {
         const pageNum = Math.min(Math.max(field.page || 1, 1), pdf.getNumberOfPages())
         pdf.setPage(pageNum)
-
-        const pdfW = pdf.internal.pageSize.getWidth()
-        const pdfH = pdf.internal.pageSize.getHeight()
-        const xScale = pdfW / 816
-        const yScale = pdfH / 1056
 
         const x = field.x * xScale
         const y = field.y * yScale
@@ -609,11 +819,6 @@ export default function PrepareDocumentPage() {
                   src = `data:image/png;base64,${signature}`
                 }
                 pdf.addImage(src, 'PNG', x, y, w, h)
-              } else {
-                pdf.setDrawColor(59, 130, 246)
-                pdf.setTextColor(59, 130, 246)
-                pdf.setFontSize(10)
-                pdf.text('Signature', x + w / 2, y + h / 2, { align: 'center' })
               }
               break
             case 'initial':
@@ -638,35 +843,42 @@ export default function PrepareDocumentPage() {
             case 'dateSigned':
               pdf.setTextColor(55, 65, 81)
               pdf.setFontSize(10)
-              pdf.text(new Date().toLocaleDateString('en-CA'), x + w / 2, y + h / 2, { align: 'center', baseline: 'middle' })
+              if (signedDate) {
+                pdf.text(signedDate, x + w / 2, y + h / 2, { align: 'center', baseline: 'middle' })
+              }
               break
             case 'name':
               pdf.setTextColor(17, 24, 39)
               pdf.setFontSize(10)
-              pdf.text(fullName || 'Name', x + 5, y + h / 2, { baseline: 'middle' })
+              if (fullName) {
+                pdf.text(fullName, x + 5, y + h / 2, { baseline: 'middle' })
+              } else if (field.value) {
+                pdf.text(String(field.value), x + 5, y + h / 2, { baseline: 'middle' })
+              }
               break
             case 'company':
               pdf.setTextColor(55, 65, 81)
               pdf.setFontSize(10)
-              pdf.text(field.value || 'Company', x + 5, y + h / 2, { baseline: 'middle' })
+              if (field.value) pdf.text(String(field.value), x + 5, y + h / 2, { baseline: 'middle' })
               break
             case 'title':
               pdf.setTextColor(55, 65, 81)
               pdf.setFontSize(10)
-              pdf.text(field.value || 'Title', x + 5, y + h / 2, { baseline: 'middle' })
+              if (field.value) pdf.text(String(field.value), x + 5, y + h / 2, { baseline: 'middle' })
               break
             case 'text':
               pdf.setTextColor(55, 65, 81)
               pdf.setFontSize(10)
-              pdf.text(field.value || 'Enter text', x + 5, y + h / 2, { baseline: 'middle' })
+              if (field.value) pdf.text(String(field.value), x + 5, y + h / 2, { baseline: 'middle' })
               break
             case 'checkbox':
-              pdf.setFillColor(59, 130, 246)
               pdf.setDrawColor(37, 99, 235)
-              pdf.roundedRect(x + w / 2 - 7.5, y + h / 2 - 7.5, 15, 15, 2, 2, 'FD')
-              pdf.setTextColor(255, 255, 255)
-              pdf.setFontSize(10)
-              pdf.text('✓', x + w / 2, y + h / 2, { align: 'center', baseline: 'middle' })
+              pdf.roundedRect(x + w / 2 - 7.5, y + h / 2 - 7.5, 15, 15, 2, 2, 'S')
+              if (String(field.value ?? '').toLowerCase() === 'true' || String(field.value ?? '') === '1' || String(field.value ?? '').toLowerCase() === 'yes') {
+                pdf.setTextColor(37, 99, 235)
+                pdf.setFontSize(12)
+                pdf.text('✓', x + w / 2, y + h / 2 + 1, { align: 'center', baseline: 'middle' })
+              }
               break
           }
         } catch (err) {
@@ -675,9 +887,10 @@ export default function PrepareDocumentPage() {
       })
 
       // Save the PDF
-      pdf.save(`Bill_of_Sale_${dealId}_with_fields.pdf`)
+      pdf.save(`Document_${dealId}_with_fields.pdf`)
+      openActionModal(true, 'Download started', 'Your document is downloading now.')
     } catch (e: any) {
-      alert(`Failed to download: ${e?.message || 'Unknown error'}`)
+      openActionModal(false, 'Download failed', String(e?.message || 'Unknown error'))
     } finally {
       setDownloading(false)
     }
@@ -692,27 +905,47 @@ export default function PrepareDocumentPage() {
         body: JSON.stringify({ dealId, fields }),
       })
       if (!res.ok) throw new Error('Failed to save fields')
-      alert('Fields saved successfully')
+      openActionModal(true, 'Success', 'Fields saved successfully')
     } catch (e: any) {
-      alert(`Failed to save: ${e?.message || 'Unknown error'}`)
+      openActionModal(false, 'Save failed', String(e?.message || 'Unknown error'))
     } finally {
       setSaving(false)
     }
   }
 
+  useEffect(() => {
+    const shouldAutoDownload = String(searchParams.get('autodownload') || '').trim() === '1'
+    if (!shouldAutoDownload) return
+    if (loading) return
+    if (error) return
+    if (!dealId) return
+
+    // Wait a tick so the UI is ready
+    const t = window.setTimeout(() => {
+      void handleDownload()
+    }, 300)
+
+    return () => window.clearTimeout(t)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams, loading, error, dealId])
+
   // Field content renderer
   const renderFieldContent = (field: Field) => {
+    // Check if this is signature table data or deals data
+    const sigData = dealData?.signature
     const c = dealData?.customer || {}
-    const fullName = [c.firstname, c.lastname].filter(Boolean).join(' ') || ''
-    const initials = [c.firstname?.[0], c.lastname?.[0]].filter(Boolean).join('').toUpperCase() || 'DS'
-    const signature = String(c.signature ?? '').trim()
+    
+    // Use signature table data if available, otherwise fall back to deals customer data
+    const fullName = sigData?.full_name || [c.firstname, c.lastname].filter(Boolean).join(' ') || ''
+    const initials = fullName ? fullName.split(' ').map((n: string) => n[0]).join('').toUpperCase() : 'DS'
+    const signature = sigData?.signature_image || String(c.signature ?? '').trim()
     const fieldValue = String(field.value ?? '')
 
     switch (field.type) {
       case 'signature':
         if (signature && signature.length > 0) {
-          let src = signature
-          if (!signature.startsWith('data:') && !signature.startsWith('http')) src = `data:image/png;base64,${signature}`
+          const normalizedSig = normalizeToDataUrl(signature, 'image/png')
+          const src = normalizedSig?.url || ''
           return <img src={src} alt="Signature" className="w-full h-full object-contain" draggable={false} onError={(e) => { e.currentTarget.style.display = 'none' }} />
         }
         return <div className="flex items-center justify-center h-full text-xs text-blue-500 font-medium">Signature</div>
@@ -887,29 +1120,72 @@ export default function PrepareDocumentPage() {
 
         {/* ── Center Canvas ── */}
         <div
-          className="flex-1 overflow-auto bg-[#e8eaed]"
+          className="flex-1 overflow-y-auto overflow-x-hidden bg-[#e8eaed]"
           style={{ backgroundImage: showGrid ? 'radial-gradient(circle, #d1d5db 1px, transparent 1px)' : 'none', backgroundSize: showGrid ? '20px 20px' : 'auto' }}
         >
           <div className="flex items-start justify-center p-8 min-h-full">
             <div
               ref={containerRef}
               className="relative bg-white border border-gray-300 shadow-sm"
-              style={{ width: `${PAGE_WIDTH * scale}px`, minHeight: `${PAGE_HEIGHT * TOTAL_PAGES * scale}px`, transformOrigin: 'top left' }}
+              style={{ width: `${PAGE_WIDTH * scale}px`, minHeight: `${PAGE_HEIGHT * totalPages * scale}px`, transformOrigin: 'top left' }}
             >
+              {/* Document display - handles both PDF and images */}
               {pdfPageUrls.length > 0 && (
                 <>
-                  {pdfPageUrls.map((pageUrl, idx) => {
-                    const pageNo = idx + 1
-                    return (
-                    <iframe
-                      key={pageNo}
-                      src={`${pageUrl}#zoom=page-fit&toolbar=0&navpanes=0&scrollbar=0`}
-                      className="w-full absolute left-0 pointer-events-none"
-                      style={{ top: `${(pageNo - 1) * PAGE_HEIGHT * scale}px`, height: `${PAGE_HEIGHT * scale}px`, border: 'none', zIndex: 1 }}
-                      title={`Bill of Sale PDF Page ${pageNo}`}
+                  {Boolean(docMime?.startsWith('image/')) ? (
+                    <img
+                      src={pdfPageUrls[0]}
+                      alt="Document"
+                      className="w-full absolute left-0 pointer-events-none object-contain"
+                      style={{ top: 0, height: `${PAGE_HEIGHT * totalPages * scale}px`, zIndex: 1 }}
                     />
+                  ) : docMime === 'application/pdf' ? (
+                    pageImages.length > 0 ? (
+                    pageImages.map((img, idx) => {
+                      const pageNo = idx + 1
+                      return (
+                        <img
+                          key={pageNo}
+                          src={img}
+                          alt={`Page ${pageNo}`}
+                          className="w-full absolute left-0 pointer-events-none bg-white"
+                          style={{ top: `${(pageNo - 1) * PAGE_HEIGHT * scale}px`, height: `${PAGE_HEIGHT * scale}px`, zIndex: 1, backgroundColor: '#fff' }}
+                        />
+                      )
+                    })
+                    ) : renderFailed ? (
+                      pdfPageUrls.map((pageUrl, idx) => {
+                        const pageNo = idx + 1
+                        return (
+                          <iframe
+                            key={pageNo}
+                            src={`${pageUrl}#page=${pageNo}&zoom=page-width&toolbar=0&navpanes=0&scrollbar=0`}
+                            scrolling="no"
+                            className="w-full absolute left-0 pointer-events-none bg-white overflow-hidden"
+                            style={{ top: `${(pageNo - 1) * PAGE_HEIGHT * scale}px`, height: `${PAGE_HEIGHT * scale}px`, border: 'none', zIndex: 1, backgroundColor: '#fff', overflow: 'hidden' }}
+                            title={`Document Page ${pageNo}`}
+                          />
+                        )
+                      })
+                    ) : (
+                      <div
+                        className="absolute inset-0 flex items-center justify-center text-sm text-gray-500"
+                        style={{ zIndex: 1, height: `${PAGE_HEIGHT * totalPages * scale}px` }}
+                      >
+                        <div className="flex flex-col items-center gap-2">
+                          <div className="animate-spin rounded-full h-8 w-8 border-2 border-blue-500 border-t-transparent"></div>
+                          <span>Rendering document...</span>
+                        </div>
+                      </div>
                     )
-                  })}
+                  ) : (
+                    <div
+                      className="absolute inset-0 flex items-center justify-center text-sm text-gray-500"
+                      style={{ zIndex: 1, height: `${PAGE_HEIGHT * totalPages * scale}px` }}
+                    >
+                      Unsupported document type
+                    </div>
+                  )}
                 </>
               )}
 
@@ -919,7 +1195,7 @@ export default function PrepareDocumentPage() {
                 onDragOver={(e) => e.preventDefault()}
                 onClick={() => setSelectedFieldId(null)}
                 className="absolute top-0 left-0 w-full h-full"
-                style={{ zIndex: 2, minHeight: `${PAGE_HEIGHT * TOTAL_PAGES * scale}px`, pointerEvents: draggedSidebarType ? 'auto' : 'none' }}
+                style={{ zIndex: 2, minHeight: `${PAGE_HEIGHT * totalPages * scale}px`, pointerEvents: 'auto' }}
               />
 
               {/* Alignment guide lines */}
@@ -990,7 +1266,7 @@ export default function PrepareDocumentPage() {
                             <div
                               key={dir}
                               onMouseDown={(e) => { startFieldResize(e, field, dir, e.currentTarget.parentElement!) }}
-                              className={`absolute w-2.5 h-2.5 rounded-full bg-white border-2 border-blue-500 z-50 ${pos[dir]}`}
+                              className={`absolute w-2.5 h-2.5 rounded-full bg-white border border-blue-500 shadow-sm ${pos[dir]}`}
                             />
                           )
                         })}
@@ -1010,6 +1286,27 @@ export default function PrepareDocumentPage() {
           </div>
         </div>
       </div>
+
+      {actionModalOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setActionModalOpen(false)} />
+          <div className="relative w-full max-w-md rounded-xl border border-slate-200 bg-white shadow-2xl p-6">
+            <div className={`text-lg font-bold ${actionModalOk ? 'text-green-600' : 'text-red-600'}`}>
+              {actionModalTitle}
+            </div>
+            <div className="mt-2 text-sm text-slate-600 break-words whitespace-pre-wrap">{actionModalMessage}</div>
+            <div className="mt-4 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setActionModalOpen(false)}
+                className="h-9 px-6 rounded-full bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700"
+              >
+                OK
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
