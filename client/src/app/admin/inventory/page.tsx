@@ -1,10 +1,26 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabaseClient'
 import * as XLSX from 'xlsx-js-style'
+
+const VEHICLE_LIMITS: Record<string, number> = {
+  'private': 1,
+  'private seller': 1,
+  'small dealership': 49,
+  'medium dealership': 99,
+  'large dealership': 299,
+}
+
+const ROLE_DISPLAY: Record<string, string> = {
+  'private': 'Private Seller',
+  'private seller': 'Private Seller',
+  'small dealership': 'Small Dealer',
+  'medium dealership': 'Medium Dealer',
+  'large dealership': 'Large Dealer',
+}
 
 interface Vehicle {
   id: string
@@ -81,6 +97,7 @@ export default function AdminInventoryPage() {
   const [modalOnConfirm, setModalOnConfirm] = useState<(() => Promise<void> | void) | null>(null)
   const [scopedUserId, setScopedUserId] = useState<string | null>(null)
   const [bucketImageCache] = useState(() => new Map<string, string[]>())
+  const [accountRole, setAccountRole] = useState<string>('')
   const [canAddVehicle, setCanAddVehicle] = useState(true)
   const [addGateLoading, setAddGateLoading] = useState(false)
   const [addGateReason, setAddGateReason] = useState('')
@@ -112,6 +129,37 @@ export default function AdminInventoryPage() {
     inventoryType: 'FLEET',
   })
   const router = useRouter()
+
+  const vehicleLimit = useMemo(() => {
+    const r = String(accountRole || '').trim().toLowerCase()
+    if (r === 'admin') return Infinity
+    return VEHICLE_LIMITS[r] ?? 1
+  }, [accountRole])
+
+  const currentVehicleCount = useMemo(() => vehicles.length, [vehicles])
+
+  const usageRatio = useMemo(() => {
+    if (vehicleLimit === Infinity) return 0
+    if (vehicleLimit === 0) return 1
+    return currentVehicleCount / vehicleLimit
+  }, [currentVehicleCount, vehicleLimit])
+
+  const usageColor = useMemo(() => {
+    if (usageRatio >= 1) return 'text-red-600'
+    if (usageRatio >= 0.7) return 'text-orange-500'
+    return 'text-green-600'
+  }, [usageRatio])
+
+  const usageBgColor = useMemo(() => {
+    if (usageRatio >= 1) return 'bg-red-50 border-red-200'
+    if (usageRatio >= 0.7) return 'bg-orange-50 border-orange-200'
+    return 'bg-green-50 border-green-200'
+  }, [usageRatio])
+
+  const planDisplayName = useMemo(() => {
+    const r = String(accountRole || '').trim().toLowerCase()
+    return ROLE_DISPLAY[r] || 'Private Seller'
+  }, [accountRole])
   const [drawerVehicle, setDrawerVehicle] = useState<Vehicle | null>(null)
   const closeDrawer = () => setDrawerVehicle(null)
   const [drawerCosts, setDrawerCosts] = useState<any>({
@@ -332,31 +380,18 @@ export default function AdminInventoryPage() {
         : ({ data: null } as any)
 
       const rawRole = String((uById as any)?.role ?? (uByEmail as any)?.role ?? '').trim().toLowerCase()
-      const role =
-        rawRole === 'public'
-          ? 'public'
-          : rawRole === 'private'
-            ? 'private'
-            : rawRole === 'admin'
-              ? 'admin'
-              : rawRole === 'dealership' || rawRole === 'dealer' || rawRole === 'dealership'
-                ? 'dealership'
-                : ''
+      setAccountRole(rawRole)
 
-      if (role === 'admin') return
-
-      if (role === 'dealership') return
-
-      if (role !== 'private') return
+      const limit = VEHICLE_LIMITS[rawRole] ?? 1 // default to private seller limit
 
       const { count } = await supabase
         .from('edc_vehicles')
         .select('id', { count: 'exact', head: true })
         .eq('user_id', userId)
 
-      if ((count || 0) >= 1) {
+      if ((count || 0) >= limit) {
         setCanAddVehicle(false)
-        setAddGateReason('Upgrade required: private accounts can upload only one vehicle.')
+        setAddGateReason(`Vehicle limit reached for your current plan. Maximum ${limit} vehicles allowed. Upgrade to add more vehicles.`)
       }
     } catch {
       setCanAddVehicle(true)
@@ -366,11 +401,11 @@ export default function AdminInventoryPage() {
     }
   }
 
-  const handleOpenAddModal = () => {
+      const handleOpenAddModal = () => {
     if (!canAddVehicle) {
       openAlert(
-        'Upgrade required',
-        'Your account is set to private, which allows only one inventory upload. Please upgrade to a dealership account to upload more vehicles.'
+        'Vehicle limit reached',
+        addGateReason || 'Vehicle limit reached for your current subscription plan. Upgrade to add more vehicles.'
       )
       return
     }
@@ -1192,6 +1227,36 @@ export default function AdminInventoryPage() {
       )}
 
       <div className="px-6 py-6">
+        {/* Vehicle Count/Limit Display */}
+        <div className={`flex items-center justify-between gap-4 px-3 py-2 rounded-lg border mb-3 ${usageBgColor}`}>
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-1.5">
+              <svg className="w-4 h-4 text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M9 17a2 2 0 11-4 0 2 2 0 014 0zM19 17a2 2 0 11-4 0 2 2 0 014 0z" />
+                <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M13 16V6a1 1 0 00-1-1H4a1 1 0 00-1 1v10a1 1 0 001 1h1m8-1a1 1 0 01-1 1H9m4-1V8a1 1 0 011-1h2.586a1 1 0 01.707.293l3.414 3.414a1 1 0 01.293.707V16a1 1 0 01-1 1h-1m-4-1a1 1 0 001 1h3M9 17h6" />
+              </svg>
+              <span className="text-xs text-slate-600">Vehicles:</span>
+              <span className={`text-sm font-bold ${usageColor}`}>
+                {currentVehicleCount} / {vehicleLimit === Infinity ? '∞' : vehicleLimit}
+              </span>
+            </div>
+            {vehicleLimit !== Infinity && (
+              <div className="w-24 h-1.5 rounded-full bg-slate-200 overflow-hidden">
+                <div
+                  className={`h-full rounded-full transition-all duration-500 ${
+                    usageRatio >= 1 ? 'bg-red-500' : usageRatio >= 0.7 ? 'bg-orange-400' : 'bg-green-500'
+                  }`}
+                  style={{ width: `${Math.min(usageRatio * 100, 100)}%` }}
+                />
+              </div>
+            )}
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="text-[11px] text-slate-500">Current Plan:</span>
+            <span className="text-xs font-semibold text-slate-800">{planDisplayName}</span>
+          </div>
+        </div>
+
         {/* Search / Filters / Page size */}
         <div className="edc-card p-4 mb-5">
           <div className="flex items-center justify-between gap-4 flex-wrap">

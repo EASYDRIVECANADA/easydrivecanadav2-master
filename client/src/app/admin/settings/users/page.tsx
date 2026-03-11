@@ -35,6 +35,25 @@ type AdminUserRow = {
   created_at: string
 }
 
+const ROLE_LIMITS: Record<string, number> = {
+  'small dealership': 3,
+  'medium dealership': 5,
+  'large dealership': 10,
+}
+
+const ROLE_DISPLAY: Record<string, string> = {
+  'small dealership': 'Small Dealer',
+  'medium dealership': 'Medium Dealer',
+  'large dealership': 'Large Dealer',
+}
+
+const getUpgradeOptions = (role: string): { label: string; plan: string }[] => {
+  const r = role.trim().toLowerCase()
+  if (r === 'small dealership') return [{ label: 'Upgrade to Medium Dealer', plan: 'medium' }, { label: 'Upgrade to Large Dealer', plan: 'large' }]
+  if (r === 'medium dealership') return [{ label: 'Upgrade to Large Dealer', plan: 'large' }]
+  return []
+}
+
 const toTitle = (s: string) => {
   const cleaned = (s || '').replace(/[_\-.]+/g, ' ').replace(/\s+/g, ' ').trim()
   if (!cleaned) return ''
@@ -186,11 +205,8 @@ export default function SettingsUsersPage() {
     setPasswordError(null)
 
     if (!editingUserId && !canAddMoreUsers) {
-      const r = String(accountRole || '').trim().toLowerCase()
-      const msg = r === 'dealership'
-        ? 'User limit reached. Dealership accounts can create up to 5 additional users.'
-        : 'User limit reached. Private Seller accounts can create 1 additional user.'
-      setPasswordError(msg)
+      const limitNum = userLimit === Infinity ? '∞' : String(userLimit)
+      setPasswordError(`User limit reached for your current plan (${planDisplayName}). Maximum ${limitNum} users allowed. Upgrade to add more users.`)
       return
     }
 
@@ -252,8 +268,29 @@ export default function SettingsUsersPage() {
         return
       }
 
+      const webhookUserId = await getWebhookUserId()
+
+      // Backend validation: check user limit before creating
+      try {
+        const limitRes = await fetch('/api/users/check-limit', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ user_id: webhookUserId }),
+        })
+        if (limitRes.ok) {
+          const limitData = await limitRes.json()
+          if (!limitData.canAdd) {
+            setPasswordError('User limit reached for current subscription plan')
+            setSavingNewUser(false)
+            return
+          }
+        }
+      } catch {
+        // If check fails, proceed with creation (don't block on API failure)
+      }
+
       const payload = {
-        user_id: await getWebhookUserId(),
+        user_id: webhookUserId,
         first_name: nullIfEmpty(firstName),
         last_name: nullIfEmpty(lastName),
         title: nullIfEmpty(title),
@@ -436,18 +473,40 @@ export default function SettingsUsersPage() {
     }
   }, [sessionEmail])
 
-  const canAddMoreUsers = useMemo(() => {
+  const userLimit = useMemo(() => {
     const r = String(accountRole || '').trim().toLowerCase()
-    if (r === 'admin') return true
-    const additional = rows.filter((u) => {
-      const email = String(u.email || '').trim().toLowerCase()
-      if (!email) return true
-      if (ownerEmailForLimit && email === ownerEmailForLimit) return false
-      return true
-    }).length
-    if (r === 'dealership') return additional < 5
-    return additional < 1
-  }, [accountRole, ownerEmailForLimit, rows])
+    if (r === 'admin') return Infinity
+    return ROLE_LIMITS[r] ?? 2
+  }, [accountRole])
+
+  const currentUserCount = useMemo(() => displayRows.length, [displayRows])
+
+  const canAddMoreUsers = useMemo(() => {
+    return currentUserCount < userLimit
+  }, [currentUserCount, userLimit])
+
+  const usageRatio = useMemo(() => {
+    if (userLimit === Infinity) return 0
+    if (userLimit === 0) return 1
+    return currentUserCount / userLimit
+  }, [currentUserCount, userLimit])
+
+  const usageColor = useMemo(() => {
+    if (usageRatio >= 1) return 'text-red-600'
+    if (usageRatio >= 0.7) return 'text-orange-500'
+    return 'text-green-600'
+  }, [usageRatio])
+
+  const usageBgColor = useMemo(() => {
+    if (usageRatio >= 1) return 'bg-red-50 border-red-200'
+    if (usageRatio >= 0.7) return 'bg-orange-50 border-orange-200'
+    return 'bg-green-50 border-green-200'
+  }, [usageRatio])
+
+  const planDisplayName = useMemo(() => {
+    const r = String(accountRole || '').trim().toLowerCase()
+    return ROLE_DISPLAY[r] || 'Private Seller'
+  }, [accountRole])
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -544,27 +603,56 @@ export default function SettingsUsersPage() {
           <div className="absolute inset-0 bg-navy-900/60 backdrop-blur-sm" onMouseDown={closeUpgradeModal} />
           <div className="edc-modal w-[420px] relative z-10" onMouseDown={(e) => e.stopPropagation()}>
             <div className="h-11 px-4 border-b border-slate-200/60 flex items-center justify-between">
-              <div className="text-sm font-semibold text-slate-800">Upgrade Required</div>
+              <div className="text-sm font-semibold text-slate-800">User Limit Reached</div>
               <button type="button" className="h-8 w-8 flex items-center justify-center" onClick={closeUpgradeModal}>
                 <span className="text-xl leading-none text-slate-400">×</span>
               </button>
             </div>
-            <div className="p-4 text-xs text-slate-600">
-              You reached the user limit for Private Seller accounts. Upgrade to a Dealership account to add more users.
+            <div className="p-5">
+              <p className="text-xs text-slate-600 leading-relaxed">
+                You have reached the maximum number of users allowed for your current subscription.
+              </p>
+              <div className="mt-4 p-3 rounded-lg bg-slate-50 border border-slate-200/60">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] text-slate-500">Current Plan</span>
+                  <span className="text-xs font-semibold text-slate-800">{planDisplayName}</span>
+                </div>
+                <div className="mt-2 flex items-center justify-between">
+                  <span className="text-[11px] text-slate-500">Users</span>
+                  <span className={`text-xs font-semibold ${usageColor}`}>
+                    {currentUserCount} / {userLimit === Infinity ? '∞' : userLimit}
+                  </span>
+                </div>
+              </div>
             </div>
-            <div className="h-12 px-4 border-t border-slate-200/60 flex items-center justify-end gap-2">
-              <button type="button" className="edc-btn-secondary h-8 px-4 text-xs" onClick={closeUpgradeModal}>
+            <div className="px-4 pb-4 flex flex-col gap-2">
+              {getUpgradeOptions(accountRole).map((opt) => (
+                <button
+                  key={opt.plan}
+                  type="button"
+                  className="w-full h-9 rounded-lg text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 transition-colors"
+                  onClick={() => {
+                    closeUpgradeModal()
+                    router.push('/admin/billing')
+                  }}
+                >
+                  {opt.label}
+                </button>
+              ))}
+              {getUpgradeOptions(accountRole).length === 0 && (
+                <button
+                  type="button"
+                  className="w-full h-9 rounded-lg text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 transition-colors"
+                  onClick={() => {
+                    closeUpgradeModal()
+                    router.push('/admin/billing')
+                  }}
+                >
+                  View Plans
+                </button>
+              )}
+              <button type="button" className="w-full h-9 rounded-lg text-xs font-medium text-slate-600 border border-slate-300 hover:bg-slate-50 transition-colors" onClick={closeUpgradeModal}>
                 Cancel
-              </button>
-              <button
-                type="button"
-                className="edc-btn-primary h-8 px-4 text-xs"
-                onClick={() => {
-                  closeUpgradeModal()
-                  router.push('/admin/billing')
-                }}
-              >
-                Upgrade
               </button>
             </div>
           </div>
@@ -897,6 +985,37 @@ export default function SettingsUsersPage() {
         </div>
       ) : null}
 
+      <div className={`flex items-center justify-between gap-4 px-3 py-2 rounded-lg border mb-3 ${usageBgColor}`}>
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1.5">
+            <svg className="w-4 h-4 text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+              <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2" />
+              <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M9 11a4 4 0 100-8 4 4 0 000 8z" />
+              <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M23 21v-2a4 4 0 00-3-3.87" />
+              <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M16 3.13a4 4 0 010 7.75" />
+            </svg>
+            <span className="text-xs text-slate-600">Users:</span>
+            <span className={`text-sm font-bold ${usageColor}`}>
+              {currentUserCount} / {userLimit === Infinity ? '∞' : userLimit}
+            </span>
+          </div>
+          {userLimit !== Infinity && (
+            <div className="w-24 h-1.5 rounded-full bg-slate-200 overflow-hidden">
+              <div
+                className={`h-full rounded-full transition-all duration-500 ${
+                  usageRatio >= 1 ? 'bg-red-500' : usageRatio >= 0.7 ? 'bg-orange-400' : 'bg-green-500'
+                }`}
+                style={{ width: `${Math.min(usageRatio * 100, 100)}%` }}
+              />
+            </div>
+          )}
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span className="text-[11px] text-slate-500">Current Plan:</span>
+          <span className="text-xs font-semibold text-slate-800">{planDisplayName}</span>
+        </div>
+      </div>
+
       <div className="flex items-center justify-between gap-4 py-2">
         <button
           type="button"
@@ -905,17 +1024,10 @@ export default function SettingsUsersPage() {
               ? 'h-7 w-7 flex items-center justify-center text-slate-700 hover:text-slate-900'
               : 'h-7 w-7 flex items-center justify-center text-slate-400 cursor-not-allowed'
           }
-          title="Add user"
+          title={canAddMoreUsers ? 'Add user' : 'User limit reached for your current plan. Upgrade to add more users.'}
           onClick={() => {
             if (!canAddMoreUsers) {
-              const r = String(accountRole || '').trim().toLowerCase()
-              if (r !== 'dealership' && r !== 'admin') {
-                setUpgradeModalOpen(true)
-                return
-              }
-              const msg = 'User limit reached. Dealership accounts can create up to 5 additional users.'
-              setUserAddedMessage(msg)
-              setUserAddedOpen(true)
+              setUpgradeModalOpen(true)
               return
             }
             setNewUserTab('details')
