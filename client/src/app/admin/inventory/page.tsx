@@ -1052,9 +1052,12 @@ export default function AdminInventoryPage() {
   return (
     <div className="min-h-screen">
       {/* Header */}
-      <div className="edc-page-header">
+      <div className="px-6 lg:px-8 pt-8 pb-4">
         <div className="flex justify-between items-center">
-          <h1 className="text-2xl font-bold text-slate-900">Inventory Management</h1>
+          <div>
+            <h1 className="text-2xl font-bold text-[#0B1F3A]">Inventory Management</h1>
+            <p className="text-sm text-slate-500 mt-0.5">Manage your vehicle inventory</p>
+          </div>
           <div className="flex items-center gap-2">
             <input
               ref={importInputRef}
@@ -1066,7 +1069,7 @@ export default function AdminInventoryPage() {
               type="button"
               onClick={handleImportClick}
               disabled={importing}
-              className={`edc-btn-ghost text-sm ${importing ? 'opacity-50 cursor-not-allowed' : ''}`}
+              className={`h-10 px-4 rounded-xl border border-slate-200 bg-white text-sm font-medium text-[#0B1F3A] hover:bg-slate-50 transition-colors ${importing ? 'opacity-50 cursor-not-allowed' : ''}`}
             >
               {importing ? 'Importing…' : 'Import File'}
             </button>
@@ -1075,7 +1078,7 @@ export default function AdminInventoryPage() {
               onClick={handleOpenAddModal}
               disabled={!canAddVehicle || addGateLoading}
               title={!canAddVehicle ? (addGateReason || 'Upgrade your account to add more vehicles.') : undefined}
-              className={`edc-btn-primary text-sm ${!canAddVehicle || addGateLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
+              className={`h-10 px-4 rounded-xl bg-[#1EA7FF] text-white text-sm font-semibold hover:bg-[#0B1F3A] transition-colors ${!canAddVehicle || addGateLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
             >
               + Add Vehicle
             </button>
@@ -1258,7 +1261,7 @@ export default function AdminInventoryPage() {
         </div>
 
         {/* Search / Filters / Page size */}
-        <div className="edc-card p-4 mb-5">
+        <div className="bg-white rounded-2xl border border-slate-200/60 p-4 mb-5" style={{ boxShadow: '0 1px 3px rgba(0,0,0,.04)' }}>
           <div className="flex items-center justify-between gap-4 flex-wrap">
             <div className="flex items-center gap-3 flex-1 min-w-[320px]">
               <div className="flex-1 relative">
@@ -1352,7 +1355,7 @@ export default function AdminInventoryPage() {
         </div>
 
         {selectedIds.size > 0 && (
-          <div className="edc-card p-3 mb-5">
+          <div className="bg-white rounded-2xl border border-slate-200/60 p-3 mb-5" style={{ boxShadow: '0 1px 3px rgba(0,0,0,.04)' }}>
             <div className="flex items-center justify-between gap-3 flex-wrap">
               <div className="text-sm font-semibold text-slate-700">
                 {selectedIds.size} selected
@@ -1378,16 +1381,18 @@ export default function AdminInventoryPage() {
         )}
 
         {loading ? (
-          <div className="edc-card p-12 text-center">
-            <div className="loading-ring mx-auto" />
-            <p className="loading-text">Loading vehicles...</p>
+          <div className="bg-white rounded-2xl border border-slate-200/60 p-12 text-center" style={{ boxShadow: '0 1px 3px rgba(0,0,0,.04)' }}>
+            <div className="animate-spin rounded-full h-10 w-10 border-2 border-[#1EA7FF] border-t-transparent mx-auto" />
+            <p className="text-sm text-slate-500 mt-3">Loading vehicles...</p>
           </div>
         ) : vehicles.length === 0 ? (
-          <div className="edc-card p-12 text-center">
-            <svg className="w-14 h-14 text-slate-300 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-            </svg>
-            <h3 className="text-lg font-semibold text-slate-700 mb-1">No Vehicles</h3>
+          <div className="bg-white rounded-2xl border border-slate-200/60 p-16 text-center" style={{ boxShadow: '0 1px 3px rgba(0,0,0,.04)' }}>
+            <div className="w-16 h-16 rounded-2xl bg-[#1EA7FF]/10 flex items-center justify-center mx-auto mb-5">
+              <svg className="w-8 h-8 text-[#1EA7FF]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+              </svg>
+            </div>
+            <h3 className="text-lg font-bold text-[#0B1F3A] mb-1">No Vehicles</h3>
             <p className="text-sm text-slate-500 mb-5">Start by adding your first vehicle or importing a CSV file.</p>
             <div className="flex justify-center gap-3">
               <button
@@ -1410,8 +1415,8 @@ export default function AdminInventoryPage() {
         ) : (
           <>
             {/* Desktop Table View */}
-            <div className="hidden lg:block edc-card overflow-hidden">
-              <table className="edc-table">
+            <div className="hidden lg:block bg-white rounded-2xl border border-slate-200/60 overflow-hidden" style={{ boxShadow: '0 1px 3px rgba(0,0,0,.04)' }}>
+              <table className="w-full text-sm">
                 <thead>
                   <tr>
                     <th className="px-3 py-3 text-center sticky left-0 bg-slate-50/80 z-10">
@@ -1618,7 +1623,7 @@ export default function AdminInventoryPage() {
 
           {/* Pagination */}
           {totalPages > 1 && (
-            <div className="edc-card px-4 py-3 flex items-center justify-between mt-5">
+            <div className="bg-white rounded-2xl border border-slate-200/60 px-4 py-3 flex items-center justify-between mt-5" style={{ boxShadow: '0 1px 3px rgba(0,0,0,.04)' }}>
               <div className="text-sm text-slate-600">
                 Page {currentPage} of {totalPages}
               </div>

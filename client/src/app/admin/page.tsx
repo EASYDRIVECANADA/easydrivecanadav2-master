@@ -166,7 +166,7 @@ function InventoryBarsWithDetails({
                 key={w.label}
                 type="button"
                 onClick={() => onSelectWeek(idx)}
-                className={`flex-1 rounded-md transition-colors ${active ? 'bg-navy-900' : 'bg-navy-900/70 hover:bg-navy-900/85'}`}
+                className={`flex-1 rounded-lg transition-colors ${active ? 'bg-[#1EA7FF]' : 'bg-[#0B1F3A]/70 hover:bg-[#0B1F3A]'}`}
                 style={{ height: `${hPct}%` }}
                 title={`${w.label}: ${value}`}
                 aria-label={`${w.label}: ${value}`}
@@ -662,39 +662,79 @@ export default function AdminPage() {
     )
   }
 
+  const kpiIcons: Record<string, React.ReactNode> = {
+    'Inventory': (
+      <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 17h10M6 12h12l-1.5-4.5A2 2 0 0014.6 6H9.4a2 2 0 00-1.9 1.5L6 12z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M6 12v5a1 1 0 001 1h1m8-6v6m0 0h1a1 1 0 001-1v-5" /></svg>
+    ),
+    'Deals Open': (
+      <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h7l5 5v11a2 2 0 01-2 2z" /></svg>
+    ),
+    'Deals Closed': (
+      <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+    ),
+    'Vendors': (
+      <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0H5m14 0h2m-16 0H3m5-12h4m-4 4h4" /></svg>
+    ),
+  }
+
+  const kpiColors: Record<string, string> = {
+    'Inventory': '#1EA7FF',
+    'Deals Open': '#f59e0b',
+    'Deals Closed': '#10b981',
+    'Vendors': '#8b5cf6',
+  }
+
   return (
     <div className="min-h-screen">
-      <div className="edc-page-header">
-        <h1 className="text-2xl font-bold text-slate-900">Dashboard</h1>
+      <div className="px-6 lg:px-8 pt-8 pb-2">
+        <h1 className="text-2xl font-bold text-[#0B1F3A]">Dashboard</h1>
         <p className="text-sm text-slate-500 mt-0.5">Welcome back, {user?.email}</p>
       </div>
 
-      <div className="px-6 py-8">
+      <div className="px-6 lg:px-8 py-6">
         {statsError ? (
-          <div className="edc-card p-4 mb-6 border border-danger-200/60 bg-danger-50/40">
-            <div className="text-sm font-semibold text-danger-700">Analytics failed to load</div>
-            <div className="text-sm text-danger-600 mt-0.5">{statsError}</div>
+          <div className="rounded-xl p-4 mb-6 border border-red-200/60 bg-red-50/40">
+            <div className="text-sm font-semibold text-red-700">Analytics failed to load</div>
+            <div className="text-sm text-red-600 mt-0.5">{statsError}</div>
           </div>
         ) : null}
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 mb-6">
-          {kpis.map((k) => (
-            <div key={k.label} className="edc-card p-5">
-              <div className="text-xs font-semibold text-slate-500">{k.label}</div>
-              <div className="mt-1 text-2xl font-bold text-slate-900">{k.value}</div>
-              {k.sublabel ? <div className="mt-1 text-xs text-slate-500">{k.sublabel}</div> : null}
-            </div>
-          ))}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 mb-8">
+          {kpis.map((k) => {
+            const color = kpiColors[k.label] || '#1EA7FF'
+            return (
+              <div
+                key={k.label}
+                className="group relative bg-white rounded-2xl border border-slate-200/60 p-5 transition-all duration-300 hover:-translate-y-1 hover:shadow-lg cursor-default"
+                style={{ boxShadow: '0 1px 3px rgba(0,0,0,.04)' }}
+              >
+                <div className="flex items-start justify-between">
+                  <div>
+                    <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider">{k.label}</div>
+                    <div className="mt-2 text-3xl font-bold text-[#0B1F3A]">{k.value}</div>
+                    {k.sublabel ? <div className="mt-1 text-xs text-slate-400">{k.sublabel}</div> : null}
+                  </div>
+                  <div
+                    className="flex items-center justify-center w-11 h-11 rounded-xl transition-all duration-300 group-hover:scale-110"
+                    style={{ backgroundColor: `${color}10`, color }}
+                  >
+                    {kpiIcons[k.label]}
+                  </div>
+                </div>
+                <div className="absolute bottom-0 left-4 right-4 h-[2px] rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-300" style={{ background: `linear-gradient(90deg, ${color}, transparent)` }} />
+              </div>
+            )
+          })}
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <div className="edc-card p-6">
+          <div className="bg-white rounded-2xl border border-slate-200/60 p-6" style={{ boxShadow: '0 1px 3px rgba(0,0,0,.04)' }}>
             <div className="flex items-center justify-between gap-3">
               <div>
-                <div className="text-sm font-semibold text-slate-900">Sales</div>
+                <div className="text-sm font-bold text-[#0B1F3A]">Sales</div>
                 <div className="text-xs text-slate-500 mt-0.5">Closed deals (Sales Report)</div>
               </div>
-              <Link href="/admin/reports/sales/sales-report" className="edc-btn-ghost h-9 px-3 text-sm">
+              <Link href="/admin/reports/sales/sales-report" className="text-xs font-semibold text-[#1EA7FF] hover:text-[#0B1F3A] transition-colors px-3 py-1.5 rounded-lg hover:bg-[#1EA7FF]/5">
                 View report
               </Link>
             </div>
@@ -736,13 +776,13 @@ export default function AdminPage() {
             </div>
           </div>
 
-          <div className="edc-card p-6">
+          <div className="bg-white rounded-2xl border border-slate-200/60 p-6" style={{ boxShadow: '0 1px 3px rgba(0,0,0,.04)' }}>
             <div className="flex items-center justify-between gap-3">
               <div>
-                <div className="text-sm font-semibold text-slate-900">Inventory</div>
+                <div className="text-sm font-bold text-[#0B1F3A]">Inventory</div>
                 <div className="text-xs text-slate-500 mt-0.5">Monthly view • Weekly breakdown</div>
               </div>
-              <Link href="/admin/inventory" className="edc-btn-ghost h-9 px-3 text-sm">
+              <Link href="/admin/inventory" className="text-xs font-semibold text-[#1EA7FF] hover:text-[#0B1F3A] transition-colors px-3 py-1.5 rounded-lg hover:bg-[#1EA7FF]/5">
                 View inventory
               </Link>
             </div>
@@ -805,8 +845,8 @@ function BarChart({
               type="button"
               className={
                 isActive
-                  ? 'flex-1 rounded-md bg-navy-900 cursor-pointer ring-2 ring-navy-900/30'
-                  : 'flex-1 rounded-md bg-navy-900/75 cursor-pointer'
+                  ? 'flex-1 rounded-lg bg-[#1EA7FF] cursor-pointer ring-2 ring-[#1EA7FF]/30'
+                  : 'flex-1 rounded-lg bg-[#0B1F3A]/70 cursor-pointer hover:bg-[#0B1F3A] transition-colors'
               }
               style={{ height: `${hPct}%` }}
               title={`${d.label}: ${d.value}`}
@@ -957,7 +997,7 @@ function InventoryMonthWidget({
                 key={w.label}
                 type="button"
                 onClick={() => setSelectedWeek(idx)}
-                className={`flex-1 rounded-md transition-colors ${active ? 'bg-navy-900' : 'bg-navy-900/70 hover:bg-navy-900/85'}`}
+                className={`flex-1 rounded-lg transition-colors ${active ? 'bg-[#1EA7FF]' : 'bg-[#0B1F3A]/70 hover:bg-[#0B1F3A]'}`}
                 style={{ height: `${hPct}%` }}
                 title={`${w.label}: ${value}`}
                 aria-label={`${w.label}: ${value}`}

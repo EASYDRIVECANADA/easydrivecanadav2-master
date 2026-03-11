@@ -771,7 +771,7 @@ export default function AdminCostumerPage() {
 
       {showCreate ? (
         <div className="px-6 py-6">
-          <div className="edc-card overflow-hidden flex flex-col">
+          <div className="bg-white rounded-2xl border border-slate-200/60 overflow-hidden flex flex-col" style={{ boxShadow: '0 1px 3px rgba(0,0,0,.04)' }}>
             <div className="flex items-center justify-between px-4 py-2 border-b border-slate-100">
               <div className="flex items-center gap-3">
                 <div className="flex items-center gap-2">
@@ -779,7 +779,7 @@ export default function AdminCostumerPage() {
                     type="button"
                     className={
                       activeTab === 'customer'
-                        ? 'h-9 px-4 rounded-t-lg bg-navy-900 text-white text-sm font-semibold transition-colors'
+                        ? 'h-9 px-4 rounded-t-lg bg-[#0B1F3A] text-white text-sm font-semibold transition-colors'
                         : 'h-9 px-4 rounded-t-lg bg-slate-100 text-slate-600 text-sm font-semibold hover:bg-slate-200 transition-colors'
                     }
                     onClick={() => setActiveTab('customer')}
@@ -790,7 +790,7 @@ export default function AdminCostumerPage() {
                     type="button"
                     className={
                       activeTab === 'credit'
-                        ? 'h-9 px-4 rounded-t-lg bg-navy-900 text-white text-sm font-semibold transition-colors'
+                        ? 'h-9 px-4 rounded-t-lg bg-[#0B1F3A] text-white text-sm font-semibold transition-colors'
                         : 'h-9 px-4 rounded-t-lg bg-slate-100 text-slate-600 text-sm font-semibold hover:bg-slate-200 transition-colors'
                     }
                     onClick={() => setActiveTab('credit')}
@@ -801,7 +801,7 @@ export default function AdminCostumerPage() {
                     type="button"
                     className={
                       activeTab === 'history'
-                        ? 'h-9 px-4 rounded-t-lg bg-navy-900 text-white text-sm font-semibold transition-colors'
+                        ? 'h-9 px-4 rounded-t-lg bg-[#0B1F3A] text-white text-sm font-semibold transition-colors'
                         : 'h-9 px-4 rounded-t-lg bg-slate-100 text-slate-600 text-sm font-semibold hover:bg-slate-200 transition-colors'
                     }
                     onClick={() => setActiveTab('history')}
@@ -891,18 +891,18 @@ export default function AdminCostumerPage() {
         </div>
       ) : (
         <div className="px-6 py-6">
-          <div className="edc-card overflow-hidden">
+          <div className="bg-white rounded-2xl border border-slate-200/60 overflow-hidden" style={{ boxShadow: '0 1px 3px rgba(0,0,0,.04)' }}>
             <div className="px-4 py-3 border-b border-slate-100 flex items-center gap-3">
               <div className="flex-1">
                 <div className="relative">
                   <input
                     value={query}
                     onChange={(e) => setQuery(e.target.value)}
-                    placeholder=""
-                    className="edc-input pl-10"
+                    placeholder="Search customers..."
+                    className="w-full h-10 pl-10 pr-4 rounded-xl border border-slate-200 bg-white text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#1EA7FF]/30 focus:border-[#1EA7FF]/40 transition-all"
                   />
                   <svg
-                    className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2"
+                    className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2"
                     fill="none"
                     stroke="currentColor"
                     viewBox="0 0 24 24"
@@ -915,7 +915,7 @@ export default function AdminCostumerPage() {
               <button
                 type="button"
                 onClick={handleOpenCreate}
-                className="w-10 h-10 rounded-lg bg-navy-900 text-white flex items-center justify-center hover:bg-navy-800 transition-colors"
+                className="w-10 h-10 rounded-xl bg-[#1EA7FF] text-white flex items-center justify-center hover:bg-[#0B1F3A] transition-colors"
                 aria-label="Add new costumer"
                 title="Add new costumer"
               >
@@ -933,7 +933,7 @@ export default function AdminCostumerPage() {
                     setChecked({})
                     setCheckedAll(false)
                   }}
-                  className="edc-input text-sm"
+                  className="h-10 rounded-xl border border-slate-200 bg-white text-sm text-slate-700 px-2 focus:outline-none focus:ring-2 focus:ring-[#1EA7FF]/30 transition-all"
                 >
                   <option value={5}>5</option>
                   <option value={10}>10</option>
@@ -943,9 +943,9 @@ export default function AdminCostumerPage() {
             </div>
 
             <div className="overflow-x-auto">
-              <table className="edc-table">
+              <table className="w-full text-sm">
                 <thead>
-                  <tr>
+                  <tr className="bg-slate-50/80">
                     <th className="w-10"></th>
                     <th className="w-10">
                       <input
@@ -1000,7 +1000,7 @@ export default function AdminCostumerPage() {
                         />
                       </td>
                       <td className="px-6 py-3 text-sm font-medium text-slate-800 whitespace-nowrap">{r.name}</td>
-                      <td className="px-6 py-3 text-sm text-cyan-700 whitespace-nowrap">{r.phone}</td>
+                      <td className="px-6 py-3 text-sm text-[#1EA7FF] whitespace-nowrap">{r.phone}</td>
                       <td className="px-6 py-3 text-sm text-slate-600 whitespace-nowrap">{r.mobile}</td>
                       <td className="px-6 py-3 text-sm text-cyan-700 whitespace-nowrap">{r.email}</td>
                       <td className="px-6 py-3 text-sm text-slate-600 whitespace-nowrap">{r.dl || r.rin || '—'}</td>

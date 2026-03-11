@@ -210,13 +210,12 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
       { href: '/admin/leads', label: 'Leads', icon: 'phone', disabled: !isVerified },
       { href: '/admin/costumer', label: 'Customers', icon: 'users', disabled: !isVerified },
       { href: '/admin/vendors', label: 'Vendors', icon: 'briefcase', disabled: !isVerified },
-      { href: '/admin/marketplace', label: 'Market Place', icon: 'briefcase', disabled: !isVerified },
+      { href: '/admin/marketplace', label: 'Market Place', icon: 'market', disabled: !isVerified },
       { href: '/admin/inventory', label: 'Inventory', icon: 'car', disabled: !isVerified },
       { href: '/admin/sales', label: 'Sales', icon: 'dollar' },
-      { href: '/admin/billing', label: 'Billing', icon: 'dollar', disabled: !isVerified },
       { href: '/admin/esignature', label: 'E-Signature', icon: 'pen', disabled: !isVerified },
-      { href: '/admin', label: 'Service', icon: 'wrench', disabled: !isVerified },
       { href: '/admin/reports', label: 'Reports', icon: 'file', disabled: !isVerified },
+      { href: '/admin/billing', label: 'Billing', icon: 'billing', disabled: !isVerified },
     ],
     [isVerified]
   )
@@ -288,8 +287,9 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
                 : 'fixed inset-y-0 left-0 z-40 w-60 transition-all duration-300 ease-out flex flex-col min-h-0 h-screen'
             }
             style={{
-              background: 'linear-gradient(180deg, #0B1C2D 0%, #0a1929 40%, #071320 100%)',
-              borderRight: '1px solid rgba(255,255,255,.06)',
+              background: 'linear-gradient(180deg, #0B1F3A 0%, #081726 60%, #060f1a 100%)',
+              borderRight: '1px solid rgba(30,167,255,.08)',
+              boxShadow: '4px 0 24px rgba(0,0,0,.3)',
             }}
           >
             <div
@@ -355,8 +355,8 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
                 {accountMenuOpen ? (
                   <div
                     role="menu"
-                    className={`absolute ${collapsed ? 'left-1/2 -translate-x-1/2' : 'right-0'} top-full mt-1.5 w-48 rounded-xl border border-white/[.08] shadow-2xl overflow-hidden animate-slide-down`}
-                    style={{ background: 'linear-gradient(180deg, #12263a 0%, #0e1f30 100%)' }}
+                    className={`absolute z-[9999] pointer-events-auto ${collapsed ? 'left-1/2 -translate-x-1/2' : 'right-0'} top-full mt-1.5 w-48 rounded-xl border border-white/[.08] shadow-2xl overflow-hidden animate-slide-down`}
+                    style={{ background: 'linear-gradient(180deg, #0B1F3A 0%, #081726 100%)', boxShadow: '0 8px 32px rgba(0,0,0,.4)' }}
                   >
                     <Link
                       href="/admin/account"
@@ -403,17 +403,17 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
               </div>
             </div>
 
-            <nav className={`${collapsed ? 'px-2' : 'px-3'} py-4 flex-1 overflow-y-auto min-h-0`} aria-label="Admin navigation">
-              <ul className="space-y-0.5">
+            <nav className={`${collapsed ? 'px-2' : 'px-3'} py-4 flex-1 overflow-y-auto min-h-0`} aria-label="Admin navigation" style={{ scrollbarWidth: 'none' }}>
+              <ul className="space-y-1">
                 {navItems.map((item) => {
                   const active = pathname === item.href || (item.href !== '/admin' && pathname.startsWith(item.href))
                   const base =
-                    `flex items-center ${collapsed ? 'justify-center gap-0 px-2' : 'gap-3 px-3'} py-2 rounded-xl text-[13px] font-medium transition-all duration-200`
+                    `relative flex items-center ${collapsed ? 'justify-center gap-0 px-2' : 'gap-3 px-3'} py-2.5 rounded-xl text-[13px] font-medium transition-all duration-300 ease-out`
                   const classes = item.disabled
-                    ? `${base} text-white/30 cursor-not-allowed`
+                    ? `${base} text-white/25 cursor-not-allowed`
                     : active
-                      ? `${base} bg-white/[.08] text-white`
-                      : `${base} text-white/60 hover:bg-white/[.05] hover:text-white/90`
+                      ? `${base} bg-[#1EA7FF]/10 text-white shadow-[inset_0_0_20px_rgba(30,167,255,0.06)]`
+                      : `${base} text-white/55 hover:bg-white/[.04] hover:text-white hover:translate-x-0.5`
 
                   const isSales = item.label === 'Sales'
                   const isReports = item.label === 'Reports'
@@ -640,7 +640,10 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
                         </div>
                       ) : (
                         <Link href={item.href} className={classes} title={item.label}>
-                          <Icon name={item.icon} />
+                          {active && !collapsed && (
+                            <span className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-5 rounded-r-full bg-[#1EA7FF]" style={{ boxShadow: '0 0 8px rgba(30,167,255,0.6)' }} />
+                          )}
+                          <span className={active ? 'text-[#1EA7FF]' : ''}><Icon name={item.icon} /></span>
                           {collapsed ? null : <span>{item.label}</span>}
                         </Link>
                       )}
@@ -654,7 +657,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
               <button
                 type="button"
                 onClick={toggleCollapsed}
-                className="w-full flex items-center justify-center h-8 rounded-lg text-white/40 hover:text-white/70 hover:bg-white/[.05] transition-all duration-200"
+                className="w-full flex items-center justify-center h-9 rounded-xl text-white/35 hover:text-[#1EA7FF] hover:bg-[#1EA7FF]/5 transition-all duration-300"
                 title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
               >
                 <svg className={`w-4 h-4 transition-transform duration-300 ${collapsed ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -665,7 +668,10 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
           </aside>
         ) : null}
 
-        <main className={`flex-1 min-w-0 ${isAuthed && !hideSidebar ? (collapsed ? 'ml-[72px]' : 'ml-60') : ''} transition-[margin] duration-300 ease-out`}>
+        <main
+          className={`flex-1 min-w-0 ${isAuthed && !hideSidebar ? (collapsed ? 'ml-[72px]' : 'ml-60') : ''} transition-[margin] duration-300 ease-out`}
+          style={{ backgroundColor: '#F5F7FB', minHeight: '100vh' }}
+        >
           {children}
         </main>
       </div>
@@ -739,6 +745,15 @@ function Icon({ name }: { name: string }) {
       </svg>
     )
   }
+  if (name === 'market') {
+    return (
+      <svg className={cls} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 7l1 2a2 2 0 001.7 1h12.6A2 2 0 0020 9l1-2" />
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 10l1 10a2 2 0 002 2h8a2 2 0 002-2l1-10" />
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 7a3 3 0 016 0" />
+      </svg>
+    )
+  }
   if (name === 'car') {
     return (
       <svg className={cls} fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -751,6 +766,15 @@ function Icon({ name }: { name: string }) {
     return (
       <svg className={cls} fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 1v22m5-18H9a3 3 0 000 6h6a3 3 0 010 6H7" />
+      </svg>
+    )
+  }
+  if (name === 'billing') {
+    return (
+      <svg className={cls} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 10h18" />
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 15h2" />
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M6 6h12a3 3 0 013 3v6a3 3 0 01-3 3H6a3 3 0 01-3-3V9a3 3 0 013-3z" />
       </svg>
     )
   }

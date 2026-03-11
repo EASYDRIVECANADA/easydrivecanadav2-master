@@ -271,15 +271,15 @@ export default function MarketplacePage() {
   const features = unique(vehicles.flatMap((v) => v.features || []))
 
   return (
-    <div className="px-6 py-6">
+    <div className="px-6 lg:px-8 py-6">
       <div className="flex items-start gap-6">
         {/* Sidebar Filters */}
-        <aside className="w-72 edc-card p-4 sticky top-6 self-start">
+        <aside className="w-72 bg-white rounded-2xl border border-slate-200/60 p-5 sticky top-6 self-start" style={{ boxShadow: '0 1px 3px rgba(0,0,0,.04)' }}>
           <div className="flex items-center justify-between pb-3 border-b border-slate-200/60">
-            <div className="text-xs font-semibold text-slate-700">Filters</div>
+            <div className="text-xs font-bold text-[#0B1F3A] uppercase tracking-wider">Filters</div>
             <button
               type="button"
-              className="text-xs text-navy-900 hover:underline transition-colors"
+              className="text-xs text-[#1EA7FF] hover:text-[#0B1F3A] font-medium transition-colors"
               onClick={() => {
                 setMake('')
                 setCollection('')
@@ -300,7 +300,7 @@ export default function MarketplacePage() {
           <div className="mt-3 space-y-4">
             <div>
               <div className="text-xs font-semibold text-slate-500 mb-1">Make</div>
-              <select value={make} onChange={(e) => setMake(e.target.value)} className="edc-input text-sm">
+              <select value={make} onChange={(e) => setMake(e.target.value)} className="w-full h-9 rounded-lg border border-slate-200 bg-white text-sm text-slate-700 px-2 focus:outline-none focus:ring-2 focus:ring-[#1EA7FF]/30 transition-all">
                 <option value="">All Makes</option>
                 {makes.map((m) => (
                   <option key={m} value={m}>{m}</option>
@@ -309,7 +309,7 @@ export default function MarketplacePage() {
             </div>
             <div>
               <div className="text-xs font-semibold text-slate-500 mb-1">Collection</div>
-              <select value={collection} onChange={(e) => setCollection(e.target.value)} className="edc-input text-sm">
+              <select value={collection} onChange={(e) => setCollection(e.target.value)} className="w-full h-9 rounded-lg border border-slate-200 bg-white text-sm text-slate-700 px-2 focus:outline-none focus:ring-2 focus:ring-[#1EA7FF]/30 transition-all">
                 <option value="">All Vehicles</option>
                 {collections.map((c) => (
                   <option key={c} value={c}>{c}</option>
@@ -318,7 +318,7 @@ export default function MarketplacePage() {
             </div>
             <div>
               <div className="text-xs font-semibold text-slate-500 mb-1">Category</div>
-              <select value={category} onChange={(e) => setCategory(e.target.value)} className="edc-input text-sm">
+              <select value={category} onChange={(e) => setCategory(e.target.value)} className="w-full h-9 rounded-lg border border-slate-200 bg-white text-sm text-slate-700 px-2 focus:outline-none focus:ring-2 focus:ring-[#1EA7FF]/30 transition-all">
                 <option value="">All Categories</option>
                 <option value="fleet">Fleet</option>
                 <option value="dealer">Dealership</option>
@@ -328,7 +328,7 @@ export default function MarketplacePage() {
             </div>
             <div>
               <div className="text-xs font-semibold text-slate-500 mb-1">Body Style</div>
-              <select value={bodyStyle} onChange={(e) => setBodyStyle(e.target.value)} className="edc-input text-sm">
+              <select value={bodyStyle} onChange={(e) => setBodyStyle(e.target.value)} className="w-full h-9 rounded-lg border border-slate-200 bg-white text-sm text-slate-700 px-2 focus:outline-none focus:ring-2 focus:ring-[#1EA7FF]/30 transition-all">
                 <option value="">All Styles</option>
                 {bodyStyles.map((b) => (
                   <option key={b} value={b}>{b}</option>
@@ -337,7 +337,7 @@ export default function MarketplacePage() {
             </div>
             <div>
               <div className="text-xs font-semibold text-slate-500 mb-1">Exterior Color</div>
-              <select value={exteriorColor} onChange={(e) => setExteriorColor(e.target.value)} className="edc-input text-sm">
+              <select value={exteriorColor} onChange={(e) => setExteriorColor(e.target.value)} className="w-full h-9 rounded-lg border border-slate-200 bg-white text-sm text-slate-700 px-2 focus:outline-none focus:ring-2 focus:ring-[#1EA7FF]/30 transition-all">
                 <option value="">All Colors</option>
                 {colors.map((c) => (
                   <option key={c} value={c}>{c}</option>
@@ -346,7 +346,7 @@ export default function MarketplacePage() {
             </div>
             <div>
               <div className="text-xs font-semibold text-slate-500 mb-1">Features</div>
-              <select value={feature} onChange={(e) => setFeature(e.target.value)} className="edc-input text-sm">
+              <select value={feature} onChange={(e) => setFeature(e.target.value)} className="w-full h-9 rounded-lg border border-slate-200 bg-white text-sm text-slate-700 px-2 focus:outline-none focus:ring-2 focus:ring-[#1EA7FF]/30 transition-all">
                 <option value="">All Features</option>
                 {features.map((f) => (
                   <option key={f} value={f}>{f}</option>
@@ -356,15 +356,15 @@ export default function MarketplacePage() {
             <div>
               <div className="text-xs font-semibold text-slate-500 mb-1">Price Range</div>
               <div className="grid grid-cols-2 gap-2">
-                <input value={minPrice} onChange={(e) => setMinPrice(e.target.value)} placeholder="Min" className="edc-input text-sm" />
-                <input value={maxPrice} onChange={(e) => setMaxPrice(e.target.value)} placeholder="Max" className="edc-input text-sm" />
+                <input value={minPrice} onChange={(e) => setMinPrice(e.target.value)} placeholder="Min" className="w-full h-9 rounded-lg border border-slate-200 bg-white text-sm text-slate-700 px-2 focus:outline-none focus:ring-2 focus:ring-[#1EA7FF]/30 transition-all" />
+                <input value={maxPrice} onChange={(e) => setMaxPrice(e.target.value)} placeholder="Max" className="w-full h-9 rounded-lg border border-slate-200 bg-white text-sm text-slate-700 px-2 focus:outline-none focus:ring-2 focus:ring-[#1EA7FF]/30 transition-all" />
               </div>
             </div>
             <div>
               <div className="text-xs font-semibold text-slate-500 mb-1">Year Range</div>
               <div className="grid grid-cols-2 gap-2">
-                <input value={minYear} onChange={(e) => setMinYear(e.target.value)} placeholder="Min" className="edc-input text-sm" />
-                <input value={maxYear} onChange={(e) => setMaxYear(e.target.value)} placeholder="Max" className="edc-input text-sm" />
+                <input value={minYear} onChange={(e) => setMinYear(e.target.value)} placeholder="Min" className="w-full h-9 rounded-lg border border-slate-200 bg-white text-sm text-slate-700 px-2 focus:outline-none focus:ring-2 focus:ring-[#1EA7FF]/30 transition-all" />
+                <input value={maxYear} onChange={(e) => setMaxYear(e.target.value)} placeholder="Max" className="w-full h-9 rounded-lg border border-slate-200 bg-white text-sm text-slate-700 px-2 focus:outline-none focus:ring-2 focus:ring-[#1EA7FF]/30 transition-all" />
               </div>
             </div>
           </div>
@@ -375,7 +375,7 @@ export default function MarketplacePage() {
           <div className="flex items-center justify-between mb-3">
             <div className="text-sm text-slate-500">{loading ? 'Loading…' : error ? 'Failed to load vehicles' : `Showing ${filtered.length} of ${vehicles.length} total vehicles`}</div>
             <div className="w-48">
-              <select value={sort} onChange={(e) => setSort(e.target.value as any)} className="edc-input text-sm">
+              <select value={sort} onChange={(e) => setSort(e.target.value as any)} className="w-full h-10 rounded-xl border border-slate-200 bg-white text-sm text-slate-700 px-3 focus:outline-none focus:ring-2 focus:ring-[#1EA7FF]/30 transition-all">
                 <option value="newest">Newest</option>
                 <option value="price_asc">Price: Low to High</option>
                 <option value="price_desc">Price: High to Low</option>
@@ -403,7 +403,7 @@ export default function MarketplacePage() {
               }}
             >
               <div
-                className="absolute inset-0 bg-navy-900/60 backdrop-blur-sm"
+                className="absolute inset-0 bg-[#0B1F3A]/60 backdrop-blur-sm"
                 onMouseDown={() => {
                   setSelected(null)
                   setSelectedImageIndex(0)

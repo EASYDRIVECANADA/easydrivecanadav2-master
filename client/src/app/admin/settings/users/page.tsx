@@ -476,6 +476,7 @@ export default function SettingsUsersPage() {
   const userLimit = useMemo(() => {
     const r = String(accountRole || '').trim().toLowerCase()
     if (r === 'admin') return Infinity
+    if (!r || r === 'private seller' || r === 'private' || r === 'starter') return 1
     return ROLE_LIMITS[r] ?? 2
   }, [accountRole])
 
@@ -610,7 +611,9 @@ export default function SettingsUsersPage() {
             </div>
             <div className="p-5">
               <p className="text-xs text-slate-600 leading-relaxed">
-                You have reached the maximum number of users allowed for your current subscription.
+                {String(accountRole || '').trim().toLowerCase() === '' || String(accountRole || '').trim().toLowerCase() === 'private seller' || String(accountRole || '').trim().toLowerCase() === 'private' || String(accountRole || '').trim().toLowerCase() === 'starter'
+                  ? 'Private Seller accounts include 1 user. Add additional users for $5/month per user.'
+                  : 'You have reached the maximum number of users allowed for your current subscription.'}
               </p>
               <div className="mt-4 p-3 rounded-lg bg-slate-50 border border-slate-200/60">
                 <div className="flex items-center justify-between">
@@ -626,20 +629,7 @@ export default function SettingsUsersPage() {
               </div>
             </div>
             <div className="px-4 pb-4 flex flex-col gap-2">
-              {getUpgradeOptions(accountRole).map((opt) => (
-                <button
-                  key={opt.plan}
-                  type="button"
-                  className="w-full h-9 rounded-lg text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 transition-colors"
-                  onClick={() => {
-                    closeUpgradeModal()
-                    router.push('/admin/billing')
-                  }}
-                >
-                  {opt.label}
-                </button>
-              ))}
-              {getUpgradeOptions(accountRole).length === 0 && (
+              {String(accountRole || '').trim().toLowerCase() === '' || String(accountRole || '').trim().toLowerCase() === 'private seller' || String(accountRole || '').trim().toLowerCase() === 'private' || String(accountRole || '').trim().toLowerCase() === 'starter' ? (
                 <button
                   type="button"
                   className="w-full h-9 rounded-lg text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 transition-colors"
@@ -648,8 +638,36 @@ export default function SettingsUsersPage() {
                     router.push('/admin/billing')
                   }}
                 >
-                  View Plans
+                  Add another user ($5/month)
                 </button>
+              ) : (
+                <>
+                  {getUpgradeOptions(accountRole).map((opt) => (
+                    <button
+                      key={opt.plan}
+                      type="button"
+                      className="w-full h-9 rounded-lg text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 transition-colors"
+                      onClick={() => {
+                        closeUpgradeModal()
+                        router.push('/admin/billing')
+                      }}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                  {getUpgradeOptions(accountRole).length === 0 && (
+                    <button
+                      type="button"
+                      className="w-full h-9 rounded-lg text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 transition-colors"
+                      onClick={() => {
+                        closeUpgradeModal()
+                        router.push('/admin/billing')
+                      }}
+                    >
+                      View Plans
+                    </button>
+                  )}
+                </>
               )}
               <button type="button" className="w-full h-9 rounded-lg text-xs font-medium text-slate-600 border border-slate-300 hover:bg-slate-50 transition-colors" onClick={closeUpgradeModal}>
                 Cancel

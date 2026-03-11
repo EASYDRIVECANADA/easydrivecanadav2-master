@@ -67,7 +67,7 @@ function BillingPage() {
         period: '',
         description: 'Default account for private sellers — pay only when you post or promote',
         features: [
-          '1-2 users',
+          '1 user only',
           'Under 1 vehicles in inventory',
           'Basic listings & inquiries',
           'Manual posting / pay-per-use publishing',
@@ -579,33 +579,8 @@ function BillingPage() {
       </div>
 
       <div className="flex relative z-10">
-        {section === 'Products & Services' && (
-          <div className="absolute right-6 top-6 z-[60] hidden md:block">
-            <div className="bg-white/10 backdrop-blur-xl rounded-xl shadow-lg border border-white/20 px-5 py-4 w-[320px]">
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <div className="text-[10px] uppercase tracking-wider font-semibold text-slate-300">Load Balance</div>
-                  <div className="text-2xl font-bold text-white mt-1">{fmtMoney(balance)}</div>
-                  <div className="text-xs text-slate-300 mt-1">Use balance for pay‑per‑use e‑signature requests</div>
-                </div>
-              </div>
-
-              <div className="mt-4">
-                <button
-                  type="button"
-                  disabled={!!buyingEsign}
-                  onClick={() => setTopUpModalOpen(true)}
-                  className="w-full inline-flex items-center justify-center gap-2 px-4 py-2 bg-gradient-to-r from-emerald-600 to-green-500 text-white text-xs font-semibold rounded-lg shadow-lg shadow-emerald-500/30 hover:shadow-emerald-500/50 transform hover:-translate-y-0.5 transition-all duration-200 disabled:opacity-60 disabled:cursor-not-allowed disabled:transform-none"
-                >
-                  Top Up
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
         {/* Sidebar Navigation */}
-        <div className="w-56 min-h-screen border-r border-white/10 bg-slate-900/60 backdrop-blur-xl">
+        <div className="w-56 border-r border-white/10 bg-slate-900/60 backdrop-blur-xl sticky top-0 h-screen overflow-y-auto">
           <div className="p-4">
             <div className="text-[10px] uppercase tracking-wider font-semibold text-slate-400 mb-3">Account Billing</div>
             <div className="space-y-1">
@@ -680,9 +655,9 @@ function BillingPage() {
           {section === 'Products & Services' ? (
             <div className="max-w-7xl mx-auto px-8 py-12">
               {/* Hero Section */}
-              <div className="relative mb-16">
+              <div className="relative mb-16 z-0">
                 <div className="text-center">
-                <div className="inline-flex items-center gap-2 px-4 py-1.5 bg-gradient-to-r from-blue-500/20 to-blue-600/20 border border-blue-400/30 rounded-full mb-4 backdrop-blur-sm">
+                <div className="inline-flex items-center gap-2 px-4 py-1.5 bg-gradient-to-r from-blue-500/20 to-blue-600/20 border border-blue-400/30 rounded-full mb-4 backdrop-blur-sm transition-all duration-300 hover:scale-105 hover:shadow-lg hover:shadow-blue-500/30 cursor-default">
                   <div className="w-1.5 h-1.5 bg-blue-400 rounded-full animate-pulse shadow-lg shadow-blue-400/50" />
                   <span className="text-[10px] uppercase tracking-wider font-semibold text-blue-300">Subscription Plans</span>
                 </div>
@@ -692,6 +667,28 @@ function BillingPage() {
                 <p className="text-slate-300 text-lg max-w-2xl mx-auto drop-shadow-lg">
                   Unlock powerful dealership management tools with flexible pricing designed to scale with your business
                 </p>
+                </div>
+              </div>
+
+              {/* Top Up Card - positioned absolute to overlay */}
+              <div className="absolute top-12 right-8 z-10 hover:z-50 transition-all duration-300">
+                <div className="bg-white/10 backdrop-blur-xl rounded-xl shadow-lg border border-white/20 px-4 py-3 w-[280px] transition-all duration-300 hover:shadow-2xl hover:scale-105">
+                  <div>
+                    <div className="text-[9px] uppercase tracking-wider font-semibold text-slate-300">Load Balance</div>
+                    <div className="text-xl font-bold text-white mt-0.5">{fmtMoney(balance)}</div>
+                    <div className="text-[11px] text-slate-300 mt-0.5">Use for e‑signature requests</div>
+                  </div>
+
+                  <div className="mt-3">
+                    <button
+                      type="button"
+                      disabled={!!buyingEsign}
+                      onClick={() => setTopUpModalOpen(true)}
+                      className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-emerald-600 to-green-500 text-white text-[11px] font-semibold rounded-lg shadow-lg shadow-emerald-500/30 hover:shadow-emerald-500/50 transition-all duration-200 disabled:opacity-60 disabled:cursor-not-allowed"
+                    >
+                      Top Up
+                    </button>
+                  </div>
                 </div>
               </div>
 
@@ -713,18 +710,13 @@ function BillingPage() {
                       key={plan.key}
                       className={
                         isPopular
-                          ? 'group relative bg-gradient-to-br from-white via-blue-50/30 to-white rounded-2xl shadow-2xl shadow-blue-500/20 border-2 border-blue-500 transform lg:scale-105 z-10 transition-all duration-500 hover:shadow-blue-500/40 hover:scale-110 animate-fade-in-up'
-                          : 'group relative bg-white rounded-2xl shadow-xl border border-slate-200 hover:shadow-2xl transition-all duration-500 hover:border-blue-300 hover:scale-105 animate-fade-in-up'
+                          ? 'group relative bg-white rounded-2xl shadow-xl border-2 border-blue-500 z-10 transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl'
+                          : 'group relative bg-white rounded-2xl shadow-xl border border-slate-200 transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl hover:border-blue-300'
                       }
                       style={{ animationDelay: `${planIdx * 100}ms` }}
                     >
-                      {/* Shine effect on hover */}
-                      <div className="absolute inset-0 rounded-2xl overflow-hidden pointer-events-none">
-                        <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000" />
-                      </div>
-
                       {isPopular && (
-                        <div className="absolute -top-3 left-1/2 -translate-x-1/2 z-20 animate-bounce-slow">
+                        <div className="absolute -top-3 left-1/2 -translate-x-1/2 z-20">
                           <div className="px-4 py-1 bg-gradient-to-r from-blue-600 to-blue-500 text-white text-[10px] uppercase tracking-wider font-bold rounded-full shadow-lg shadow-blue-500/50">
                             <span className="inline-flex items-center gap-1">
                               <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
@@ -738,9 +730,9 @@ function BillingPage() {
 
                       <div className="p-6 text-center relative">
                         {/* Gauge Icon with animation */}
-                        <div className="flex justify-center mb-4">
+                        <div className="flex justify-center mb-4 transition-transform duration-300 group-hover:scale-110">
                           {isFree ? (
-                            <div className="relative w-14 h-8 transition-transform duration-300 group-hover:scale-110">
+                            <div className="relative w-14 h-8">
                               <svg viewBox="0 0 60 35" className="w-full h-full">
                                 <path d="M5 30 A25 25 0 0 1 55 30" fill="none" stroke="#e5e7eb" strokeWidth="6" strokeLinecap="round" />
                                 <path
@@ -762,7 +754,7 @@ function BillingPage() {
                               </svg>
                             </div>
                           ) : (
-                            <div className="relative w-14 h-8 transition-transform duration-300 group-hover:scale-110">
+                            <div className="relative w-14 h-8">
                               <svg viewBox="0 0 60 35" className="w-full h-full">
                                 <path d="M5 30 A25 25 0 0 1 55 30" fill="none" stroke="#e5e7eb" strokeWidth="6" strokeLinecap="round" />
                                 <path 
@@ -788,23 +780,23 @@ function BillingPage() {
                         </div>
 
                         {/* Plan Label */}
-                        <div className="text-[10px] uppercase tracking-wider font-semibold text-slate-400 mb-2">
+                        <div className="text-[10px] uppercase tracking-wider font-semibold text-slate-400 mb-2 transition-all duration-300 group-hover:text-blue-500 group-hover:scale-105">
                           {isFree ? 'PRIVATE SELLER' : plan.key === 'small' ? 'SMALL DEALER' : plan.key === 'medium' ? 'MEDIUM DEALER' : 'LARGE DEALER'}
                         </div>
 
                         {/* Price with animation */}
-                        <div className="mb-1 transition-transform duration-300 group-hover:scale-105">
+                        <div className="mb-1 transition-transform duration-300 group-hover:scale-110">
                           <span className="text-3xl font-bold bg-gradient-to-r from-slate-900 via-blue-900 to-slate-900 bg-clip-text text-transparent">{plan.amount}</span>
                           {plan.period && <span className="text-slate-500 text-sm">{plan.period}</span>}
                         </div>
 
                         {/* Billed Note */}
                         {billedNote && (
-                          <div className="text-[11px] text-blue-600 font-medium mb-3">{billedNote}</div>
+                          <div className="text-[11px] text-blue-600 font-medium mb-3 transition-all duration-300 group-hover:text-blue-700 group-hover:font-semibold">{billedNote}</div>
                         )}
 
                         {/* Description */}
-                        <p className="text-sm text-slate-600 font-medium mb-4 min-h-[40px]">
+                        <p className="text-sm text-slate-600 font-medium mb-4 min-h-[40px] transition-all duration-300 group-hover:text-slate-800">
                           {isFree ? 'Default account for private sellers' : (
                             <>Plan made for <span className={plan.key === 'small' ? 'text-slate-900 font-bold' : plan.key === 'medium' ? 'text-blue-600 font-bold' : 'text-blue-700 font-bold'}>{plan.key}</span> sized car dealerships</>
                           )}
@@ -825,11 +817,11 @@ function BillingPage() {
                           {plan.features.map((feature, idx) => (
                             <div 
                               key={idx} 
-                              className="flex items-center gap-2 text-sm text-slate-600 transition-all duration-300 hover:translate-x-1"
+                              className="flex items-center gap-2 text-sm text-slate-600 transition-all duration-300 group-hover:translate-x-1 group-hover:text-slate-800"
                               style={{ animationDelay: `${(planIdx * 100) + (idx * 50)}ms` }}
                             >
-                              <div className="flex-shrink-0 w-5 h-5 rounded-full bg-gradient-to-br from-blue-100 to-blue-200 flex items-center justify-center">
-                                <svg className="w-3 h-3 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <div className="flex-shrink-0 w-5 h-5 rounded-full bg-gradient-to-br from-blue-100 to-blue-200 flex items-center justify-center transition-all duration-300 group-hover:scale-110 group-hover:from-blue-200 group-hover:to-blue-300">
+                                <svg className="w-3 h-3 text-blue-600 transition-colors duration-300 group-hover:text-blue-700" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
                                 </svg>
                               </div>
@@ -862,30 +854,25 @@ function BillingPage() {
                               type="button"
                               disabled={!!buying}
                               onClick={() => startCheckout(plan.key)}
-                              className="relative w-full py-3 px-6 bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-700 hover:to-blue-600 text-white font-semibold rounded-full shadow-lg shadow-blue-500/40 hover:shadow-blue-500/60 transform hover:-translate-y-1 hover:scale-105 transition-all duration-300 disabled:opacity-60 disabled:cursor-not-allowed disabled:transform-none overflow-hidden group"
+                              className="w-full py-3 px-6 bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-700 hover:to-blue-600 text-white font-semibold rounded-full shadow-lg shadow-blue-500/40 hover:shadow-blue-500/60 transition-all duration-300 hover:-translate-y-1 hover:scale-105 disabled:opacity-60 disabled:cursor-not-allowed disabled:hover:translate-y-0 disabled:hover:scale-100"
                             >
-                              <span className="relative z-10">
+                              <span>
                                 {isPurchasing ? (
-                                  <span className="inline-flex items-center justify-center gap-2">
-                                    <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
-                                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                                    </svg>
+                                  <span className="inline-flex items-center gap-2">
+                                    <span className="inline-block h-4 w-4 rounded-full border-2 border-white/40 border-t-white animate-spin" />
                                     Processing...
                                   </span>
                                 ) : (
                                   'Subscribe'
                                 )}
                               </span>
-                              <div className="absolute inset-0 bg-gradient-to-r from-blue-400 to-blue-300 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
                             </button>
                           )}
-                        </div>
 
-                        {/* Cancel Note */}
-                        {cancelNote && (
-                          <div className="mt-4 text-[10px] text-slate-400">{cancelNote}</div>
-                        )}
+                          {cancelNote && (
+                            <div className="mt-4 text-[10px] text-slate-400">{cancelNote}</div>
+                          )}
+                        </div>
                       </div>
                     </div>
                   )

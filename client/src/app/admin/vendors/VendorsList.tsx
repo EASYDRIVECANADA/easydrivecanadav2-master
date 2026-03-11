@@ -169,20 +169,20 @@ export default function VendorsList({ compact }: { compact?: boolean }) {
   }
 
   return (
-    <div className={compact ? 'w-full' : 'w-full px-4 sm:px-6 lg:px-8 py-6'}>
-      <div className={compact ? 'edc-card p-4' : 'edc-card p-6'}>
+    <div className={compact ? 'w-full' : 'w-full px-6 lg:px-8 py-6'}>
+      <div className={compact ? 'bg-white rounded-2xl border border-slate-200/60 p-4' : 'bg-white rounded-2xl border border-slate-200/60 p-6'} style={{ boxShadow: '0 1px 3px rgba(0,0,0,.04)' }}>
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search"
-              className="edc-input h-9 w-72 max-w-full"
+              placeholder="Search vendors..."
+              className="h-10 w-72 max-w-full pl-4 pr-4 rounded-xl border border-slate-200 bg-white text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#1EA7FF]/30 focus:border-[#1EA7FF]/40 transition-all"
             />
             <button
               type="button"
               onClick={openAdd}
-              className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200/60 bg-white text-navy-900 hover:bg-slate-50 transition-colors"
+              className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-[#1EA7FF] text-white hover:bg-[#0B1F3A] transition-colors"
               title="Add Vendor"
               aria-label="Add Vendor"
             >
@@ -196,7 +196,7 @@ export default function VendorsList({ compact }: { compact?: boolean }) {
             <select
               value={pageSize}
               onChange={(e) => setPageSize(Number(e.target.value) || 10)}
-              className="h-9 rounded-lg border border-slate-200/60 bg-white px-2 text-sm outline-none"
+              className="h-10 rounded-xl border border-slate-200 bg-white px-2 text-sm text-slate-700 outline-none focus:ring-2 focus:ring-[#1EA7FF]/30 transition-all"
               aria-label="Rows per page"
               title="Rows per page"
             >
@@ -210,9 +210,9 @@ export default function VendorsList({ compact }: { compact?: boolean }) {
 
         {error ? <div className="mt-3 text-sm text-red-600">{error}</div> : null}
 
-        <div className="mt-4 overflow-hidden rounded-lg border border-slate-200/60">
+        <div className="mt-4 overflow-hidden rounded-xl border border-slate-200/60">
           <table className="w-full table-auto text-sm">
-            <thead className="bg-slate-50 text-slate-600">
+            <thead className="bg-slate-50/80 text-slate-600">
               <tr>
                 <th className="w-10 px-3 py-3 text-left font-semibold"></th>
                 <th className="w-10 px-2 py-3 text-left font-semibold"></th>
@@ -233,7 +233,7 @@ export default function VendorsList({ compact }: { compact?: boolean }) {
                 </tr>
               ) : (
                 paged.map((r) => (
-                  <tr key={r.id} className="hover:bg-slate-50 transition-colors">
+                  <tr key={r.id} className="hover:bg-slate-50/70 transition-colors">
                     <td className="px-3 py-2">
                       <button
                         type="button"
@@ -300,8 +300,8 @@ export default function VendorsList({ compact }: { compact?: boolean }) {
 
       {confirmOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 edc-overlay" onMouseDown={() => setConfirmOpen(false)} />
-          <div className="edc-modal w-full max-w-md relative">
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onMouseDown={() => setConfirmOpen(false)} />
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md relative">
             <div className="px-6 py-4 border-b border-slate-100">
               <div className="text-sm font-semibold text-slate-800">{confirmTitle}</div>
             </div>

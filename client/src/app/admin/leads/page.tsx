@@ -137,11 +137,12 @@ export default function AdminLeadsPage() {
   return (
     <div className="min-h-screen">
       {/* Header */}
-      <div className="edc-page-header">
-        <h1 className="text-2xl font-bold text-slate-900">Leads & Inquiries</h1>
+      <div className="px-6 lg:px-8 pt-8 pb-2">
+        <h1 className="text-2xl font-bold text-[#0B1F3A]">Leads & Inquiries</h1>
+        <p className="text-sm text-slate-500 mt-0.5">Track and manage incoming leads</p>
       </div>
 
-      <div className="px-6 py-6">
+      <div className="px-6 lg:px-8 py-6">
         {/* Search and Stats */}
         <div className="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div className="flex-1 max-w-md">
@@ -151,10 +152,10 @@ export default function AdminLeadsPage() {
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search by name, email, phone..."
-                className="edc-input pl-10"
+                className="w-full h-10 pl-10 pr-4 rounded-xl border border-slate-200 bg-white text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#1EA7FF]/30 focus:border-[#1EA7FF]/40 transition-all"
               />
               <svg 
-                className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" 
+                className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" 
                 fill="none" 
                 stroke="currentColor" 
                 viewBox="0 0 24 24"
@@ -163,7 +164,7 @@ export default function AdminLeadsPage() {
               </svg>
             </div>
           </div>
-          <div className="text-sm text-slate-500">
+          <div className="text-sm text-slate-500 font-medium">
             Showing {paginatedLeads.length} of {totalLeads} leads
           </div>
         </div>
@@ -172,31 +173,35 @@ export default function AdminLeadsPage() {
           {/* Lead List */}
           <div className="flex-1">
             {loading ? (
-              <div className="edc-card p-12 text-center">
-                <div className="loading-ring mx-auto" />
-                <p className="loading-text">Loading leads...</p>
+              <div className="bg-white rounded-2xl border border-slate-200/60 p-12 text-center" style={{ boxShadow: '0 1px 3px rgba(0,0,0,.04)' }}>
+                <div className="animate-spin rounded-full h-10 w-10 border-2 border-[#1EA7FF] border-t-transparent mx-auto" />
+                <p className="text-sm text-slate-500 mt-3">Loading leads...</p>
               </div>
             ) : leads.length === 0 ? (
-              <div className="edc-card p-12 text-center">
-                <svg className="w-14 h-14 text-slate-300 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-                </svg>
-                <h3 className="text-lg font-semibold text-slate-700 mb-1">No Leads Yet</h3>
+              <div className="bg-white rounded-2xl border border-slate-200/60 p-16 text-center" style={{ boxShadow: '0 1px 3px rgba(0,0,0,.04)' }}>
+                <div className="w-16 h-16 rounded-2xl bg-[#1EA7FF]/10 flex items-center justify-center mx-auto mb-5">
+                  <svg className="w-8 h-8 text-[#1EA7FF]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                  </svg>
+                </div>
+                <h3 className="text-lg font-bold text-[#0B1F3A] mb-1">No Leads Yet</h3>
                 <p className="text-sm text-slate-500">Leads from the financing form and contact page will appear here.</p>
               </div>
             ) : filteredLeads.length === 0 ? (
-              <div className="edc-card p-12 text-center">
-                <svg className="w-14 h-14 text-slate-300 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                </svg>
-                <h3 className="text-lg font-semibold text-slate-700 mb-1">No Results Found</h3>
+              <div className="bg-white rounded-2xl border border-slate-200/60 p-16 text-center" style={{ boxShadow: '0 1px 3px rgba(0,0,0,.04)' }}>
+                <div className="w-16 h-16 rounded-2xl bg-slate-100 flex items-center justify-center mx-auto mb-5">
+                  <svg className="w-8 h-8 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                  </svg>
+                </div>
+                <h3 className="text-lg font-bold text-[#0B1F3A] mb-1">No Results Found</h3>
                 <p className="text-sm text-slate-500">Try adjusting your search query.</p>
               </div>
             ) : (
               <>
                 {/* Desktop Table View */}
-                <div className="hidden lg:block edc-card overflow-hidden overflow-x-auto">
-                  <table className="edc-table">
+                <div className="hidden lg:block bg-white rounded-2xl border border-slate-200/60 overflow-hidden overflow-x-auto" style={{ boxShadow: '0 1px 3px rgba(0,0,0,.04)' }}>
+                  <table className="w-full text-sm">
                     <thead>
                       <tr>
                         <th>Name</th>
@@ -211,7 +216,7 @@ export default function AdminLeadsPage() {
                       {paginatedLeads.map((lead) => (
                         <tr 
                           key={lead.id} 
-                          className={`${selectedLead?.id === lead.id ? 'bg-cyan-50/50' : ''}`}
+                          className={`border-b border-slate-100 transition-colors hover:bg-slate-50/70 ${selectedLead?.id === lead.id ? 'bg-[#1EA7FF]/5' : ''}`}
                         >
                           <td className="px-6 py-4 whitespace-nowrap">
                             <div className="font-medium text-slate-800">
@@ -244,13 +249,13 @@ export default function AdminLeadsPage() {
                           <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                             <button
                               onClick={() => setSelectedLead(lead)}
-                              className="text-cyan-600 hover:text-cyan-700 mr-3 transition-colors"
+                              className="text-[#1EA7FF] hover:text-[#0B1F3A] mr-3 transition-colors font-medium"
                             >
                               View
                             </button>
                             <button
                               onClick={() => handleDelete(lead.id)}
-                              className="text-danger-500 hover:text-danger-600 transition-colors"
+                              className="text-red-500 hover:text-red-600 transition-colors"
                             >
                               Delete
                             </button>
