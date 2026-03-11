@@ -54,9 +54,116 @@ export default function ESignaturePage() {
   const [uploadSignature, setUploadSignature] = useState<File | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const signatureInputRef = useRef<HTMLInputElement>(null)
+  const esignModalResolverRef = useRef<((value: boolean) => void) | null>(null)
+  const [esignModalOpen, setEsignModalOpen] = useState(false)
+  const [esignModalTitle, setEsignModalTitle] = useState('')
+  const [esignModalBody, setEsignModalBody] = useState('')
+  const [esignModalBlocking, setEsignModalBlocking] = useState(true)
 
-  const handleUploadClick = () => {
-    setIsModalOpen(true)
+  const openEsignModal = (opts: { title: string; body: string; blocking: boolean }) => {
+    setEsignModalTitle(opts.title)
+    setEsignModalBody(opts.body)
+    setEsignModalBlocking(opts.blocking)
+    setEsignModalOpen(true)
+  }
+
+  const closeEsignModal = () => {
+    setEsignModalOpen(false)
+    if (esignModalResolverRef.current) {
+      esignModalResolverRef.current(false)
+      esignModalResolverRef.current = null
+    }
+  }
+
+  const handleEsignModalContinue = () => {
+    setEsignModalOpen(false)
+    if (esignModalResolverRef.current) {
+      esignModalResolverRef.current(true)
+      esignModalResolverRef.current = null
+    }
+  }
+
+  const confirmEsignChargeIfNeeded = async (senderEmail: string) => {
+    try {
+      if (!senderEmail) return true
+      const res = await fetch('/api/esign/wallet', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: senderEmail }),
+      })
+      const json = await res.json().catch(() => null)
+      if (!res.ok) throw new Error(String(json?.error || 'Unable to check E‑Signature credits'))
+
+      // Handle NULL values from database
+      const rawCredits = json?.esign_credits
+      const rawBalance = json?.balance
+      const credits = rawCredits === null || rawCredits === undefined ? 0 : Number(rawCredits)
+      const balance = rawBalance === null || rawBalance === undefined ? 0 : Number(rawBalance)
+      const unlimitedUntilRaw = (json as any)?.esign_unlimited_until ?? null
+      const safeCredits = Number.isFinite(credits) ? credits : 0
+      const safeBalance = Number.isFinite(balance) ? balance : 0
+
+      try {
+        const until = unlimitedUntilRaw ? new Date(String(unlimitedUntilRaw)) : null
+        if (until && !Number.isNaN(until.getTime()) && until.getTime() > Date.now()) {
+          return true
+        }
+      } catch {
+        // ignore
+      }
+
+      // If user has credits, allow upload (credit will be deducted after successful upload)
+      if (safeCredits > 0) return true
+
+      // If no credits and balance is too low, block
+      if (safeBalance < 3) {
+        openEsignModal({
+          title: 'No E‑Signature Credits',
+          body: `You have 0 E‑Signature credits and your Load Balance is too low to upload this document. Please top up your balance or buy the bundle.`,
+          blocking: true,
+        })
+        return false
+      }
+
+      // If no credits but sufficient balance, ask for confirmation to charge $3
+      return await new Promise<boolean>((resolve) => {
+        esignModalResolverRef.current = resolve
+        openEsignModal({
+          title: 'No E‑Signature Credits',
+          body: `You have 0 E‑Signature credits. Uploading this document will charge $3.00 from your Load Balance. Do you want to continue?`,
+          blocking: false,
+        })
+      })
+    } catch (e) {
+      openEsignModal({
+        title: 'E‑Signature Error',
+        body: String((e as any)?.message || e || 'Unable to check E‑Signature credits.'),
+        blocking: true,
+      })
+      return false
+    }
+  }
+
+  const handleUploadClick = async () => {
+    try {
+      // Get sender email from localStorage
+      let senderEmail = ''
+      try {
+        const raw = typeof window !== 'undefined' ? window.localStorage.getItem('edc_admin_session') : null
+        const parsed = raw ? JSON.parse(raw) : null
+        senderEmail = String(parsed?.email ?? '').trim().toLowerCase()
+      } catch {
+        senderEmail = ''
+      }
+
+      // Check credits before allowing upload
+      const canProceed = await confirmEsignChargeIfNeeded(senderEmail)
+      if (!canProceed) return
+
+      setIsModalOpen(true)
+    } catch (err: any) {
+      console.error('Error checking credits:', err)
+    }
   }
 
   const handleCloseModal = () => {
@@ -145,6 +252,24 @@ export default function ESignaturePage() {
       // Check if response text is "Done"
       const responseText = await res.text()
       if (responseText.trim() === 'Done') {
+        // Deduct 1 credit after successful upload
+        try {
+          const raw = typeof window !== 'undefined' ? window.localStorage.getItem('edc_admin_session') : null
+          const parsed = raw ? JSON.parse(raw) : null
+          const senderEmail = String(parsed?.email ?? '').trim().toLowerCase()
+          
+          if (senderEmail) {
+            await fetch('/api/esign/deduct-credit', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ email: senderEmail }),
+            })
+          }
+        } catch (err) {
+          console.error('Failed to deduct credit:', err)
+          // Don't block the upload success flow if credit deduction fails
+        }
+
         // Close upload modal and show success modal
         handleCloseModal()
         setIsSuccessModalOpen(true)
@@ -1238,6 +1363,38 @@ export default function ESignaturePage() {
             >
               OK
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* E-Signature Credit Check Modal */}
+      {esignModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden">
+            <div className="px-6 py-4 border-b border-slate-200">
+              <h3 className="text-lg font-bold text-slate-900">{esignModalTitle}</h3>
+            </div>
+            <div className="px-6 py-5">
+              <p className="text-sm text-slate-600 leading-relaxed">{esignModalBody}</p>
+            </div>
+            <div className="px-6 py-4 bg-slate-50 flex items-center justify-end gap-3">
+              {!esignModalBlocking && (
+                <button
+                  type="button"
+                  onClick={closeEsignModal}
+                  className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors"
+                >
+                  Cancel
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={esignModalBlocking ? closeEsignModal : handleEsignModalContinue}
+                className="px-5 py-2 text-sm font-semibold text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                {esignModalBlocking ? 'OK' : 'Continue'}
+              </button>
+            </div>
           </div>
         </div>
       )}
