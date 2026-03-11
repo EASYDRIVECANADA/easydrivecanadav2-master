@@ -111,8 +111,10 @@ function DealsSignaturePageInner() {
   const lastPointRef = useRef<{ x: number; y: number } | null>(null)
 
   const [penSize, setPenSize] = useState(2)
-  const [penColor, setPenColor] = useState('#111827')
   const [signatureDataUrl, setSignatureDataUrl] = useState<string | null>(null)
+  const [signatureModalOpen, setSignatureModalOpen] = useState(false)
+  const [signatureMode, setSignatureMode] = useState<'draw' | 'type'>('draw')
+  const [typedName, setTypedName] = useState('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
@@ -404,7 +406,7 @@ function DealsSignaturePageInner() {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
     ctx.lineCap = 'round'
     ctx.lineJoin = 'round'
-    ctx.strokeStyle = penColor
+    ctx.strokeStyle = '#000000'
     ctx.lineWidth = penSize
 
     if (prev.width && prev.height) {
@@ -417,7 +419,7 @@ function DealsSignaturePageInner() {
     if (!ctx) return
     ctx.lineCap = 'round'
     ctx.lineJoin = 'round'
-    ctx.strokeStyle = penColor
+    ctx.strokeStyle = '#000000'
     ctx.lineWidth = penSize
   }
 
@@ -476,11 +478,14 @@ function DealsSignaturePageInner() {
     setSignatureDataUrl(null)
   }
 
-  const save = async () => {
+  const save = async (overrideUrl?: string) => {
     if (saving) return
-    const c = getCanvas()
-    if (!c) return
-    const url = c.toDataURL('image/png')
+    let url = overrideUrl || ''
+    if (!url) {
+      const c = getCanvas()
+      if (!c) return
+      url = c.toDataURL('image/png')
+    }
     setSignatureDataUrl(url)
 
     setSaving(true)
@@ -534,29 +539,57 @@ function DealsSignaturePageInner() {
   }, [])
 
   useEffect(() => {
-    const c = getCanvas()
-    if (!c) return
+    if (!signatureModalOpen || signatureMode !== 'draw') return
 
-    const onPointerDown = (e: PointerEvent) => {
-      c.setPointerCapture(e.pointerId)
-      startDraw(e)
+    let raf = 0
+    let cleanup: null | (() => void) = null
+
+    const bind = () => {
+      const c = getCanvas()
+      if (!c) return
+
+      ensureHiDpi()
+      applyPen()
+
+      const onPointerDown = (e: PointerEvent) => {
+        e.preventDefault()
+        c.setPointerCapture(e.pointerId)
+        startDraw(e)
+      }
+      const onPointerMove = (e: PointerEvent) => {
+        e.preventDefault()
+        moveDraw(e)
+      }
+      const onPointerUp = (e: PointerEvent) => {
+        e.preventDefault()
+        endDraw()
+      }
+      const onPointerCancel = (e: PointerEvent) => {
+        e.preventDefault()
+        endDraw()
+      }
+
+      c.addEventListener('pointerdown', onPointerDown)
+      c.addEventListener('pointermove', onPointerMove)
+      c.addEventListener('pointerup', onPointerUp)
+      c.addEventListener('pointercancel', onPointerCancel)
+
+      cleanup = () => {
+        c.removeEventListener('pointerdown', onPointerDown)
+        c.removeEventListener('pointermove', onPointerMove)
+        c.removeEventListener('pointerup', onPointerUp)
+        c.removeEventListener('pointercancel', onPointerCancel)
+      }
     }
-    const onPointerMove = (e: PointerEvent) => moveDraw(e)
-    const onPointerUp = () => endDraw()
-    const onPointerCancel = () => endDraw()
 
-    c.addEventListener('pointerdown', onPointerDown)
-    c.addEventListener('pointermove', onPointerMove)
-    c.addEventListener('pointerup', onPointerUp)
-    c.addEventListener('pointercancel', onPointerCancel)
+    // Wait for the modal/canvas to mount.
+    raf = window.requestAnimationFrame(bind)
 
     return () => {
-      c.removeEventListener('pointerdown', onPointerDown)
-      c.removeEventListener('pointermove', onPointerMove)
-      c.removeEventListener('pointerup', onPointerUp)
-      c.removeEventListener('pointercancel', onPointerCancel)
+      if (raf) window.cancelAnimationFrame(raf)
+      cleanup?.()
     }
-  }, [penColor, penSize])
+  }, [signatureModalOpen, signatureMode, penSize])
 
   useEffect(() => {
     const onResize = () => {
@@ -565,7 +598,7 @@ function DealsSignaturePageInner() {
     }
     window.addEventListener('resize', onResize)
     return () => window.removeEventListener('resize', onResize)
-  }, [penColor, penSize])
+  }, [penSize])
 
   useEffect(() => {
     const host = signatureBoxRef.current
@@ -581,14 +614,17 @@ function DealsSignaturePageInner() {
 
   useEffect(() => {
     applyPen()
-  }, [penColor, penSize])
+  }, [penSize])
 
   // Render field content
   const renderFieldContent = (field: Field) => {
     switch (field.type) {
       case 'signature':
         return (
-          <div className="flex items-center justify-center h-full text-blue-600 text-xs font-medium">
+          <div 
+            className="flex items-center justify-center h-full text-blue-600 text-xs font-medium cursor-pointer hover:bg-blue-100/90"
+            onClick={() => setSignatureModalOpen(true)}
+          >
             Here need to Sign
           </div>
         )
@@ -646,18 +682,18 @@ function DealsSignaturePageInner() {
   }
 
   return (
-    <div className="min-h-screen w-full bg-gradient-to-b from-slate-50 to-slate-100">
-      <div className="sticky top-0 z-10 border-b border-slate-200 bg-white/90 backdrop-blur">
+    <div className="min-h-screen w-full" style={{ backgroundColor: '#1a1a2e', backgroundImage: 'radial-gradient(circle, rgba(255,255,255,0.05) 1px, transparent 1px)', backgroundSize: '24px 24px' }}>
+      <div className="sticky top-0 z-10 border-b border-white/10 bg-[#1a1a2e]/95 backdrop-blur-xl">
         <div className="w-full px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex flex-col items-center text-center">
             <div className="relative h-12 w-12 sm:h-14 sm:w-14">
               <NextImage src="/images/logo.png" alt="EDC" fill className="object-contain" />
             </div>
-            <div className="mt-2 text-lg sm:text-xl font-bold text-slate-900">{title}</div>
+            <div className="mt-2 text-lg sm:text-xl font-bold text-white">{title}</div>
             {recipientEmail && (
-              <div className="mt-1 text-sm text-slate-600">For: {recipientEmail}</div>
+              <div className="mt-1 text-sm text-slate-300">For: {recipientEmail}</div>
             )}
-            <div className="mt-1 text-xs text-slate-500">Review the document and sign where indicated</div>
+            <div className="mt-1 text-xs text-slate-400">Review the document and sign where indicated</div>
           </div>
         </div>
       </div>
@@ -667,28 +703,28 @@ function DealsSignaturePageInner() {
           <div className="flex items-center justify-center py-20">
             <div className="flex flex-col items-center gap-3">
               <div className="animate-spin rounded-full h-10 w-10 border-2 border-blue-500 border-t-transparent"></div>
-              <span className="text-sm text-slate-600">Loading document...</span>
+              <span className="text-sm text-slate-400">Loading document...</span>
             </div>
           </div>
         ) : error ? (
           <div className="flex items-center justify-center py-20">
             <div className="text-center">
-              <div className="text-red-500 text-lg font-semibold mb-2">Error</div>
-              <div className="text-slate-600">{error}</div>
+              <div className="text-red-400 text-lg font-semibold mb-2">Error</div>
+              <div className="text-slate-300">{error}</div>
             </div>
           </div>
         ) : (
           <>
             {/* Document with fields */}
-            <div className="rounded-2xl border border-slate-200 bg-white shadow-lg p-4 sm:p-6 mb-6">
+            <div className="mb-6">
               <div className="mb-4">
-                <div className="text-sm font-semibold text-slate-900">Document</div>
-                <div className="text-xs text-slate-500">Review the document below. Fields are highlighted where you need to take action.</div>
+                <div className="text-sm font-semibold text-white">Document</div>
+                <div className="text-xs text-slate-400">Review the document below. Fields are highlighted where you need to take action.</div>
               </div>
 
               <div className="flex justify-center overflow-auto">
                 <div 
-                  className="relative bg-white shadow-lg"
+                  className="relative"
                   style={{ width: `${PAGE_WIDTH}px` }}
                 >
                   {/* Render pages */}
@@ -696,29 +732,36 @@ function DealsSignaturePageInner() {
                     pageImages.map((img, idx) => {
                       const pageNo = idx + 1
                       const pageFields = fields.filter(f => f.page === pageNo)
+                      const isLast = idx === pageImages.length - 1
                       return (
-                        <div key={pageNo} className="relative" style={{ height: `${PAGE_HEIGHT}px` }}>
-                          <img
-                            src={img}
-                            alt={`Page ${pageNo}`}
-                            className="w-full h-full object-contain"
-                          />
-                          {/* Field overlays */}
-                          {pageFields.map((field) => (
-                            <div
-                              key={field.id}
-                              className="absolute border-2 border-blue-400 bg-blue-50/80 rounded cursor-pointer hover:bg-blue-100/90 transition-colors"
-                              style={{
-                                left: `${field.x}px`,
-                                top: `${field.y}px`,
-                                width: `${field.width}px`,
-                                height: `${field.height}px`,
-                              }}
-                              title={fieldTypeLabels[field.type]}
-                            >
-                              {renderFieldContent(field)}
-                            </div>
-                          ))}
+                        <div key={pageNo} className="relative">
+                          <div className="relative bg-white border-2 border-slate-300 shadow-md" style={{ height: `${PAGE_HEIGHT}px` }}>
+                            <img
+                              src={img}
+                              alt={`Page ${pageNo}`}
+                              className="w-full h-full object-contain"
+                            />
+                            {/* Field overlays */}
+                            {pageFields.map((field) => (
+                              <div
+                                key={field.id}
+                                className="absolute border-2 border-blue-400 bg-blue-50/80 rounded cursor-pointer hover:bg-blue-100/90 transition-colors"
+                                style={{
+                                  left: `${field.x}px`,
+                                  top: `${field.y}px`,
+                                  width: `${field.width}px`,
+                                  height: `${field.height}px`,
+                                }}
+                                title={fieldTypeLabels[field.type]}
+                              >
+                                {renderFieldContent(field)}
+                              </div>
+                            ))}
+                          </div>
+
+                          <div className="w-full flex items-center justify-center py-3">
+                            <div className="text-xs font-semibold text-slate-400">Page {pageNo} of {pageImages.length}</div>
+                          </div>
                         </div>
                       )
                     })
@@ -746,7 +789,7 @@ function DealsSignaturePageInner() {
                       ))}
                     </div>
                   ) : (
-                    <div className="flex items-center justify-center h-96 text-slate-500">
+                    <div className="flex items-center justify-center h-96 text-slate-400">
                       <div className="flex flex-col items-center gap-2">
                         <div className="animate-spin rounded-full h-8 w-8 border-2 border-blue-500 border-t-transparent"></div>
                         <span>Rendering document...</span>
@@ -757,77 +800,129 @@ function DealsSignaturePageInner() {
               </div>
             </div>
 
-            {/* Signature pad */}
-            <div className="rounded-2xl border border-slate-200 bg-white shadow-lg p-4 sm:p-6">
-              <div className="flex items-end justify-between gap-4 flex-wrap mb-4">
-                <div>
-                  <div className="text-sm font-semibold text-slate-900">Your Signature</div>
-                  <div className="text-xs text-slate-500">Draw your signature below</div>
-                </div>
+          </>
+        )}
+      </div>
 
-                <div className="flex items-end gap-3">
-                  <div>
-                    <div className="text-[11px] font-semibold text-slate-600 mb-1">Pen Size</div>
-                    <input
-                      type="number"
-                      value={penSize}
-                      min={1}
-                      max={12}
-                      onChange={(e) => setPenSize(Math.min(12, Math.max(1, Number(e.target.value) || 2)))}
-                      className="w-20 h-9 border border-slate-200 rounded px-3 text-sm bg-white text-slate-900 outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-                  <div>
-                    <div className="text-[11px] font-semibold text-slate-600 mb-1">Pen Color</div>
-                    <input
-                      type="color"
-                      value={penColor}
-                      onChange={(e) => setPenColor(e.target.value)}
-                      className="w-20 h-9 border border-slate-200 rounded px-1 py-1 bg-white cursor-pointer"
-                    />
-                  </div>
-                </div>
+      {signatureModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+          <div className="relative w-full max-w-2xl bg-white rounded-2xl shadow-2xl overflow-hidden">
+            <div className="px-6 py-4 border-b border-slate-200">
+              <div className="flex items-center justify-between">
+                <h3 className="text-lg font-bold text-slate-900">Your Signature</h3>
+                <button
+                  onClick={() => setSignatureModalOpen(false)}
+                  className="p-1 hover:bg-slate-100 rounded-lg transition-colors"
+                >
+                  <svg className="w-5 h-5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+              <p className="text-xs text-slate-500 mt-1">Draw your signature or type your name</p>
+            </div>
+
+            <div className="px-6 py-4">
+              {/* Mode selector */}
+              <div className="flex gap-2 mb-4">
+                <button
+                  onClick={() => setSignatureMode('draw')}
+                  className={`flex-1 py-2 px-4 rounded-lg text-sm font-semibold transition-colors ${
+                    signatureMode === 'draw'
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                  }`}
+                >
+                  Draw Signature
+                </button>
+                <button
+                  onClick={() => setSignatureMode('type')}
+                  className={`flex-1 py-2 px-4 rounded-lg text-sm font-semibold transition-colors ${
+                    signatureMode === 'type'
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                  }`}
+                >
+                  Type Signature
+                </button>
               </div>
 
-              <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-center mb-4">
+              {signatureMode === 'draw' ? (
+                <>
+                  <div className="mb-3">
+                    <div className="text-sm text-slate-600">Draw your signature below</div>
+                  </div>
+                  <div ref={signatureBoxRef} className="rounded-xl border-2 border-slate-300 bg-white overflow-hidden" style={{ height: '200px' }}>
+                    <canvas ref={canvasRef} className="w-full h-full touch-none cursor-crosshair" />
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="text-sm text-slate-600 mb-3">Type your full name</div>
+                  <input
+                    type="text"
+                    value={typedName}
+                    onChange={(e) => setTypedName(e.target.value)}
+                    placeholder="Enter your full name"
+                    className="w-full px-4 py-3 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                  {typedName && (
+                    <div className="mt-4 p-6 rounded-xl border-2 border-slate-300 bg-white text-center">
+                      <div className="text-4xl" style={{ fontFamily: 'Brush Script MT, cursive', fontStyle: 'italic' }}>
+                        {typedName}
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+
+              <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-center mt-4">
                 <div className="text-sm font-semibold text-slate-900">Agreement</div>
                 <div className="mt-1 text-sm text-slate-600">
                   By signing below, you confirm that you have reviewed and agree to the document and all included terms.
                 </div>
               </div>
-
-              <div className="flex justify-center">
-                <div
-                  ref={signatureBoxRef}
-                  className="max-w-full rounded-xl border-2 border-slate-300 bg-white overflow-hidden"
-                  style={{ width: '100%', maxWidth: '800px', height: '200px' }}
-                >
-                  <canvas ref={canvasRef} className="w-full h-full touch-none cursor-crosshair" />
-                </div>
-              </div>
-
-              <div className="mt-4 flex items-center justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={clear}
-                  disabled={saving}
-                  className="h-10 px-4 rounded-lg bg-slate-100 text-slate-700 text-sm font-semibold hover:bg-slate-200 border border-slate-200"
-                >
-                  Clear
-                </button>
-                <button
-                  type="button"
-                  onClick={save}
-                  disabled={saving}
-                  className="h-10 px-6 rounded-lg bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed"
-                >
-                  {saving ? 'Saving...' : 'Submit Signature'}
-                </button>
-              </div>
             </div>
-          </>
-        )}
-      </div>
+
+            <div className="px-6 py-4 bg-slate-50 flex items-center justify-end gap-2">
+              <button
+                onClick={clear}
+                className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors"
+              >
+                Clear
+              </button>
+              <button
+                onClick={async () => {
+                  setSignatureModalOpen(false)
+                  if (signatureMode === 'type' && typedName) {
+                    // Convert typed name to off-screen canvas and get b64 directly (transparent background)
+                    const offCanvas = document.createElement('canvas')
+                    offCanvas.width = 800
+                    offCanvas.height = 200
+                    const ctx = offCanvas.getContext('2d')
+                    if (ctx) {
+                      ctx.clearRect(0, 0, offCanvas.width, offCanvas.height)
+                      ctx.fillStyle = '#000000'
+                      ctx.font = 'italic 60px "Brush Script MT", cursive'
+                      ctx.textAlign = 'center'
+                      ctx.textBaseline = 'middle'
+                      ctx.fillText(typedName, offCanvas.width / 2, offCanvas.height / 2)
+                      const url = offCanvas.toDataURL('image/png')
+                      await save(url)
+                    }
+                  } else {
+                    await save()
+                  }
+                }}
+                disabled={signatureMode === 'type' && !typedName}
+                className="px-5 py-2 text-sm font-semibold text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Submit Signature
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {saveModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">

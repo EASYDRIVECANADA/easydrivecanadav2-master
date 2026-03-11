@@ -1143,28 +1143,51 @@ export default function PrepareDocumentPage() {
                     pageImages.length > 0 ? (
                     pageImages.map((img, idx) => {
                       const pageNo = idx + 1
+                      const isLast = idx === pageImages.length - 1
                       return (
-                        <img
-                          key={pageNo}
-                          src={img}
-                          alt={`Page ${pageNo}`}
-                          className="w-full absolute left-0 pointer-events-none bg-white"
-                          style={{ top: `${(pageNo - 1) * PAGE_HEIGHT * scale}px`, height: `${PAGE_HEIGHT * scale}px`, zIndex: 1, backgroundColor: '#fff' }}
-                        />
+                        <div key={pageNo}>
+                          <img
+                            src={img}
+                            alt={`Page ${pageNo}`}
+                            className="w-full absolute left-0 pointer-events-none bg-white"
+                            style={{ top: `${(pageNo - 1) * PAGE_HEIGHT * scale}px`, height: `${PAGE_HEIGHT * scale}px`, zIndex: 1, backgroundColor: '#fff' }}
+                          />
+
+                          {!isLast && (
+                            <div
+                              className="absolute left-0 w-full flex flex-col items-center justify-center pointer-events-none"
+                              style={{ top: `${pageNo * PAGE_HEIGHT * scale}px`, zIndex: 1 }}
+                            >
+                              <div className="text-xs font-semibold text-slate-500 mb-2" style={{ fontSize: `${12 * scale}px` }}>Page {pageNo}</div>
+                              <div className="w-full bg-slate-400" style={{ maxWidth: `${PAGE_WIDTH * scale}px`, height: `${2 * scale}px` }} />
+                            </div>
+                          )}
+                        </div>
                       )
                     })
                     ) : renderFailed ? (
                       pdfPageUrls.map((pageUrl, idx) => {
                         const pageNo = idx + 1
+                        const isLast = idx === pdfPageUrls.length - 1
                         return (
-                          <iframe
-                            key={pageNo}
-                            src={`${pageUrl}#page=${pageNo}&zoom=page-width&toolbar=0&navpanes=0&scrollbar=0`}
-                            scrolling="no"
-                            className="w-full absolute left-0 pointer-events-none bg-white overflow-hidden"
-                            style={{ top: `${(pageNo - 1) * PAGE_HEIGHT * scale}px`, height: `${PAGE_HEIGHT * scale}px`, border: 'none', zIndex: 1, backgroundColor: '#fff', overflow: 'hidden' }}
-                            title={`Document Page ${pageNo}`}
-                          />
+                          <div key={pageNo}>
+                            <iframe
+                              src={`${pageUrl}#page=${pageNo}&zoom=page-width&toolbar=0&navpanes=0&scrollbar=0`}
+                              scrolling="no"
+                              className="w-full absolute left-0 pointer-events-none bg-white overflow-hidden"
+                              style={{ top: `${(pageNo - 1) * PAGE_HEIGHT * scale}px`, height: `${PAGE_HEIGHT * scale}px`, border: 'none', zIndex: 1, backgroundColor: '#fff', overflow: 'hidden' }}
+                              title={`Document Page ${pageNo}`}
+                            />
+
+                            {!isLast && (
+                              <div
+                                className="absolute left-0 w-full flex items-center justify-center pointer-events-none"
+                                style={{ top: `${pageNo * PAGE_HEIGHT * scale}px`, zIndex: 1 }}
+                              >
+                                <div className="w-full h-px bg-slate-200" style={{ maxWidth: `${PAGE_WIDTH * scale}px` }} />
+                              </div>
+                            )}
+                          </div>
                         )
                       })
                     ) : (
