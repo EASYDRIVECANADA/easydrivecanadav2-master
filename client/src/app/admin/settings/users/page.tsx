@@ -612,7 +612,7 @@ export default function SettingsUsersPage() {
             <div className="p-5">
               <p className="text-xs text-slate-600 leading-relaxed">
                 {String(accountRole || '').trim().toLowerCase() === '' || String(accountRole || '').trim().toLowerCase() === 'private seller' || String(accountRole || '').trim().toLowerCase() === 'private' || String(accountRole || '').trim().toLowerCase() === 'starter'
-                  ? 'Private Seller accounts include 1 user. Add additional users for $5/month per user.'
+                  ? 'Private Seller accounts include 1 user. Add additional users for $5 per use.'
                   : 'You have reached the maximum number of users allowed for your current subscription.'}
               </p>
               <div className="mt-4 p-3 rounded-lg bg-slate-50 border border-slate-200/60">
@@ -638,7 +638,7 @@ export default function SettingsUsersPage() {
                     router.push('/admin/billing')
                   }}
                 >
-                  Add another user ($5/month)
+                  Add another user ($5)
                 </button>
               ) : (
                 <>
@@ -1040,7 +1040,7 @@ export default function SettingsUsersPage() {
           className={
             canAddMoreUsers
               ? 'h-7 w-7 flex items-center justify-center text-slate-700 hover:text-slate-900'
-              : 'h-7 w-7 flex items-center justify-center text-slate-400 cursor-not-allowed'
+              : 'h-7 w-7 flex items-center justify-center text-slate-400 hover:text-slate-600'
           }
           title={canAddMoreUsers ? 'Add user' : 'User limit reached for your current plan. Upgrade to add more users.'}
           onClick={() => {
