@@ -369,8 +369,8 @@ export default function MarketplacePage() {
   return (
     <div className="px-6 lg:px-8 py-6">
       <div className="flex items-start gap-6">
-        {/* Sidebar Filters */}
-        <aside className="w-72 bg-white rounded-2xl border border-slate-200/60 p-5 sticky top-6 self-start" style={{ boxShadow: '0 1px 3px rgba(0,0,0,.04)' }}>
+        {/* Sidebar Filters (hidden on Marketplace as requested) */}
+        <aside className="hidden w-72 bg-white rounded-2xl border border-slate-200/60 p-5 sticky top-6 self-start" style={{ boxShadow: '0 1px 3px rgba(0,0,0,.04)' }}>
           <div className="flex items-center justify-between pb-3 border-b border-slate-200/60">
             <div className="text-xs font-bold text-[#0B1F3A] uppercase tracking-wider">Filters</div>
             <button
