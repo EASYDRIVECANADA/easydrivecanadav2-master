@@ -14,6 +14,61 @@ const planToRole: Record<Plan, Role> = {
   large: 'large dealership',
 }
 
+// E‑Sign wallet helpers
+const getEsignWalletByEmail = async (email: string) => {
+  const { supabaseUrl, supabaseKey } = getSupabaseServerConfig()
+
+  const q = `${supabaseUrl}/rest/v1/users?select=id,email,esign_credits,esign_unlimited_until&email=eq.${encodeURIComponent(email)}&limit=1`
+  const res = await fetch(q, {
+    method: 'GET',
+    headers: {
+      apikey: supabaseKey,
+      Authorization: `Bearer ${supabaseKey}`,
+    },
+  })
+  const text = await res.text()
+  if (!res.ok) throw new Error(text || `Failed to read e‑sign wallet (${res.status})`)
+
+  let rows: any[] = []
+  try { rows = JSON.parse(text || '[]') } catch { rows = [] }
+  const row = rows?.[0]
+  if (!row) throw new Error(`No users row matched email=${email}`)
+  return {
+    id: String(row?.id || ''),
+    email: String(row?.email || email),
+    esignCredits: Number((row as any)?.esign_credits ?? 0),
+    esignUnlimitedUntil: (row as any)?.esign_unlimited_until ?? null,
+  }
+}
+
+const updateEsignWalletByEmail = async (
+  email: string,
+  patch: { esign_credits?: number | string; esign_unlimited_until?: string | null }
+) => {
+  const { supabaseUrl, supabaseKey } = getSupabaseServerConfig()
+  const patchUrl = `${supabaseUrl}/rest/v1/users?email=eq.${encodeURIComponent(email)}`
+
+  // Some deployments use varchar for these fields; send as strings to be safe
+  const bodyPatch: Record<string, any> = { ...patch }
+  if (typeof bodyPatch.esign_credits === 'number') bodyPatch.esign_credits = String(bodyPatch.esign_credits)
+
+  const res = await fetch(patchUrl, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      apikey: supabaseKey,
+      Authorization: `Bearer ${supabaseKey}`,
+      Prefer: 'return=representation',
+    },
+    body: JSON.stringify(bodyPatch),
+  })
+
+  const text = await res.text()
+  if (!res.ok) throw new Error(text || `Failed to update e‑sign wallet (${res.status})`)
+  if (String(text || '').trim() === '[]') throw new Error(`No users row matched email=${email}`)
+  return text
+}
+
 const normalizeEmail = (email: unknown) => String(email || '').trim().toLowerCase()
 
 const getPlanFromPriceId = (priceId: string, smallPrice: string, mediumPrice: string, largePrice: string): Plan | null => {
@@ -503,6 +558,8 @@ export async function POST(req: Request) {
       const session = event.data.object as Stripe.Checkout.Session
       let sessionPlan = String((session.metadata as any)?.plan || '').trim().toLowerCase() as Plan
       const product = String((session.metadata as any)?.product || '').trim().toLowerCase()
+      // Use a mutable alias for product detection logic below
+      let esignProduct = product
 
       console.log('[stripe-webhook] session.metadata.plan:', sessionPlan)
 
@@ -630,6 +687,88 @@ export async function POST(req: Request) {
       if (!email && session.customer) {
         const customer = (await stripe.customers.retrieve(String(session.customer))) as Stripe.Customer
         email = normalizeEmail((customer as any)?.email)
+      }
+
+      // Handle E‑Signature add‑ons purchased via Stripe Checkout
+      // Some webhooks may omit metadata, so detect from line items as a fallback
+      let esignTier = String((session.metadata as any)?.tier || '').trim().toLowerCase()
+      if (esignProduct !== 'esignature') {
+        try {
+          const priceUpto5 = String(
+            (process.env as any).STRIPE_PRICE_ID_ESIGN_BUNDLE ||
+              process.env.STRIPE_PRICE_ID_ESIGN_UPTO_5 ||
+              (process.env as any)['STRIPE_PRICE_ID_E-SIGN_BUNDLE'] ||
+              ''
+          ).trim()
+          const priceUnlimited = String(
+            process.env.STRIPE_PRICE_ID_ESIGN_UNLIMITED || (process.env as any)['STRIPE_PRICE_ID_E-SIGN_UNLIMITED'] || ''
+          ).trim()
+
+          const sessionWithLineItems = await stripe.checkout.sessions.retrieve(String(session.id), {
+            expand: ['line_items.data.price']
+          })
+          const firstLine: any = sessionWithLineItems.line_items?.data?.[0]
+          const linePriceId = String(firstLine?.price?.id || '').trim()
+          if (linePriceId) {
+            if (priceUpto5 && linePriceId === priceUpto5) { esignProduct = 'esignature'; esignTier = 'upto_5' }
+            if (priceUnlimited && linePriceId === priceUnlimited) { esignProduct = 'esignature'; esignTier = 'unlimited' }
+          }
+          console.log('[stripe-webhook] esign detect via line_items', { linePriceId, product: esignProduct, esignTier })
+        } catch (e: any) {
+          console.log('[stripe-webhook] esign detect via line_items failed', String(e?.message || e))
+        }
+      }
+
+      if (esignProduct === 'esignature') {
+        if (!email) return NextResponse.json({ received: true, skipped: true, reason: 'missing email for esignature purchase' })
+
+        const tier = esignTier || String((session.metadata as any)?.tier || '').trim().toLowerCase()
+        const sessionId = String((session as any)?.id || '').trim()
+        const idempotencyKey = sessionId ? `esign:${tier}:${sessionId}` : `event:${String((event as any)?.id || '').trim()}`
+
+        // Ensure idempotency before updating wallet
+        const idempotency = await markWebhookEventProcessed(idempotencyKey, event.type)
+        if (idempotency.alreadyProcessed) {
+          console.log('[stripe-webhook] esign-skip-duplicate', { key: idempotencyKey })
+          return NextResponse.json({ received: true, skipped: true, reason: 'duplicate esign event' })
+        }
+        if (!idempotency.ok || (idempotency as any).durable === false) {
+          return NextResponse.json(
+            { error: 'Idempotency store unavailable for esign purchase', key: idempotencyKey, details: (idempotency as any).error || null },
+            { status: 500 }
+          )
+        }
+
+        try {
+          const wallet = await getEsignWalletByEmail(email)
+
+          if (tier === 'upto_5') {
+            const next = Number(wallet.esignCredits) + 5
+            await updateEsignWalletByEmail(email, { esign_credits: next })
+            console.log('[stripe-webhook] esign-bundle-credited', { email, added: 5, total: next, sessionId })
+            return NextResponse.json({ received: true, esign_credits: next })
+          }
+
+          if (tier === 'unlimited') {
+            const now = Date.now()
+            let baseMs = now
+            try {
+              const current = wallet.esignUnlimitedUntil ? new Date(String(wallet.esignUnlimitedUntil)) : null
+              if (current && !Number.isNaN(current.getTime()) && current.getTime() > now) {
+                baseMs = current.getTime()
+              }
+            } catch { baseMs = now }
+            const until = new Date(baseMs + 30 * 24 * 60 * 60 * 1000).toISOString()
+            await updateEsignWalletByEmail(email, { esign_unlimited_until: until })
+            console.log('[stripe-webhook] esign-unlimited-extended', { email, until, sessionId })
+            return NextResponse.json({ received: true, esign_unlimited_until: until })
+          }
+
+          return NextResponse.json({ received: true, skipped: true, reason: `unknown esignature tier: ${tier || 'missing'}` })
+        } catch (e: any) {
+          console.error('[stripe-webhook] esign processing failed:', e?.message)
+          return NextResponse.json({ error: e?.message || 'esign processing failed' }, { status: 500 })
+        }
       }
 
       // Top up balance (pay-per-use)

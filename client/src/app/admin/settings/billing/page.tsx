@@ -361,21 +361,31 @@ function BillingPage() {
         email = ''
       }
 
+      console.log('[billing] Buying unlimited esign for email:', email)
+
       const res = await fetch('/api/esign/unlimited/buy-with-balance', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email }),
       })
+      
+      console.log('[billing] Unlimited API response:', { ok: res.ok, status: res.status })
+      
       const json = await res.json().catch(() => null)
+      console.log('[billing] Unlimited API JSON:', json)
+      
       if (!res.ok) {
         const msg = String(json?.error || 'Unable to buy Unlimited with balance')
+        console.error('[billing] Unlimited purchase failed:', msg)
         throw new Error(msg)
       }
 
       const nextBalance = Number(json?.balance ?? balance)
       if (Number.isFinite(nextBalance)) setBalance(nextBalance)
+      console.log('[billing] Unlimited purchase successful, new balance:', nextBalance)
       window.alert('Unlimited E‑Signature activated for 30 days.')
     } catch (e: any) {
+      console.error('[billing] Unlimited purchase error:', e)
       window.alert(String(e?.message || 'Unable to buy Unlimited with balance'))
     } finally {
       setBuyingEsign('')
@@ -399,21 +409,31 @@ function BillingPage() {
         email = ''
       }
 
+      console.log('[billing] Buying esign bundle for email:', email)
+
       const res = await fetch('/api/esign/buy-with-balance', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ tier: 'upto_5', email }),
       })
+      
+      console.log('[billing] API response:', { ok: res.ok, status: res.status })
+      
       const json = await res.json().catch(() => null)
+      console.log('[billing] API JSON:', json)
+      
       if (!res.ok) {
         const msg = String(json?.error || 'Unable to buy bundle with balance')
+        console.error('[billing] Purchase failed:', msg)
         throw new Error(msg)
       }
 
       const nextBalance = Number(json?.balance ?? balance)
       if (Number.isFinite(nextBalance)) setBalance(nextBalance)
+      console.log('[billing] Purchase successful, new balance:', nextBalance)
       window.alert('Bundle purchased. 5 E‑Signature credits added.')
     } catch (e: any) {
+      console.error('[billing] Purchase error:', e)
       window.alert(String(e?.message || 'Unable to buy bundle with balance'))
     } finally {
       setBuyingEsign('')

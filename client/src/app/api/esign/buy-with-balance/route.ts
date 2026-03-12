@@ -44,8 +44,11 @@ const readUserWallet = async (email: string) => {
 }
 
 const updateUserWallet = async (email: string, patch: { balance?: number; esign_credits?: number }) => {
+  console.log('[updateUserWallet] Starting update for:', email, 'patch:', patch)
   const { supabaseUrl, supabaseKey } = getSupabaseServerConfig()
   const patchUrl = `${supabaseUrl}/rest/v1/users?email=eq.${encodeURIComponent(email)}`
+  console.log('[updateUserWallet] Patch URL:', patchUrl)
+  
   const res = await fetch(patchUrl, {
     method: 'PATCH',
     headers: {
@@ -56,24 +59,35 @@ const updateUserWallet = async (email: string, patch: { balance?: number; esign_
     },
     body: JSON.stringify(patch),
   })
+  
   const text = await res.text().catch(() => '')
+  console.log('[updateUserWallet] Response:', { ok: res.ok, status: res.status, text })
+  
   if (!res.ok) throw new Error(text || `Failed to update user wallet (${res.status})`)
   if (String(text || '').trim() === '[]') throw new Error(`No users row matched email=${email}`)
+  
+  console.log('[updateUserWallet] Update successful')
 }
 
 export async function POST(request: Request) {
   try {
+    console.log('[esign-buy-bundle] Request received')
     const body = (await request.json().catch(() => ({}))) as any
     const email = normalizeEmail(body?.email)
     const tier = String(body?.tier || '').trim().toLowerCase() as Tier
 
+    console.log('[esign-buy-bundle] Parsed request:', { email, tier })
+
     if (!email) return NextResponse.json({ error: 'Missing email' }, { status: 400 })
     if (tier !== 'upto_5') return NextResponse.json({ error: 'Invalid tier' }, { status: 400 })
 
+    console.log('[esign-buy-bundle] Reading user wallet...')
     const wallet = await readUserWallet(email)
+    console.log('[esign-buy-bundle] Current wallet:', { balance: wallet.balance, credits: wallet.esignCredits })
 
     const cost = 14.99
     if (wallet.balance < cost) {
+      console.log('[esign-buy-bundle] Insufficient balance:', { current: wallet.balance, required: cost })
       return NextResponse.json(
         { error: 'Insufficient Load Balance to buy bundle ($14.99 required).', balance: wallet.balance, required: cost },
         { status: 402 }
@@ -83,10 +97,13 @@ export async function POST(request: Request) {
     const nextBalance = Number(wallet.balance) - cost
     const nextCredits = Number(wallet.esignCredits) + 5
 
+    console.log('[esign-buy-bundle] Updating wallet:', { nextBalance, nextCredits })
     await updateUserWallet(email, { balance: nextBalance, esign_credits: nextCredits })
+    console.log('[esign-buy-bundle] Wallet updated successfully')
 
     return NextResponse.json({ ok: true, email, balance: nextBalance, esign_credits: nextCredits }, { status: 200 })
   } catch (e: any) {
+    console.error('[esign-buy-bundle] Error:', e?.message, e?.stack)
     return NextResponse.json({ error: e?.message || 'Server error' }, { status: 500 })
   }
 }
