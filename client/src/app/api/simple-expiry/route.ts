@@ -52,26 +52,44 @@ export async function POST(request: Request) {
     console.log('[simple-expiry] Owner role:', currentRole)
 
     // If owner has a paid role (not private), force expiry since subscription was canceled
+    // BUT preserve Premier roles - they should never be downgraded
     const isPaidRole = currentRole && currentRole !== 'private' && currentRole !== 'starter'
     
     if (isPaidRole) {
       console.log('[simple-expiry] Paid role detected, applying expiry...')
       
-      // Set all users to private + disable
-      const updateAllRes = await fetch(
-        `${supabaseUrl}/rest/v1/users?user_id=eq.${encodeURIComponent(userId)}`,
-        {
-          method: 'PATCH',
-          headers: {
-            'Content-Type': 'application/json',
-            apikey: supabaseKey,
-            Authorization: `Bearer ${supabaseKey}`,
-          },
-          body: JSON.stringify({ role: 'private', status: 'disable' }),
-        }
-      )
-      
-      console.log('[simple-expiry] Update all users result:', updateAllRes.ok)
+      // If owner is Premier, preserve the role and just disable status
+      if (currentRole === 'premier') {
+        console.log('[simple-expiry] Owner is Premier - preserving role, only disabling status')
+        const updatePremierRes = await fetch(
+          `${supabaseUrl}/rest/v1/users?user_id=eq.${encodeURIComponent(userId)}`,
+          {
+            method: 'PATCH',
+            headers: {
+              'Content-Type': 'application/json',
+              apikey: supabaseKey,
+              Authorization: `Bearer ${supabaseKey}`,
+            },
+            body: JSON.stringify({ status: 'disable' }), // Only update status, preserve Premier role
+          }
+        )
+        console.log('[simple-expiry] Premier users disable result:', updatePremierRes.ok)
+      } else {
+        // For non-Premier paid roles, downgrade to private
+        const updateAllRes = await fetch(
+          `${supabaseUrl}/rest/v1/users?user_id=eq.${encodeURIComponent(userId)}`,
+          {
+            method: 'PATCH',
+            headers: {
+              'Content-Type': 'application/json',
+              apikey: supabaseKey,
+              Authorization: `Bearer ${supabaseKey}`,
+            },
+            body: JSON.stringify({ role: 'private', status: 'disable' }),
+          }
+        )
+        console.log('[simple-expiry] Update all users result:', updateAllRes.ok)
+      }
 
       // Re-enable owner
       const ownerRes = await fetch(

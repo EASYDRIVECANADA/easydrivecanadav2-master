@@ -18,7 +18,7 @@ export async function POST(request: Request) {
     if (!email) return NextResponse.json({ error: 'Missing email' }, { status: 400 })
 
     const { supabaseUrl, supabaseKey } = getSupabaseServerConfig()
-    const q = `${supabaseUrl}/rest/v1/users?select=email,balance,esign_credits,esign_unlimited_until&email=eq.${encodeURIComponent(email)}&limit=1`
+    const q = `${supabaseUrl}/rest/v1/users?select=email,balance,esign_credits,esign_unlimited_until,role&email=eq.${encodeURIComponent(email)}&limit=1`
 
     const res = await fetch(q, {
       method: 'GET',
@@ -43,6 +43,10 @@ export async function POST(request: Request) {
     const balance = Number(row?.balance ?? 0)
     const credits = Number((row as any)?.esign_credits ?? 0)
     const unlimitedUntil = (row as any)?.esign_unlimited_until ?? null
+    const userRole = String(row?.role || '').trim().toLowerCase()
+
+    // Premier users get unlimited e-sign access
+    const isPremier = userRole === 'premier'
 
     return NextResponse.json(
       {
@@ -50,6 +54,8 @@ export async function POST(request: Request) {
         balance: Number.isFinite(balance) ? balance : 0,
         esign_credits: Number.isFinite(credits) ? credits : 0,
         esign_unlimited_until: unlimitedUntil,
+        role: userRole,
+        premier_unlimited: isPremier,
       },
       { status: 200 }
     )

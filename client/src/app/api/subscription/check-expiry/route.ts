@@ -79,26 +79,75 @@ const applyExpiry = async (
 ) => {
   console.log('[applyExpiry] Starting expiry process for userId:', userId, 'ownerId:', ownerId)
   
-  // 1. Set ALL users' role to 'private' and status to 'disable'
-  console.log('[applyExpiry] Setting all users to private + disable')
-  const allUsersRes = await fetch(
-    `${supabaseUrl}/rest/v1/users?user_id=eq.${encodeURIComponent(userId)}`,
+  // First, get all users to check for Premier roles
+  const getUsersRes = await fetch(
+    `${supabaseUrl}/rest/v1/users?select=id,role&user_id=eq.${encodeURIComponent(userId)}`,
     {
-      method: 'PATCH',
+      method: 'GET',
       headers: {
-        'Content-Type': 'application/json',
         apikey: supabaseKey,
         Authorization: `Bearer ${supabaseKey}`,
-        Prefer: 'return=minimal',
       },
-      body: JSON.stringify({ role: 'private', status: 'disable' }),
     }
   )
-  console.log('[applyExpiry] All users update result:', { ok: allUsersRes.ok, status: allUsersRes.status })
   
-  if (!allUsersRes.ok) {
-    const errorText = await allUsersRes.text().catch(() => '')
-    console.error('[applyExpiry] Failed to update all users:', errorText)
+  let allUsers: any[] = []
+  if (getUsersRes.ok) {
+    try {
+      allUsers = await getUsersRes.json()
+    } catch {
+      allUsers = []
+    }
+  }
+  
+  // 1. Set users' role to 'private' and status to 'disable', BUT preserve Premier roles
+  console.log('[applyExpiry] Setting users to private + disable (preserving Premier roles)')
+  
+  // Update non-Premier users to private + disable
+  const nonPremierUsers = allUsers.filter(u => String(u.role || '').trim().toLowerCase() !== 'premier')
+  if (nonPremierUsers.length > 0) {
+    const nonPremierIds = nonPremierUsers.map(u => u.id)
+    const allUsersRes = await fetch(
+      `${supabaseUrl}/rest/v1/users?user_id=eq.${encodeURIComponent(userId)}&id=in.(${nonPremierIds.map(id => `"${id}"`).join(',')})`,
+      {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          apikey: supabaseKey,
+          Authorization: `Bearer ${supabaseKey}`,
+          Prefer: 'return=minimal',
+        },
+        body: JSON.stringify({ role: 'private', status: 'disable' }),
+      }
+    )
+    console.log('[applyExpiry] Non-Premier users update result:', { ok: allUsersRes.ok, status: allUsersRes.status })
+    
+    if (!allUsersRes.ok) {
+      const errorText = await allUsersRes.text().catch(() => '')
+      console.error('[applyExpiry] Failed to update non-Premier users:', errorText)
+    }
+  }
+  
+  // Disable Premier users but keep their Premier role
+  const premierUsers = allUsers.filter(u => String(u.role || '').trim().toLowerCase() === 'premier')
+  if (premierUsers.length > 0) {
+    console.log('[applyExpiry] Disabling Premier users while preserving their role')
+    for (const premierUser of premierUsers) {
+      const premierRes = await fetch(
+        `${supabaseUrl}/rest/v1/users?id=eq.${encodeURIComponent(premierUser.id)}`,
+        {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+            apikey: supabaseKey,
+            Authorization: `Bearer ${supabaseKey}`,
+            Prefer: 'return=minimal',
+          },
+          body: JSON.stringify({ status: 'disable' }), // Only update status, preserve Premier role
+        }
+      )
+      console.log('[applyExpiry] Premier user disable result:', { ok: premierRes.ok, status: premierRes.status })
+    }
   }
 
   // 2. Owner must always remain 'enable'
@@ -211,6 +260,12 @@ export async function POST(request: Request) {
     const ownerEmail = String(ownerRow.email || '').trim().toLowerCase()
     const currentRole = String(ownerRow.role || '').trim().toLowerCase()
     console.log('[check-expiry] Owner details:', { ownerEmail, currentRole })
+
+    // Premier users have unlimited access - never expire
+    if (currentRole === 'premier') {
+      console.log('[check-expiry] Premier user - unlimited access, no expiry')
+      return NextResponse.json({ ok: true, expired: false, callerStatus: 'enable', premier: true })
+    }
 
     // If already private/no role, just return current caller status
     const isPrivate = !currentRole || currentRole === 'private' || currentRole === 'private seller' || currentRole === 'starter'

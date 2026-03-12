@@ -88,6 +88,11 @@ function SalesNewDealPageContent() {
       const json = await res.json().catch(() => null)
       if (!res.ok) throw new Error(String(json?.error || 'Unable to check E‑Signature credits'))
 
+      // Premier users get unlimited access - no modals or charges
+      if (json?.premier_unlimited === true) {
+        return true
+      }
+
       const credits = Number(json?.esign_credits ?? 0)
       const balance = Number(json?.balance ?? 0)
       const unlimitedUntilRaw = (json as any)?.esign_unlimited_until ?? null

@@ -55,7 +55,7 @@ export async function POST(request: Request) {
 
     const currentCount = count ?? 0
     const limit =
-      role === 'admin' ? Infinity : isPrivateSellerRole(role) ? 1 : (ROLE_LIMITS[role] ?? 2)
+      role === 'admin' || role === 'premier' ? Infinity : isPrivateSellerRole(role) ? 1 : (ROLE_LIMITS[role] ?? 2)
     const canAdd = currentCount < limit
 
     return NextResponse.json({

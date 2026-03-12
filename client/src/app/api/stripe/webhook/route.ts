@@ -349,27 +349,53 @@ const handleSubscriptionExpiry = async (email: string) => {
 
     // Fetch all users for this user_id
     const allRes = await fetch(
-      `${supabaseUrl}/rest/v1/users?select=id,title&user_id=eq.${encodeURIComponent(userId)}`,
+      `${supabaseUrl}/rest/v1/users?select=id,title,role&user_id=eq.${encodeURIComponent(userId)}`,
       { method: 'GET', headers: { apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` } }
     )
     const allText = await allRes.text().catch(() => '')
     let allUsers: any[] = []
     try { allUsers = JSON.parse(allText || '[]') } catch { allUsers = [] }
 
-    // Set ALL users' role to 'private' + status to 'disable'
-    await fetch(
-      `${supabaseUrl}/rest/v1/users?user_id=eq.${encodeURIComponent(userId)}`,
-      {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          apikey: supabaseKey,
-          Authorization: `Bearer ${supabaseKey}`,
-          Prefer: 'return=minimal',
-        },
-        body: JSON.stringify({ role: 'private', status: 'disable' }),
+    // Set users' role to 'private' + status to 'disable', BUT preserve Premier roles
+    const premierUsers = allUsers.filter(u => String(u.role || '').trim().toLowerCase() === 'premier')
+    const nonPremierUsers = allUsers.filter(u => String(u.role || '').trim().toLowerCase() !== 'premier')
+    
+    // Update non-Premier users to private + disable
+    if (nonPremierUsers.length > 0) {
+      const nonPremierIds = nonPremierUsers.map(u => u.id)
+      await fetch(
+        `${supabaseUrl}/rest/v1/users?user_id=eq.${encodeURIComponent(userId)}&id=in.(${nonPremierIds.map(id => `"${id}"`).join(',')})`,
+        {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+            apikey: supabaseKey,
+            Authorization: `Bearer ${supabaseKey}`,
+            Prefer: 'return=minimal',
+          },
+          body: JSON.stringify({ role: 'private', status: 'disable' }),
+        }
+      )
+    }
+    
+    // Disable Premier users but preserve their Premier role
+    if (premierUsers.length > 0) {
+      for (const premierUser of premierUsers) {
+        await fetch(
+          `${supabaseUrl}/rest/v1/users?id=eq.${encodeURIComponent(premierUser.id)}`,
+          {
+            method: 'PATCH',
+            headers: {
+              'Content-Type': 'application/json',
+              apikey: supabaseKey,
+              Authorization: `Bearer ${supabaseKey}`,
+              Prefer: 'return=minimal',
+            },
+            body: JSON.stringify({ status: 'disable' }), // Only update status, preserve Premier role
+          }
+        )
       }
-    )
+    }
 
     // Owner must always remain 'enable'
     const ownerDbRow = allUsers.find((u: any) => String(u.title || '').trim().toLowerCase() === 'owner')

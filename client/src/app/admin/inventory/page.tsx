@@ -11,7 +11,8 @@ const VEHICLE_LIMITS: Record<string, number> = {
   'private seller': 1,
   'small dealership': 49,
   'medium dealership': 99,
-  'large dealership': 299,
+  'large dealership': 199,
+  'premier': Infinity,
 }
 
 const ROLE_DISPLAY: Record<string, string> = {
@@ -20,6 +21,7 @@ const ROLE_DISPLAY: Record<string, string> = {
   'small dealership': 'Small Dealer',
   'medium dealership': 'Medium Dealer',
   'large dealership': 'Large Dealer',
+  'premier': 'Premier',
 }
 
 interface Vehicle {
@@ -132,7 +134,7 @@ export default function AdminInventoryPage() {
 
   const vehicleLimit = useMemo(() => {
     const r = String(accountRole || '').trim().toLowerCase()
-    if (r === 'admin') return Infinity
+    if (r === 'admin' || r === 'premier') return Infinity
     return VEHICLE_LIMITS[r] ?? 1
   }, [accountRole])
 

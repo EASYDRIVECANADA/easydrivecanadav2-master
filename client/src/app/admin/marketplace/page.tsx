@@ -50,6 +50,15 @@ export default function MarketplacePage() {
   const [maxYear, setMaxYear] = useState('')
   const [sort, setSort] = useState<'newest' | 'price_asc' | 'price_desc'>('newest')
 
+  // Quick Filter states
+  const [quickFilters, setQuickFilters] = useState({
+    sellerTypes: [] as string[],
+    newListings: false,
+    dealOfWeek: false,
+    featured: false,
+    priceUnder: null as number | null,
+  })
+
   const toImageSrc = (value: string) => {
     const v = String(value || '').trim()
     if (!v) return ''
@@ -209,6 +218,13 @@ export default function MarketplacePage() {
   }, [])
 
   const filtered = useMemo(() => {
+    const hasQuickFilters = 
+      quickFilters.sellerTypes.length > 0 ||
+      quickFilters.newListings ||
+      quickFilters.dealOfWeek ||
+      quickFilters.featured ||
+      quickFilters.priceUnder !== null
+
     const noFilters =
       !make &&
       !collection &&
@@ -219,28 +235,32 @@ export default function MarketplacePage() {
       !minPrice.trim() &&
       !maxPrice.trim() &&
       !minYear.trim() &&
-      !maxYear.trim()
+      !maxYear.trim() &&
+      !hasQuickFilters
 
     let rows = [...vehicles]
+    
     if (noFilters) {
       if (sort === 'newest') rows.sort((a, b) => b.year - a.year)
       if (sort === 'price_asc') rows.sort((a, b) => a.price - b.price)
       if (sort === 'price_desc') rows.sort((a, b) => b.price - a.price)
       return rows
-    } else {
-      const m = make.trim()
-      const c = collection.trim()
-      const cat = category.trim().toLowerCase()
-      const bs = bodyStyle.trim()
-      const ec = exteriorColor.trim()
-      const ft = feature.trim()
+    }
 
-      if (m) rows = rows.filter((v) => (v.make || '').trim() === m)
-      if (c) rows = rows.filter((v) => ((v.collection || '').trim()) === c)
-      if (cat) rows = rows.filter((v) => String((v as any)?.categories || '').toLowerCase().includes(cat))
-      if (bs) rows = rows.filter((v) => ((v.bodyStyle || '').trim()) === bs)
-      if (ec) rows = rows.filter((v) => ((v.exteriorColor || '').trim()) === ec)
-      if (ft) rows = rows.filter((v) => (v.features || []).includes(ft))
+    // Apply sidebar filters
+    const m = make.trim()
+    const c = collection.trim()
+    const cat = category.trim().toLowerCase()
+    const bs = bodyStyle.trim()
+    const ec = exteriorColor.trim()
+    const ft = feature.trim()
+
+    if (m) rows = rows.filter((v) => (v.make || '').trim() === m)
+    if (c) rows = rows.filter((v) => ((v.collection || '').trim()) === c)
+    if (cat) rows = rows.filter((v) => String((v as any)?.categories || '').toLowerCase().includes(cat))
+    if (bs) rows = rows.filter((v) => ((v.bodyStyle || '').trim()) === bs)
+    if (ec) rows = rows.filter((v) => ((v.exteriorColor || '').trim()) === ec)
+    if (ft) rows = rows.filter((v) => (v.features || []).includes(ft))
 
     const hasMinPrice = minPrice.trim() !== ''
     const hasMaxPrice = maxPrice.trim() !== ''
@@ -256,12 +276,50 @@ export default function MarketplacePage() {
     const yMax = hasMaxYear ? Number(maxYear) : null
     if (yMin !== null && Number.isFinite(yMin)) rows = rows.filter((v) => v.year >= yMin)
     if (yMax !== null && Number.isFinite(yMax)) rows = rows.filter((v) => v.year <= yMax)
+
+    // Apply quick filters
+    if (quickFilters.sellerTypes.length > 0) {
+      rows = rows.filter((v) => {
+        const sellerType = String((v as any)?.seller_type || (v as any)?.categories || '').toLowerCase()
+        return quickFilters.sellerTypes.some(type => 
+          sellerType.includes(type.toLowerCase()) ||
+          (type === 'private' && sellerType.includes('private')) ||
+          (type === 'dealer' && (sellerType.includes('dealer') || sellerType.includes('dealership'))) ||
+          (type === 'fleet' && sellerType.includes('fleet')) ||
+          (type === 'premier' && sellerType.includes('premier'))
+        )
+      })
     }
+
+    if (quickFilters.newListings) {
+      const sevenDaysAgo = new Date()
+      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
+      rows = rows.filter((v) => {
+        // Assuming vehicles have a created_at field - if not available, we'll use a fallback
+        const createdAt = (v as any)?.created_at || (v as any)?.createdAt
+        if (!createdAt) return false
+        const vehicleDate = new Date(createdAt)
+        return vehicleDate >= sevenDaysAgo
+      })
+    }
+
+    if (quickFilters.dealOfWeek) {
+      rows = rows.filter((v) => (v as any)?.deal_of_week === true || (v as any)?.dealOfWeek === true)
+    }
+
+    if (quickFilters.featured) {
+      rows = rows.filter((v) => (v as any)?.featured === true)
+    }
+
+    if (quickFilters.priceUnder !== null) {
+      rows = rows.filter((v) => v.price <= quickFilters.priceUnder!)
+    }
+
     if (sort === 'newest') rows.sort((a, b) => b.year - a.year)
     if (sort === 'price_asc') rows.sort((a, b) => a.price - b.price)
     if (sort === 'price_desc') rows.sort((a, b) => b.price - a.price)
     return rows
-  }, [vehicles, make, collection, category, bodyStyle, exteriorColor, feature, minPrice, maxPrice, minYear, maxYear, sort])
+  }, [vehicles, make, collection, category, bodyStyle, exteriorColor, feature, minPrice, maxPrice, minYear, maxYear, sort, quickFilters])
 
   const unique = (arr: (string | undefined)[]) => Array.from(new Set(arr.filter(Boolean))) as string[]
   const makes = unique(vehicles.map((v) => v.make))
@@ -269,6 +327,44 @@ export default function MarketplacePage() {
   const bodyStyles = unique(vehicles.map((v) => v.bodyStyle))
   const colors = unique(vehicles.map((v) => v.exteriorColor))
   const features = unique(vehicles.flatMap((v) => v.features || []))
+
+  // Quick filter helper functions
+  const toggleSellerType = (type: string) => {
+    setQuickFilters(prev => ({
+      ...prev,
+      sellerTypes: prev.sellerTypes.includes(type)
+        ? prev.sellerTypes.filter(t => t !== type)
+        : [...prev.sellerTypes, type]
+    }))
+  }
+
+  const toggleQuickFilter = (key: keyof typeof quickFilters, value?: any) => {
+    setQuickFilters(prev => ({
+      ...prev,
+      [key]: key === 'priceUnder' ? (prev.priceUnder === value ? null : value) : !prev[key]
+    }))
+  }
+
+  const clearAllFilters = () => {
+    setMake('')
+    setCollection('')
+    setCategory('')
+    setBodyStyle('')
+    setExteriorColor('')
+    setFeature('')
+    setMinPrice('')
+    setMaxPrice('')
+    setMinYear('')
+    setMaxYear('')
+    setSort('newest')
+    setQuickFilters({
+      sellerTypes: [],
+      newListings: false,
+      dealOfWeek: false,
+      featured: false,
+      priceUnder: null,
+    })
+  }
 
   return (
     <div className="px-6 lg:px-8 py-6">
@@ -280,19 +376,7 @@ export default function MarketplacePage() {
             <button
               type="button"
               className="text-xs text-[#1EA7FF] hover:text-[#0B1F3A] font-medium transition-colors"
-              onClick={() => {
-                setMake('')
-                setCollection('')
-                setCategory('')
-                setBodyStyle('')
-                setExteriorColor('')
-                setFeature('')
-                setMinPrice('')
-                setMaxPrice('')
-                setMinYear('')
-                setMaxYear('')
-                setSort('newest')
-              }}
+              onClick={clearAllFilters}
             >
               Clear
             </button>
@@ -380,6 +464,114 @@ export default function MarketplacePage() {
                 <option value="price_asc">Price: Low to High</option>
                 <option value="price_desc">Price: High to Low</option>
               </select>
+            </div>
+          </div>
+
+          {/* Quick Filters */}
+          <div className="bg-white rounded-2xl border border-slate-200/60 p-5 mb-6" style={{ boxShadow: '0 1px 3px rgba(0,0,0,.04)' }}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-bold text-[#0B1F3A] uppercase tracking-wider">Quick Filters</h3>
+              <button
+                type="button"
+                onClick={clearAllFilters}
+                className="px-3 py-1.5 text-xs font-medium text-[#1EA7FF] hover:text-white hover:bg-[#1EA7FF] border border-[#1EA7FF] rounded-full transition-all duration-200"
+              >
+                Clear Filters
+              </button>
+            </div>
+            
+            <div className="space-y-4">
+              {/* Seller Type Filters */}
+              <div>
+                <div className="text-xs font-semibold text-slate-600 mb-2">Seller Type</div>
+                <div className="flex flex-wrap gap-2 overflow-x-auto pb-2">
+                  {[
+                    { key: 'private', label: 'Private Sellers' },
+                    { key: 'dealer', label: 'Dealers' },
+                    { key: 'fleet', label: 'Fleet' },
+                    { key: 'premier', label: 'Premier' }
+                  ].map(({ key, label }) => (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => toggleSellerType(key)}
+                      className={`px-4 py-2 text-sm font-medium rounded-full border transition-all duration-200 whitespace-nowrap ${
+                        quickFilters.sellerTypes.includes(key)
+                          ? 'bg-[#1EA7FF] text-white border-[#1EA7FF] shadow-lg shadow-[#1EA7FF]/30'
+                          : 'bg-white text-slate-700 border-slate-200 hover:border-[#1EA7FF] hover:text-[#1EA7FF]'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Time Based & Promotional Filters */}
+              <div>
+                <div className="text-xs font-semibold text-slate-600 mb-2">Special Listings</div>
+                <div className="flex flex-wrap gap-2 overflow-x-auto pb-2">
+                  <button
+                    type="button"
+                    onClick={() => toggleQuickFilter('newListings')}
+                    className={`px-4 py-2 text-sm font-medium rounded-full border transition-all duration-200 whitespace-nowrap ${
+                      quickFilters.newListings
+                        ? 'bg-[#1EA7FF] text-white border-[#1EA7FF] shadow-lg shadow-[#1EA7FF]/30'
+                        : 'bg-white text-slate-700 border-slate-200 hover:border-[#1EA7FF] hover:text-[#1EA7FF]'
+                    }`}
+                  >
+                    New Listings
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => toggleQuickFilter('dealOfWeek')}
+                    className={`px-4 py-2 text-sm font-medium rounded-full border transition-all duration-200 whitespace-nowrap ${
+                      quickFilters.dealOfWeek
+                        ? 'bg-[#1EA7FF] text-white border-[#1EA7FF] shadow-lg shadow-[#1EA7FF]/30'
+                        : 'bg-white text-slate-700 border-slate-200 hover:border-[#1EA7FF] hover:text-[#1EA7FF]'
+                    }`}
+                  >
+                    Deals of the Week
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => toggleQuickFilter('featured')}
+                    className={`px-4 py-2 text-sm font-medium rounded-full border transition-all duration-200 whitespace-nowrap ${
+                      quickFilters.featured
+                        ? 'bg-[#1EA7FF] text-white border-[#1EA7FF] shadow-lg shadow-[#1EA7FF]/30'
+                        : 'bg-white text-slate-700 border-slate-200 hover:border-[#1EA7FF] hover:text-[#1EA7FF]'
+                    }`}
+                  >
+                    Featured
+                  </button>
+                </div>
+              </div>
+
+              {/* Price Quick Filters */}
+              <div>
+                <div className="text-xs font-semibold text-slate-600 mb-2">Cars Under</div>
+                <div className="flex flex-wrap gap-2 overflow-x-auto pb-2">
+                  {[
+                    { value: 25000, label: '$25K' },
+                    { value: 20000, label: '$20K' },
+                    { value: 15000, label: '$15K' },
+                    { value: 10000, label: '$10K' }
+                  ].map(({ value, label }) => (
+                    <button
+                      key={value}
+                      type="button"
+                      onClick={() => toggleQuickFilter('priceUnder', value)}
+                      className={`px-4 py-2 text-sm font-medium rounded-full border transition-all duration-200 whitespace-nowrap ${
+                        quickFilters.priceUnder === value
+                          ? 'bg-[#1EA7FF] text-white border-[#1EA7FF] shadow-lg shadow-[#1EA7FF]/30'
+                          : 'bg-white text-slate-700 border-slate-200 hover:border-[#1EA7FF] hover:text-[#1EA7FF]'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
           </div>
 

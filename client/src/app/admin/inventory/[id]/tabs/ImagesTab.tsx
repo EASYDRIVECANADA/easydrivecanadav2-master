@@ -263,6 +263,32 @@ export default function ImagesTab({ vehicleId, images, onImagesUpdate }: ImagesT
       return
     }
 
+    // Premier users get free image generation - skip all payment checks
+    const isPremier = accountRole === 'premier'
+    
+    if (isPremier) {
+      // Direct generation for Premier users - no payment required
+      const runGenerate = async () => {
+        setGenerating(true)
+        try {
+          const res = await fetch('/api/generate-image', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ vehicleId, email: sessionEmail }),
+          })
+          const json = await res.json().catch(() => null)
+          if (!res.ok) throw new Error(String(json?.error || 'Failed to generate image'))
+          await refreshImagesFromBucket()
+        } catch (e) {
+          setErrorMsg(String((e as any)?.message || e || 'Failed to generate image'))
+        } finally {
+          setGenerating(false)
+        }
+      }
+      await runGenerate()
+      return
+    }
+
     const skipConfirm = (() => {
       try {
         if (typeof window === 'undefined') return false
@@ -521,14 +547,16 @@ export default function ImagesTab({ vehicleId, images, onImagesUpdate }: ImagesT
             >
               Select Images
             </label>
-            <button
-              type="button"
-              onClick={handleGenerateImage}
-              disabled={generating}
-              className="inline-block bg-[#118df0] text-white px-6 py-2 rounded-lg font-medium hover:bg-[#0d6ebd] transition-colors disabled:opacity-50"
-            >
-              {generating ? 'Generating...' : 'Generate Image'}
-            </button>
+            {accountRole === 'premier' && (
+              <button
+                type="button"
+                onClick={handleGenerateImage}
+                disabled={generating}
+                className="inline-block bg-[#118df0] text-white px-6 py-2 rounded-lg font-medium hover:bg-[#0d6ebd] transition-colors disabled:opacity-50"
+              >
+                {generating ? 'Generating...' : 'Generate Image'}
+              </button>
+            )}
           </div>
 
           {null}

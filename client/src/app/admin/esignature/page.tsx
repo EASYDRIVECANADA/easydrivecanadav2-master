@@ -94,6 +94,11 @@ export default function ESignaturePage() {
       const json = await res.json().catch(() => null)
       if (!res.ok) throw new Error(String(json?.error || 'Unable to check E‑Signature credits'))
 
+      // Premier users get unlimited access - no modals or charges
+      if (json?.premier_unlimited === true) {
+        return true
+      }
+
       // Handle NULL values from database
       const rawCredits = json?.esign_credits
       const rawBalance = json?.balance

@@ -45,6 +45,7 @@ const ROLE_DISPLAY: Record<string, string> = {
   'small dealership': 'Small Dealer',
   'medium dealership': 'Medium Dealer',
   'large dealership': 'Large Dealer',
+  'premier': 'Premier',
 }
 
 const getUpgradeOptions = (role: string): { label: string; plan: string }[] => {
@@ -566,7 +567,7 @@ export default function SettingsUsersPage() {
 
   const userLimit = useMemo(() => {
     const r = String(accountRole || '').trim().toLowerCase()
-    if (r === 'admin') return Infinity
+    if (r === 'admin' || r === 'premier') return Infinity
     if (!r || r === 'private seller' || r === 'private' || r === 'starter') return 1
     return ROLE_LIMITS[r] ?? 2
   }, [accountRole])

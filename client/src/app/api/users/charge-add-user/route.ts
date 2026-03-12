@@ -51,9 +51,9 @@ export async function POST(request: Request) {
       role = ''
     }
 
-    // Only Private Seller uses this per-use deduction model.
+    // Only Private Seller uses this per-use deduction model. Premier and other paid roles get unlimited access.
     if (!isPrivateSellerRole(role)) {
-      return NextResponse.json({ ok: true, charged: false, reason: 'not_private_seller' }, { status: 200 })
+      return NextResponse.json({ ok: true, charged: false, reason: 'unlimited_access' }, { status: 200 })
     }
 
     // Count current users for this dealership.

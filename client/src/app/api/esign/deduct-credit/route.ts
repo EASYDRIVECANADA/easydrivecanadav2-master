@@ -22,9 +22,9 @@ export async function POST(request: Request) {
 
     const normalizedEmail = String(email).trim().toLowerCase()
 
-    // Fetch current user data
+    // Fetch current user data including role
     const userRes = await fetch(
-      `${baseUrl}/rest/v1/users?email=eq.${encodeURIComponent(normalizedEmail)}&select=esign_credits,balance,esign_unlimited_until&limit=1`,
+      `${baseUrl}/rest/v1/users?email=eq.${encodeURIComponent(normalizedEmail)}&select=esign_credits,balance,esign_unlimited_until,role&limit=1`,
       {
         method: 'GET',
         headers: {
@@ -51,6 +51,16 @@ export async function POST(request: Request) {
     const currentCredits = Number(user.esign_credits ?? 0)
     const currentBalance = Number(user.balance ?? 0)
     const unlimitedUntilRaw = user.esign_unlimited_until
+    const userRole = String(user.role || '').trim().toLowerCase()
+
+    // Premier users get unlimited e-sign access
+    if (userRole === 'premier') {
+      return NextResponse.json({
+        success: true,
+        message: 'Premier account - unlimited e-sign access',
+        unlimited: true,
+      })
+    }
 
     // Check if user has active unlimited subscription
     try {
