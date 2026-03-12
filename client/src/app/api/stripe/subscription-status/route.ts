@@ -29,6 +29,9 @@ export async function POST(req: Request) {
 
     const stripe = new Stripe(secretKey)
 
+    const supabaseUrl = String(process.env.NEXT_PUBLIC_SUPABASE_URL || '').replace(/\/+$/, '')
+    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+
     const customers = await stripe.customers.list({ email: normalizedEmail, limit: 1 })
     const customer = customers.data?.[0]
     if (!customer?.id) {
@@ -106,6 +109,36 @@ export async function POST(req: Request) {
     }
 
     const anyActive = plans.starter.active || plans.small.active || plans.medium.active || plans.large.active
+
+    // Persist subscription_end on the owner's users row (by email) for visibility in DB
+    try {
+      if (supabaseUrl && supabaseKey && normalizedEmail) {
+        // Pick the furthest validUntilIso across active plans
+        const isoCandidates = [plans.small.validUntilIso, plans.medium.validUntilIso, plans.large.validUntilIso].filter(
+          (v): v is string => typeof v === 'string' && v.length > 0
+        )
+        let maxIso: string | null = null
+        for (const iso of isoCandidates) {
+          if (!maxIso || iso > maxIso) maxIso = iso
+        }
+
+        if (maxIso) {
+          await fetch(`${supabaseUrl}/rest/v1/users?email=eq.${encodeURIComponent(normalizedEmail)}`, {
+            method: 'PATCH',
+            headers: {
+              'Content-Type': 'application/json',
+              apikey: supabaseKey,
+              Authorization: `Bearer ${supabaseKey}`,
+              Prefer: 'return=minimal',
+            },
+            body: JSON.stringify({ subscription_end: maxIso }),
+          }).catch(() => null)
+        }
+      }
+    } catch {
+      // non-fatal: do not block response if persisting fails
+    }
+
     return NextResponse.json({ plans, anyActive })
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || 'Failed to read subscription status' }, { status: 500 })

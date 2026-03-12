@@ -4,10 +4,18 @@ import Stripe from 'stripe'
 export const runtime = 'nodejs'
 
 const getSupabaseServerConfig = () => {
-  const supabaseUrl = String(process.env.NEXT_PUBLIC_SUPABASE_URL || '').replace(/\/+$/, '')
-  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-  if (!supabaseUrl || !supabaseKey) throw new Error('Supabase server not configured')
-  return { supabaseUrl, supabaseKey }
+  try {
+    const supabaseUrl = String(process.env.NEXT_PUBLIC_SUPABASE_URL || '').replace(/\/+$/, '')
+    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+    if (!supabaseUrl || !supabaseKey) {
+      console.error('[check-expiry] Missing Supabase config:', { hasUrl: !!supabaseUrl, hasKey: !!supabaseKey })
+      throw new Error('Supabase server not configured')
+    }
+    return { supabaseUrl, supabaseKey }
+  } catch (e: any) {
+    console.error('[check-expiry] Supabase config error:', e?.message)
+    throw e
+  }
 }
 
 /**
@@ -131,29 +139,60 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: false, error: 'Missing user_id' }, { status: 400 })
     }
 
-    const { supabaseUrl, supabaseKey } = getSupabaseServerConfig()
-    console.log('[check-expiry] Supabase config loaded')
-
-    // Fetch all users for this user_id
-    const usersRes = await fetch(
-      `${supabaseUrl}/rest/v1/users?select=id,email,title,role,status,subscription_end&user_id=eq.${encodeURIComponent(userId)}`,
-      {
-        method: 'GET',
-        headers: { apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` },
-      }
-    )
-
-    const usersText = await usersRes.text().catch(() => '')
-    console.log('[check-expiry] Users fetch response:', { ok: usersRes.ok, status: usersRes.status })
-    
-    if (!usersRes.ok) {
-      console.log('[check-expiry] Failed to fetch users:', usersText)
-      return NextResponse.json({ ok: false, error: 'Failed to fetch users' }, { status: 500 })
+    let supabaseUrl: string, supabaseKey: string
+    try {
+      const config = getSupabaseServerConfig()
+      supabaseUrl = config.supabaseUrl
+      supabaseKey = config.supabaseKey
+      console.log('[check-expiry] Supabase config loaded')
+    } catch (configError: any) {
+      console.error('[check-expiry] Supabase config failed:', configError?.message)
+      return NextResponse.json({ 
+        ok: false, 
+        error: 'Database configuration error',
+        details: configError?.message 
+      }, { status: 500 })
     }
 
+    // Fetch all users for this user_id
     let users: any[] = []
-    try { users = JSON.parse(usersText || '[]') } catch { users = [] }
-    console.log('[check-expiry] Users found:', users.length, users.map(u => ({ email: u.email, title: u.title, role: u.role, status: u.status })))
+    try {
+      const usersRes = await fetch(
+        `${supabaseUrl}/rest/v1/users?select=id,email,title,role,status,subscription_end&user_id=eq.${encodeURIComponent(userId)}`,
+        {
+          method: 'GET',
+          headers: { apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` },
+        }
+      )
+
+      const usersText = await usersRes.text().catch(() => '')
+      console.log('[check-expiry] Users fetch response:', { ok: usersRes.ok, status: usersRes.status })
+      
+      if (!usersRes.ok) {
+        console.log('[check-expiry] Failed to fetch users:', usersText)
+        return NextResponse.json({ 
+          ok: false, 
+          error: 'Failed to fetch users',
+          details: usersText 
+        }, { status: 500 })
+      }
+
+      try { 
+        users = JSON.parse(usersText || '[]') 
+      } catch (parseError: any) { 
+        console.error('[check-expiry] Failed to parse users JSON:', parseError?.message)
+        users = [] 
+      }
+      
+      console.log('[check-expiry] Users found:', users.length, users.map(u => ({ email: u.email, title: u.title, role: u.role, status: u.status })))
+    } catch (fetchError: any) {
+      console.error('[check-expiry] Users fetch error:', fetchError?.message)
+      return NextResponse.json({ 
+        ok: false, 
+        error: 'Database fetch error',
+        details: fetchError?.message 
+      }, { status: 500 })
+    }
 
     if (users.length === 0) {
       console.log('[check-expiry] No users found for user_id:', userId)
@@ -245,9 +284,18 @@ export async function POST(request: Request) {
       ownerEmail,
     })
 
-    console.log('[check-expiry] Applying expiry to all users...')
-    await applyExpiry(supabaseUrl, supabaseKey, userId, ownerRow.id)
-    console.log('[check-expiry] Expiry applied successfully')
+    try {
+      console.log('[check-expiry] Applying expiry to all users...')
+      await applyExpiry(supabaseUrl, supabaseKey, userId, ownerRow.id)
+      console.log('[check-expiry] Expiry applied successfully')
+    } catch (expiryError: any) {
+      console.error('[check-expiry] Failed to apply expiry:', expiryError?.message)
+      return NextResponse.json({ 
+        ok: false, 
+        error: 'Failed to apply subscription expiry',
+        details: expiryError?.message 
+      }, { status: 500 })
+    }
 
     // Determine caller's new status
     const isCallerOwner = callerEmail && ownerEmail === callerEmail

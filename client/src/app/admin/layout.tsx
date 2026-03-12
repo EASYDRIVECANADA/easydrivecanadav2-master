@@ -129,8 +129,8 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
 
     const checkExpiry = async () => {
       try {
-        console.log('[admin-layout] Calling check-expiry API...')
-        const res = await fetch('/api/subscription/check-expiry', {
+        console.log('[admin-layout] Calling simple-expiry API...')
+        const res = await fetch('/api/simple-expiry', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ user_id: userId, email }),
