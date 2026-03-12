@@ -302,4 +302,10 @@ body {
     50% { transform: translateY(-5px); } 
   }
   .animate-bounce-slow { animation: bounceSlow 2s ease-in-out infinite; }
+
+  /* Scrollytelling — floating card */
+  @keyframes floatCard {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-6px); }
+  }
 }

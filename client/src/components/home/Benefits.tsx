@@ -1,3 +1,8 @@
+'use client'
+
+import { motion } from 'framer-motion'
+import { useInView, fadeUp, fadeIn, scaleIn, staggerContainer, staggerItem } from '@/lib/animations'
+
 export default function Benefits() {
   const benefits = [
     {
@@ -45,12 +50,20 @@ export default function Benefits() {
     { icon: '✕', label: 'Below market pricing', amount: 'Save $1,000+' },
   ]
 
+  const { ref: sectionRef, inView } = useInView(0.15)
+
   return (
-    <section className="py-20 lg:py-28 bg-primary-600" aria-label="Benefits and savings">
+    <section ref={sectionRef} className="py-20 lg:py-28 bg-primary-600 overflow-hidden" aria-label="Benefits and savings">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 lg:gap-16 items-center">
           {/* Left Content */}
-          <div className="text-white">
+          <motion.div
+            initial="hidden"
+            animate={inView ? 'visible' : 'hidden'}
+            variants={fadeUp}
+            custom={0}
+            className="text-white"
+          >
             <span className="inline-flex items-center gap-1.5 text-primary-200 font-semibold text-sm uppercase tracking-wider">
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
@@ -66,9 +79,14 @@ export default function Benefits() {
               our rigorous 150+ point inspection.
             </p>
             
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+            <motion.div
+              initial="hidden"
+              animate={inView ? 'visible' : 'hidden'}
+              variants={staggerContainer}
+              className="grid grid-cols-1 sm:grid-cols-2 gap-5"
+            >
               {benefits.map((benefit, index) => (
-                <div key={index} className="flex items-start gap-3.5 group">
+                <motion.div key={index} variants={staggerItem} className="flex items-start gap-3.5 group">
                   <div className="w-11 h-11 bg-white/15 rounded-xl flex items-center justify-center flex-shrink-0 group-hover:bg-white/25 transition-colors">
                     {benefit.icon}
                   </div>
@@ -76,13 +94,20 @@ export default function Benefits() {
                     <h4 className="font-semibold mb-0.5">{benefit.title}</h4>
                     <p className="text-primary-200 text-sm leading-relaxed">{benefit.description}</p>
                   </div>
-                </div>
+                </motion.div>
               ))}
-            </div>
-          </div>
+            </motion.div>
+          </motion.div>
 
-          {/* Right — Savings Card */}
-          <div className="bg-white rounded-3xl p-8 lg:p-10 shadow-2xl">
+          {/* Right — Savings Card (floating in) */}
+          <motion.div
+            initial="hidden"
+            animate={inView ? 'visible' : 'hidden'}
+            variants={scaleIn}
+            custom={0.2}
+            className="bg-white rounded-3xl p-8 lg:p-10 shadow-2xl"
+            style={{ animation: inView ? 'floatCard 4s ease-in-out infinite 1.2s' : 'none' }}
+          >
             <div className="text-center mb-8">
               <div className="inline-flex items-center justify-center w-16 h-16 bg-primary-50 rounded-2xl mb-4">
                 <svg className="w-8 h-8 text-primary-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
@@ -115,7 +140,7 @@ export default function Benefits() {
                 <span className="text-3xl font-extrabold text-primary-600">$3,297+</span>
               </div>
             </div>
-          </div>
+          </motion.div>
         </div>
       </div>
     </section>

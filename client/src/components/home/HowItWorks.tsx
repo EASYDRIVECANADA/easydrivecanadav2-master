@@ -1,3 +1,8 @@
+'use client'
+
+import { motion } from 'framer-motion'
+import { useInView, fadeUp, slideFromLeft, slideFromRight, connectorGrow } from '@/lib/animations'
+
 export default function HowItWorks() {
   const steps = [
     {
@@ -42,10 +47,18 @@ export default function HowItWorks() {
     }
   ]
 
+  const { ref: sectionRef, inView } = useInView(0.15)
+
   return (
-    <section className="py-20 lg:py-28 bg-secondary-50" aria-label="How to buy a car">
+    <section ref={sectionRef} className="py-20 lg:py-28 bg-secondary-50" aria-label="How to buy a car">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="text-center mb-16">
+        <motion.div
+          initial="hidden"
+          animate={inView ? 'visible' : 'hidden'}
+          variants={fadeUp}
+          custom={0}
+          className="text-center mb-16"
+        >
           <span className="inline-flex items-center gap-1.5 text-primary-600 font-semibold text-sm uppercase tracking-wider">
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
@@ -58,17 +71,32 @@ export default function HowItWorks() {
           <p className="text-lg text-secondary-500 max-w-2xl mx-auto leading-relaxed">
             Skip the dealership. Buy your next car entirely online, from the comfort of your home.
           </p>
-        </div>
+        </motion.div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 lg:gap-8" role="list">
           {steps.map((step, index) => (
-            <div key={index} className="relative" role="listitem">
+            <motion.div
+              key={index}
+              className="relative"
+              role="listitem"
+              initial="hidden"
+              animate={inView ? 'visible' : 'hidden'}
+              variants={index % 2 === 0 ? slideFromLeft : slideFromRight}
+              custom={0.15 + index * 0.15}
+            >
               {/* Connector Line */}
               {index < steps.length - 1 && (
-                <div className="hidden lg:block absolute top-12 left-[60%] w-[calc(100%-10px)] h-[2px]" aria-hidden="true">
+                <motion.div
+                  className="hidden lg:block absolute top-12 left-[60%] w-[calc(100%-10px)] h-[2px] origin-left"
+                  aria-hidden="true"
+                  initial="hidden"
+                  animate={inView ? 'visible' : 'hidden'}
+                  variants={connectorGrow}
+                  custom={0.4 + index * 0.2}
+                >
                   <div className="w-full h-full bg-gradient-to-r from-primary-400 to-primary-200 rounded-full" />
                   <div className="absolute right-0 top-1/2 -translate-y-1/2 w-2 h-2 bg-primary-300 rounded-full" />
-                </div>
+                </motion.div>
               )}
               
               <div className="relative bg-white rounded-2xl p-7 shadow-card hover:shadow-card-hover transition-all duration-300 hover:-translate-y-1 group">
@@ -89,19 +117,25 @@ export default function HowItWorks() {
                   </p>
                 </div>
               </div>
-            </div>
+            </motion.div>
           ))}
         </div>
 
         {/* 100% Online Badge */}
-        <div className="text-center mt-12">
+        <motion.div
+          initial="hidden"
+          animate={inView ? 'visible' : 'hidden'}
+          variants={fadeUp}
+          custom={0.8}
+          className="text-center mt-12"
+        >
           <div className="inline-flex items-center gap-2.5 bg-primary-50 text-primary-700 px-6 py-3 rounded-full font-semibold text-sm border border-primary-100">
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
             </svg>
             100% Online — No Dealership Visits Required
           </div>
-        </div>
+        </motion.div>
       </div>
     </section>
   )

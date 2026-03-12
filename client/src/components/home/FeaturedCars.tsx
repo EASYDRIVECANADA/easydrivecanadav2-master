@@ -2,6 +2,8 @@
 
 import Link from 'next/link'
 import { useState, useRef, useEffect } from 'react'
+import { motion } from 'framer-motion'
+import { useInView, fadeUp, slideFromLeft, staggerContainer, staggerItem } from '@/lib/animations'
 
 interface Vehicle {
   id: string
@@ -91,12 +93,19 @@ export default function FeaturedCars() {
   const scrollLeft = () => goToSlide(currentSlide - 1)
   const scrollRight = () => goToSlide(currentSlide + 1)
 
+  const { ref: sectionRef, inView: sectionInView } = useInView(0.15)
+
   return (
-    <section className="py-20 lg:py-28 bg-secondary-50" aria-label="Featured vehicles">
+    <section ref={sectionRef} className="py-20 lg:py-28 bg-secondary-50" aria-label="Featured vehicles">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* Section Header */}
         <div className="flex flex-col md:flex-row md:items-end justify-between mb-12">
-          <div>
+          <motion.div
+            initial="hidden"
+            animate={sectionInView ? 'visible' : 'hidden'}
+            variants={slideFromLeft}
+            custom={0}
+          >
             <span className="inline-flex items-center gap-1.5 text-primary-600 font-semibold text-sm uppercase tracking-wider mb-2">
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
@@ -109,16 +118,23 @@ export default function FeaturedCars() {
             <p className="text-secondary-500 mt-2 max-w-lg">
               Hand-picked vehicles with the lowest mileage in our inventory.
             </p>
-          </div>
-          <Link 
-            href="/inventory" 
-            className="group mt-4 md:mt-0 inline-flex items-center gap-2 text-primary-600 font-semibold hover:text-primary-700 transition-colors"
+          </motion.div>
+          <motion.div
+            initial="hidden"
+            animate={sectionInView ? 'visible' : 'hidden'}
+            variants={fadeUp}
+            custom={0.2}
           >
-            View all vehicles
-            <svg className="w-5 h-5 group-hover:translate-x-0.5 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" />
-            </svg>
-          </Link>
+            <Link 
+              href="/inventory" 
+              className="group mt-4 md:mt-0 inline-flex items-center gap-2 text-primary-600 font-semibold hover:text-primary-700 transition-colors"
+            >
+              View all vehicles
+              <svg className="w-5 h-5 group-hover:translate-x-0.5 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" />
+              </svg>
+            </Link>
+          </motion.div>
         </div>
 
         {/* Carousel Container */}

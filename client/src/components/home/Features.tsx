@@ -1,3 +1,8 @@
+'use client'
+
+import { motion } from 'framer-motion'
+import { useInView, fadeUp, scaleIn, staggerContainer, staggerItem } from '@/lib/animations'
+
 export default function Features() {
   const features = [
     {
@@ -56,10 +61,18 @@ export default function Features() {
     },
   ]
 
+  const { ref: sectionRef, inView } = useInView(0.15)
+
   return (
-    <section className="py-20 lg:py-28 bg-white" aria-label="Why choose EasyDrive">
+    <section ref={sectionRef} className="py-20 lg:py-28 bg-white" aria-label="Why choose EasyDrive">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="text-center mb-14">
+        <motion.div
+          initial="hidden"
+          animate={inView ? 'visible' : 'hidden'}
+          variants={fadeUp}
+          custom={0}
+          className="text-center mb-14"
+        >
           <span className="inline-flex items-center gap-1.5 text-primary-600 font-semibold text-sm uppercase tracking-wider">
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -73,27 +86,39 @@ export default function Features() {
             We&apos;ve reimagined the car buying experience. No dealership games, 
             no pressure tactics — just a simple, transparent process.
           </p>
-        </div>
+        </motion.div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6" role="list">
+        <motion.div
+          initial="hidden"
+          animate={inView ? 'visible' : 'hidden'}
+          variants={staggerContainer}
+          className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
+          role="list"
+        >
           {features.map((feature, index) => (
-            <div 
+            <motion.div 
               key={index}
               role="listitem"
-              className="group relative bg-white p-7 rounded-2xl border border-secondary-100 hover:border-primary-200 shadow-card hover:shadow-card-hover transition-all duration-300 hover:-translate-y-1"
+              variants={staggerItem}
+              className="group relative bg-white p-7 rounded-2xl border border-secondary-100 hover:border-primary-200 shadow-card hover:shadow-card-hover transition-all duration-300 hover:-translate-y-2 hover:shadow-lg"
             >
-              <div className="w-14 h-14 bg-primary-50 rounded-2xl flex items-center justify-center text-primary-600 mb-5 group-hover:bg-primary-100 group-hover:scale-110 transition-all duration-300">
+              <motion.div
+                initial={{ scale: 0.85, opacity: 0 }}
+                animate={inView ? { scale: 1, opacity: 1 } : { scale: 0.85, opacity: 0 }}
+                transition={{ duration: 0.5, delay: 0.2 + index * 0.1 }}
+                className="w-14 h-14 bg-primary-50 rounded-2xl flex items-center justify-center text-primary-600 mb-5 group-hover:bg-primary-100 group-hover:scale-110 transition-all duration-300"
+              >
                 {feature.icon}
-              </div>
+              </motion.div>
               <h3 className="text-lg font-bold text-secondary-900 mb-2">
                 {feature.title}
               </h3>
               <p className="text-secondary-500 leading-relaxed text-[15px]">
                 {feature.description}
               </p>
-            </div>
+            </motion.div>
           ))}
-        </div>
+        </motion.div>
       </div>
     </section>
   )

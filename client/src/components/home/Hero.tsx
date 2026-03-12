@@ -2,11 +2,17 @@
 
 import Link from 'next/link'
 import Image from 'next/image'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
+import { motion } from 'framer-motion'
+import { useParallax, fadeUp, fadeIn } from '@/lib/animations'
 
 export default function Hero() {
   const [vehicleCount, setVehicleCount] = useState<number | null>(null)
+  const [onLight, setOnLight] = useState(false)
   const API_URL = process.env.NEXT_PUBLIC_API_URL
+  const { ref: parallaxRef, offset } = useParallax(0.4)
+  const sectionRef = useRef<HTMLElement | null>(null)
+  const badgesRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
     const fetchVehicleCount = async () => {
@@ -40,10 +46,31 @@ export default function Hero() {
     fetchVehicleCount()
   }, [API_URL])
 
+  useEffect(() => {
+    const onScroll = () => {
+      const el = sectionRef.current
+      if (!el) return
+      const heroBottom = el.offsetTop + el.offsetHeight
+      const y = window.scrollY || 0
+      // Compute badges middle Y position relative to document
+      const br = badgesRef.current
+      const badgesMiddle = br ? (br.offsetTop + br.offsetHeight / 2) : (el.offsetTop + el.offsetHeight - 1)
+      // Switch when the badges are at or below the hero bottom (with 40px buffer)
+      const threshold = heroBottom - 40
+      setOnLight(badgesMiddle >= threshold || y > heroBottom - 200)
+    }
+    window.addEventListener('scroll', onScroll, { passive: true })
+    onScroll()
+    return () => window.removeEventListener('scroll', onScroll)
+  }, [])
+
   return (
-    <section className="relative min-h-[640px] lg:min-h-[720px] overflow-hidden" aria-label="Hero section">
-      {/* Background Image */}
-      <div className="absolute inset-0">
+    <section ref={(el)=>{sectionRef.current=el; (parallaxRef as any).current = el}} className="relative min-h-[640px] lg:min-h-[720px] overflow-hidden" aria-label="Hero section">
+      {/* Background Image with Parallax */}
+      <div
+        className="absolute inset-0 will-change-transform"
+        style={{ transform: `translate3d(0, ${offset}px, 0)` }}
+      >
         <Image
           src="/images/background.jpg"
           alt="Easy Drive Canada - Premium Vehicles"
@@ -56,13 +83,20 @@ export default function Hero() {
         <div className="absolute inset-0 bg-gradient-to-r from-black/40 via-transparent to-black/20" aria-hidden="true" />
       </div>
 
-      {/* Soft bottom fade into white */}
-      <div className="pointer-events-none absolute inset-x-0 bottom-0 h-32 bg-gradient-to-b from-transparent to-white" aria-hidden="true" />
+      {/* Soft bottom fade into white (lower height, behind content) */}
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 h-20 bg-gradient-to-b from-transparent to-white z-0" aria-hidden="true" />
 
       <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-24 pb-32 md:pt-32 md:pb-40 lg:pt-36 lg:pb-44 flex flex-col items-center text-center">
         <div className="max-w-3xl">
           {/* Badge */}
-          <div className="inline-flex items-center gap-2 bg-white/10 backdrop-blur-md text-white px-5 py-2.5 rounded-full text-sm font-medium mb-8 border border-white/20 shadow-lg" role="status">
+          <motion.div
+            initial="hidden"
+            animate="visible"
+            variants={fadeUp}
+            custom={0}
+            className="inline-flex items-center gap-2 bg-white/10 backdrop-blur-md text-white px-5 py-2.5 rounded-full text-sm font-medium mb-8 border border-white/20 shadow-lg"
+            role="status"
+          >
             <span className="relative flex h-2.5 w-2.5" aria-hidden="true">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary-400 opacity-75" />
               <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-primary-400" />
@@ -70,26 +104,44 @@ export default function Hero() {
             {vehicleCount !== null && vehicleCount > 0
               ? `${vehicleCount} Vehicles Available Now`
               : "Canada\u2019s Trusted Car Marketplace"}
-          </div>
+          </motion.div>
 
           {/* Headline */}
-          <h1 className="text-4xl md:text-5xl lg:text-6xl font-extrabold text-white mb-6 leading-[1.08] tracking-tight">
+          <motion.h1
+            initial="hidden"
+            animate="visible"
+            variants={fadeUp}
+            custom={0.15}
+            className="text-4xl md:text-5xl lg:text-6xl font-extrabold text-white mb-6 leading-[1.08] tracking-tight"
+          >
             Buy Your Next Car Online
             <br />
             <span className="bg-gradient-to-r from-primary-300 to-primary-500 bg-clip-text text-transparent">
               Simple, Transparent, Delivered
             </span>
-          </h1>
+          </motion.h1>
 
           {/* Subheadline */}
-          <p className="text-lg md:text-xl text-gray-200/90 mb-10 max-w-2xl mx-auto leading-relaxed">
+          <motion.p
+            initial="hidden"
+            animate="visible"
+            variants={fadeUp}
+            custom={0.3}
+            className="text-lg md:text-xl text-gray-200/90 mb-10 max-w-2xl mx-auto leading-relaxed"
+          >
             No hidden fees. 150+ point inspected vehicles. Easy online financing.
             <br className="hidden sm:block" />
             Your next car is just a few clicks away.
-          </p>
+          </motion.p>
 
           {/* Dual CTA Buttons */}
-          <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
+          <motion.div
+            initial="hidden"
+            animate="visible"
+            variants={fadeUp}
+            custom={0.45}
+            className="flex flex-col sm:flex-row gap-4 justify-center items-center"
+          >
             {/* Primary CTA */}
             <Link
               href="/inventory"
@@ -114,42 +166,51 @@ export default function Hero() {
               </svg>
               Get Pre-Approved
             </Link>
-          </div>
+          </motion.div>
         </div>
 
         {/* Trust Indicators */}
-        <div className="mt-16 flex flex-col sm:flex-row items-center justify-center gap-6 sm:gap-10" role="region" aria-label="Trust indicators">
-          <div className="flex items-center gap-2.5 text-white/90">
-            <div className="w-10 h-10 rounded-full bg-white/10 backdrop-blur-sm flex items-center justify-center border border-white/10">
-              <svg className="w-5 h-5 text-primary-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+        <motion.div
+          ref={badgesRef}
+          initial="hidden"
+          animate="visible"
+          variants={fadeIn}
+          custom={0.7}
+          className={`relative z-10 mt-16 flex flex-col sm:flex-row items-center justify-center gap-6 sm:gap-10 ${onLight ? 'dark-mode' : 'light-mode'}`}
+          role="region"
+          aria-label="Trust indicators"
+        >
+          <div className={`flex items-center gap-2.5 ${onLight ? 'text-slate-900' : 'text-white'} transition-colors duration-300`}>
+            <div className={`w-10 h-10 rounded-full ${onLight ? 'bg-white shadow-sm border border-slate-200' : 'bg-white/10 backdrop-blur-sm border border-white/10'} flex items-center justify-center transition-colors duration-300`}>
+              <svg className={`w-5 h-5 ${onLight ? 'text-slate-900' : 'text-white'} transition-colors duration-300`} fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
               </svg>
             </div>
-            <span className="text-sm font-medium">150+ Point Inspection</span>
+            <span className={`text-sm font-medium transition-colors duration-300 ${onLight ? 'text-slate-900' : 'text-white/90'}`}>150+ Point Inspection</span>
           </div>
 
-          <div className="hidden sm:block w-px h-6 bg-white/20" aria-hidden="true" />
+          <div className={`hidden sm:block w-px h-6 ${onLight ? 'bg-slate-300' : 'bg-white/40'} transition-colors duration-300`} aria-hidden="true" />
 
-          <div className="flex items-center gap-2.5 text-white/90">
-            <div className="w-10 h-10 rounded-full bg-white/10 backdrop-blur-sm flex items-center justify-center border border-white/10">
-              <svg className="w-5 h-5 text-primary-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+          <div className={`flex items-center gap-2.5 ${onLight ? 'text-slate-900' : 'text-white'} transition-colors duration-300`}>
+            <div className={`w-10 h-10 rounded-full ${onLight ? 'bg-white shadow-sm border border-slate-200' : 'bg-white/10 backdrop-blur-sm border border-white/10'} flex items-center justify-center transition-colors duration-300`}>
+              <svg className={`w-5 h-5 ${onLight ? 'text-slate-900' : 'text-white'} transition-colors duration-300`} fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
               </svg>
             </div>
-            <span className="text-sm font-medium">Free Delivery in Ontario</span>
+            <span className={`text-sm font-medium transition-colors duration-300 ${onLight ? 'text-slate-900' : 'text-white/90'}`}>Free Delivery in Ontario</span>
           </div>
 
-          <div className="hidden sm:block w-px h-6 bg-white/20" aria-hidden="true" />
+          <div className={`hidden sm:block w-px h-6 ${onLight ? 'bg-slate-300' : 'bg-white/40'} transition-colors duration-300`} aria-hidden="true" />
 
-          <div className="flex items-center gap-2.5 text-white/90">
-            <div className="w-10 h-10 rounded-full bg-white/10 backdrop-blur-sm flex items-center justify-center border border-white/10">
-              <svg className="w-5 h-5 text-primary-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+          <div className={`flex items-center gap-2.5 ${onLight ? 'text-slate-900' : 'text-white'} transition-colors duration-300`}>
+            <div className={`w-10 h-10 rounded-full ${onLight ? 'bg-white shadow-sm border border-slate-200' : 'bg-white/10 backdrop-blur-sm border border-white/10'} flex items-center justify-center transition-colors duration-300`}>
+              <svg className={`w-5 h-5 ${onLight ? 'text-slate-900' : 'text-white'} transition-colors duration-300`} fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
               </svg>
             </div>
-            <span className="text-sm font-medium">Secure Checkout</span>
+            <span className={`text-sm font-medium transition-colors duration-300 ${onLight ? 'text-slate-900' : 'text-white/90'}`}>Secure Checkout</span>
           </div>
-        </div>
+        </motion.div>
       </div>
     </section>
   )

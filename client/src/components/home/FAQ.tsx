@@ -1,6 +1,8 @@
 'use client'
 
 import { useState } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
+import { useInView, fadeUp, staggerContainer, staggerItem } from '@/lib/animations'
 
 interface FAQItem {
   question: string
@@ -9,6 +11,7 @@ interface FAQItem {
 
 export default function FAQ() {
   const [openIndex, setOpenIndex] = useState<number | null>(0)
+  const { ref: sectionRef, inView } = useInView(0.1)
 
   const faqs: FAQItem[] = [
     {
@@ -62,9 +65,15 @@ export default function FAQ() {
   ]
 
   return (
-    <section className="py-20 lg:py-28 bg-white" aria-label="Frequently asked questions">
+    <section ref={sectionRef} className="py-20 lg:py-28 bg-white" aria-label="Frequently asked questions">
       <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="text-center mb-14">
+        <motion.div
+          initial="hidden"
+          animate={inView ? 'visible' : 'hidden'}
+          variants={fadeUp}
+          custom={0}
+          className="text-center mb-14"
+        >
           <span className="inline-flex items-center gap-1.5 text-primary-600 font-semibold text-sm uppercase tracking-wider">
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -77,12 +86,19 @@ export default function FAQ() {
           <p className="text-lg text-secondary-500 max-w-2xl mx-auto leading-relaxed">
             Everything you need to know about buying a car online with Easy Drive Canada
           </p>
-        </div>
+        </motion.div>
 
-        <div className="space-y-3" role="list">
+        <motion.div
+          initial="hidden"
+          animate={inView ? 'visible' : 'hidden'}
+          variants={staggerContainer}
+          className="space-y-3"
+          role="list"
+        >
           {faqs.map((faq, index) => (
-            <div 
+            <motion.div 
               key={index}
+              variants={staggerItem}
               className={`bg-white rounded-2xl overflow-hidden transition-all duration-200 ${
                 openIndex === index 
                   ? 'shadow-card border border-primary-200' 
@@ -100,11 +116,15 @@ export default function FAQ() {
                 }`}>
                   {faq.question}
                 </span>
-                <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 transition-all duration-200 ${
-                  openIndex === index 
-                    ? 'bg-primary-100 text-primary-600 rotate-180' 
-                    : 'bg-secondary-100 text-secondary-500'
-                }`}>
+                <motion.div
+                  animate={{ rotate: openIndex === index ? 180 : 0 }}
+                  transition={{ duration: 0.3 }}
+                  className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 transition-colors duration-200 ${
+                    openIndex === index 
+                      ? 'bg-primary-100 text-primary-600' 
+                      : 'bg-secondary-100 text-secondary-500'
+                  }`}
+                >
                   <svg
                     className="w-4 h-4"
                     fill="none"
@@ -114,26 +134,39 @@ export default function FAQ() {
                   >
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
                   </svg>
-                </div>
+                </motion.div>
               </button>
               
-              <div
-                className={`overflow-hidden transition-all duration-300 ease-in-out ${
-                  openIndex === index ? 'max-h-96' : 'max-h-0'
-                }`}
-              >
-                <div className="px-5 sm:px-6 pb-5 sm:pb-6">
-                  <p className="text-secondary-500 leading-relaxed text-[15px]">
-                    {faq.answer}
-                  </p>
-                </div>
-              </div>
-            </div>
+              <AnimatePresence initial={false}>
+                {openIndex === index && (
+                  <motion.div
+                    key="content"
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: 'auto', opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    transition={{ duration: 0.3, ease: [0.25, 0.46, 0.45, 0.94] }}
+                    className="overflow-hidden"
+                  >
+                    <div className="px-5 sm:px-6 pb-5 sm:pb-6">
+                      <p className="text-secondary-500 leading-relaxed text-[15px]">
+                        {faq.answer}
+                      </p>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </motion.div>
           ))}
-        </div>
+        </motion.div>
 
         {/* Contact CTA */}
-        <div className="mt-14 text-center p-8 sm:p-10 bg-secondary-50 rounded-3xl border border-secondary-100">
+        <motion.div
+          initial="hidden"
+          animate={inView ? 'visible' : 'hidden'}
+          variants={fadeUp}
+          custom={0.3}
+          className="mt-14 text-center p-8 sm:p-10 bg-secondary-50 rounded-3xl border border-secondary-100"
+        >
           <div className="w-14 h-14 bg-primary-50 rounded-2xl flex items-center justify-center mx-auto mb-4">
             <svg className="w-7 h-7 text-primary-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
@@ -154,7 +187,7 @@ export default function FAQ() {
             </svg>
             Contact Us
           </a>
-        </div>
+        </motion.div>
       </div>
     </section>
   )
