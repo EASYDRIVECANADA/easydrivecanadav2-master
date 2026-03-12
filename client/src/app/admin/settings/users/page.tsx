@@ -82,6 +82,7 @@ export default function SettingsUsersPage() {
   const [userAddedMessage, setUserAddedMessage] = useState('User information added')
   const [upgradeModalOpen, setUpgradeModalOpen] = useState(false)
   const [sessionEmail, setSessionEmail] = useState<string | null>(null)
+  const [sessionDbEmail, setSessionDbEmail] = useState<string | null>(null)
   const [sessionFullName, setSessionFullName] = useState<string | null>(null)
   const [editingUserId, setEditingUserId] = useState<string | null>(null)
 
@@ -118,6 +119,7 @@ export default function SettingsUsersPage() {
   const [confirmPassword, setConfirmPassword] = useState('')
   const [passwordError, setPasswordError] = useState<string | null>(null)
   const [savingNewUser, setSavingNewUser] = useState(false)
+  const [openedFromLimitModal, setOpenedFromLimitModal] = useState(false)
 
   const closeNewUser = () => {
     setNewUserOpen(false)
@@ -136,11 +138,17 @@ export default function SettingsUsersPage() {
     setConfirmPassword('')
     setPasswordError(null)
     setSavingNewUser(false)
+    setOpenedFromLimitModal(false)
   }
 
   const closeUpgradeModal = () => {
     setUpgradeModalOpen(false)
   }
+
+  const isPrivateSeller = useMemo(() => {
+    const r = String(accountRole || '').trim().toLowerCase()
+    return !r || r === 'private seller' || r === 'private' || r === 'starter'
+  }, [accountRole])
 
   const nullIfEmpty = (v: string) => {
     const s = (v || '').trim()
@@ -203,6 +211,12 @@ export default function SettingsUsersPage() {
     if (newUserTab !== 'password') return
     if (savingNewUser) return
     setPasswordError(null)
+
+    // Only Owner can add new users
+    if (!editingUserId && !isOwner) {
+      setPasswordError('Only the account Owner can add new users.')
+      return
+    }
 
     if (!editingUserId && !canAddMoreUsers) {
       const limitNum = userLimit === Infinity ? '∞' : String(userLimit)
@@ -271,6 +285,30 @@ export default function SettingsUsersPage() {
       const webhookUserId = await getWebhookUserId()
 
       // Backend validation: check user limit before creating
+      let shouldChargeAfterSuccess = false
+      
+      // For Private Seller with openedFromLimitModal, always charge $5 after successful save
+      if (isPrivateSeller && openedFromLimitModal) {
+        // Check balance but don't deduct yet - will deduct after successful webhook
+        try {
+          const walletRes = await fetch('/api/users/balance', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: ownerEmailForLimit }),
+          })
+          const walletJson = await walletRes.json().catch(() => null)
+          const balance = Number(walletJson?.balance ?? 0)
+          if (balance < 5) {
+            setPasswordError('Insufficient Load Balance ($5 required to add another user).')
+            setSavingNewUser(false)
+            return
+          }
+          shouldChargeAfterSuccess = true
+        } catch (e) {
+          console.error('Failed to check balance:', e)
+        }
+      }
+      
       try {
         const limitRes = await fetch('/api/users/check-limit', {
           method: 'POST',
@@ -279,7 +317,7 @@ export default function SettingsUsersPage() {
         })
         if (limitRes.ok) {
           const limitData = await limitRes.json()
-          if (!limitData.canAdd) {
+          if (!limitData.canAdd && !shouldChargeAfterSuccess) {
             setPasswordError('User limit reached for current subscription plan')
             setSavingNewUser(false)
             return
@@ -289,7 +327,7 @@ export default function SettingsUsersPage() {
         // If check fails, proceed with creation (don't block on API failure)
       }
 
-      const payload = {
+      const payload: any = {
         user_id: webhookUserId,
         first_name: nullIfEmpty(firstName),
         last_name: nullIfEmpty(lastName),
@@ -304,6 +342,13 @@ export default function SettingsUsersPage() {
         permissions,
       }
 
+      // If opened from User Limit modal, include days=30
+      if (openedFromLimitModal) {
+        payload.days = 30
+      }
+
+      payload.owner_role = String(accountRole || '').trim()
+
       const res = await fetch('https://primary-production-6722.up.railway.app/webhook/users', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -313,6 +358,23 @@ export default function SettingsUsersPage() {
       const text = await res.text().catch(() => '')
       if (!res.ok) throw new Error(text || `Request failed (${res.status})`)
       if (String(text).trim() !== 'Done') throw new Error(text || 'Webhook did not return Done')
+
+      // Deduct $5 from Load Balance AFTER successful webhook response
+      if (shouldChargeAfterSuccess) {
+        try {
+          const chargeRes = await fetch('/api/users/charge-add-user', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ user_id: webhookUserId, email: ownerEmailForLimit }),
+          })
+          const chargeJson = await chargeRes.json().catch(() => null)
+          if (!chargeRes.ok || !chargeJson?.ok) {
+            console.error('Failed to deduct $5 after user creation:', chargeJson?.error)
+          }
+        } catch (e) {
+          console.error('Failed to deduct $5 after user creation:', e)
+        }
+      }
 
       closeNewUser()
       setUserAddedMessage('User information added')
@@ -403,6 +465,17 @@ export default function SettingsUsersPage() {
     void fetchUsers()
   }, [scopedUserId])
 
+  const loadSessionDbEmail = () => {
+    try {
+      if (typeof window === 'undefined') return
+      const raw = window.localStorage.getItem('edc_admin_session')
+      if (!raw) return
+      const parsed = JSON.parse(raw) as { email?: string }
+      const e = String(parsed?.email || '').trim().toLowerCase()
+      if (e) setSessionDbEmail(e)
+    } catch { /* ignore */ }
+  }
+
   useEffect(() => {
     const init = async () => {
       try {
@@ -415,6 +488,7 @@ export default function SettingsUsersPage() {
         setSessionEmail(null)
         setSessionFullName(null)
       }
+      loadSessionDbEmail()
     }
 
     void init()
@@ -424,6 +498,7 @@ export default function SettingsUsersPage() {
       setSessionEmail(user?.email || null)
       const fullName = (user?.user_metadata as any)?.full_name
       setSessionFullName(typeof fullName === 'string' ? fullName : null)
+      loadSessionDbEmail()
     })
 
     return () => {
@@ -431,8 +506,12 @@ export default function SettingsUsersPage() {
     }
   }, [])
 
+  const activeSessionEmail = useMemo(() => {
+    return (sessionDbEmail || sessionEmail || '').trim().toLowerCase()
+  }, [sessionDbEmail, sessionEmail])
+
   const displayRows = useMemo(() => {
-    const email = (sessionEmail || '').trim().toLowerCase()
+    const email = activeSessionEmail
     if (!email) return rows
 
     const normalized = rows.map((r) => {
@@ -443,7 +522,7 @@ export default function SettingsUsersPage() {
     const exists = normalized.some((r) => (r.email || '').trim().toLowerCase() === email)
     if (exists) return normalized
 
-    const fallbackName = sessionFullName?.trim() || deriveNameFromEmail(sessionEmail || '')
+    const fallbackName = sessionFullName?.trim() || deriveNameFromEmail(activeSessionEmail)
     const ownerRow: AdminUserRow = {
       id: 'current-session-owner',
       first_name: fallbackName || null,
@@ -452,12 +531,12 @@ export default function SettingsUsersPage() {
       registration: null,
       phone: null,
       mobile: null,
-      email: sessionEmail || '',
+      email: activeSessionEmail,
       created_at: new Date().toISOString(),
     }
 
     return [ownerRow, ...normalized]
-  }, [rows, sessionEmail, sessionFullName])
+  }, [rows, activeSessionEmail, sessionFullName])
 
   const ownerEmailForLimit = useMemo(() => {
     const e1 = String(sessionEmail || '').trim().toLowerCase()
@@ -472,6 +551,18 @@ export default function SettingsUsersPage() {
       return ''
     }
   }, [sessionEmail])
+
+  const currentUserTitle = useMemo(() => {
+    const email = activeSessionEmail
+    if (!email) return ''
+    // Use raw rows (not displayRows) to get the real DB title
+    const currentUser = rows.find((r) => (r.email || '').trim().toLowerCase() === email)
+    return String(currentUser?.title || '').trim()
+  }, [rows, activeSessionEmail])
+
+  const isOwner = useMemo(() => {
+    return currentUserTitle.toLowerCase() === 'owner'
+  }, [currentUserTitle])
 
   const userLimit = useMemo(() => {
     const r = String(accountRole || '').trim().toLowerCase()
@@ -611,8 +702,8 @@ export default function SettingsUsersPage() {
             </div>
             <div className="p-5">
               <p className="text-xs text-slate-600 leading-relaxed">
-                {String(accountRole || '').trim().toLowerCase() === '' || String(accountRole || '').trim().toLowerCase() === 'private seller' || String(accountRole || '').trim().toLowerCase() === 'private' || String(accountRole || '').trim().toLowerCase() === 'starter'
-                  ? 'Private Seller accounts include 1 user. Add additional users for $5 per use.'
+                {isPrivateSeller
+                  ? 'Private Seller accounts include 1 user. Adding another user will auto deduct $5 from your Load Balance when you save.'
                   : 'You have reached the maximum number of users allowed for your current subscription.'}
               </p>
               <div className="mt-4 p-3 rounded-lg bg-slate-50 border border-slate-200/60">
@@ -629,13 +720,15 @@ export default function SettingsUsersPage() {
               </div>
             </div>
             <div className="px-4 pb-4 flex flex-col gap-2">
-              {String(accountRole || '').trim().toLowerCase() === '' || String(accountRole || '').trim().toLowerCase() === 'private seller' || String(accountRole || '').trim().toLowerCase() === 'private' || String(accountRole || '').trim().toLowerCase() === 'starter' ? (
+              {isPrivateSeller ? (
                 <button
                   type="button"
                   className="w-full h-9 rounded-lg text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 transition-colors"
                   onClick={() => {
                     closeUpgradeModal()
-                    router.push('/admin/billing')
+                    setOpenedFromLimitModal(true)
+                    setNewUserTab('details')
+                    setNewUserOpen(true)
                   }}
                 >
                   Add another user ($5)
@@ -767,7 +860,10 @@ export default function SettingsUsersPage() {
                       label: 'Title',
                       placeholder: 'Title',
                       value: title,
-                      onChange: (v: string) => setTitle(v),
+                      onChange: (v: string) => {
+                        const cleaned = v.replace(/owner/gi, '')
+                        setTitle(cleaned)
+                      },
                       icon: (
                       <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
                         <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M20 7l-8-4-8 4 8 4 8-4z" />
@@ -863,6 +959,24 @@ export default function SettingsUsersPage() {
                       </div>
                     </div>
                   ))}
+                  {openedFromLimitModal && (
+                    <div>
+                      <div className="text-[11px] text-slate-600">Days</div>
+                      <div className="mt-1 flex items-center border border-slate-200/60 bg-slate-50">
+                        <div className="w-9 h-8 flex items-center justify-center text-slate-400 border-r border-slate-200/60">
+                          <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                            <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 012 2v14a2 2 0 01-2 2H5a2 2 0 01-2-2V6a2 2 0 012-2z" />
+                          </svg>
+                        </div>
+                        <input
+                          className="h-8 flex-1 px-2 text-xs outline-none bg-slate-50 text-slate-500 cursor-not-allowed"
+                          value="30"
+                          readOnly
+                          disabled
+                        />
+                      </div>
+                    </div>
+                  )}
                 </div>
               ) : newUserTab === 'permissions' ? (
                 <div>
@@ -1035,30 +1149,33 @@ export default function SettingsUsersPage() {
       </div>
 
       <div className="flex items-center justify-between gap-4 py-2">
-        <button
-          type="button"
-          className={
-            canAddMoreUsers
-              ? 'h-7 w-7 flex items-center justify-center text-slate-700 hover:text-slate-900'
-              : 'h-7 w-7 flex items-center justify-center text-slate-400 hover:text-slate-600'
-          }
-          title={canAddMoreUsers ? 'Add user' : 'User limit reached for your current plan. Upgrade to add more users.'}
-          onClick={() => {
-            if (!canAddMoreUsers) {
-              setUpgradeModalOpen(true)
-              return
+        {isOwner && (
+          <button
+            type="button"
+            className={
+              canAddMoreUsers
+                ? 'h-7 w-7 flex items-center justify-center text-slate-700 hover:text-slate-900'
+                : 'h-7 w-7 flex items-center justify-center text-slate-400 hover:text-slate-600'
             }
-            setNewUserTab('details')
-            setNewUserOpen(true)
-          }}
-        >
-          <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-            <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2" />
-            <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M8.5 11a4 4 0 100-8 4 4 0 000 8z" />
-            <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M20 8v6" />
-            <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M17 11h6" />
-          </svg>
-        </button>
+            title={canAddMoreUsers ? 'Add user' : 'User limit reached for your current plan. Upgrade to add more users.'}
+            onClick={() => {
+              if (!canAddMoreUsers) {
+                setUpgradeModalOpen(true)
+                return
+              }
+              setOpenedFromLimitModal(true)
+              setNewUserTab('details')
+              setNewUserOpen(true)
+            }}
+          >
+            <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+              <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2" />
+              <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M8.5 11a4 4 0 100-8 4 4 0 000 8z" />
+              <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M20 8v6" />
+              <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M17 11h6" />
+            </svg>
+          </button>
+        )}
 
         <div className="flex-1 flex items-center gap-2">
           <div className="relative w-full max-w-[360px]">
@@ -1104,12 +1221,13 @@ export default function SettingsUsersPage() {
           <div>
             {visible.map((r) => {
               const isOwnerSessionRow = r.id === 'current-session-owner'
+              const isCurrentUserRow = isOwnerSessionRow || (activeSessionEmail ? (r.email || '').trim().toLowerCase() === activeSessionEmail : false)
               const name = `${r.first_name || ''} ${r.last_name || ''}`.trim() || deriveNameFromEmail(r.email)
               const title = r.title || ''
               return (
                 <div key={r.id} className="grid grid-cols-[56px_1fr_1fr_1fr] border-b border-slate-200/60 hover:bg-slate-50">
                   <div className="h-9 flex items-center justify-center gap-3">
-                    {isOwnerSessionRow ? (
+                    {isCurrentUserRow ? (
                       <div className="h-6 w-6" />
                     ) : (
                       <>

@@ -112,6 +112,50 @@ const updateUserRoleByEmail = async (email: string, role: Role) => {
   return { raw: text, rows }
 }
 
+const updateAllUsersRoleByOwnerEmail = async (ownerEmail: string, role: Role) => {
+  const { supabaseUrl, supabaseKey } = getSupabaseServerConfig()
+
+  // First get the owner's user_id
+  const ownerRes = await fetch(
+    `${supabaseUrl}/rest/v1/users?select=user_id&email=eq.${encodeURIComponent(ownerEmail)}&limit=1`,
+    { method: 'GET', headers: { apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` } }
+  )
+  const ownerText = await ownerRes.text().catch(() => '')
+  let ownerRows: any[] = []
+  try { ownerRows = JSON.parse(ownerText || '[]') } catch { ownerRows = [] }
+  const ownerRow = ownerRows?.[0]
+  if (!ownerRow) throw new Error(`No owner found for email=${ownerEmail}`)
+
+  const userId = String(ownerRow.user_id || '').trim()
+  if (!userId) throw new Error(`Owner has no user_id for email=${ownerEmail}`)
+
+  // Update ALL users with this user_id
+  const patchUrl = `${supabaseUrl}/rest/v1/users?user_id=eq.${encodeURIComponent(userId)}`
+  const res = await fetch(patchUrl, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      apikey: supabaseKey,
+      Authorization: `Bearer ${supabaseKey}`,
+      Prefer: 'return=representation',
+    },
+    body: JSON.stringify({ role }),
+  })
+
+  const text = await res.text()
+  if (!res.ok) throw new Error(text || `Failed to update all users role (${res.status})`)
+
+  let rows: any[] = []
+  try {
+    rows = JSON.parse(text || '[]')
+  } catch {
+    rows = []
+  }
+
+  console.log(`[stripe-webhook] Updated ${rows.length} users to role=${role} for user_id=${userId}`)
+  return { raw: text, rows, userId }
+}
+
 const getUserBalanceByEmail = async (email: string) => {
   const { supabaseUrl, supabaseKey } = getSupabaseServerConfig()
 
@@ -222,6 +266,137 @@ const sendDealershipSubscriptWebhook = async (userId: string) => {
   return text
 }
 
+const enableSubscriptionUsers = async (email: string) => {
+  try {
+    const { supabaseUrl, supabaseKey } = getSupabaseServerConfig()
+
+    // Get the owner's row to find user_id
+    const userRes = await fetch(
+      `${supabaseUrl}/rest/v1/users?select=id,user_id,title&email=eq.${encodeURIComponent(email)}&limit=1`,
+      { method: 'GET', headers: { apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` } }
+    )
+    const userText = await userRes.text().catch(() => '')
+    let rows: any[] = []
+    try { rows = JSON.parse(userText || '[]') } catch { rows = [] }
+    const ownerRow = rows?.[0]
+    if (!ownerRow) return null
+
+    const userId = String(ownerRow.user_id || '').trim()
+    if (!userId) return null
+
+    // Calculate subscription_end (1 month from now)
+    const now = new Date()
+    const subscriptionEnd = new Date(now.getFullYear(), now.getMonth() + 1, now.getDate())
+    const subscriptionEndIso = subscriptionEnd.toISOString()
+
+    // Set status='enable' for ALL users with this user_id
+    await fetch(
+      `${supabaseUrl}/rest/v1/users?user_id=eq.${encodeURIComponent(userId)}`,
+      {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          apikey: supabaseKey,
+          Authorization: `Bearer ${supabaseKey}`,
+          Prefer: 'return=minimal',
+        },
+        body: JSON.stringify({ status: 'enable' }),
+      }
+    )
+
+    // Set subscription_end on the owner's row (title=Owner)
+    const ownerTitle = String(ownerRow.title || '').trim().toLowerCase()
+    const targetId = ownerTitle === 'owner' ? ownerRow.id : ownerRow.id
+    await fetch(
+      `${supabaseUrl}/rest/v1/users?id=eq.${encodeURIComponent(targetId)}`,
+      {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          apikey: supabaseKey,
+          Authorization: `Bearer ${supabaseKey}`,
+          Prefer: 'return=minimal',
+        },
+        body: JSON.stringify({ subscription_end: subscriptionEndIso }),
+      }
+    )
+
+    console.log('[stripe-webhook] subscription enabled', { userId, subscriptionEnd: subscriptionEndIso })
+    return { userId, subscriptionEnd: subscriptionEndIso }
+  } catch (e: any) {
+    console.error('[stripe-webhook] enableSubscriptionUsers failed:', e?.message)
+    return null
+  }
+}
+
+const handleSubscriptionExpiry = async (email: string) => {
+  try {
+    const { supabaseUrl, supabaseKey } = getSupabaseServerConfig()
+
+    // Get the owner's row
+    const userRes = await fetch(
+      `${supabaseUrl}/rest/v1/users?select=id,user_id,title&email=eq.${encodeURIComponent(email)}&limit=1`,
+      { method: 'GET', headers: { apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` } }
+    )
+    const userText = await userRes.text().catch(() => '')
+    let rows: any[] = []
+    try { rows = JSON.parse(userText || '[]') } catch { rows = [] }
+    const ownerRow = rows?.[0]
+    if (!ownerRow) return null
+
+    const userId = String(ownerRow.user_id || '').trim()
+    if (!userId) return null
+
+    // Fetch all users for this user_id
+    const allRes = await fetch(
+      `${supabaseUrl}/rest/v1/users?select=id,title&user_id=eq.${encodeURIComponent(userId)}`,
+      { method: 'GET', headers: { apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` } }
+    )
+    const allText = await allRes.text().catch(() => '')
+    let allUsers: any[] = []
+    try { allUsers = JSON.parse(allText || '[]') } catch { allUsers = [] }
+
+    // Set ALL users' role to 'private' + status to 'disable'
+    await fetch(
+      `${supabaseUrl}/rest/v1/users?user_id=eq.${encodeURIComponent(userId)}`,
+      {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          apikey: supabaseKey,
+          Authorization: `Bearer ${supabaseKey}`,
+          Prefer: 'return=minimal',
+        },
+        body: JSON.stringify({ role: 'private', status: 'disable' }),
+      }
+    )
+
+    // Owner must always remain 'enable'
+    const ownerDbRow = allUsers.find((u: any) => String(u.title || '').trim().toLowerCase() === 'owner')
+    if (ownerDbRow) {
+      await fetch(
+        `${supabaseUrl}/rest/v1/users?id=eq.${encodeURIComponent(ownerDbRow.id)}`,
+        {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+            apikey: supabaseKey,
+            Authorization: `Bearer ${supabaseKey}`,
+            Prefer: 'return=minimal',
+          },
+          body: JSON.stringify({ status: 'enable' }),
+        }
+      )
+    }
+
+    console.log('[stripe-webhook] subscription expired', { userId, email })
+    return { userId }
+  } catch (e: any) {
+    console.error('[stripe-webhook] handleSubscriptionExpiry failed:', e?.message)
+    return null
+  }
+}
+
 export async function POST(req: Request) {
   try {
     const secretKey = String(process.env.STRIPE_SECRET_KEY || '').trim()
@@ -285,7 +460,16 @@ export async function POST(req: Request) {
       if (!normalized) throw new Error('Missing customer email')
       const role = planToRole[plan]
 
-      await updateUserRoleByEmail(normalized, role)
+      // Update ALL users under this owner (not just the owner)
+      await updateAllUsersRoleByOwnerEmail(normalized, role)
+
+      // Enable subscription for all users under this owner + set subscription_end
+      try {
+        await enableSubscriptionUsers(normalized)
+      } catch (e: any) {
+        console.error('[stripe-webhook] enableSubscriptionUsers error:', e?.message)
+      }
+
       return { email: normalized, role, plan }
     }
 
@@ -703,6 +887,44 @@ export async function POST(req: Request) {
         plan: plan || null,
       })
       return NextResponse.json({ received: true, skipped: true })
+    }
+
+    // Handle customer deletion
+    if (event.type === 'customer.deleted') {
+      const customer = event.data.object as Stripe.Customer
+      const email = normalizeEmail((customer as any)?.email)
+      
+      if (email) {
+        await handleSubscriptionExpiry(email)
+        console.log('[stripe-webhook] customer deleted, subscription expired', { email })
+        return NextResponse.json({ received: true, expired: true, email, reason: 'customer_deleted' })
+      }
+    }
+
+    // Handle subscription cancellation / deletion
+    if (event.type === 'customer.subscription.deleted' || event.type === 'customer.subscription.updated') {
+      const subscription = event.data.object as Stripe.Subscription
+      const subStatus = String((subscription as any)?.status || '').trim().toLowerCase()
+
+      // Only expire on deletion or terminal states
+      const isExpired = event.type === 'customer.subscription.deleted' ||
+        subStatus === 'canceled' || subStatus === 'unpaid' || subStatus === 'past_due'
+
+      if (isExpired) {
+        let email = ''
+        if (subscription.customer) {
+          try {
+            const customer = (await stripe.customers.retrieve(String(subscription.customer))) as Stripe.Customer
+            email = normalizeEmail((customer as any)?.email)
+          } catch { /* ignore */ }
+        }
+
+        if (email) {
+          await handleSubscriptionExpiry(email)
+          console.log('[stripe-webhook] subscription expired via', event.type, { email, subStatus })
+          return NextResponse.json({ received: true, expired: true, email })
+        }
+      }
     }
 
     return NextResponse.json({ received: true })

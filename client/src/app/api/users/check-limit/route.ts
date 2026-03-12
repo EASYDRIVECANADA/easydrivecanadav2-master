@@ -7,6 +7,11 @@ const ROLE_LIMITS: Record<string, number> = {
   'large dealership': 10,
 }
 
+const isPrivateSellerRole = (role: string) => {
+  const r = String(role || '').trim().toLowerCase()
+  return !r || r === 'starter' || r === 'private seller' || r === 'private'
+}
+
 export async function POST(request: Request) {
   try {
     const body = (await request.json().catch(() => ({}))) as { user_id?: string }
@@ -49,7 +54,8 @@ export async function POST(request: Request) {
     }
 
     const currentCount = count ?? 0
-    const limit = role === 'admin' ? Infinity : (ROLE_LIMITS[role] ?? 2)
+    const limit =
+      role === 'admin' ? Infinity : isPrivateSellerRole(role) ? 1 : (ROLE_LIMITS[role] ?? 2)
     const canAdd = currentCount < limit
 
     return NextResponse.json({

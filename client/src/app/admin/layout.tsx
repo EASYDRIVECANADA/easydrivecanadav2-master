@@ -116,6 +116,51 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
     void run()
   }, [])
 
+  // Check subscription expiry on page load
+  useEffect(() => {
+    const userId = String(session?.user_id ?? '').trim()
+    const email = String(session?.email ?? '').trim().toLowerCase()
+    console.log('[admin-layout] Expiry check triggered:', { userId, email, hasSession: !!session })
+    
+    if (!userId) {
+      console.log('[admin-layout] No user_id, skipping expiry check')
+      return
+    }
+
+    const checkExpiry = async () => {
+      try {
+        console.log('[admin-layout] Calling check-expiry API...')
+        const res = await fetch('/api/subscription/check-expiry', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ user_id: userId, email }),
+        })
+        console.log('[admin-layout] Check-expiry response:', { ok: res.ok, status: res.status })
+        
+        const json = await res.json().catch(() => null)
+        console.log('[admin-layout] Check-expiry data:', json)
+        
+        if (json?.callerStatus === 'disable') {
+          console.log('[admin-layout] User disabled, logging out...')
+          // User's account is disabled – log them out
+          if (typeof window !== 'undefined') {
+            window.localStorage.removeItem('edc_admin_session')
+            window.localStorage.removeItem('edc_account_verified')
+            window.dispatchEvent(new Event('edc_admin_session_changed'))
+            window.location.replace('/account')
+          }
+        } else {
+          console.log('[admin-layout] User still enabled, continuing...')
+        }
+      } catch (e: any) {
+        console.error('[admin-layout] Expiry check error:', e?.message)
+        // Don't block page load on API failure
+      }
+    }
+
+    void checkExpiry()
+  }, [session?.user_id, session?.email])
+
   useEffect(() => {
     const email = String(session?.email || '').trim().toLowerCase()
     if (!email) {

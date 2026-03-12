@@ -23,7 +23,7 @@ export async function POST(request: Request) {
 
     const queryPromise = supabase
       .from('users')
-      .select('id, user_id, email, administrator')
+      .select('id, user_id, email, administrator, status')
       .ilike('email', email)
       .eq('password', password)
       .limit(1)
@@ -43,6 +43,15 @@ export async function POST(request: Request) {
     if (error) return NextResponse.json({ ok: false, error: 'Login failed' }, { status: 500 })
 
     if (!data) return NextResponse.json({ ok: false, error: 'Invalid credentials' }, { status: 401 })
+
+    // Block login if account is disabled
+    const accountStatus = String((data as any)?.status || '').trim().toLowerCase()
+    if (accountStatus === 'disable') {
+      return NextResponse.json(
+        { ok: false, error: 'Your account has been disabled. Please contact your administrator.' },
+        { status: 403 }
+      )
+    }
 
     const role = (data as any)?.administrator ? 'ADMIN' : 'STAFF'
     const scopedUserId = String((data as any)?.user_id ?? (data as any)?.id ?? '').trim()
