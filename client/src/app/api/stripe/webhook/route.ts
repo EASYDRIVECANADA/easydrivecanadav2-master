@@ -572,6 +572,68 @@ export async function POST(req: Request) {
           email = normalizeEmail((customer as any)?.email)
         }
 
+        // Handle E‑Signature Unlimited sold as a subscription
+        try {
+          const metaProduct = String((session.metadata as any)?.product || '').trim().toLowerCase()
+          const metaTier = String((session.metadata as any)?.tier || '').trim().toLowerCase()
+          const rawSubId = (session as any)?.subscription
+          const subscriptionId = typeof rawSubId === 'string' ? rawSubId : rawSubId?.id
+          let isEsignUnlimited = metaProduct === 'esignature' && metaTier === 'unlimited'
+
+          // Fallback: detect via line_items price ID
+          if (!isEsignUnlimited) {
+            try {
+              const priceUnlimited = String(
+                process.env.STRIPE_PRICE_ID_ESIGN_UNLIMITED || (process.env as any)['STRIPE_PRICE_ID_E-SIGN_UNLIMITED'] || ''
+              ).trim()
+              const full = await stripe.checkout.sessions.retrieve(session.id, { expand: ['line_items.data.price'] })
+              const firstLine: any = full.line_items?.data?.[0]
+              const linePriceId = String(firstLine?.price?.id || '').trim()
+              if (priceUnlimited && linePriceId && linePriceId === priceUnlimited) {
+                isEsignUnlimited = true
+              }
+              console.log('[stripe-webhook] subscription esign detect via line_items', { linePriceId, isEsignUnlimited })
+            } catch (e: any) {
+              console.log('[stripe-webhook] subscription esign detect via line_items failed', String(e?.message || e))
+            }
+          }
+
+          if (isEsignUnlimited && subscriptionId) {
+            // Ensure we have an email (derive from customer if missing)
+            if (!email && session.customer) {
+              const customer = (await stripe.customers.retrieve(String(session.customer))) as Stripe.Customer
+              email = normalizeEmail((customer as any)?.email)
+            }
+            if (!email) {
+              return NextResponse.json({ received: true, skipped: true, reason: 'esign subscription missing email' })
+            }
+
+            const idempotencyKey = `esign-sub:${subscriptionId}`
+            const idem = await markWebhookEventProcessed(idempotencyKey, event.type)
+            if (idem.alreadyProcessed) {
+              console.log('[stripe-webhook] esign-subscription skip duplicate', { key: idempotencyKey })
+              return NextResponse.json({ received: true, skipped: true, reason: 'duplicate esign subscription event' })
+            }
+            if (!idem.ok || (idem as any).durable === false) {
+              return NextResponse.json({ error: 'Idempotency store unavailable (esign subscription)' }, { status: 500 })
+            }
+
+            const wallet = await getEsignWalletByEmail(email)
+            const now = Date.now()
+            let baseMs = now
+            try {
+              const current = wallet.esignUnlimitedUntil ? new Date(String(wallet.esignUnlimitedUntil)) : null
+              if (current && !Number.isNaN(current.getTime()) && current.getTime() > now) baseMs = current.getTime()
+            } catch {}
+            const until = new Date(baseMs + 30 * 24 * 60 * 60 * 1000).toISOString()
+            await updateEsignWalletByEmail(email, { esign_unlimited_until: until })
+            console.log('[stripe-webhook] esign-unlimited (subscription) extended', { email, until, subscriptionId })
+            return NextResponse.json({ received: true, esign_unlimited_until: until, subscriptionId })
+          }
+        } catch (e: any) {
+          console.error('[stripe-webhook] esign subscription handling failed:', e?.message)
+        }
+
         // Try to get plan from session line_items first (most reliable)
         if (!(sessionPlan === 'starter' || sessionPlan === 'small' || sessionPlan === 'medium' || sessionPlan === 'large')) {
           try {

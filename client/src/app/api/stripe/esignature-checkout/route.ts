@@ -45,9 +45,15 @@ export async function POST(req: Request) {
     }
 
     const stripe = new Stripe(secretKey)
+    // Detect whether the price is recurring (subscription) or one-time (payment)
+    let mode: 'payment' | 'subscription' = 'payment'
+    try {
+      const price = await stripe.prices.retrieve(priceId)
+      if ((price as any)?.recurring) mode = 'subscription'
+    } catch {}
 
     const session = await stripe.checkout.sessions.create({
-      mode: 'payment',
+      mode,
       line_items: [{ price: priceId, quantity: 1 }],
       success_url: `${siteUrl}/admin/billing?esign_success=1&session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${siteUrl}/admin/billing?esign_canceled=1`,
