@@ -36,6 +36,8 @@ interface Vehicle {
   mileage: number
   status: string
   inventoryType: string
+  category?: string
+  vehicleType?: string
   images: string[]
   photos?: string[]
   keyNumber?: string
@@ -87,6 +89,8 @@ export default function AdminInventoryPage() {
   const [statusFilter, setStatusFilter] = useState<Set<string>>(new Set())
   const [statusFilterOpen, setStatusFilterOpen] = useState(false)
   const [itemsPerPage, setItemsPerPage] = useState(10)
+  // Premier-only category tabs (based on vehicles.categories)
+  const [categoryTab, setCategoryTab] = useState<'' | 'premier' | 'fleet'>('')
   const [showAddModal, setShowAddModal] = useState(false)
   const [addSubmitting, setAddSubmitting] = useState(false)
   const [addError, setAddError] = useState('')
@@ -637,6 +641,23 @@ export default function AdminInventoryPage() {
           mileage: Number(v.mileage) || 0,
           status: normalizeStatus(v.status),
           inventoryType: safe(v.inventory_type),
+          category: (() => {
+            // Prefer explicit categories/category columns; fallback to inventory_type
+            const c1 = safe((v as any).categories)
+            const c2 = safe((v as any).category)
+            const source = (c1 || c2 || '').trim().toLowerCase()
+            let cat = source
+            if (cat === 'premiere') cat = 'premier'
+            if (cat === 'premier' || cat === 'fleet') return cat
+            const inv = safe((v as any).inventory_type).trim().toLowerCase()
+            if (inv === 'premiere') return 'premier'
+            if (inv === 'premier' || inv === 'fleet') return inv
+            return source || undefined
+          })(),
+          vehicleType: (() => {
+            const vt = String((v as any).vehicle_type ?? (v as any).vehicletype ?? (v as any).type ?? '').trim()
+            return vt || undefined
+          })(),
           images: await loadBucketImages(String(v.id)),
           photos: Array.isArray((v as any).photos) ? (v as any).photos : undefined,
           keyNumber: safe((v as any).key_number) || undefined,
@@ -699,12 +720,21 @@ export default function AdminInventoryPage() {
       filtered = filtered.filter(vehicle => vehicle.inventoryType === inventoryTypeFilter)
     }
 
+    // If user is Premier and a category tab is selected, filter by vehicles.categories
+    const roleLower = String(accountRole || '').trim().toLowerCase()
+    if (roleLower === 'premier' && categoryTab) {
+      const want = categoryTab.toLowerCase()
+      filtered = filtered.filter(v => (v.category || '').toLowerCase() === want)
+    }
+
     if (statusFilter.size > 0 && statusFilter.size < STATUS_OPTIONS.length) {
       const known = new Set<string>(STATUS_OPTIONS.filter((s) => s !== 'Other') as unknown as string[])
       filtered = filtered.filter((vehicle) => {
         const normalized = normalizeStatus(vehicle.status)
+        // If status matches selected options
         if (statusFilter.has(normalized)) return true
-        if (statusFilter.has('Other') && normalized && !known.has(normalized)) return true
+        // Treat empty or unknown statuses as 'Other' when 'Other' is selected
+        if (statusFilter.has('Other') && (!normalized || !known.has(normalized))) return true
         return false
       })
     }
@@ -726,7 +756,7 @@ export default function AdminInventoryPage() {
     setFilteredVehicles(filtered)
     setTotalVehicles(filtered.length)
     setCurrentPage(1)
-  }, [searchQuery, inventoryTypeFilter, vehicles, statusFilter])
+  }, [searchQuery, inventoryTypeFilter, vehicles, statusFilter, accountRole, categoryTab])
 
   // Get paginated vehicles
   const paginatedVehicles = filteredVehicles.slice(
@@ -856,7 +886,7 @@ export default function AdminInventoryPage() {
       aoa.push([
         desc,
         v.trim ?? '',
-        v.bodyStyle ?? '',
+        v.vehicleType ?? '',
         v.drivetrain ?? '',
         v.transmission ?? '',
         v.cylinders ?? '',
@@ -1262,6 +1292,36 @@ export default function AdminInventoryPage() {
           </div>
         </div>
 
+        {/* Premier/Fleet category tabs - only show for Premier accounts */}
+        {String(accountRole || '').trim().toLowerCase() === 'premier' && (
+          <div className="bg-white rounded-2xl border border-slate-200/60 p-3 mb-5" style={{ boxShadow: '0 1px 3px rgba(0,0,0,.04)' }}>
+            <div className="flex items-center gap-2">
+              {(() => {
+                const premierCount = vehicles.filter(v => (v.category || '').toLowerCase() === 'premier').length
+                const fleetCount = vehicles.filter(v => (v.category || '').toLowerCase() === 'fleet').length
+                const TabBtn = ({ label, val, count }: { label: string; val: '' | 'premier' | 'fleet'; count?: number }) => (
+                  <button
+                    type="button"
+                    onClick={() => setCategoryTab(val)}
+                    className={`px-4 py-1.5 rounded-full text-sm border transition ${
+                      categoryTab === val ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
+                    }`}
+                  >
+                    {label}{typeof count === 'number' ? ` (${count})` : ''}
+                  </button>
+                )
+                return (
+                  <div className="flex items-center gap-2">
+                    <TabBtn label="All" val="" />
+                    <TabBtn label="Premier" val="premier" count={premierCount} />
+                    <TabBtn label="Fleet" val="fleet" count={fleetCount} />
+                  </div>
+                )
+              })()}
+            </div>
+          </div>
+        )}
+
         {/* Search / Filters / Page size */}
         <div className="bg-white rounded-2xl border border-slate-200/60 p-4 mb-5" style={{ boxShadow: '0 1px 3px rgba(0,0,0,.04)' }}>
           <div className="flex items-center justify-between gap-4 flex-wrap">
@@ -1483,7 +1543,7 @@ export default function AdminInventoryPage() {
                       {vehicle.year} {vehicle.make} {vehicle.model}
                     </td>
                     <td className="px-3 py-3 whitespace-nowrap text-xs text-slate-500">{vehicle.trim || '—'}</td>
-                    <td className="px-3 py-3 whitespace-nowrap text-xs text-slate-500">{vehicle.bodyStyle || vehicle.inventoryType || '—'}</td>
+                    <td className="px-3 py-3 whitespace-nowrap text-xs text-slate-500">{vehicle.vehicleType || '—'}</td>
                     <td className="px-3 py-3 whitespace-nowrap text-xs text-slate-500">{vehicle.drivetrain || '—'}</td>
                     <td className="px-3 py-3 whitespace-nowrap text-xs text-slate-500">{vehicle.transmission || '—'}</td>
                     <td className="px-3 py-3 whitespace-nowrap text-xs text-slate-500">{vehicle.cylinders || '—'}</td>
