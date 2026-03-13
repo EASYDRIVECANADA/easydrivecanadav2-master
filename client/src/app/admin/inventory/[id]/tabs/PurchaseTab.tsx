@@ -147,21 +147,46 @@ export default function PurchaseTab({ vehicleId, stockNumber, onError }: Purchas
     const run = async () => {
       try {
         const sn = stockNumber === null || stockNumber === undefined ? '' : String(stockNumber).trim()
-        if (!sn) return
 
-        const { data: rows, error } = await supabase
-          .from('edc_purchase')
-          .select('*')
-          .eq('stock_number', sn)
-          .order('created_at', { ascending: false })
-          .limit(1)
+        let row: any = null
 
-        if (error) {
-          console.error('Error fetching edc_purchase:', error)
-          return
+        // 1) Schemas where edc_purchase.id === edc_vehicles.id
+        try {
+          const { data, error } = await supabase
+            .from('edc_purchase')
+            .select('*')
+            .eq('id', vehicleId)
+            .order('created_at', { ascending: false })
+            .limit(1)
+          if (!error) row = Array.isArray(data) ? data[0] : null
+        } catch {}
+
+        // 2) Explicit vehicle_id column
+        if (!row) {
+          try {
+            const { data, error } = await supabase
+              .from('edc_purchase')
+              .select('*')
+              .eq('vehicle_id', vehicleId)
+              .order('created_at', { ascending: false })
+              .limit(1)
+            if (!error) row = Array.isArray(data) ? data[0] : null
+          } catch {}
         }
 
-        const row = Array.isArray(rows) ? rows[0] : null
+        // 3) Fallback to stock number
+        if (!row && sn) {
+          try {
+            const { data, error } = await supabase
+              .from('edc_purchase')
+              .select('*')
+              .eq('stock_number', sn)
+              .order('created_at', { ascending: false })
+              .limit(1)
+            if (!error) row = Array.isArray(data) ? data[0] : null
+          } catch {}
+        }
+
         if (!row) return
 
         const pick = (keys: string[]) => {

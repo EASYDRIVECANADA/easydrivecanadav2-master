@@ -137,15 +137,32 @@ export default function WarrantyTab({ vehicleId }: WarrantyTabProps) {
 
   const fetchWarrantyData = async () => {
     try {
-      const { data, error } = await supabase
-        .from('edc_warranty')
-        .select('*')
-        .eq('vehicle_id', vehicleId)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle()
+      let data: any = null
 
-      if (error) return
+      // 1) Try schemas where edc_warranty.id === edc_vehicles.id
+      try {
+        const { data: byId, error: errId } = await supabase
+          .from('edc_warranty')
+          .select('*')
+          .eq('id', vehicleId)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+        if (!errId && byId) data = byId
+      } catch {}
+
+      // 2) Fall back to explicit vehicle_id column
+      if (!data) {
+        const { data: byVehicle, error: errVehicle } = await supabase
+          .from('edc_warranty')
+          .select('*')
+          .eq('vehicle_id', vehicleId)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+        if (!errVehicle && byVehicle) data = byVehicle
+      }
+
       if (!data) return
 
       setWarrantyRowExists(true)

@@ -234,7 +234,6 @@ const DisclosuresTab = forwardRef<DisclosuresTabHandle, DisclosuresTabProps>(fun
   const handleSave = async (): Promise<boolean> => {
     setSaving(true)
     try {
-      if (!vehicleId) return false
       const payloadDisclosures: Disclosure[] = [
         ...selectedDisclosures,
         { id: NOTES_DISCLOSURE_ID, title: 'Notes', content: customNote || '' },
@@ -243,9 +242,15 @@ const DisclosuresTab = forwardRef<DisclosuresTabHandle, DisclosuresTabProps>(fun
       const stockNumberRaw = vehicleData && typeof vehicleData === 'object' ? (vehicleData as any).stockNumber : undefined
       const stockNumber = typeof stockNumberRaw === 'string' ? (stockNumberRaw.trim() || null) : stockNumberRaw ?? null
 
+      const idStr = String(vehicleId || '').trim()
+      if (!idStr) {
+        onError?.('Missing vehicle ID. Please save Vehicle Details first to generate the vehicle and try again.')
+        return false
+      }
+
       const webhookBody = {
         user_id: userId ?? null,
-        vehicleId,
+        vehicleId: idStr,
         stockNumber,
         brandType,
         disclosures: payloadDisclosures,
@@ -259,7 +264,9 @@ const DisclosuresTab = forwardRef<DisclosuresTabHandle, DisclosuresTabProps>(fun
 
       const text = await res.text().catch(() => '')
       if (!res.ok) throw new Error(text || `Webhook responded with ${res.status}`)
-      if (!String(text).toLowerCase().includes('done')) throw new Error(text || 'Webhook did not return done')
+      const lower = String(text || '').toLowerCase()
+      const ok = lower.includes('done') || lower.includes('success') || lower.includes('ok') || lower.includes('"success":true')
+      if (!ok) throw new Error(text || 'Unexpected webhook response')
 
       alert('Disclosures saved successfully!')
       return true

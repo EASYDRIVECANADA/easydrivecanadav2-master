@@ -34,6 +34,7 @@ interface CostItem {
   tax: number
   taxType: string
   total: number
+  dbId?: string | number
 }
 
 interface CostsData {
@@ -261,6 +262,7 @@ const CostsTab = forwardRef<CostsTabHandle, CostsTabProps>(function CostsTab({ v
             ...prev,
             ...(nextCosts || {}),
             listPrice: typeof row.price === 'number' ? row.price : prev.listPrice,
+            salePrice: row.saleprice === null || row.saleprice === undefined ? prev.salePrice : (Number(row.saleprice) || 0),
           }))
         } catch {
           // ignore parse errors
@@ -276,7 +278,7 @@ const CostsTab = forwardRef<CostsTabHandle, CostsTabProps>(function CostsTab({ v
     try {
       const { data, error } = await supabase
         .from('edc_vehicles')
-        .select('costs_data, price')
+        .select('costs_data, price, saleprice')
         .eq('id', vehicleId)
         .maybeSingle()
 
@@ -286,6 +288,10 @@ const CostsTab = forwardRef<CostsTabHandle, CostsTabProps>(function CostsTab({ v
         }
         if (data.price) {
           setCostsData(prev => ({ ...prev, listPrice: data.price }))
+        }
+        if ((data as any).saleprice !== null && (data as any).saleprice !== undefined) {
+          const sp = Number((data as any).saleprice || 0)
+          setCostsData(prev => ({ ...prev, salePrice: Number.isFinite(sp) ? sp : 0 }))
         }
       }
     } catch (error) {
@@ -311,6 +317,7 @@ const CostsTab = forwardRef<CostsTabHandle, CostsTabProps>(function CostsTab({ v
           const total = parseFloat(r.total ?? String(Math.max(0, price * qty - discount + tax))) || (price * qty - discount + tax)
           return {
             id: String(r.id ?? Date.now()),
+            dbId: r.id,
             date: (r.created_at ? String(r.created_at).split('T')[0] : new Date().toISOString().split('T')[0]),
             name: r.name || '',
             groupName: r.group_name || '',
@@ -411,29 +418,28 @@ const CostsTab = forwardRef<CostsTabHandle, CostsTabProps>(function CostsTab({ v
 
       // Persist edit to Supabase (when possible), then refresh from Supabase
       try {
-        if (stockNumber && editingCost.id) {
-          const numericId = Number(editingCost.id)
-          if (!Number.isNaN(numericId)) {
-            const { error } = await supabase
-              .from('edc_costs')
-              .update({
-                name: modalForm.name || '',
-                group_name: modalForm.groupName || '',
-                description: modalForm.description || '',
-                vendor: modalForm.vendor || '',
-                invoice_reference: modalForm.invoiceRef || '',
-                amount: price,
-                quantity: qty,
-                discount: discount,
-                tax: tax,
-                tax_type: modalForm.taxType || 'HST',
-                total: total,
-              })
-              .eq('id', numericId)
-              .eq('stock_number', stockNumber)
-            if (error) {
-              console.error('Failed to update cost in Supabase:', error)
-            }
+        if (editingCost?.id) {
+          const dbId = (editingCost as any).dbId ?? editingCost.id
+          const q = supabase
+            .from('edc_costs')
+            .update({
+              name: modalForm.name || '',
+              group_name: modalForm.groupName || '',
+              description: modalForm.description || '',
+              vendor: modalForm.vendor || '',
+              invoice_reference: modalForm.invoiceRef || '',
+              amount: price,
+              quantity: qty,
+              discount: discount,
+              tax: tax,
+              tax_type: modalForm.taxType || 'HST',
+              total: total,
+            })
+            .eq('id', dbId as any)
+          if (stockNumber) q.eq('stock_number', stockNumber)
+          const { error } = await q
+          if (error) {
+            console.error('Failed to update cost in Supabase:', error)
           }
         }
       } catch (err) {
@@ -541,17 +547,16 @@ const CostsTab = forwardRef<CostsTabHandle, CostsTabProps>(function CostsTab({ v
 
     // Attempt delete from Supabase when we have a real DB id and stock number
     try {
-      if (stockNumber && item.id) {
-        const numericId = Number(item.id)
-        if (!Number.isNaN(numericId)) {
-          const { error } = await supabase
-            .from('edc_costs')
-            .delete()
-            .eq('id', numericId)
-            .eq('stock_number', stockNumber)
-          if (error) {
-            console.error('Failed to delete cost from Supabase:', error)
-          }
+      if (item?.id) {
+        const dbId = (item as any).dbId ?? item.id
+        const q = supabase
+          .from('edc_costs')
+          .delete()
+          .eq('id', dbId as any)
+        if (stockNumber) q.eq('stock_number', stockNumber)
+        const { error } = await q
+        if (error) {
+          console.error('Failed to delete cost from Supabase:', error)
         }
       }
     } catch (err) {
@@ -725,6 +730,7 @@ const CostsTab = forwardRef<CostsTabHandle, CostsTabProps>(function CostsTab({ v
                   <td className="py-2 px-2">
                     <div className="flex items-center gap-3">
                       <button
+                        type="button"
                         title="Edit"
                         onClick={(e) => { e.stopPropagation(); openEditModal(item); }}
                         className="text-gray-600 hover:text-gray-800"
@@ -732,6 +738,7 @@ const CostsTab = forwardRef<CostsTabHandle, CostsTabProps>(function CostsTab({ v
                         ✎
                       </button>
                       <button
+                        type="button"
                         title="Delete"
                         onClick={(e) => { e.stopPropagation(); removeCostItem(item); }}
                         className="text-red-500 hover:text-red-700"
@@ -747,6 +754,7 @@ const CostsTab = forwardRef<CostsTabHandle, CostsTabProps>(function CostsTab({ v
         </table>
 
         <button
+          type="button"
           onClick={openAddModal}
           className="mt-4 flex items-center gap-2 text-[#118df0] hover:text-[#0d6ebd] font-medium"
         >
@@ -1121,12 +1129,14 @@ const CostsTab = forwardRef<CostsTabHandle, CostsTabProps>(function CostsTab({ v
               </div>
               <div className="flex gap-3">
                 <button
+                  type="button"
                   onClick={() => setShowModal(false)}
                   className="flex-1 px-5 py-2.5 bg-white border border-gray-200 rounded-lg font-medium text-gray-700 hover:bg-gray-50 hover:border-gray-300 transition-all"
                 >
                   Cancel
                 </button>
                 <button
+                  type="button"
                   onClick={handleModalSave}
                   className="flex-1 px-5 py-2.5 bg-[#118df0] text-white rounded-lg font-medium hover:bg-[#0d6ebd] shadow-lg shadow-blue-500/25 transition-all"
                 >

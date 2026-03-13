@@ -14,6 +14,7 @@ type TabType = 'details' | 'disclosures' | 'purchase' | 'costs' | 'warranty'
 export default function NewVehiclePage() {
   const [activeTab, setActiveTab] = useState<TabType>('details')
   const [createdVehicleId, setCreatedVehicleId] = useState<string>('')
+  const [allowNextTabs, setAllowNextTabs] = useState(false)
   const [disclosuresSaved, setDisclosuresSaved] = useState(false)
   const [purchaseSaved, setPurchaseSaved] = useState(false)
   const [costsSaved, setCostsSaved] = useState(false)
@@ -350,10 +351,10 @@ export default function NewVehiclePage() {
   }, [formData?.stockNumber, webhookUserId])
 
   useEffect(() => {
-    if (!createdVehicleId && activeTab !== 'details') {
+    if (!createdVehicleId && activeTab !== 'details' && !allowNextTabs) {
       setActiveTab('details')
     }
-  }, [createdVehicleId, activeTab])
+  }, [createdVehicleId, activeTab, allowNextTabs])
 
   useEffect(() => {
     if (!createdVehicleId) {
@@ -375,8 +376,179 @@ export default function NewVehiclePage() {
     setFormData({ ...formData, [name]: value })
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (submitting) return
+    setSubmitting(true)
+    setError('')
+
+    try {
+      const toNumberOrNull = (v: any) => {
+        const n = Number(v)
+        return Number.isFinite(n) ? n : null
+      }
+      const toIntOrNull = (v: any) => {
+        const n = parseInt(String(v))
+        return Number.isFinite(n) ? n : null
+      }
+      const featuresArr =
+        typeof (formData as any).features === 'string'
+          ? String((formData as any).features)
+              .split(',')
+              .map((f) => f.trim())
+              .filter(Boolean)
+          : Array.isArray((formData as any).features)
+            ? (formData as any).features
+            : []
+
+      const payload: Record<string, any> = {
+        // Optional scoping for backend
+        user_id: webhookUserId ?? undefined,
+
+        make: formData.make || null,
+        model: formData.model || null,
+        year: toIntOrNull(formData.year),
+        trim: formData.trim || null,
+        stock_number: formData.stockNumber || null,
+        key_number: formData.keyNumber || null,
+        key_description: (formData as any).keyDescription || null,
+        series: formData.series || null,
+        equipment: formData.equipment || null,
+        vin: formData.vin || null,
+        price: toNumberOrNull(formData.price),
+        mileage: toIntOrNull(formData.mileage),
+        status: formData.status || null,
+        inventory_type: formData.inventoryType || null,
+        fuel_type: formData.fuelType || null,
+        transmission: formData.transmission || null,
+        body_style: formData.bodyStyle || null,
+        drivetrain: formData.drivetrain || null,
+        city: formData.city || null,
+        province: formData.province || null,
+        exterior_color: formData.exteriorColor || null,
+        interior_color: formData.interiorColor || null,
+        description: formData.description || null,
+        ad_description: (formData as any).adDescription || null,
+        features: featuresArr,
+        condition: (formData as any).condition || null,
+        status_colour: (formData as any).statusColour || null,
+        retail_wholesale: (formData as any).retailWholesale || null,
+        substatus: (formData as any).substatus || null,
+        assignment: (formData as any).assignment || null,
+        lot_location: (formData as any).lotLocation || null,
+        keywords: (formData as any).keywords || null,
+        feedwords: (formData as any).feedwords || null,
+        odometer: (formData as any).odometer || null,
+        odometer_unit: (formData as any).odometerUnit || null,
+        in_stock_date: (formData as any).inStockDate || null,
+        vehicle_type: (formData as any).vehicleType || null,
+        engine: (formData as any).engine || null,
+        cylinders: (formData as any).cylinders || null,
+        doors: (formData as any).doors || null,
+        other: (formData as any).other || null,
+        notes: (formData as any).notes || null,
+        distance_disclaimer: Boolean((formData as any).distanceDisclaimer),
+        feed_to_autotrader: Boolean((formData as any).feedToAutotrader),
+        feed_to_carpages: Boolean((formData as any).feedToCarpages),
+        feed_to_cargurus: Boolean((formData as any).feedToCargurus),
+        certified: Boolean((formData as any).certified),
+        verified: Boolean((formData as any).verified),
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      }
+
+      const res = await fetch('/api/webhook/add', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+      const text = await res.text().catch(() => '')
+      const lower = (text || '').toLowerCase()
+      const hasSuccess = lower.includes('done') || lower.includes('success')
+      const isDuplicate = lower.includes('duplicate key') || lower.includes('unique constraint') || lower.includes('already exists')
+      const proceed = (res.ok && hasSuccess) || isDuplicate
+      if (!proceed) {
+        const msg = text || `Webhook error (${res.status})`
+        setError(msg)
+        alert(`Save failed: ${msg}`)
+        return
+      }
+
+      // Try to extract a created vehicle id from response JSON (if the webhook returns one)
+      let rid = ''
+      try {
+        const maybe = JSON.parse(text)
+        const src = Array.isArray(maybe) ? (maybe[0] || {}) : (maybe || {})
+        rid = String((src.id ?? src.vehicle_id ?? src.vehicleId ?? '') || '').trim()
+      } catch {}
+
+      // If ID not present in the response, poll Supabase using unique keys (stock_number or VIN)
+      const resolveCreatedId = async (): Promise<string | null> => {
+        try {
+          const stock = String(formData.stockNumber || '').trim()
+          const vin = String(formData.vin || '').trim()
+          if (stock) {
+            const { data } = await supabase
+              .from('edc_vehicles')
+              .select('id')
+              .eq('stock_number', stock)
+              .order('created_at', { ascending: false })
+              .limit(1)
+              .maybeSingle()
+            const id = (data as any)?.id ? String((data as any).id).trim() : ''
+            if (id) return id
+          }
+          if (vin) {
+            const { data } = await supabase
+              .from('edc_vehicles')
+              .select('id')
+              .eq('vin', vin)
+              .order('created_at', { ascending: false })
+              .limit(1)
+              .maybeSingle()
+            const id = (data as any)?.id ? String((data as any).id).trim() : ''
+            if (id) return id
+          }
+        } catch {}
+        return null
+      }
+
+      if (!rid) {
+        for (let i = 0; i < 12; i++) { // up to ~12s
+          const got = await resolveCreatedId()
+          if (got) { rid = got; break }
+          await new Promise(r => setTimeout(r, 1000))
+        }
+      }
+
+      if (!rid) {
+        alert('Vehicle created via webhook, but the vehicle ID is not yet available. Please try again in a moment.')
+        return
+      }
+
+      setCreatedVehicleId(rid)
+      alert('Vehicle created via webhook!')
+      setAllowNextTabs(true)
+      setActiveTab('disclosures')
+      try {
+        const snapshot = {
+          activeTab: 'disclosures',
+          createdVehicleId: rid,
+          disclosuresSaved: false,
+          purchaseSaved: false,
+          costsSaved: false,
+          formData,
+        }
+        localStorage.setItem('edc_new_vehicle_wizard', JSON.stringify(snapshot))
+      } catch {}
+    } catch (err: any) {
+      console.error('Error creating vehicle via webhook:', err)
+      const msg = String(err?.message || 'Unexpected error')
+      setError(msg)
+      alert(`Save failed: ${msg}`)
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   // Removed tab locking - allow free navigation even if saves fail
@@ -639,49 +811,49 @@ export default function NewVehiclePage() {
             </button>
             <button
               type="button"
-              onClick={() => createdVehicleId && setActiveTab('disclosures')}
-              disabled={!createdVehicleId}
+              onClick={() => (allowNextTabs || createdVehicleId) && setActiveTab('disclosures')}
+              disabled={!(allowNextTabs || createdVehicleId)}
               className={`py-4 px-1 border-b-2 font-medium text-sm ${
                 activeTab === 'disclosures'
                   ? 'border-[#118df0] text-[#118df0]'
                   : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              } ${!createdVehicleId ? 'opacity-50 cursor-not-allowed' : ''}`}
+              } ${!(allowNextTabs || createdVehicleId) ? 'opacity-50 cursor-not-allowed' : ''}`}
             >
               📋 Disclosures
             </button>
             <button
               type="button"
-              onClick={() => createdVehicleId && setActiveTab('purchase')}
-              disabled={!createdVehicleId}
+              onClick={() => (allowNextTabs || createdVehicleId) && setActiveTab('purchase')}
+              disabled={!(allowNextTabs || createdVehicleId)}
               className={`py-4 px-1 border-b-2 font-medium text-sm ${
                 activeTab === 'purchase'
                   ? 'border-[#118df0] text-[#118df0]'
                   : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              } ${!createdVehicleId ? 'opacity-50 cursor-not-allowed' : ''}`}
+              } ${!(allowNextTabs || createdVehicleId) ? 'opacity-50 cursor-not-allowed' : ''}`}
             >
               💰 Purchase
             </button>
             <button
               type="button"
-              onClick={() => createdVehicleId && setActiveTab('costs')}
-              disabled={!createdVehicleId}
+              onClick={() => (allowNextTabs || createdVehicleId) && setActiveTab('costs')}
+              disabled={!(allowNextTabs || createdVehicleId)}
               className={`py-4 px-1 border-b-2 font-medium text-sm ${
                 activeTab === 'costs'
                   ? 'border-[#118df0] text-[#118df0]'
                   : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              } ${!createdVehicleId ? 'opacity-50 cursor-not-allowed' : ''}`}
+              } ${!(allowNextTabs || createdVehicleId) ? 'opacity-50 cursor-not-allowed' : ''}`}
             >
               💵 Costs
             </button>
             <button
               type="button"
-              onClick={() => createdVehicleId && setActiveTab('warranty')}
-              disabled={!createdVehicleId}
+              onClick={() => (allowNextTabs || createdVehicleId) && setActiveTab('warranty')}
+              disabled={!(allowNextTabs || createdVehicleId)}
               className={`py-4 px-1 border-b-2 font-medium text-sm ${
                 activeTab === 'warranty'
                   ? 'border-[#118df0] text-[#118df0]'
                   : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              } ${!createdVehicleId ? 'opacity-50 cursor-not-allowed' : ''}`}
+              } ${!(allowNextTabs || createdVehicleId) ? 'opacity-50 cursor-not-allowed' : ''}`}
             >
               🛡️ Warranty
             </button>

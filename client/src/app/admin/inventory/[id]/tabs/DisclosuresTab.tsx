@@ -250,43 +250,84 @@ const DisclosuresTab = forwardRef<DisclosuresTabHandle, DisclosuresTabProps>(fun
       const stockNumberRaw = (data as any).stock_number
       const stockNumber = stockNumberRaw === null || stockNumberRaw === undefined ? '' : String(stockNumberRaw).trim()
       setCurrentStockNumber(stockNumber)
-      console.log('[DisclosuresTab] vehicleId', vehicleId, 'stockNumber', stockNumber)
 
-      // Prefer prefill from edc_disclosures table when available (matches how some saves are stored)
-      if (stockNumber) {
-        const { data: dRows, error: dErr } = await supabase
+      let row: any = null
+
+      // 1) Try schemas where edc_disclosures.id === edc_vehicles.id
+      try {
+        const { data: byId, error: errId } = await supabase
           .from('edc_disclosures')
-          .select('brandtype, disclosures_tittle, disclosures_body, created_at')
-          .eq('stock_number', stockNumber)
+          .select('*')
+          .eq('id', vehicleId)
           .order('created_at', { ascending: false })
           .limit(1)
 
-        if (dErr) {
-          console.error('Error fetching edc_disclosures:', dErr)
+        if (!errId) {
+          row = Array.isArray(byId) ? byId[0] : null
+        }
+      } catch {}
+
+      // 2) Fall back to explicit vehicle_id column
+      if (!row) {
+        try {
+          const { data: byVehicle, error: errVehicle } = await supabase
+            .from('edc_disclosures')
+            .select('*')
+            .eq('vehicle_id', vehicleId)
+            .order('created_at', { ascending: false })
+            .limit(1)
+
+          if (!errVehicle) {
+            row = Array.isArray(byVehicle) ? byVehicle[0] : null
+          }
+        } catch {}
+      }
+
+      if (!row && stockNumber) {
+        try {
+          const { data: byStock, error: errStock } = await supabase
+            .from('edc_disclosures')
+            .select('*')
+            .eq('stock_number', stockNumber)
+            .order('created_at', { ascending: false })
+            .limit(1)
+
+          if (!errStock) {
+            row = Array.isArray(byStock) ? byStock[0] : null
+          }
+        } catch {}
+      }
+
+      if (row) {
+        const brandRaw = (row as any).brandtype ?? (row as any).brand_type ?? (row as any).brand ?? null
+        if (brandRaw) {
+          const allowed = ['N/A', 'None', 'Rebuilt', 'Salvage', 'Irreparable'] as const
+          const found = allowed.find((x) => String(brandRaw).toLowerCase() === x.toLowerCase())
+          if (found) setBrandType(found)
         }
 
-        const d = Array.isArray(dRows) ? dRows[0] : null
-        console.log('[DisclosuresTab] edc_disclosures rows', Array.isArray(dRows) ? dRows.length : 0)
-        if (d) {
-          if ((d as any).brandtype) setBrandType((d as any).brandtype)
-          const title = String((d as any).disclosures_tittle || '').trim()
-          const body = String((d as any).disclosures_body || '').trim()
-          const combined = body ? (title ? `${title}\n${body}` : body) : title
-          console.log('[DisclosuresTab] edc_disclosures prefill length', combined.length)
-          if (combined) {
-            const plain = toPlainText(combined)
-            setCustomNote(
-              plain
-                ? `<div>${plain
-                    .replace(/&/g, '&amp;')
-                    .replace(/</g, '&lt;')
-                    .replace(/>/g, '&gt;')
-                    .replace(/\n/g, '<br/>')}</div>`
-                : ''
-            )
-            setSelectedDisclosures([])
-            return
-          }
+        const title = String(
+          (row as any).disclosures_tittle ?? (row as any).disclosure_tittle ?? (row as any).disclosures_title ?? (row as any).disclosure_title ?? (row as any).title ?? ''
+        ).trim()
+
+        const body = String(
+          (row as any).disclosures_body ?? (row as any).disclosure_body ?? (row as any).disclosures ?? (row as any).body ?? (row as any).notes ?? ''
+        ).trim()
+
+        const combined = body ? (title ? `${title}\n${body}` : body) : title
+        if (combined) {
+          const plain = toPlainText(combined)
+          setCustomNote(
+            plain
+              ? `<div>${plain
+                  .replace(/&/g, '&amp;')
+                  .replace(/</g, '&lt;')
+                  .replace(/>/g, '&gt;')
+                  .replace(/\n/g, '<br/>')}</div>`
+              : ''
+          )
+          setSelectedDisclosures([])
+          return
         }
       }
     } catch (error) {

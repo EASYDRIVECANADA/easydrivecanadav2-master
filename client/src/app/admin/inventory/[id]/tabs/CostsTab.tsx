@@ -27,6 +27,7 @@ interface CostItem {
   tax: number
   taxType: string
   total: number
+  dbId?: string | number
 }
 
 interface CostsData {
@@ -73,35 +74,108 @@ export default function CostsTab({ vehicleId, vehiclePrice, stockNumber }: Costs
     taxType: 'HST',
   })
 
-  // Load purchase price from edc_purchase by stock_number
-  const fetchPurchasePriceByStock = async () => {
+  // Load purchase price with preference for shared vehicle UUID
+  const fetchPurchasePrice = async () => {
     try {
-      if (!stockNumber) return
-      const { data, error } = await supabase
-        .from('edc_purchase')
-        .select('purchase_price')
-        .eq('stock_number', stockNumber)
-        .order('updated_at', { ascending: false })
-        .limit(1)
-        .single()
-      if (error) {
-        console.error('Failed to fetch purchase price:', error)
-        return
+      let row: any = null
+
+      // 1) edc_purchase.id === vehicleId
+      try {
+        const { data, error } = await supabase
+          .from('edc_purchase')
+          .select('purchase_price')
+          .eq('id', vehicleId)
+          .order('updated_at', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+        if (!error && data) row = data
+      } catch {}
+
+      // 2) explicit vehicle_id
+      if (!row) {
+        try {
+          const { data, error } = await supabase
+            .from('edc_purchase')
+            .select('purchase_price')
+            .eq('vehicle_id', vehicleId)
+            .order('updated_at', { ascending: false })
+            .limit(1)
+            .maybeSingle()
+          if (!error && data) row = data
+        } catch {}
       }
-      const price = Number(data?.purchase_price || 0)
-      setCostsData(prev => ({ ...prev, purchasePrice: isNaN(price) ? 0 : price }))
+
+      // 3) fallback to stock_number
+      if (!row && stockNumber) {
+        try {
+          const { data, error } = await supabase
+            .from('edc_purchase')
+            .select('purchase_price')
+            .eq('stock_number', stockNumber)
+            .order('updated_at', { ascending: false })
+            .limit(1)
+            .maybeSingle()
+          if (!error && data) row = data
+        } catch {}
+      }
+
+      if (!row) return
+      const price = Number((row as any)?.purchase_price || 0)
+      setCostsData(prev => ({ ...prev, purchasePrice: Number.isFinite(price) ? price : 0 }))
     } catch (err) {
       console.error('Error fetching purchase price:', err)
     }
   }
 
+  // Helper: fetch costs strictly by stock number (used by realtime/polling refreshes)
+  const fetchCostsByStock = async () => {
+    if (!stockNumber) return
+    try {
+      const { data, error } = await supabase
+        .from('edc_costs')
+        .select('*')
+        .eq('stock_number', stockNumber)
+        .order('created_at', { ascending: true })
+
+      if (!error && Array.isArray(data)) {
+        const mapped = data.map((r: any): CostItem => {
+          const price = parseFloat(r.amount ?? '0') || 0
+          const qty = parseFloat(r.quantity ?? '1') || 1
+          const discount = parseFloat(r.discount ?? '0') || 0
+          const tax = parseFloat(r.tax ?? '0') || 0
+          const total = parseFloat(r.total ?? String(Math.max(0, price * qty - discount + tax))) || (price * qty - discount + tax)
+          return {
+            id: String(r.id ?? Date.now()),
+            dbId: r.id,
+            date: (r.created_at ? String(r.created_at).split('T')[0] : new Date().toISOString().split('T')[0]),
+            name: r.name || '',
+            groupName: r.group_name || '',
+            description: r.description || '',
+            vendor: r.vendor || '',
+            invoiceRef: r.invoice_reference || '',
+            price,
+            qty,
+            discount,
+            tax,
+            taxType: r.tax_type || 'HST',
+            total,
+          }
+        })
+
+        setCostsData(prev => ({ ...prev, additionalExpenses: mapped }))
+      }
+    } catch (err) {
+      console.error('Error fetching edc_costs by stock number:', err)
+    }
+  }
+
   useEffect(() => {
-    fetchPurchasePriceByStock()
-  }, [stockNumber])
+    fetchPurchasePrice()
+  }, [vehicleId, stockNumber])
 
   useEffect(() => {
     fetchCostsData()
-    fetchCostsByStock()
+    fetchCostsAny()
   }, [vehicleId, stockNumber])
 
   // Realtime: refresh costs when edc_costs changes for this stock number
@@ -124,7 +198,7 @@ export default function CostsTab({ vehicleId, vehiclePrice, stockNumber }: Costs
     const channel = supabase
       .channel(`realtime-purchase-${stockNumber}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'edc_purchase', filter: `stock_number=eq.${stockNumber}` }, () => {
-        fetchPurchasePriceByStock()
+        fetchPurchasePrice()
       })
       .subscribe()
     return () => {
@@ -137,7 +211,7 @@ export default function CostsTab({ vehicleId, vehiclePrice, stockNumber }: Costs
     if (!stockNumber) return
     const id = setInterval(() => {
       fetchCostsByStock()
-      fetchPurchasePriceByStock()
+      fetchPurchasePrice()
     }, 2000)
     return () => clearInterval(id)
   }, [stockNumber])
@@ -192,42 +266,73 @@ export default function CostsTab({ vehicleId, vehiclePrice, stockNumber }: Costs
     }
   }
 
-  const fetchCostsByStock = async () => {
-    if (!stockNumber) return
+  const fetchCostsAny = async () => {
     try {
-      const { data, error } = await supabase
-        .from('edc_costs')
-        .select('*')
-        .eq('stock_number', stockNumber)
-        .order('created_at', { ascending: true })
+      let rows: any[] | null = null
 
-      if (!error && Array.isArray(data)) {
-        const mapped = data.map((r: any): CostItem => {
-          const price = parseFloat(r.amount ?? '0') || 0
-          const qty = parseFloat(r.quantity ?? '1') || 1
-          const discount = parseFloat(r.discount ?? '0') || 0
-          const tax = parseFloat(r.tax ?? '0') || 0
-          const total = parseFloat(r.total ?? String(Math.max(0, price * qty - discount + tax))) || (price * qty - discount + tax)
-          return {
-            id: String(r.id ?? Date.now()),
-            date: (r.created_at ? String(r.created_at).split('T')[0] : new Date().toISOString().split('T')[0]),
-            name: r.name || '',
-            groupName: r.group_name || '',
-            description: r.description || '',
-            vendor: r.vendor || '',
-            invoiceRef: r.invoice_reference || '',
-            price,
-            qty,
-            discount,
-            tax,
-            taxType: r.tax_type || 'HST',
-            total,
-          }
-        })
-        setCostsData(prev => ({ ...prev, additionalExpenses: mapped }))
+      // 1) schemas where edc_costs.id === edc_vehicles.id (single row)
+      try {
+        const { data, error } = await supabase
+          .from('edc_costs')
+          .select('*')
+          .eq('id', vehicleId)
+          .order('created_at', { ascending: true })
+        if (!error && Array.isArray(data) && data.length) rows = data as any[]
+      } catch {}
+
+      // 2) explicit vehicle_id (possibly many rows)
+      if (!rows) {
+        try {
+          const { data, error } = await supabase
+            .from('edc_costs')
+            .select('*')
+            .eq('vehicle_id', vehicleId)
+            .order('created_at', { ascending: true })
+          if (!error && Array.isArray(data) && data.length) rows = data as any[]
+        } catch {}
       }
+
+      // 3) fallback to stock_number
+      if (!rows && stockNumber) {
+        try {
+          const { data, error } = await supabase
+            .from('edc_costs')
+            .select('*')
+            .eq('stock_number', stockNumber)
+            .order('created_at', { ascending: true })
+          if (!error && Array.isArray(data)) rows = data as any[]
+        } catch {}
+      }
+
+      if (!rows) return
+
+      const mapped = rows.map((r: any): CostItem => {
+        const price = parseFloat(r.amount ?? '0') || 0
+        const qty = parseFloat(r.quantity ?? '1') || 1
+        const discount = parseFloat(r.discount ?? '0') || 0
+        const tax = parseFloat(r.tax ?? '0') || 0
+        const total = parseFloat(r.total ?? String(Math.max(0, price * qty - discount + tax))) || (price * qty - discount + tax)
+        return {
+          id: String(r.id ?? Date.now()),
+          dbId: r.id,
+          date: (r.created_at ? String(r.created_at).split('T')[0] : new Date().toISOString().split('T')[0]),
+          name: r.name || '',
+          groupName: r.group_name || '',
+          description: r.description || '',
+          vendor: r.vendor || '',
+          invoiceRef: r.invoice_reference || '',
+          price,
+          qty,
+          discount,
+          tax,
+          taxType: r.tax_type || 'HST',
+          total,
+        }
+      })
+
+      setCostsData(prev => ({ ...prev, additionalExpenses: mapped }))
     } catch (err) {
-      console.error('Error fetching edc_costs by stock number:', err)
+      console.error('Error fetching edc_costs:', err)
     }
   }
 
@@ -305,29 +410,27 @@ export default function CostsTab({ vehicleId, vehiclePrice, stockNumber }: Costs
 
       // Persist edit to Supabase (when possible), then refresh from Supabase
       try {
-        if (stockNumber && editingCost.id) {
-          const numericId = Number(editingCost.id)
-          if (!Number.isNaN(numericId)) {
-            const { error } = await supabase
-              .from('edc_costs')
-              .update({
-                name: modalForm.name || '',
-                group_name: modalForm.groupName || '',
-                description: modalForm.description || '',
-                vendor: modalForm.vendor || '',
-                invoice_reference: modalForm.invoiceRef || '',
-                amount: price,
-                quantity: qty,
-                discount: discount,
-                tax: tax,
-                tax_type: modalForm.taxType || 'HST',
-                total: total,
-              })
-              .eq('id', numericId)
-              .eq('stock_number', stockNumber)
-            if (error) {
-              console.error('Failed to update cost in Supabase:', error)
-            }
+        if (editingCost?.id) {
+          const dbId = (editingCost as any).dbId ?? editingCost.id
+          const q = supabase
+            .from('edc_costs')
+            .update({
+              name: modalForm.name || '',
+              group_name: modalForm.groupName || '',
+              description: modalForm.description || '',
+              vendor: modalForm.vendor || '',
+              invoice_reference: modalForm.invoiceRef || '',
+              amount: price,
+              quantity: qty,
+              discount: discount,
+              tax: tax,
+              tax_type: modalForm.taxType || 'HST',
+              total: total,
+            })
+            .eq('id', dbId as any)
+          const { error } = await q
+          if (error) {
+            console.error('Failed to update cost in Supabase:', error)
           }
         }
       } catch (err) {
@@ -409,17 +512,15 @@ export default function CostsTab({ vehicleId, vehiclePrice, stockNumber }: Costs
 
     // Attempt delete from Supabase when we have a real DB id and stock number
     try {
-      if (stockNumber && item.id) {
-        const numericId = Number(item.id)
-        if (!Number.isNaN(numericId)) {
-          const { error } = await supabase
-            .from('edc_costs')
-            .delete()
-            .eq('id', numericId)
-            .eq('stock_number', stockNumber)
-          if (error) {
-            console.error('Failed to delete cost from Supabase:', error)
-          }
+      if (item?.id) {
+        const dbId = (item as any).dbId ?? item.id
+        const q = supabase
+          .from('edc_costs')
+          .delete()
+          .eq('id', dbId as any)
+        const { error } = await q
+        if (error) {
+          console.error('Failed to delete cost from Supabase:', error)
         }
       }
     } catch (err) {
@@ -545,6 +646,7 @@ export default function CostsTab({ vehicleId, vehiclePrice, stockNumber }: Costs
                   <td className="py-2 px-2">
                     <div className="flex items-center gap-3">
                       <button
+                        type="button"
                         title="Edit"
                         onClick={(e) => { e.stopPropagation(); openEditModal(item); }}
                         className="text-gray-600 hover:text-gray-800"
@@ -552,6 +654,7 @@ export default function CostsTab({ vehicleId, vehiclePrice, stockNumber }: Costs
                         ✎
                       </button>
                       <button
+                        type="button"
                         title="Delete"
                         onClick={(e) => { e.stopPropagation(); removeCostItem(item); }}
                         className="text-red-500 hover:text-red-700"
@@ -567,6 +670,7 @@ export default function CostsTab({ vehicleId, vehiclePrice, stockNumber }: Costs
         </table>
 
         <button
+          type="button"
           onClick={openAddModal}
           className="mt-4 flex items-center gap-2 text-[#118df0] hover:text-[#0d6ebd] font-medium"
         >

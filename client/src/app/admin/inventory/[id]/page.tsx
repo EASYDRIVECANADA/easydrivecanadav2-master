@@ -243,6 +243,14 @@ export default function AdminEditVehiclePage() {
     setSaving(true)
 
     try {
+      const toNumberOrNull = (v: any) => {
+        const n = Number(v)
+        return Number.isFinite(n) ? n : null
+      }
+      const toIntOrNull = (v: any) => {
+        const n = parseInt(String(v))
+        return Number.isFinite(n) ? n : null
+      }
       const features =
         typeof formData.features === 'string'
           ? formData.features.split(',').map((f: string) => f.trim()).filter(Boolean)
@@ -250,65 +258,98 @@ export default function AdminEditVehiclePage() {
             ? formData.features
             : []
 
+      const payload: Record<string, any> = {
+        make: formData.make || null,
+        model: formData.model || null,
+        year: toIntOrNull(formData.year),
+        trim: formData.trim || null,
+        stock_number: formData.stockNumber || null,
+        key_number: formData.keyNumber || null,
+        key_description: (formData as any).keyDescription || null,
+        series: formData.series || null,
+        equipment: formData.equipment || null,
+        vin: formData.vin || null,
+        price: toNumberOrNull(formData.price),
+        mileage: toIntOrNull(formData.mileage),
+        status: formData.status || null,
+        inventory_type: formData.inventoryType || null,
+        fuel_type: formData.fuelType || null,
+        transmission: formData.transmission || null,
+        body_style: formData.bodyStyle || null,
+        drivetrain: formData.drivetrain || null,
+        city: formData.city || null,
+        province: formData.province || null,
+        exterior_color: formData.exteriorColor || null,
+        interior_color: formData.interiorColor || null,
+        description: formData.description || null,
+        features,
+        condition: (formData as any).condition || null,
+        status_colour: (formData as any).statusColour || null,
+        retail_wholesale: (formData as any).retailWholesale || null,
+        substatus: (formData as any).substatus || null,
+        assignment: (formData as any).assignment || null,
+        lot_location: (formData as any).lotLocation || null,
+        keywords: (formData as any).keywords || null,
+        feedwords: (formData as any).feedwords || null,
+        odometer: (formData as any).odometer || null,
+        odometer_unit: (formData as any).odometerUnit || null,
+        in_stock_date: (formData as any).inStockDate || null,
+        vehicle_type: (formData as any).vehicleType || null,
+        engine: (formData as any).engine || null,
+        cylinders: (formData as any).cylinders || null,
+        doors: (formData as any).doors || null,
+        other: (formData as any).other || null,
+        notes: (formData as any).notes || null,
+        ad_description: (formData as any).adDescription || null,
+        distance_disclaimer: Boolean((formData as any).distanceDisclaimer),
+        feed_to_autotrader: Boolean((formData as any).feedToAutotrader),
+        feed_to_carpages: Boolean((formData as any).feedToCarpages),
+        feed_to_cargurus: Boolean((formData as any).feedToCargurus),
+        certified: Boolean((formData as any).certified),
+        verified: Boolean((formData as any).verified),
+        updated_at: new Date().toISOString(),
+      }
+
+      // Prefer external webhook to perform the save
+      let webhookOk = false
+      try {
+        const res = await fetch('/api/webhook/add', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: String(params.id), ...payload }),
+        })
+        const text = await res.text().catch(() => '')
+        const lower = (text || '').toLowerCase()
+        webhookOk = res.ok && (lower.includes('done') || lower.includes('success'))
+        if (!webhookOk && !res.ok) {
+          console.error('Webhook error', res.status, text)
+        }
+      } catch (we) {
+        console.error('Webhook request failed:', we)
+        webhookOk = false
+      }
+
+      if (webhookOk) {
+        alert('Vehicle saved successfully via webhook!')
+        await fetchVehicle()
+        return
+      }
+
+      // Fallback: directly update Supabase if webhook did not succeed
       const { error } = await supabase
         .from('edc_vehicles')
-        .update({
-          make: formData.make,
-          model: formData.model,
-          year: parseInt(String(formData.year)),
-          trim: formData.trim || null,
-          stock_number: formData.stockNumber || null,
-          key_number: formData.keyNumber || null,
-          key_description: (formData as any).keyDescription || null,
-          series: formData.series || null,
-          equipment: formData.equipment || null,
-          vin: formData.vin,
-          price: parseFloat(String(formData.price)),
-          mileage: parseInt(String(formData.mileage)),
-          status: formData.status,
-          inventory_type: formData.inventoryType,
-          fuel_type: formData.fuelType || null,
-          transmission: formData.transmission || null,
-          body_style: formData.bodyStyle || null,
-          drivetrain: formData.drivetrain || null,
-          city: formData.city,
-          province: formData.province,
-          exterior_color: formData.exteriorColor || null,
-          interior_color: formData.interiorColor || null,
-          description: formData.description || null,
-          features,
-          condition: (formData as any).condition || null,
-          status_colour: (formData as any).statusColour || null,
-          retail_wholesale: (formData as any).retailWholesale || null,
-          substatus: (formData as any).substatus || null,
-          assignment: (formData as any).assignment || null,
-          lot_location: (formData as any).lotLocation || null,
-          keywords: (formData as any).keywords || null,
-          feedwords: (formData as any).feedwords || null,
-          odometer: (formData as any).odometer || null,
-          odometer_unit: (formData as any).odometerUnit || null,
-          in_stock_date: (formData as any).inStockDate || null,
-          vehicle_type: (formData as any).vehicleType || null,
-          engine: (formData as any).engine || null,
-          cylinders: (formData as any).cylinders || null,
-          doors: (formData as any).doors || null,
-          other: (formData as any).other || null,
-          notes: (formData as any).notes || null,
-          ad_description: (formData as any).adDescription || null,
-          distance_disclaimer: (formData as any).distanceDisclaimer || false,
-          feed_to_autotrader: (formData as any).feedToAutotrader || false,
-          feed_to_carpages: (formData as any).feedToCarpages || false,
-          feed_to_cargurus: (formData as any).feedToCargurus || false,
-          certified: (formData as any).certified || false,
-          verified: (formData as any).verified || false,
-        })
+        .update(payload)
         .eq('id', String(params.id))
 
-      if (!error) {
-        alert('Vehicle saved successfully!')
+      if (error) {
+        alert(`Save failed (webhook + fallback): ${error.message || 'Unknown error'}`)
+      } else {
+        alert('Vehicle saved successfully (fallback).')
+        await fetchVehicle()
       }
     } catch (error) {
       console.error('Error saving vehicle:', error)
+      alert('An unexpected error occurred while saving. Check console for details.')
     } finally {
       setSaving(false)
     }
