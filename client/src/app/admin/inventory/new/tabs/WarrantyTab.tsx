@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
 
 type WarrantyPresetRow = {
@@ -42,6 +43,8 @@ export default function WarrantyTab({ vehicleId }: WarrantyTabProps) {
   const [resultModalOpen, setResultModalOpen] = useState(false)
   const [resultModalTitle, setResultModalTitle] = useState('')
   const [resultModalMessage, setResultModalMessage] = useState('')
+  const [lastSaveSuccess, setLastSaveSuccess] = useState(false)
+  const router = useRouter()
   const [warrantyPresets, setWarrantyPresets] = useState<WarrantyPresetRow[]>([])
   const [loadingWarrantyPresets, setLoadingWarrantyPresets] = useState(false)
   const [warrantyPresetsRetry, setWarrantyPresetsRetry] = useState(0)
@@ -242,6 +245,7 @@ export default function WarrantyTab({ vehicleId }: WarrantyTabProps) {
 
       setResultModalTitle('Warranty Saved')
       setResultModalMessage(webhookMessage)
+      setLastSaveSuccess(true)
       setResultModalOpen(true)
 
       if (webhookMessage.toLowerCase().includes('done')) {
@@ -252,6 +256,7 @@ export default function WarrantyTab({ vehicleId }: WarrantyTabProps) {
       const msg = formatAnyError(error)
       setResultModalTitle('Save Failed')
       setResultModalMessage(msg || 'Error saving warranty information')
+      setLastSaveSuccess(false)
       setResultModalOpen(true)
     } finally {
       setSaving(false)
@@ -279,10 +284,15 @@ export default function WarrantyTab({ vehicleId }: WarrantyTabProps) {
             </div>
             <div className="px-6 py-4 border-t border-gray-100 bg-gray-50">
               <button
-                onClick={() => setResultModalOpen(false)}
+                onClick={() => {
+                  setResultModalOpen(false)
+                  if (lastSaveSuccess) {
+                    router.push('/admin/inventory')
+                  }
+                }}
                 className="w-full bg-[#118df0] text-white py-2.5 rounded-lg font-semibold hover:bg-[#0d6ebd] transition-colors"
               >
-                OK
+                {lastSaveSuccess ? 'Done' : 'OK'}
               </button>
             </div>
           </div>

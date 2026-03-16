@@ -110,6 +110,14 @@ export default function VehicleDetailsTab({ formData, onChange, onFormDataChange
       const parsed = JSON.parse(raw) as { email?: string; user_id?: string; role?: string }
       const sessionUserId = String(parsed?.user_id ?? '').trim()
       if (sessionUserId) return sessionUserId
+
+      const sessionEmail = String(parsed?.email ?? '').trim()
+      const sessionRole = String(parsed?.role ?? '').trim().toLowerCase()
+      if (sessionEmail && sessionRole && (sessionRole === 'admin' || sessionRole === 'staff')) {
+        // edc_admin_users credential session: allow flow without user scoping
+        return null
+      }
+
       const email = String(parsed?.email ?? '').trim().toLowerCase()
       if (!email) return null
       const { data } = await supabase
@@ -811,7 +819,7 @@ export default function VehicleDetailsTab({ formData, onChange, onFormDataChange
             disabled={saving}
             className="px-8 py-2 bg-[#118df0] text-white font-medium rounded hover:bg-[#0d6ebd] disabled:opacity-50 transition-colors"
           >
-            {saving ? 'Saving...' : 'Save'}
+            {saving ? 'Saving...' : 'Update'}
           </button>
         </div>
       </div>

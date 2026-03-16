@@ -105,7 +105,7 @@ const PurchaseTab = forwardRef<PurchaseTabHandle, PurchaseTabProps>(function Pur
   const [formData, setFormData] = useState<PurchaseData>({
     publicOrCompany: 'public',
     purchasedThroughAuction: false,
-    taxType: 'HST',
+    taxType: '',
     purchasePrice: 0,
     actualCashValue: 0,
     discount: 0,
@@ -188,6 +188,31 @@ const PurchaseTab = forwardRef<PurchaseTabHandle, PurchaseTabProps>(function Pur
   }))
 
   useEffect(() => {
+    if (typeof window === 'undefined') return
+    try {
+      const key = `edc_new_vehicle_purchase_${String(vehicleId || 'draft')}`
+      const raw = window.localStorage.getItem(key)
+      if (!raw) return
+      const parsed = JSON.parse(raw)
+      if (parsed && typeof parsed === 'object') {
+        setFormData((prev) => ({ ...prev, ...parsed }))
+      }
+    } catch {
+      // ignore
+    }
+  }, [vehicleId])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    try {
+      const key = `edc_new_vehicle_purchase_${String(vehicleId || 'draft')}`
+      window.localStorage.setItem(key, JSON.stringify(formData))
+    } catch {
+      // ignore
+    }
+  }, [formData, vehicleId])
+
+  useEffect(() => {
     // webhook-driven: no client-side supabase prefill
   }, [vehicleId, stockNumber])
 
@@ -249,7 +274,14 @@ const PurchaseTab = forwardRef<PurchaseTabHandle, PurchaseTabProps>(function Pur
   }, [userId, onError])
 
   useEffect(() => {
-    if (!taxPresets.length) return
+    if (!taxPresets.length) {
+      setFormData((prev) => ({
+        ...prev,
+        taxType: '',
+        ...(prev.taxOverride ? {} : { vehicleTax: 0, totalVehicleTax: 0 }),
+      }))
+      return
+    }
     setFormData((prev) => {
       const current = String(prev.taxType || '').trim()
       const hasCurrent = current && taxPresets.some((t) => String(t.name || '').trim() === current)

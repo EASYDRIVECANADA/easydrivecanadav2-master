@@ -92,6 +92,9 @@ export default function AdminEditVehiclePage() {
   const [formData, setFormData] = useState<VehicleFormData>({})
   const [images, setImages] = useState<string[]>([])
   const [activeTab, setActiveTab] = useState<TabType>('details')
+  const [saveModalOpen, setSaveModalOpen] = useState(false)
+  const [saveModalTitle, setSaveModalTitle] = useState('')
+  const [saveModalMessage, setSaveModalMessage] = useState('')
 
   const [bucketImageCache] = useState(() => new Map<string, string[]>())
 
@@ -316,7 +319,7 @@ export default function AdminEditVehiclePage() {
         const res = await fetch('/api/webhook/add', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ id: String(params.id), ...payload }),
+          body: JSON.stringify({ id: String(params.id), vehicleId: String(params.id), ...payload }),
         })
         const text = await res.text().catch(() => '')
         const lower = (text || '').toLowerCase()
@@ -330,7 +333,9 @@ export default function AdminEditVehiclePage() {
       }
 
       if (webhookOk) {
-        alert('Vehicle saved successfully via webhook!')
+        setSaveModalTitle('Saved')
+        setSaveModalMessage('Vehicle saved successfully.')
+        setSaveModalOpen(true)
         await fetchVehicle()
         return
       }
@@ -342,14 +347,21 @@ export default function AdminEditVehiclePage() {
         .eq('id', String(params.id))
 
       if (error) {
-        alert(`Save failed (webhook + fallback): ${error.message || 'Unknown error'}`)
+        setSaveModalTitle('Save Failed')
+        setSaveModalMessage(error.message || 'Save failed (webhook + fallback).')
+        setSaveModalOpen(true)
       } else {
-        alert('Vehicle saved successfully (fallback).')
+        setSaveModalTitle('Saved')
+        setSaveModalMessage('Vehicle saved successfully.')
+        setSaveModalOpen(true)
         await fetchVehicle()
       }
     } catch (error) {
       console.error('Error saving vehicle:', error)
-      alert('An unexpected error occurred while saving. Check console for details.')
+      const msg = error instanceof Error ? error.message : 'An unexpected error occurred while saving.'
+      setSaveModalTitle('Save Failed')
+      setSaveModalMessage(msg)
+      setSaveModalOpen(true)
     } finally {
       setSaving(false)
     }
@@ -427,6 +439,34 @@ export default function AdminEditVehiclePage() {
           </nav>
         </div>
       </div>
+
+      {saveModalOpen && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+            <div className="px-6 py-4 border-b border-gray-100 bg-gradient-to-r from-gray-50 to-white flex items-center justify-between">
+              <h3 className="text-lg font-semibold text-gray-900">{saveModalTitle}</h3>
+              <button
+                onClick={() => setSaveModalOpen(false)}
+                className="p-1 text-gray-400 hover:text-gray-600"
+              >
+                ×
+              </button>
+            </div>
+            <div className="px-6 py-5 text-sm text-gray-700 whitespace-pre-line">
+              {saveModalMessage}
+            </div>
+            <div className="px-6 py-4 border-t border-gray-100 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setSaveModalOpen(false)}
+                className="px-4 py-2 bg-[#118df0] text-white rounded-md hover:bg-[#0d6ebd]"
+              >
+                OK
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Tab Content */}
       <div className="w-full px-4 sm:px-6 lg:px-8 py-6">

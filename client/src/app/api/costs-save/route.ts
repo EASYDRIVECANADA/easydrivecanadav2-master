@@ -4,7 +4,7 @@ export async function POST(request: Request) {
   try {
     const body = await request.json().catch(() => ({}))
 
-    const res = await fetch('https://primary-production-6722.up.railway.app/webhook/Cost', {
+    const res = await fetch('https://primary-production-6722.up.railway.app/webhook/costs', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body ?? {}),
@@ -23,7 +23,7 @@ export async function POST(request: Request) {
 
     return new NextResponse(text, { status: res.status })
   } catch (err) {
-    console.error('costs proxy error', err)
+    console.error('costs-save proxy error', err)
     return NextResponse.json({ error: 'Server error' }, { status: 500 })
   }
 }

@@ -91,7 +91,7 @@ export default function PurchaseTab({ vehicleId, stockNumber, onError }: Purchas
   const [formData, setFormData] = useState<PurchaseData>({
     publicOrCompany: 'public',
     purchasedThroughAuction: false,
-    taxType: 'HST',
+    taxType: '',
     purchasePrice: 0,
     actualCashValue: 0,
     discount: 0,
@@ -1296,7 +1296,7 @@ export default function PurchaseTab({ vehicleId, stockNumber, onError }: Purchas
           disabled={saving}
           className="flex-1 bg-[#118df0] text-white py-3 rounded-lg font-semibold hover:bg-[#0d6ebd] transition-colors disabled:opacity-50"
         >
-          {saving ? 'Saving...' : 'Save Purchase Info'}
+          {saving ? 'Saving...' : 'Update'}
         </button>
       </div>
 

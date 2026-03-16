@@ -78,6 +78,34 @@ const DisclosuresTab = forwardRef<DisclosuresTabHandle, DisclosuresTabProps>(fun
   }))
 
   useEffect(() => {
+    if (typeof window === 'undefined') return
+    try {
+      const key = `edc_new_vehicle_disclosures_${String(vehicleId || 'draft')}`
+      const raw = window.localStorage.getItem(key)
+      if (!raw) return
+      const parsed = JSON.parse(raw)
+      if (parsed && typeof parsed === 'object') {
+        if (parsed.brandType) setBrandType(parsed.brandType)
+        if (Array.isArray(parsed.selectedDisclosures)) setSelectedDisclosures(parsed.selectedDisclosures)
+        if (typeof parsed.customNote === 'string') setCustomNote(parsed.customNote)
+      }
+    } catch {
+      // ignore
+    }
+  }, [vehicleId])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    try {
+      const key = `edc_new_vehicle_disclosures_${String(vehicleId || 'draft')}`
+      const snapshot = { brandType, selectedDisclosures, customNote }
+      window.localStorage.setItem(key, JSON.stringify(snapshot))
+    } catch {
+      // ignore
+    }
+  }, [brandType, selectedDisclosures, customNote, vehicleId])
+
+  useEffect(() => {
     const el = editorRef.current
     if (!el) return
     const active = typeof document !== 'undefined' ? document.activeElement : null
@@ -268,7 +296,6 @@ const DisclosuresTab = forwardRef<DisclosuresTabHandle, DisclosuresTabProps>(fun
       const ok = lower.includes('done') || lower.includes('success') || lower.includes('ok') || lower.includes('"success":true')
       if (!ok) throw new Error(text || 'Unexpected webhook response')
 
-      alert('Disclosures saved successfully!')
       return true
     } catch (error) {
       const msg = typeof (error as any)?.message === 'string' ? String((error as any).message) : ''

@@ -91,6 +91,10 @@ export default function NewVehiclePage() {
   const [nextPurchaseSaving, setNextPurchaseSaving] = useState(false)
   const costsTabRef = useRef<any>(null)
   const [nextWarrantySaving, setNextWarrantySaving] = useState(false)
+  const [saveModalOpen, setSaveModalOpen] = useState(false)
+  const [saveModalTitle, setSaveModalTitle] = useState('')
+  const [saveModalMessage, setSaveModalMessage] = useState('')
+  const [pendingNextTab, setPendingNextTab] = useState<TabType | null>(null)
   const adEditorRef = useRef<HTMLDivElement | null>(null)
   const lastAdHtmlRef = useRef<string>('')
   const [adToolbar, setAdToolbar] = useState({
@@ -228,6 +232,7 @@ export default function NewVehiclePage() {
       router.push('/admin')
       return
     }
+    localStorage.removeItem('edc_new_vehicle_costs_draft')
   }, [router])
 
   const getLoggedInAdminDbUserId = async (): Promise<string | null> => {
@@ -240,8 +245,8 @@ export default function NewVehiclePage() {
       if (sessionUserId) return sessionUserId
 
       const sessionEmail = String(parsed?.email ?? '').trim()
-      const sessionRole = String(parsed?.role ?? '').trim()
-      if (sessionEmail && sessionRole) {
+      const sessionRole = String(parsed?.role ?? '').trim().toLowerCase()
+      if (sessionEmail && sessionRole && (sessionRole === 'admin' || sessionRole === 'staff')) {
         // edc_admin_users credential session: allow flow without user scoping
         return null
       }
@@ -282,6 +287,15 @@ export default function NewVehiclePage() {
     load()
     return () => {
       cancelled = true
+    }
+  }, [])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    try {
+      window.localStorage.removeItem('edc_new_vehicle_costs_draft')
+    } catch {
+      // ignore
     }
   }, [])
 
@@ -390,11 +404,29 @@ export default function NewVehiclePage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [formData?.stockNumber, webhookUserId])
 
+  const enableDisclosures = Boolean(createdVehicleId)
+  const enablePurchase = Boolean(createdVehicleId && disclosuresSaved)
+  const enableCosts = Boolean(createdVehicleId && purchaseSaved)
+  const enableWarranty = Boolean(createdVehicleId && costsSaved)
+
   useEffect(() => {
-    if (!createdVehicleId && activeTab !== 'details' && !allowNextTabs) {
+    if (activeTab === 'details') return
+    if (activeTab === 'disclosures' && !enableDisclosures) {
       setActiveTab('details')
+      return
     }
-  }, [createdVehicleId, activeTab, allowNextTabs])
+    if (activeTab === 'purchase' && !enablePurchase) {
+      setActiveTab(enableDisclosures ? 'disclosures' : 'details')
+      return
+    }
+    if (activeTab === 'costs' && !enableCosts) {
+      setActiveTab(enablePurchase ? 'purchase' : enableDisclosures ? 'disclosures' : 'details')
+      return
+    }
+    if (activeTab === 'warranty' && !enableWarranty) {
+      setActiveTab(enableCosts ? 'costs' : enablePurchase ? 'purchase' : enableDisclosures ? 'disclosures' : 'details')
+    }
+  }, [activeTab, enableDisclosures, enablePurchase, enableCosts, enableWarranty])
 
   useEffect(() => {
     if (!createdVehicleId) {
@@ -510,7 +542,9 @@ export default function NewVehiclePage() {
       if (!proceed) {
         const msg = text || `Webhook error (${res.status})`
         setError(msg)
-        alert(`Save failed: ${msg}`)
+        setSaveModalTitle('Save Failed')
+        setSaveModalMessage(msg)
+        setSaveModalOpen(true)
         return
       }
 
@@ -562,12 +596,17 @@ export default function NewVehiclePage() {
       }
 
       if (!rid) {
-        alert('Vehicle created via webhook, but the vehicle ID is not yet available. Please try again in a moment.')
+        const msg = 'Vehicle created via webhook, but the vehicle ID is not yet available. Please try again in a moment.'
+        setSaveModalTitle('Saved')
+        setSaveModalMessage(msg)
+        setSaveModalOpen(true)
         return
       }
 
       setCreatedVehicleId(rid)
-      alert('Vehicle created via webhook!')
+      setSaveModalTitle('Saved')
+      setSaveModalMessage('Vehicle created successfully.')
+      setSaveModalOpen(true)
       setAllowNextTabs(true)
       setActiveTab('disclosures')
       try {
@@ -585,7 +624,9 @@ export default function NewVehiclePage() {
       console.error('Error creating vehicle via webhook:', err)
       const msg = String(err?.message || 'Unexpected error')
       setError(msg)
-      alert(`Save failed: ${msg}`)
+      setSaveModalTitle('Save Failed')
+      setSaveModalMessage(msg)
+      setSaveModalOpen(true)
     } finally {
       setSubmitting(false)
     }
@@ -822,6 +863,34 @@ export default function NewVehiclePage() {
         </div>
       ) : null}
 
+      {saveModalOpen && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-md">
+            <div className="px-6 py-4 border-b border-gray-200">
+              <h3 className="text-lg font-semibold text-gray-900">{saveModalTitle}</h3>
+            </div>
+            <div className="px-6 py-4 text-sm text-gray-700 whitespace-pre-line">
+              {saveModalMessage}
+            </div>
+            <div className="px-6 py-4 border-t border-gray-200 flex justify-end">
+              <button
+                type="button"
+                onClick={() => {
+                  setSaveModalOpen(false)
+                  if (pendingNextTab) {
+                    setActiveTab(pendingNextTab)
+                    setPendingNextTab(null)
+                  }
+                }}
+                className="px-4 py-2 bg-[#118df0] text-white rounded-md hover:bg-[#0d6ebd]"
+              >
+                OK
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="bg-white shadow">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="py-6">
@@ -851,49 +920,49 @@ export default function NewVehiclePage() {
             </button>
             <button
               type="button"
-              onClick={() => (allowNextTabs || createdVehicleId) && setActiveTab('disclosures')}
-              disabled={!(allowNextTabs || createdVehicleId)}
+              onClick={() => enableDisclosures && setActiveTab('disclosures')}
+              disabled={!enableDisclosures}
               className={`py-4 px-1 border-b-2 font-medium text-sm ${
                 activeTab === 'disclosures'
                   ? 'border-[#118df0] text-[#118df0]'
                   : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              } ${!(allowNextTabs || createdVehicleId) ? 'opacity-50 cursor-not-allowed' : ''}`}
+              } ${!enableDisclosures ? 'opacity-50 cursor-not-allowed' : ''}`}
             >
               📋 Disclosures
             </button>
             <button
               type="button"
-              onClick={() => (allowNextTabs || createdVehicleId) && setActiveTab('purchase')}
-              disabled={!(allowNextTabs || createdVehicleId)}
+              onClick={() => enablePurchase && setActiveTab('purchase')}
+              disabled={!enablePurchase}
               className={`py-4 px-1 border-b-2 font-medium text-sm ${
                 activeTab === 'purchase'
                   ? 'border-[#118df0] text-[#118df0]'
                   : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              } ${!(allowNextTabs || createdVehicleId) ? 'opacity-50 cursor-not-allowed' : ''}`}
+              } ${!enablePurchase ? 'opacity-50 cursor-not-allowed' : ''}`}
             >
               💰 Purchase
             </button>
             <button
               type="button"
-              onClick={() => (allowNextTabs || createdVehicleId) && setActiveTab('costs')}
-              disabled={!(allowNextTabs || createdVehicleId)}
+              onClick={() => enableCosts && setActiveTab('costs')}
+              disabled={!enableCosts}
               className={`py-4 px-1 border-b-2 font-medium text-sm ${
                 activeTab === 'costs'
                   ? 'border-[#118df0] text-[#118df0]'
                   : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              } ${!(allowNextTabs || createdVehicleId) ? 'opacity-50 cursor-not-allowed' : ''}`}
+              } ${!enableCosts ? 'opacity-50 cursor-not-allowed' : ''}`}
             >
               💵 Costs
             </button>
             <button
               type="button"
-              onClick={() => (allowNextTabs || createdVehicleId) && setActiveTab('warranty')}
-              disabled={!(allowNextTabs || createdVehicleId)}
+              onClick={() => enableWarranty && setActiveTab('warranty')}
+              disabled={!enableWarranty}
               className={`py-4 px-1 border-b-2 font-medium text-sm ${
                 activeTab === 'warranty'
                   ? 'border-[#118df0] text-[#118df0]'
                   : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              } ${!(allowNextTabs || createdVehicleId) ? 'opacity-50 cursor-not-allowed' : ''}`}
+              } ${!enableWarranty ? 'opacity-50 cursor-not-allowed' : ''}`}
             >
               🛡️ Warranty
             </button>
@@ -908,11 +977,7 @@ export default function NewVehiclePage() {
               {gatingError}
             </div>
           ) : null}
-          {error && (
-            <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg text-red-700">
-              {error}
-            </div>
-          )}
+          {null}
 
           {/* Vehicle Details Tab - Dealerpull Style */}
           {activeTab === 'details' && (
@@ -1415,7 +1480,16 @@ export default function NewVehiclePage() {
                       const ok = await disclosuresTabRef.current?.save?.()
                       if (ok) {
                         setDisclosuresSaved(true)
-                        setActiveTab('purchase')
+                        setPendingNextTab('purchase')
+                        setSaveModalTitle('Saved')
+                        setSaveModalMessage('Disclosures saved successfully.')
+                        setSaveModalOpen(true)
+                      } else {
+                        const msg = error || 'Save failed. Please check your disclosures.'
+                        setPendingNextTab(null)
+                        setSaveModalTitle('Save Failed')
+                        setSaveModalMessage(msg)
+                        setSaveModalOpen(true)
                       }
                     } finally {
                       setNextPurchaseSaving(false)
@@ -1455,7 +1529,16 @@ export default function NewVehiclePage() {
                           setFormData(prev => ({ ...prev, price: String(purchasePrice) }))
                         }
                         setPurchaseSaved(true)
-                        setActiveTab('costs')
+                        setPendingNextTab('costs')
+                        setSaveModalTitle('Saved')
+                        setSaveModalMessage('Purchase info saved successfully.')
+                        setSaveModalOpen(true)
+                      } else {
+                        const msg = error || 'Save failed. Please check your purchase info.'
+                        setPendingNextTab(null)
+                        setSaveModalTitle('Save Failed')
+                        setSaveModalMessage(msg)
+                        setSaveModalOpen(true)
                       }
                     } finally {
                       setNextCostsSaving(false)
@@ -1490,7 +1573,16 @@ export default function NewVehiclePage() {
                       const ok = await costsTabRef.current?.save?.()
                       if (ok) {
                         setCostsSaved(true)
-                        setActiveTab('warranty')
+                        setPendingNextTab('warranty')
+                        setSaveModalTitle('Saved')
+                        setSaveModalMessage('Costs saved successfully.')
+                        setSaveModalOpen(true)
+                      } else {
+                        const msg = error || 'Save failed. Please check your costs.'
+                        setPendingNextTab(null)
+                        setSaveModalTitle('Save Failed')
+                        setSaveModalMessage(msg)
+                        setSaveModalOpen(true)
                       }
                     } finally {
                       setNextWarrantySaving(false)
@@ -1507,20 +1599,6 @@ export default function NewVehiclePage() {
           {activeTab === 'warranty' && (
             <div>
               <WarrantyTab vehicleId={createdVehicleId} />
-              <div className="mt-6 flex gap-4">
-                <Link
-                  href="/admin/inventory"
-                  className="flex-1 bg-green-600 text-white py-3 rounded-lg font-semibold hover:bg-green-700 transition-colors text-center"
-                >
-                  ✓ Complete & View Inventory
-                </Link>
-                <Link
-                  href={`/admin/inventory/${createdVehicleId}`}
-                  className="flex-1 bg-[#118df0] text-white py-3 rounded-lg font-semibold hover:bg-[#0d6ebd] transition-colors text-center"
-                >
-                  Edit Vehicle Details
-                </Link>
-              </div>
             </div>
           )}
         </form>

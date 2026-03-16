@@ -137,7 +137,7 @@ export default function CostsTab({ vehicleId, vehiclePrice, stockNumber }: Costs
         .eq('stock_number', stockNumber)
         .order('created_at', { ascending: true })
 
-      if (!error && Array.isArray(data)) {
+      if (!error && Array.isArray(data) && data.length) {
         const mapped = data.map((r: any): CostItem => {
           const price = parseFloat(r.amount ?? '0') || 0
           const qty = parseFloat(r.quantity ?? '1') || 1
@@ -225,12 +225,18 @@ export default function CostsTab({ vehicleId, vehiclePrice, stockNumber }: Costs
         const row: any = payload?.new || {}
         try {
           const nextCosts = row.costs_data ? (typeof row.costs_data === 'string' ? JSON.parse(row.costs_data) : row.costs_data) : null
-          setCostsData(prev => ({
-            ...prev,
-            ...(nextCosts || {}),
-            listPrice: typeof row.price === 'number' ? row.price : prev.listPrice,
-            salePrice: row.saleprice === null || row.saleprice === undefined ? prev.salePrice : (Number(row.saleprice) || 0),
-          }))
+          setCostsData(prev => {
+            const merged: CostsData = {
+              ...prev,
+              ...(nextCosts || {}),
+              listPrice: typeof row.price === 'number' ? row.price : prev.listPrice,
+              salePrice: row.saleprice === null || row.saleprice === undefined ? prev.salePrice : (Number(row.saleprice) || 0),
+            }
+            if (!Array.isArray((nextCosts as any)?.additionalExpenses) || (nextCosts as any).additionalExpenses.length === 0) {
+              merged.additionalExpenses = prev.additionalExpenses
+            }
+            return merged
+          })
         } catch {
           // ignore parse errors
         }
@@ -251,7 +257,16 @@ export default function CostsTab({ vehicleId, vehiclePrice, stockNumber }: Costs
 
       if (data) {
         if (data.costs_data) {
-          setCostsData(prev => ({ ...prev, ...data.costs_data }))
+          const incoming = typeof data.costs_data === 'string'
+            ? JSON.parse(data.costs_data)
+            : data.costs_data
+          setCostsData(prev => ({
+            ...prev,
+            ...incoming,
+            additionalExpenses: Array.isArray(incoming?.additionalExpenses) && incoming.additionalExpenses.length
+              ? incoming.additionalExpenses
+              : prev.additionalExpenses,
+          }))
         }
         if (data.price) {
           setCostsData(prev => ({ ...prev, listPrice: data.price }))
@@ -305,6 +320,23 @@ export default function CostsTab({ vehicleId, vehiclePrice, stockNumber }: Costs
       }
 
       if (!rows) return
+
+      if (rows.length === 1) {
+        const single = rows[0] || {}
+        const rawCosts = single.costs_data || (single as any).costs_data_json
+        if (rawCosts) {
+          try {
+            const parsed = typeof rawCosts === 'string' ? JSON.parse(rawCosts) : rawCosts
+            const expenses = Array.isArray(parsed?.additionalExpenses) ? parsed.additionalExpenses : null
+            if (expenses && expenses.length) {
+              setCostsData(prev => ({ ...prev, additionalExpenses: expenses }))
+              return
+            }
+          } catch {
+            // ignore
+          }
+        }
+      }
 
       const mapped = rows.map((r: any): CostItem => {
         const price = parseFloat(r.amount ?? '0') || 0
@@ -535,29 +567,30 @@ export default function CostsTab({ vehicleId, vehiclePrice, stockNumber }: Costs
     try {
       console.log('Updating price for vehicle:', vehicleId, 'to:', costsData.listPrice)
       
-      const { data, error } = await supabase
-        .from('edc_vehicles')
-        .update({ price: costsData.listPrice || 0, saleprice: costsData.salePrice || 0 })
-        .eq('id', vehicleId)
-        .select()
+      const payload = {
+        vehicleId,
+        stockNumber: stockNumber || null,
+        listPrice: costsData.listPrice || 0,
+        salePrice: costsData.salePrice || 0,
+        msrp: costsData.msrp || 0,
+        purchasePrice: costsData.purchasePrice || 0,
+        actualCashValue: costsData.actualCashValue || 0,
+        additionalExpenses: Array.isArray(costsData.additionalExpenses) ? costsData.additionalExpenses : [],
+      }
 
-      console.log('Update response:', { data, error })
+      const res = await fetch('/api/costs-save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
 
-      if (error) {
-        console.error('Supabase error:', error)
-        alert(`Error saving: ${error.message}`)
+      const text = await res.text().catch(() => '')
+      if (!res.ok) {
+        console.error('Costs save webhook error:', res.status, text)
         return
       }
-      
-      if (!data || data.length === 0) {
-        alert('No rows were updated. Check if the vehicle ID exists.')
-        return
-      }
-      
-      alert('Price saved successfully!')
     } catch (error) {
       console.error('Error saving:', error)
-      alert(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`)
     } finally {
       setSaving(false)
     }
@@ -839,7 +872,7 @@ export default function CostsTab({ vehicleId, vehiclePrice, stockNumber }: Costs
           disabled={saving}
           className="bg-[#118df0] text-white px-8 py-3 rounded-lg font-semibold hover:bg-[#0d6ebd] transition-colors disabled:opacity-50"
         >
-          {saving ? 'Saving...' : 'Save'}
+          {saving ? 'Saving...' : 'Update'}
         </button>
       </div>
 

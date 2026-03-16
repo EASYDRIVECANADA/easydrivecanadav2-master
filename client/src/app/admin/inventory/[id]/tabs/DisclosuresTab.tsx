@@ -56,8 +56,11 @@ const DisclosuresTab = forwardRef<DisclosuresTabHandle, DisclosuresTabProps>(fun
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedDisclosures, setSelectedDisclosures] = useState<Disclosure[]>([])
   const [customNote, setCustomNote] = useState('')
-  const [currentStockNumber, setCurrentStockNumber] = useState<string>('')
   const [saving, setSaving] = useState(false)
+  const [resultModalOpen, setResultModalOpen] = useState(false)
+  const [resultModalTitle, setResultModalTitle] = useState('')
+  const [resultModalMessage, setResultModalMessage] = useState('')
+  const [currentStockNumber, setCurrentStockNumber] = useState<string>('')
   const [presets, setPresets] = useState<Disclosure[]>([])
   const [loadingPresets, setLoadingPresets] = useState(false)
   const [presetsError, setPresetsError] = useState<string | null>(null)
@@ -390,17 +393,15 @@ const DisclosuresTab = forwardRef<DisclosuresTabHandle, DisclosuresTabProps>(fun
     try {
       const sn = String(currentStockNumber || '').trim()
       if (!sn) {
-        alert('Missing stock number. Please set Stock # in Vehicle Details first.')
         return false
       }
 
-      const title = selectedDisclosures.map(d => String(d?.title || '').trim()).filter(Boolean).join('\n')
       const body = String(customNote || '').trim()
 
       const payload = {
+        vehicleId: String(vehicleId),
         stock_number: sn,
         brandtype: brandType,
-        disclosures_tittle: title || null,
         disclosures_body: body || null,
       }
 
@@ -413,11 +414,16 @@ const DisclosuresTab = forwardRef<DisclosuresTabHandle, DisclosuresTabProps>(fun
       const text = await res.text().catch(() => '')
       if (!res.ok) throw new Error(text || `Webhook responded with ${res.status}`)
       if (!String(text).toLowerCase().includes('done')) throw new Error('Webhook did not return Done')
-      alert('Disclosures saved successfully!')
+      setResultModalTitle('Saved')
+      setResultModalMessage('Disclosures saved successfully.')
+      setResultModalOpen(true)
       return true
     } catch (error) {
       console.error('Error saving disclosures:', error)
-      alert('Error saving disclosures')
+      const msg = error instanceof Error ? error.message : 'Error saving disclosures'
+      setResultModalTitle('Save Failed')
+      setResultModalMessage(msg)
+      setResultModalOpen(true)
       return false
     } finally {
       setSaving(false)
@@ -432,6 +438,33 @@ const DisclosuresTab = forwardRef<DisclosuresTabHandle, DisclosuresTabProps>(fun
 
   return (
     <div className="bg-white rounded-xl shadow p-6">
+      {resultModalOpen && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+            <div className="px-6 py-4 border-b border-gray-100 bg-gradient-to-r from-gray-50 to-white flex items-center justify-between">
+              <h3 className="text-lg font-semibold text-gray-900">{resultModalTitle}</h3>
+              <button
+                onClick={() => setResultModalOpen(false)}
+                className="p-1 text-gray-400 hover:text-gray-600"
+              >
+                ×
+              </button>
+            </div>
+            <div className="px-6 py-5 text-sm text-gray-700 whitespace-pre-line">
+              {resultModalMessage}
+            </div>
+            <div className="px-6 py-4 border-t border-gray-100 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setResultModalOpen(false)}
+                className="px-4 py-2 bg-[#118df0] text-white rounded-md hover:bg-[#0d6ebd]"
+              >
+                OK
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {/* Info Banner */}
       <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
         <p className="text-sm text-blue-800">
@@ -633,7 +666,7 @@ const DisclosuresTab = forwardRef<DisclosuresTabHandle, DisclosuresTabProps>(fun
             disabled={saving}
             className="w-full bg-[#118df0] text-white py-3 rounded-lg font-semibold hover:bg-[#0d6ebd] transition-colors disabled:opacity-50"
           >
-            {saving ? 'Saving...' : 'Save Disclosures'}
+            {saving ? 'Saving...' : 'Update'}
           </button>
         </div>
       )}

@@ -539,7 +539,7 @@ export default function WarrantyTab({ vehicleId }: WarrantyTabProps) {
           disabled={saving}
           className="w-full bg-[#118df0] text-white py-3 rounded-lg font-semibold hover:bg-[#0d6ebd] transition-colors disabled:opacity-50"
         >
-          {saving ? 'Saving...' : 'Save Warranty Information'}
+          {saving ? 'Saving...' : 'Update'}
         </button>
       </div>
     </div>

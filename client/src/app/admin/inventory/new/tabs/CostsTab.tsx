@@ -3,16 +3,6 @@
 import { useState, useEffect, forwardRef, useImperativeHandle } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 
-/// Supported tax rates
-const TAX_RATES: Record<string, number> = {
-  HST: 0.13,
-  RST: 0.08,
-  GST: 0.05,
-  PST: 0.06,
-  QST: 0.09975,
-  Exempt: 0,
-}
-
 type TaxPresetRow = {
   id: string
   name: string | null
@@ -86,8 +76,41 @@ const CostsTab = forwardRef<CostsTabHandle, CostsTabProps>(function CostsTab({ v
     qty: 1,
     discount: 0,
     tax: 0,
-    taxType: 'HST',
+    taxType: '',
   })
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    if (!vehicleId) return
+    try {
+      const key = `edc_new_vehicle_costs_${String(vehicleId)}`
+      const raw = window.localStorage.getItem(key)
+      if (!raw) return
+      const parsed = JSON.parse(raw)
+      if (parsed && typeof parsed === 'object') {
+        setCostsData((prev) => ({
+          ...prev,
+          ...parsed,
+          additionalExpenses: Array.isArray((parsed as any).additionalExpenses)
+            ? (parsed as any).additionalExpenses
+            : prev.additionalExpenses,
+        }))
+      }
+    } catch {
+      // ignore
+    }
+  }, [vehicleId])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    if (!vehicleId) return
+    try {
+      const key = `edc_new_vehicle_costs_${String(vehicleId)}`
+      window.localStorage.setItem(key, JSON.stringify(costsData))
+    } catch {
+      // ignore
+    }
+  }, [costsData, vehicleId])
 
   useEffect(() => {
     const getLoggedInAdminDbUserId = async (): Promise<string | null> => {
@@ -147,7 +170,10 @@ const CostsTab = forwardRef<CostsTabHandle, CostsTabProps>(function CostsTab({ v
   }, [userId, onError])
 
   useEffect(() => {
-    if (!taxPresets.length) return
+    if (!taxPresets.length) {
+      setModalForm((prev) => ({ ...prev, taxType: '' }))
+      return
+    }
     setModalForm((prev) => {
       const current = String(prev.taxType || '').trim()
       const hasCurrent = current && taxPresets.some((t) => String(t.name || '').trim() === current)
@@ -167,11 +193,13 @@ const CostsTab = forwardRef<CostsTabHandle, CostsTabProps>(function CostsTab({ v
 
     const preset = taxPresets.find((t) => String(t.name || '').trim() === key)
     if (preset) {
-      const n = typeof preset.rate === 'number' ? preset.rate : parseFloat(String(preset.rate || '0'))
-      return Number.isFinite(n) ? n : 0
+      let n = typeof preset.rate === 'number' ? preset.rate : parseFloat(String(preset.rate || '0'))
+      if (!Number.isFinite(n)) n = 0
+      if (n > 1) n = n / 100
+      return n
     }
 
-    return TAX_RATES[key] ?? 0
+    return 0
   }
 
   const formatTaxLabel = (name: string, rate: number) => {
@@ -209,21 +237,7 @@ const CostsTab = forwardRef<CostsTabHandle, CostsTabProps>(function CostsTab({ v
   useEffect(() => {
     fetchCostsData()
     fetchCostsByStock()
-  }, [vehicleId, stockNumber])
-
-  // Realtime: refresh costs when edc_costs changes for this stock number
-  useEffect(() => {
-    if (!stockNumber) return
-    const channel = supabase
-      .channel(`realtime-costs-${stockNumber}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'edc_costs', filter: `stock_number=eq.${stockNumber}` }, () => {
-        fetchCostsByStock()
-      })
-      .subscribe()
-    return () => {
-      supabase.removeChannel(channel)
-    }
-  }, [stockNumber])
+  }, [vehicleId])
 
   // Realtime: refresh purchase price when edc_purchase changes for this stock number
   useEffect(() => {
@@ -243,7 +257,6 @@ const CostsTab = forwardRef<CostsTabHandle, CostsTabProps>(function CostsTab({ v
   useEffect(() => {
     if (!stockNumber) return
     const id = setInterval(() => {
-      fetchCostsByStock()
       fetchPurchasePriceByStock()
     }, 2000)
     return () => clearInterval(id)
@@ -284,7 +297,16 @@ const CostsTab = forwardRef<CostsTabHandle, CostsTabProps>(function CostsTab({ v
 
       if (data) {
         if (data.costs_data) {
-          setCostsData(prev => ({ ...prev, ...data.costs_data }))
+          const incoming = typeof data.costs_data === 'string'
+            ? JSON.parse(data.costs_data)
+            : data.costs_data
+          setCostsData(prev => ({
+            ...prev,
+            ...incoming,
+            additionalExpenses: Array.isArray(incoming?.additionalExpenses) && incoming.additionalExpenses.length
+              ? incoming.additionalExpenses
+              : prev.additionalExpenses,
+          }))
         }
         if (data.price) {
           setCostsData(prev => ({ ...prev, listPrice: data.price }))
@@ -300,16 +322,34 @@ const CostsTab = forwardRef<CostsTabHandle, CostsTabProps>(function CostsTab({ v
   }
 
   const fetchCostsByStock = async () => {
-    if (!stockNumber) return
+    if (!vehicleId) return
     try {
-      const { data, error } = await supabase
+      let rows: any[] = []
+
+      const { data: byId, error: errId } = await supabase
         .from('edc_costs')
         .select('*')
-        .eq('stock_number', stockNumber)
+        .eq('id', vehicleId)
         .order('created_at', { ascending: true })
 
-      if (!error && Array.isArray(data)) {
-        const mapped = data.map((r: any): CostItem => {
+      if (!errId && Array.isArray(byId) && byId.length) {
+        rows = byId as any[]
+      }
+
+      if (!rows.length) {
+        const { data: byVehicle, error: errVehicle } = await supabase
+          .from('edc_costs')
+          .select('*')
+          .eq('vehicle_id', vehicleId)
+          .order('created_at', { ascending: true })
+
+        if (!errVehicle && Array.isArray(byVehicle) && byVehicle.length) {
+          rows = byVehicle as any[]
+        }
+      }
+
+      if (Array.isArray(rows)) {
+        const mapped = rows.map((r: any): CostItem => {
           const price = parseFloat(r.amount ?? '0') || 0
           const qty = parseFloat(r.quantity ?? '1') || 1
           const discount = parseFloat(r.discount ?? '0') || 0
@@ -328,7 +368,7 @@ const CostsTab = forwardRef<CostsTabHandle, CostsTabProps>(function CostsTab({ v
             qty,
             discount,
             tax,
-            taxType: r.tax_type || 'HST',
+            taxType: r.tax_type || '',
             total,
           }
         })
@@ -351,6 +391,12 @@ const CostsTab = forwardRef<CostsTabHandle, CostsTabProps>(function CostsTab({ v
     }))
   }
 
+  const getDefaultTaxType = () => {
+    const defaultRow = taxPresets.find((t) => Boolean(t.default_tax_rate) && String(t.name || '').trim())
+    const firstRow = taxPresets.find((t) => String(t.name || '').trim())
+    return String((defaultRow || firstRow)?.name || '').trim()
+  }
+
   const openAddModal = () => {
     setEditingCost(null)
     setModalForm({
@@ -364,7 +410,7 @@ const CostsTab = forwardRef<CostsTabHandle, CostsTabProps>(function CostsTab({ v
       qty: 1,
       discount: 0,
       tax: 0,
-      taxType: 'HST',
+      taxType: getDefaultTaxType(),
     })
     setShowModal(true)
   }
@@ -411,7 +457,7 @@ const CostsTab = forwardRef<CostsTabHandle, CostsTabProps>(function CostsTab({ v
         ...prev,
         additionalExpenses: prev.additionalExpenses.map(item =>
           item.id === editingCost.id
-            ? { ...modalForm, id: item.id, price, qty, discount, tax, taxType: modalForm.taxType || 'HST', total } as CostItem
+            ? { ...modalForm, id: item.id, price, qty, discount, tax, taxType: modalForm.taxType || '', total } as CostItem
             : item
         )
       }))
@@ -432,7 +478,7 @@ const CostsTab = forwardRef<CostsTabHandle, CostsTabProps>(function CostsTab({ v
               quantity: qty,
               discount: discount,
               tax: tax,
-              tax_type: modalForm.taxType || 'HST',
+              tax_type: modalForm.taxType || '',
               total: total,
             })
             .eq('id', dbId as any)
@@ -460,7 +506,7 @@ const CostsTab = forwardRef<CostsTabHandle, CostsTabProps>(function CostsTab({ v
         qty,
         discount,
         tax,
-        taxType: modalForm.taxType || 'HST',
+        taxType: modalForm.taxType || '',
         total,
       }
 
@@ -507,7 +553,6 @@ const CostsTab = forwardRef<CostsTabHandle, CostsTabProps>(function CostsTab({ v
 
           const text = await res.text().catch(() => '')
           if (!res.ok) throw new Error(text || `Webhook responded with ${res.status}`)
-          if (!String(text).toLowerCase().includes('done')) throw new Error(text || 'Webhook did not return done')
           await fetchCostsByStock()
         }
       } catch (err) {
@@ -599,7 +644,7 @@ const CostsTab = forwardRef<CostsTabHandle, CostsTabProps>(function CostsTab({ v
         })
       )
 
-      const res = await fetch('/api/costs', {
+      const res = await fetch('/api/costs-save', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
@@ -607,10 +652,6 @@ const CostsTab = forwardRef<CostsTabHandle, CostsTabProps>(function CostsTab({ v
 
       const text = await res.text().catch(() => '')
       if (!res.ok) throw new Error(text || `Webhook responded with ${res.status}`)
-
-      if (!String(text).toLowerCase().includes('done')) {
-        throw new Error(text || 'Webhook did not return done')
-      }
 
       return true
     } catch (error) {
@@ -879,7 +920,7 @@ const CostsTab = forwardRef<CostsTabHandle, CostsTabProps>(function CostsTab({ v
             <input
               type="number"
               name="listPrice"
-              value={costsData.listPrice}
+              value={costsData.listPrice ? costsData.listPrice : ''}
               onChange={handleChange}
               className="flex-1 border border-gray-300 rounded-r-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
             />
@@ -895,7 +936,7 @@ const CostsTab = forwardRef<CostsTabHandle, CostsTabProps>(function CostsTab({ v
             <input
               type="number"
               name="salePrice"
-              value={costsData.salePrice}
+              value={costsData.salePrice ? costsData.salePrice : ''}
               onChange={handleChange}
               className="flex-1 border border-gray-300 rounded-r-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
             />
@@ -908,7 +949,7 @@ const CostsTab = forwardRef<CostsTabHandle, CostsTabProps>(function CostsTab({ v
             <input
               type="number"
               name="msrp"
-              value={costsData.msrp}
+              value={costsData.msrp ? costsData.msrp : ''}
               onChange={handleChange}
               className="flex-1 border border-gray-300 rounded-r-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
             />
@@ -1041,7 +1082,7 @@ const CostsTab = forwardRef<CostsTabHandle, CostsTabProps>(function CostsTab({ v
                     <input
                       type="number"
                       name="price"
-                      value={modalForm.price || 0}
+                      value={modalForm.price ? modalForm.price : ''}
                       onChange={handleModalChange}
                       className="w-full bg-gray-50 border border-gray-200 rounded-lg px-4 py-2.5 text-gray-900 focus:bg-white focus:ring-2 focus:ring-[#118df0] focus:border-transparent transition-all"
                     />
@@ -1051,7 +1092,7 @@ const CostsTab = forwardRef<CostsTabHandle, CostsTabProps>(function CostsTab({ v
                     <input
                       type="number"
                       name="qty"
-                      value={modalForm.qty || 1}
+                      value={modalForm.qty ? modalForm.qty : ''}
                       onChange={handleModalChange}
                       min="1"
                       className="w-full bg-gray-50 border border-gray-200 rounded-lg px-4 py-2.5 text-gray-900 focus:bg-white focus:ring-2 focus:ring-[#118df0] focus:border-transparent transition-all"
@@ -1065,7 +1106,7 @@ const CostsTab = forwardRef<CostsTabHandle, CostsTabProps>(function CostsTab({ v
                   <input
                     type="number"
                     name="discount"
-                    value={modalForm.discount || 0}
+                    value={modalForm.discount ? modalForm.discount : ''}
                     onChange={handleModalChange}
                     className="w-full bg-gray-50 border border-gray-200 rounded-lg px-4 py-2.5 text-gray-900 focus:bg-white focus:ring-2 focus:ring-[#118df0] focus:border-transparent transition-all"
                   />
@@ -1078,13 +1119,13 @@ const CostsTab = forwardRef<CostsTabHandle, CostsTabProps>(function CostsTab({ v
                     <input
                       type="number"
                       name="tax"
-                      value={modalForm.tax || 0}
+                      value={modalForm.tax ? modalForm.tax : ''}
                       readOnly
                       className="flex-1 bg-gray-100 border border-gray-200 rounded-lg px-4 py-2.5 text-gray-900 focus:bg-white focus:ring-2 focus:ring-[#118df0] focus:border-transparent transition-all"
                     />
                     <select
                       name="taxType"
-                      value={modalForm.taxType || 'HST'}
+                      value={modalForm.taxType || ''}
                       onChange={handleModalChange}
                       className="bg-gray-50 border border-gray-200 rounded-lg px-4 py-2.5 text-gray-900 focus:bg-white focus:ring-2 focus:ring-[#118df0] focus:border-transparent transition-all cursor-pointer"
                     >
@@ -1104,14 +1145,7 @@ const CostsTab = forwardRef<CostsTabHandle, CostsTabProps>(function CostsTab({ v
                             )
                           })
                       ) : (
-                        <>
-                          <option value="HST">HST 13%</option>
-                          <option value="RST">RST 8%</option>
-                          <option value="GST">GST 5%</option>
-                          <option value="PST">PST 6%</option>
-                          <option value="QST">QST 9.975%</option>
-                          <option value="Exempt">Exempt 0%</option>
-                        </>
+                        <option value="">No tax presets</option>
                       )}
                     </select>
                   </div>
