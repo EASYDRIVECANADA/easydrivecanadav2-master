@@ -69,16 +69,35 @@ function AccountPageInner() {
       }
 
       setRedirectingAdmin(true)
+      
+      // Fetch fresh role from users table (reflects subscription changes)
+      let actualRole = 'STAFF'
+      try {
+        const roleRes = await fetch('/api/users/get-role', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: normalizedEmail }),
+        })
+        const roleJson = await roleRes.json().catch(() => null)
+        if (roleRes.ok && roleJson?.role) {
+          actualRole = String(roleJson.role).trim()
+        }
+      } catch {
+        // Fallback to edc_admin_users role if API fails
+      }
+      
       if (!adminResult.error) {
-        const role = String((adminResult.data as any)?.role || '').trim().toUpperCase()
+        const adminRole = String((adminResult.data as any)?.role || '').trim().toUpperCase()
         const isActive = Boolean((adminResult.data as any)?.is_active)
-        if (isActive && (role === 'ADMIN' || role === 'STAFF')) {
-          setAdminSession(normalizedEmail, role)
+        if (isActive && (adminRole === 'ADMIN' || adminRole === 'STAFF')) {
+          setAdminSession(normalizedEmail, adminRole)
         } else {
-          setStaffAdminSession(normalizedEmail)
+          // Use actual role from users table (subscription-aware)
+          setAdminSession(normalizedEmail, actualRole)
         }
       } else {
-        setStaffAdminSession(normalizedEmail)
+        // Use actual role from users table (subscription-aware)
+        setAdminSession(normalizedEmail, actualRole)
       }
       router.replace('/admin')
     } catch {

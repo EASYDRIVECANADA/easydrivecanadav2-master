@@ -258,6 +258,7 @@ export default function AdminPage() {
 
   const checkAuth = async () => {
     const sessionStr = localStorage.getItem('edc_admin_session')
+    console.log('[checkAuth] sessionStr:', sessionStr)
     if (!sessionStr) {
       setUser(null)
       setIsAuthenticated(false)
@@ -268,8 +269,38 @@ export default function AdminPage() {
 
     try {
       const parsed = JSON.parse(sessionStr) as { email?: string; role?: string }
-      if (parsed?.email && parsed?.role) {
-        setUser({ email: parsed.email, role: parsed.role })
+      console.log('[checkAuth] parsed session:', parsed)
+      if (parsed?.email) {
+        // Fetch fresh role from database to sync with subscription changes
+        let currentRole = parsed.role || 'private'
+        console.log('[checkAuth] cached role:', currentRole)
+        try {
+          console.log('[checkAuth] fetching fresh role from API for:', parsed.email)
+          const roleRes = await fetch('/api/users/get-role', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: parsed.email }),
+          })
+          console.log('[checkAuth] API response status:', roleRes.status)
+          const roleJson = await roleRes.json().catch(() => null)
+          console.log('[checkAuth] API response data:', roleJson)
+          if (roleRes.ok && roleJson?.role) {
+            currentRole = String(roleJson.role).trim()
+            console.log('[checkAuth] updated role from API:', currentRole)
+            // Update localStorage with fresh role
+            const updatedSession = { email: parsed.email, role: currentRole }
+            localStorage.setItem('edc_admin_session', JSON.stringify(updatedSession))
+            console.log('[checkAuth] localStorage updated with new role')
+          } else {
+            console.log('[checkAuth] API failed or no role, using cached:', currentRole)
+          }
+        } catch (e) {
+          console.error('[checkAuth] API error:', e)
+          // Use cached role if API fails
+        }
+        
+        console.log('[checkAuth] final role:', currentRole)
+        setUser({ email: parsed.email, role: currentRole })
         setIsAuthenticated(true)
       } else {
         localStorage.removeItem('edc_admin_session')
@@ -277,7 +308,8 @@ export default function AdminPage() {
         setIsAuthenticated(false)
         setScopedUserId(null)
       }
-    } catch {
+    } catch (e) {
+      console.error('[checkAuth] parse error:', e)
       localStorage.removeItem('edc_admin_session')
       setUser(null)
       setIsAuthenticated(false)

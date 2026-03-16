@@ -538,19 +538,28 @@ export async function POST(req: Request) {
 
     const applyRoleUpdate = async (email: string, plan: Plan) => {
       const normalized = normalizeEmail(email)
+      console.log('[stripe-webhook] applyRoleUpdate START', { email: normalized, plan, role: planToRole[plan] })
       if (!normalized) throw new Error('Missing customer email')
       const role = planToRole[plan]
 
       // Update ALL users under this owner (not just the owner)
-      await updateAllUsersRoleByOwnerEmail(normalized, role)
+      try {
+        const updateResult = await updateAllUsersRoleByOwnerEmail(normalized, role)
+        console.log('[stripe-webhook] updateAllUsersRoleByOwnerEmail SUCCESS', updateResult)
+      } catch (e: any) {
+        console.error('[stripe-webhook] updateAllUsersRoleByOwnerEmail FAILED', e?.message)
+        throw e
+      }
 
       // Enable subscription for all users under this owner + set subscription_end
       try {
-        await enableSubscriptionUsers(normalized)
+        const enableResult = await enableSubscriptionUsers(normalized)
+        console.log('[stripe-webhook] enableSubscriptionUsers SUCCESS', enableResult)
       } catch (e: any) {
         console.error('[stripe-webhook] enableSubscriptionUsers error:', e?.message)
       }
 
+      console.log('[stripe-webhook] applyRoleUpdate COMPLETE', { email: normalized, role, plan })
       return { email: normalized, role, plan }
     }
 
@@ -697,11 +706,12 @@ export async function POST(req: Request) {
           }
         }
 
-        console.log('[stripe-webhook] final sessionPlan:', sessionPlan, 'role will be:', planToRole[sessionPlan])
+        console.log('[stripe-webhook] final sessionPlan:', sessionPlan, 'role will be:', planToRole[sessionPlan], 'email:', email)
 
         if (email && (sessionPlan === 'starter' || sessionPlan === 'small' || sessionPlan === 'medium' || sessionPlan === 'large')) {
+          console.log('[stripe-webhook] APPLYING ROLE UPDATE for', { email, sessionPlan })
           const result = await applyRoleUpdate(email, sessionPlan)
-          console.log('[stripe-webhook] role-updated', result)
+          console.log('[stripe-webhook] role-updated SUCCESS', result)
 
           if (sessionPlan === 'small' || sessionPlan === 'medium' || sessionPlan === 'large') {
             let badgeSent = false
@@ -735,7 +745,8 @@ export async function POST(req: Request) {
           return NextResponse.json({ received: true, updated: result })
         }
 
-        return NextResponse.json({ received: true, skipped: true, reason: 'subscription checkout completed but missing email/plan' })
+        console.log('[stripe-webhook] SKIPPING role update - missing email or invalid plan', { email, sessionPlan, hasEmail: !!email, isValidPlan: (sessionPlan === 'starter' || sessionPlan === 'small' || sessionPlan === 'medium' || sessionPlan === 'large') })
+        return NextResponse.json({ received: true, skipped: true, reason: 'subscription checkout completed but missing email/plan', debug: { email, sessionPlan } })
       }
 
       // If you want to strictly update only after payment is successful, require paid.

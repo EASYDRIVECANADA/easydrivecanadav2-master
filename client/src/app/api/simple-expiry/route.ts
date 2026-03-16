@@ -22,7 +22,7 @@ export async function POST(request: Request) {
 
     // Get users for this user_id
     const usersRes = await fetch(
-      `${supabaseUrl}/rest/v1/users?select=id,email,title,role,status&user_id=eq.${encodeURIComponent(userId)}`,
+      `${supabaseUrl}/rest/v1/users?select=id,email,title,role,status,subscription_end&user_id=eq.${encodeURIComponent(userId)}`,
       {
         method: 'GET',
         headers: { apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` },
@@ -51,12 +51,24 @@ export async function POST(request: Request) {
     const currentRole = String(ownerRow.role || '').trim().toLowerCase()
     console.log('[simple-expiry] Owner role:', currentRole)
 
-    // If owner has a paid role (not private), force expiry since subscription was canceled
-    // BUT preserve Premier roles - they should never be downgraded
+    const subscriptionEnd = String(ownerRow.subscription_end || '').trim()
+    const endDate = subscriptionEnd ? new Date(subscriptionEnd) : null
+    const endDateValid = !!endDate && !Number.isNaN(endDate.getTime())
+    const now = new Date()
+    const isExpired = endDateValid && endDate <= now
+    console.log('[simple-expiry] subscription_end check:', {
+      subscriptionEnd,
+      endDateValid,
+      isExpired,
+      now: now.toISOString(),
+    })
+
+    // If owner has a paid role (not private), only expire when subscription_end is past.
+    // Preserve Premier roles - they should never be downgraded.
     const isPaidRole = currentRole && currentRole !== 'private' && currentRole !== 'starter'
     
-    if (isPaidRole) {
-      console.log('[simple-expiry] Paid role detected, applying expiry...')
+    if (isPaidRole && isExpired) {
+      console.log('[simple-expiry] Paid role expired, applying expiry...')
       
       // If owner is Premier, preserve the role and just disable status
       if (currentRole === 'premier') {
