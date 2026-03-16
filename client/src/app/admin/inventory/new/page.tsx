@@ -4,6 +4,14 @@ import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabaseClient'
+import { 
+  CarFront, 
+  ClipboardList, 
+  BadgeDollarSign, 
+  Receipt, 
+  ShieldCheck, 
+  ArrowLeft 
+} from 'lucide-react'
 import DisclosuresTab from './tabs/DisclosuresTab'
 import PurchaseTab from './tabs/PurchaseTab'
 import CostsTab from './tabs/CostsTab'
@@ -894,8 +902,9 @@ export default function NewVehiclePage() {
       <div className="bg-white shadow">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="py-6">
-            <Link href="/admin/inventory" className="text-[#118df0] hover:underline">
-              ← Back to Inventory
+            <Link href="/admin/inventory" className="flex items-center gap-2 text-[#118df0] hover:underline">
+              <ArrowLeft className="w-4 h-4" />
+              Back to Inventory
             </Link>
             <h1 className="text-3xl font-bold text-gray-900 mt-2">Add New Vehicle</h1>
             <p className="mt-2 text-gray-600">Create a new inventory listing</p>
@@ -910,61 +919,66 @@ export default function NewVehiclePage() {
             <button
               type="button"
               onClick={() => setActiveTab('details')}
-              className={`py-4 px-1 border-b-2 font-medium text-sm ${
+              className={`flex items-center gap-2 py-4 px-1 border-b-2 font-medium text-sm ${
                 activeTab === 'details'
-                  ? 'border-[#118df0] text-[#118df0]'
+                  ? 'border-black text-black'
                   : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
               }`}
             >
-              🚗 Vehicle Details
+              <CarFront className={`w-4 h-4 ${activeTab === 'details' ? 'text-black' : 'text-gray-500'}`} />
+              Vehicle Details
             </button>
             <button
               type="button"
               onClick={() => enableDisclosures && setActiveTab('disclosures')}
               disabled={!enableDisclosures}
-              className={`py-4 px-1 border-b-2 font-medium text-sm ${
+              className={`flex items-center gap-2 py-4 px-1 border-b-2 font-medium text-sm ${
                 activeTab === 'disclosures'
-                  ? 'border-[#118df0] text-[#118df0]'
+                  ? 'border-black text-black'
                   : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
               } ${!enableDisclosures ? 'opacity-50 cursor-not-allowed' : ''}`}
             >
-              📋 Disclosures
+              <ClipboardList className={`w-4 h-4 ${activeTab === 'disclosures' ? 'text-black' : 'text-gray-500'}`} />
+              Disclosures
             </button>
             <button
               type="button"
               onClick={() => enablePurchase && setActiveTab('purchase')}
               disabled={!enablePurchase}
-              className={`py-4 px-1 border-b-2 font-medium text-sm ${
+              className={`flex items-center gap-2 py-4 px-1 border-b-2 font-medium text-sm ${
                 activeTab === 'purchase'
-                  ? 'border-[#118df0] text-[#118df0]'
+                  ? 'border-black text-black'
                   : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
               } ${!enablePurchase ? 'opacity-50 cursor-not-allowed' : ''}`}
             >
-              💰 Purchase
+              <BadgeDollarSign className={`w-4 h-4 ${activeTab === 'purchase' ? 'text-black' : 'text-gray-500'}`} />
+              Purchase
             </button>
             <button
               type="button"
               onClick={() => enableCosts && setActiveTab('costs')}
               disabled={!enableCosts}
-              className={`py-4 px-1 border-b-2 font-medium text-sm ${
+              className={`flex items-center gap-2 py-4 px-1 border-b-2 font-medium text-sm ${
                 activeTab === 'costs'
-                  ? 'border-[#118df0] text-[#118df0]'
+                  ? 'border-black text-black'
                   : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
               } ${!enableCosts ? 'opacity-50 cursor-not-allowed' : ''}`}
             >
-              💵 Costs
+              <Receipt className={`w-4 h-4 ${activeTab === 'costs' ? 'text-black' : 'text-gray-500'}`} />
+              Costs
             </button>
             <button
               type="button"
               onClick={() => enableWarranty && setActiveTab('warranty')}
               disabled={!enableWarranty}
-              className={`py-4 px-1 border-b-2 font-medium text-sm ${
+              className={`flex items-center gap-2 py-4 px-1 border-b-2 font-medium text-sm ${
                 activeTab === 'warranty'
-                  ? 'border-[#118df0] text-[#118df0]'
+                  ? 'border-black text-black'
                   : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
               } ${!enableWarranty ? 'opacity-50 cursor-not-allowed' : ''}`}
             >
-              🛡️ Warranty
+              <ShieldCheck className={`w-4 h-4 ${activeTab === 'warranty' ? 'text-black' : 'text-gray-500'}`} />
+              Warranty
             </button>
           </div>
         </div>

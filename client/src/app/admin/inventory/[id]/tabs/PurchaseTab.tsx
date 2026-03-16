@@ -2,6 +2,23 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabaseClient'
+import {
+  Search,
+  User,
+  CreditCard,
+  Building,
+  FileText,
+  Calendar,
+  DollarSign,
+  MapPin,
+  Tag,
+  Briefcase,
+  Hash,
+  Phone,
+  Smartphone,
+  Mail,
+  Printer,
+} from 'lucide-react'
 
 // Supported tax rates for purchase calculations
 const TAX_RATES: Record<string, number> = {
@@ -388,7 +405,7 @@ export default function PurchaseTab({ vehicleId, stockNumber, onError }: Purchas
       }
 
       // Recompute taxes when inputs change, unless taxOverride is enabled and user is editing vehicleTax directly
-      if (!next.taxOverride || (name !== 'vehicleTax')) {
+      if (!next.taxOverride || name !== 'vehicleTax') {
         const rate = TAX_RATES[next.taxType || 'Exempt'] ?? 0
         const purchasePrice = Number(next.purchasePrice || 0)
         const acv = Number(next.actualCashValue || 0)
@@ -529,52 +546,69 @@ export default function PurchaseTab({ vehicleId, stockNumber, onError }: Purchas
 
   return (
     <div className="bg-white rounded-xl shadow p-6">
-      
       {/* Dates Section */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Purchased On</label>
-          <input
-            type="date"
-            name="purchasedOn"
-            value={formData.purchasedOn || ''}
-            onChange={handleChange}
-            className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
-          />
+          <div className="relative">
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
+              <Calendar className="w-4 h-4" />
+            </span>
+            <input
+              type="date"
+              name="purchasedOn"
+              value={formData.purchasedOn || ''}
+              onChange={handleChange}
+              className="w-full border border-gray-300 rounded-lg pl-10 pr-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+            />
+          </div>
         </div>
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Date Received</label>
-          <input
-            type="date"
-            name="dateReceived"
-            value={formData.dateReceived || ''}
-            onChange={handleChange}
-            className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
-          />
+          <div className="relative">
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
+              <Calendar className="w-4 h-4" />
+            </span>
+            <input
+              type="date"
+              name="dateReceived"
+              value={formData.dateReceived || ''}
+              onChange={handleChange}
+              className="w-full border border-gray-300 rounded-lg pl-10 pr-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+            />
+          </div>
         </div>
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Date Delivered</label>
-          <input
-            type="date"
-            name="dateDelivered"
-            value={formData.dateDelivered || ''}
-            onChange={handleChange}
-            className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
-          />
+          <div className="relative">
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
+              <Calendar className="w-4 h-4" />
+            </span>
+            <input
+              type="date"
+              name="dateDelivered"
+              value={formData.dateDelivered || ''}
+              onChange={handleChange}
+              className="w-full border border-gray-300 rounded-lg pl-10 pr-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+            />
+          </div>
         </div>
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Recon Completed By</label>
-          <input
-            type="date"
-            name="reconCompletedBy"
-            value={formData.reconCompletedBy || ''}
-            onChange={handleChange}
-            className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
-          />
+          <div className="relative">
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
+              <Calendar className="w-4 h-4" />
+            </span>
+            <input
+              type="date"
+              name="reconCompletedBy"
+              value={formData.reconCompletedBy || ''}
+              onChange={handleChange}
+              className="w-full border border-gray-300 rounded-lg pl-10 pr-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+            />
+          </div>
         </div>
       </div>
-
-      
 
       {/* Ownership Section */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
@@ -600,23 +634,33 @@ export default function PurchaseTab({ vehicleId, stockNumber, onError }: Purchas
         </div>
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Title Received</label>
-          <input
-            type="date"
-            name="titleReceived"
-            value={formData.titleReceived || ''}
-            onChange={handleChange}
-            className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
-          />
+          <div className="relative">
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
+              <Calendar className="w-4 h-4" />
+            </span>
+            <input
+              type="date"
+              name="titleReceived"
+              value={formData.titleReceived || ''}
+              onChange={handleChange}
+              className="w-full border border-gray-300 rounded-lg pl-10 pr-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+            />
+          </div>
         </div>
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Ownership Notes</label>
-          <input
-            type="text"
-            name="ownershipNotes"
-            value={formData.ownershipNotes || ''}
-            onChange={handleChange}
-            className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
-          />
+          <div className="relative">
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
+              <FileText className="w-4 h-4" />
+            </span>
+            <input
+              type="text"
+              name="ownershipNotes"
+              value={formData.ownershipNotes || ''}
+              onChange={handleChange}
+              className="w-full border border-gray-300 rounded-lg pl-10 pr-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+            />
+          </div>
         </div>
       </div>
 
@@ -626,9 +670,10 @@ export default function PurchaseTab({ vehicleId, stockNumber, onError }: Purchas
         <p className="text-sm text-gray-600 mb-4">Who did you purchase the vehicle from?</p>
 
         {/* Info Banner */}
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4 flex gap-2">
+          <FileText className="w-4 h-4 text-blue-800 mt-0.5 flex-shrink-0" />
           <p className="text-sm text-blue-800">
-            💡 You can copy the purchase details from a vendor by using the search box below. If the vendor does not exist you can create a new one by clicking 'Add New'. Vendors cannot be edited or updated from here and any changes made will copy only.
+            You can copy the purchase details from a vendor by using the search box below. If the vendor does not exist you can create a new one by clicking 'Add New'. Vendors cannot be edited or updated from here and any changes made will copy only.
           </p>
         </div>
 
@@ -637,7 +682,9 @@ export default function PurchaseTab({ vehicleId, stockNumber, onError }: Purchas
           <div className="flex-1">
             <div className="relative">
               <div className="flex items-center">
-                <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">🔍</span>
+                <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">
+                  <Search className="w-4 h-4" />
+                </span>
                 <input
                   type="text"
                   placeholder="vendor search"
@@ -718,7 +765,9 @@ export default function PurchaseTab({ vehicleId, stockNumber, onError }: Purchas
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
             <div className="flex items-center">
-              <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">👤</span>
+              <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">
+                <User className="w-4 h-4" />
+              </span>
               <input
                 type="text"
                 name="vendorName"
@@ -757,7 +806,9 @@ export default function PurchaseTab({ vehicleId, stockNumber, onError }: Purchas
                     className={`absolute top-1/2 -translate-y-1/2 w-3 h-3 rounded-full bg-[#118df0] transition-all ${publicIdType === 'rin' ? 'right-1' : 'left-1'}`}
                   ></span>
                 </button>
-                <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">🪪</span>
+                <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">
+                  <CreditCard className="w-4 h-4" />
+                </span>
                 {publicIdType === 'dl' ? (
                   <input
                     type="text"
@@ -786,7 +837,9 @@ export default function PurchaseTab({ vehicleId, stockNumber, onError }: Purchas
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Company</label>
                 <div className="flex items-center">
-                  <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">🏢</span>
+                  <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">
+                    <Building className="w-4 h-4" />
+                  </span>
                   <input
                     type="text"
                     name="vendorCompany"
@@ -800,7 +853,9 @@ export default function PurchaseTab({ vehicleId, stockNumber, onError }: Purchas
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">RIN</label>
                 <div className="flex items-center">
-                  <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">🪪</span>
+                  <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">
+                    <CreditCard className="w-4 h-4" />
+                  </span>
                   <input
                     type="text"
                     name="rin"
@@ -811,739 +866,581 @@ export default function PurchaseTab({ vehicleId, stockNumber, onError }: Purchas
                   />
                 </div>
               </div>
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium text-gray-700 mb-1">Salesperson Registration #</label>
+                <div className="flex items-center">
+                  <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">
+                    <Briefcase className="w-4 h-4" />
+                  </span>
+                  <input
+                    type="text"
+                    name="salespersonRegistration"
+                    value={formData.salespersonRegistration || ''}
+                    onChange={handleChange}
+                    placeholder="salesperson registration"
+                    className="flex-1 border border-gray-300 rounded-r-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+                  />
+                </div>
+              </div>
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium text-gray-700 mb-1">Company MVDA #</label>
+                <div className="flex items-center">
+                  <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">
+                    <Hash className="w-4 h-4" />
+                  </span>
+                  <input
+                    type="text"
+                    name="companyMvda"
+                    value={formData.companyMvda || ''}
+                    onChange={handleChange}
+                    placeholder="company MVDA"
+                    className="flex-1 border border-gray-300 rounded-r-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+                  />
+                </div>
+              </div>
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium text-gray-700 mb-1">Tax Number</label>
+                <div className="flex items-center">
+                  <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">
+                    <Hash className="w-4 h-4" />
+                  </span>
+                  <input
+                    type="text"
+                    name="taxNumber"
+                    value={formData.taxNumber || ''}
+                    onChange={handleChange}
+                    placeholder="tax number"
+                    className="flex-1 border border-gray-300 rounded-r-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+                  />
+                </div>
+              </div>
             </>
           )}
         </div>
 
-        {isCompany && (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+        {/* Purchased Through Auction */}
+        <div className="border-t border-gray-200 pt-6 mb-6">
+          <div className="flex items-center gap-4 p-4 bg-gray-50 rounded-lg">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <span className="text-sm font-medium text-gray-700">Purchased Through Auction?</span>
+              <input
+                type="checkbox"
+                name="purchasedThroughAuction"
+                checked={formData.purchasedThroughAuction}
+                onChange={handleChange}
+                className="w-4 h-4 text-[#118df0] focus:ring-[#118df0] rounded"
+              />
+              <span className="text-sm">{formData.purchasedThroughAuction ? 'Yes' : 'No'}</span>
+            </label>
+          </div>
+        </div>
+
+        {/* Purchase price, ACV, Discount */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Purchase Price</label>
+            <div className="flex items-center">
+              <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">
+                <DollarSign className="w-4 h-4" />
+              </span>
+              <input
+                type="number"
+                name="purchasePrice"
+                value={formData.purchasePrice ? formData.purchasePrice : ''}
+                onChange={handleChange}
+                className="flex-1 border border-gray-300 rounded-r-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+              />
+            </div>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Actual Cash Value</label>
+            <div className="flex items-center">
+              <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">
+                <DollarSign className="w-4 h-4" />
+              </span>
+              <input
+                type="number"
+                name="actualCashValue"
+                value={formData.actualCashValue ? formData.actualCashValue : ''}
+                onChange={handleChange}
+                className="flex-1 border border-gray-300 rounded-r-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+              />
+            </div>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Discount</label>
+            <div className="flex items-center">
+              <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">
+                <DollarSign className="w-4 h-4" />
+              </span>
+              <input
+                type="number"
+                name="discount"
+                value={formData.discount ? formData.discount : ''}
+                onChange={handleChange}
+                className="flex-1 border border-gray-300 rounded-r-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Tax Rate & Override */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+          <div className="flex items-center gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Salesperson Registration *</label>
-              <div className="flex items-center">
-                <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">🧑‍💼</span>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Select Tax Rates</label>
+              <select
+                name="taxType"
+                value={formData.taxType || 'HST'}
+                onChange={handleChange}
+                className="w-48 border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+              >
+                <option value="HST">HST 13%</option>
+                <option value="RST">RST 8%</option>
+                <option value="GST">GST 5%</option>
+                <option value="PST">PST 6%</option>
+                <option value="QST">QST 9.975%</option>
+                <option value="Exempt">Exempt 0%</option>
+              </select>
+            </div>
+            <label className="mt-6 flex items-center gap-2">
+              <input
+                type="checkbox"
+                name="taxOverride"
+                checked={!!formData.taxOverride}
+                onChange={handleChange}
+                className="w-4 h-4 text-[#118df0] focus:ring-[#118df0] rounded"
+              />
+              <span className="text-sm text-gray-700">Tax override</span>
+            </label>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">{String(formData.taxType || 'HST').replace(/\bRTS\b/gi, 'RST').replace(/(\d+)\.00%/g, '$1%')}</label>
+            <div className="flex items-center">
+              <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">
+                <DollarSign className="w-4 h-4" />
+              </span>
+              <input
+                type="number"
+                name="vehicleTax"
+                value={formData.vehicleTax ? formData.vehicleTax : ''}
+                onChange={handleChange}
+                readOnly={!formData.taxOverride}
+                className={`flex-1 border border-gray-300 rounded-r-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent ${formData.taxOverride ? '' : 'bg-gray-100'}`}
+              />
+            </div>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Total Vehicle Tax</label>
+            <div className="flex items-center">
+              <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">
+                <DollarSign className="w-4 h-4" />
+              </span>
+              <input
+                type="number"
+                name="totalVehicleTax"
+                value={formData.totalVehicleTax ? formData.totalVehicleTax : ''}
+                onChange={handleChange}
+                readOnly
+                className="flex-1 border border-gray-300 rounded-r-lg px-3 py-2 bg-gray-100"
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Payment Status */}
+        <div className="mb-6">
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Payment Status <span className="text-xs text-gray-400">Ex: Paid</span>
+          </label>
+          <div className="flex items-center gap-3">
+            <select
+              name="paymentStatus"
+              value={formData.paymentStatus || ''}
+              onChange={handleChange}
+              className="w-64 border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+            >
+              <option value="">Ex: Paid</option>
+              <option value="paid">Paid</option>
+              <option value="not_paid">Not Paid</option>
+              <option value="waiting">Waiting</option>
+              <option value="negotiation">Negotiation</option>
+              <option value="arb_issue">Arb Issue</option>
+              <option value="problem">Problem</option>
+              <option value="voided">Voided</option>
+            </select>
+            <button
+              type="button"
+              onClick={() => setShowPaymentDetails(!showPaymentDetails)}
+              className="text-sm text-[#118df0] hover:underline"
+            >
+              {showPaymentDetails ? 'Less «' : 'More »'}
+            </button>
+          </div>
+        </div>
+
+        {/* Payment Details (Expandable) */}
+        {showPaymentDetails && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Payment Type</label>
+              <select
+                name="paymentType"
+                value={formData.paymentType || ''}
+                onChange={handleChange}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+              >
+                <option value="">None</option>
+                <option value="cash">Cash</option>
+                <option value="check">Check</option>
+                <option value="wire">Wire</option>
+                <option value="credit_card">Credit Card</option>
+                <option value="debit_card">Debit Card</option>
+                <option value="financing">Financing</option>
+                <option value="other">Other</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Payment Date</label>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
+                  <Calendar className="w-4 h-4" />
+                </span>
                 <input
-                  type="text"
-                  name="salespersonRegistration"
-                  value={formData.salespersonRegistration || ''}
+                  type="date"
+                  name="paymentDate"
+                  value={formData.paymentDate || ''}
                   onChange={handleChange}
-                  placeholder="# Salesperson Registration"
-                  className="flex-1 border border-gray-300 rounded-r-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+                  className="w-full border border-gray-300 rounded-lg pl-10 pr-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
                 />
               </div>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Company MVDA #</label>
-              <div className="flex items-center">
-                <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">#</span>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Payment Transaction #</label>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
+                  <Hash className="w-4 h-4" />
+                </span>
                 <input
                   type="text"
-                  name="companyMvda"
-                  value={formData.companyMvda || ''}
+                  name="paymentTransactionNumber"
+                  value={formData.paymentTransactionNumber || ''}
                   onChange={handleChange}
-                  placeholder="Company MVDA #"
-                  className="flex-1 border border-gray-300 rounded-r-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+                  placeholder="Transaction number"
+                  className="w-full border border-gray-300 rounded-lg pl-10 pr-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
                 />
               </div>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1"># Tax Number</label>
-              <div className="flex items-center">
-                <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">#</span>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Payment Notes</label>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
+                  <FileText className="w-4 h-4" />
+                </span>
                 <input
                   type="text"
-                  name="taxNumber"
-                  value={formData.taxNumber || ''}
+                  name="paymentNotes"
+                  value={formData.paymentNotes || ''}
                   onChange={handleChange}
-                  placeholder="# Tax Number"
-                  className="flex-1 border border-gray-300 rounded-r-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+                  placeholder="Payment notes"
+                  className="w-full border border-gray-300 rounded-lg pl-10 pr-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
                 />
               </div>
             </div>
           </div>
         )}
 
-        {/* QuickBooks Info */}
-        <div className="bg-blue-600 text-white rounded-lg p-3 mb-4">
-          <p className="text-sm">ℹ️ Connect QuickBooks in Settings to enable vendor selection for Bill generation.</p>
-        </div>
-
-        {/* Contact Details */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
-            <div className="flex items-center">
-              <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">📞</span>
-              <input
-                type="tel"
-                name="vendorPhone"
-                value={formData.vendorPhone || ''}
-                onChange={handleChange}
-                placeholder="phone"
-                className="flex-1 border border-gray-300 rounded-r-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
-              />
-            </div>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Mobile</label>
-            <div className="flex items-center">
-              <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">📱</span>
-              <input
-                type="tel"
-                name="vendorMobile"
-                value={formData.vendorMobile || ''}
-                onChange={handleChange}
-                placeholder="mobile"
-                className="flex-1 border border-gray-300 rounded-r-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
-              />
-            </div>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Fax</label>
-            <div className="flex items-center">
-              <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">📠</span>
-              <input
-                type="tel"
-                name="vendorFax"
-                value={formData.vendorFax || ''}
-                onChange={handleChange}
-                placeholder="fax"
-                className="flex-1 border border-gray-300 rounded-r-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
-              />
-            </div>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-            <div className="flex items-center">
-              <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">✉️</span>
-              <input
-                type="email"
-                name="vendorEmail"
-                value={formData.vendorEmail || ''}
-                onChange={handleChange}
-                placeholder="email"
-                className="flex-1 border border-gray-300 rounded-r-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* Address */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Enter a location</label>
-            <div className="flex items-center">
-              <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">📍</span>
-              <input
-                type="text"
-                name="vendorLocation"
-                value={formData.vendorLocation || ''}
-                onChange={handleChange}
-                placeholder="Enter a location"
-                className="flex-1 border border-gray-300 rounded-r-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
-              />
-            </div>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Apt/Suite #</label>
-            <div className="flex items-center">
-              <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">#</span>
-              <input
-                type="text"
-                name="vendorAptSuite"
-                value={formData.vendorAptSuite || ''}
-                onChange={handleChange}
-                placeholder="apt/suite #"
-                className="flex-1 border border-gray-300 rounded-r-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
-              />
-            </div>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">City</label>
-            <div className="flex items-center">
-              <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">📍</span>
-              <input
-                type="text"
-                name="vendorCity"
-                value={formData.vendorCity || ''}
-                onChange={handleChange}
-                placeholder="city"
-                className="flex-1 border border-gray-300 rounded-r-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
-              />
-            </div>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">--</label>
-            <div className="flex items-center">
-              <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">📍</span>
-              <select
-                name="vendorProvince"
-                value={formData.vendorProvince || ''}
-                onChange={handleChange}
-                className="flex-1 border border-gray-300 rounded-r-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
-              >
-               
-                <option value="ON">ON</option>
-                <option value="QC">QC</option>
-                <option value="NS">NS</option>
-                <option value="NB">NB</option>
-                <option value="MB">MB</option>
-                <option value="BC">BC</option>
-                <option value="PE">PE</option>
-                <option value="SK">SK</option>
-                <option value="AB">AB</option>
-                <option value="NL">NL</option>
-                <option value="YT">YT</option>
-                <option value="NU">NU</option>
-                <option value="NT">NT</option>
-              </select>
-            </div>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Postal Code</label>
-            <div className="flex items-center">
-              <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">🏷️</span>
-              <input
-                type="text"
-                name="vendorPostalCode"
-                value={formData.vendorPostalCode || ''}
-                onChange={handleChange}
-                placeholder="postal code"
-                className="flex-1 border border-gray-300 rounded-r-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
-              />
-            </div>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Country</label>
-            <div className="flex items-center">
-              <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">🌐</span>
-              <select
-                name="vendorCountry"
-                value={formData.vendorCountry || 'CA'}
-                onChange={handleChange}
-                className="flex-1 border border-gray-300 rounded-r-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
-              >
-                <option value="CA">CA</option>
-                <option value="US">US</option>
-              </select>
-            </div>
-          </div>
-        </div>
-
-        <div className="flex justify-end mb-4">
+        {/* Action Buttons */}
+        <div className="mt-8 flex justify-end">
           <button
-            type="button"
-            onClick={handleClear}
-            className="text-[#118df0] hover:underline text-sm"
+            onClick={handleSave}
+            disabled={saving}
+            className="px-8 py-2 bg-[#118df0] text-white font-medium rounded hover:bg-[#0d6ebd] disabled:opacity-50 transition-colors"
           >
-            Clear
+            {saving ? 'Saving...' : 'Update'}
           </button>
         </div>
 
-        {/* Plate & Sale Info */
-        }
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Plate #</label>
-            <input
-              type="text"
-              name="plateNumber"
-              value={formData.plateNumber || ''}
-              onChange={handleChange}
-              placeholder="plate number"
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Sale State</label>
-            <select
-              name="saleState"
-              value={formData.saleState || ''}
-              onChange={handleChange}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
-            >
-              <option value="">Not Set</option>
-              <option value="resale">Resale</option>
-              <option value="wrecking">Wrecking</option>
-              <option value="consignment">Consignment</option>
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">License Fee (Purchase Agreement)</label>
-            <input
-              type="number"
-              name="licenseFee"
-              value={formData.licenseFee ? formData.licenseFee : ''}
-              onChange={handleChange}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
-            />
-          </div>
-        </div>
+        {showNewVendorModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+            <div className="w-full max-w-3xl rounded-lg bg-white shadow-lg">
+              <div className="px-6 py-4">
+                <h3 className="text-lg font-semibold text-gray-900">New Vendor</h3>
+              </div>
 
-        {/* Auction Toggle */}
-        <div className="flex items-center gap-2 mb-6">
-          <span className="text-sm text-gray-700">Was this vehicle purchased through an auction?</span>
-          <label className="flex items-center gap-1.5 cursor-pointer">
-            <input
-              type="checkbox"
-              name="purchasedThroughAuction"
-              checked={formData.purchasedThroughAuction || false}
-              onChange={handleChange}
-              className="w-4 h-4 text-[#118df0] focus:ring-[#118df0] rounded"
-            />
-            <span className="text-sm">{formData.purchasedThroughAuction ? 'Yes' : 'No'}</span>
-          </label>
-        </div>
-      </div>
-
-      {/* Purchase price, ACV, Discount */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Purchase Price</label>
-          <div className="flex items-center">
-            <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">$</span>
-            <input
-              type="number"
-              name="purchasePrice"
-              value={formData.purchasePrice ? formData.purchasePrice : ''}
-              onChange={handleChange}
-              className="flex-1 border border-gray-300 rounded-r-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
-            />
-          </div>
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Actual Cash Value</label>
-          <div className="flex items-center">
-            <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">$</span>
-            <input
-              type="number"
-              name="actualCashValue"
-              value={formData.actualCashValue ? formData.actualCashValue : ''}
-              onChange={handleChange}
-              className="flex-1 border border-gray-300 rounded-r-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
-            />
-          </div>
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Discount</label>
-          <div className="flex items-center">
-            <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">$</span>
-            <input
-              type="number"
-              name="discount"
-              value={formData.discount ? formData.discount : ''}
-              onChange={handleChange}
-              className="flex-1 border border-gray-300 rounded-r-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
-            />
-          </div>
-        </div>
-      </div>
-
-      {/* Tax Rate & Override */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-        <div className="flex items-center gap-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Select Tax Rates</label>
-            <select
-              name="taxType"
-              value={formData.taxType || 'HST'}
-              onChange={handleChange}
-              className="w-48 border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
-            >
-              <option value="HST">HST 13%</option>
-              <option value="RST">RST 8%</option>
-              <option value="GST">GST 5%</option>
-              <option value="PST">PST 6%</option>
-              <option value="QST">QST 9.975%</option>
-              <option value="Exempt">Exempt 0%</option>
-            </select>
-          </div>
-          <label className="mt-6 flex items-center gap-2">
-            <input
-              type="checkbox"
-              name="taxOverride"
-              checked={!!formData.taxOverride}
-              onChange={handleChange}
-              className="w-4 h-4 text-[#118df0] focus:ring-[#118df0] rounded"
-            />
-            <span className="text-sm text-gray-700">Tax override</span>
-          </label>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">{String(formData.taxType || 'HST').replace(/\bRTS\b/gi, 'RST').replace(/(\d+)\.00%/g, '$1%')}</label>
-          <div className="flex items-center">
-            <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">$</span>
-            <input
-              type="number"
-              name="vehicleTax"
-              value={formData.vehicleTax ? formData.vehicleTax : ''}
-              onChange={handleChange}
-              readOnly={!formData.taxOverride}
-              className={`flex-1 border border-gray-300 rounded-r-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent ${formData.taxOverride ? '' : 'bg-gray-100'}`}
-            />
-          </div>
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Total Vehicle Tax</label>
-          <div className="flex items-center">
-            <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">$</span>
-            <input
-              type="number"
-              name="totalVehicleTax"
-              value={formData.totalVehicleTax ? formData.totalVehicleTax : ''}
-              onChange={handleChange}
-              readOnly
-              className="flex-1 border border-gray-300 rounded-r-lg px-3 py-2 bg-gray-100"
-            />
-          </div>
-        </div>
-      </div>
-
-      {/* Payment Status */}
-      <div className="mb-6">
-        <label className="block text-sm font-medium text-gray-700 mb-1">Payment Status <span className="text-xs text-gray-400">Ex: Paid</span></label>
-        <div className="flex items-center gap-3">
-          <select
-            name="paymentStatus"
-            value={formData.paymentStatus || ''}
-            onChange={handleChange}
-            className="w-64 border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
-          >
-            <option value="">Ex: Paid</option>
-            <option value="paid">Paid</option>
-            <option value="not_paid">Not Paid</option>
-            <option value="waiting">Waiting</option>
-            <option value="negotiation">Negotiation</option>
-            <option value="arb_issue">Arb Issue</option>
-            <option value="problem">Problem</option>
-            <option value="voided">Voided</option>
-          </select>
-          <button
-            type="button"
-            onClick={() => setShowPaymentDetails(!showPaymentDetails)}
-            className="text-sm text-[#118df0] hover:underline"
-          >
-            {showPaymentDetails ? 'Less «' : 'More »'}
-          </button>
-        </div>
-      </div>
-
-      {/* Payment Details (Expandable) */}
-      {showPaymentDetails && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Payment Type</label>
-            <select
-              name="paymentType"
-              value={formData.paymentType || ''}
-              onChange={handleChange}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
-            >
-              <option value="">None</option>
-              <option value="cash">Cash</option>
-              <option value="check">Check</option>
-              <option value="wire">Wire</option>
-              <option value="credit_card">Credit Card</option>
-              <option value="debit_card">Debit Card</option>
-              <option value="financing">Financing</option>
-              <option value="other">Other</option>
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Payment Date</label>
-            <input
-              type="date"
-              name="paymentDate"
-              value={formData.paymentDate || ''}
-              onChange={handleChange}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Payment Transaction #</label>
-            <input
-              type="text"
-              name="paymentTransactionNumber"
-              value={formData.paymentTransactionNumber || ''}
-              onChange={handleChange}
-              placeholder="Transaction number"
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Payment Notes</label>
-            <input
-              type="text"
-              name="paymentNotes"
-              value={formData.paymentNotes || ''}
-              onChange={handleChange}
-              placeholder="Payment notes"
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
-            />
-          </div>
-        </div>
-      )}
-
-      {/* Action Buttons */}
-      <div className="mt-8 flex gap-4">
-        <button
-          onClick={handleSave}
-          disabled={saving}
-          className="flex-1 bg-[#118df0] text-white py-3 rounded-lg font-semibold hover:bg-[#0d6ebd] transition-colors disabled:opacity-50"
-        >
-          {saving ? 'Saving...' : 'Update'}
-        </button>
-      </div>
-
-      {showNewVendorModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="w-full max-w-3xl rounded-lg bg-white shadow-lg">
-            <div className="px-6 py-4">
-              <h3 className="text-lg font-semibold text-gray-900">New Vendor</h3>
-            </div>
-
-            <div className="max-h-[70vh] overflow-y-auto px-6 pb-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="md:col-span-2">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Company Name</label>
-                  <div className="flex items-center">
-                    <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">🏢</span>
-                    <input
-                      type="text"
-                      value={newVendorForm.companyName}
-                      onChange={(e) => setNewVendorForm(prev => ({ ...prev, companyName: e.target.value }))}
-                      className="flex-1 border border-gray-300 rounded-r-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
-                    />
+              <div className="max-h-[70vh] overflow-y-auto px-6 pb-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="md:col-span-2">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Company Name</label>
+                    <div className="flex items-center">
+                      <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">
+                        <Building className="w-4 h-4" />
+                      </span>
+                      <input
+                        type="text"
+                        value={newVendorForm.companyName}
+                        onChange={(e) => setNewVendorForm(prev => ({ ...prev, companyName: e.target.value }))}
+                        className="flex-1 border border-gray-300 rounded-r-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+                      />
+                    </div>
                   </div>
-                </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Contact First Name</label>
-                  <div className="flex items-center">
-                    <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">👤</span>
-                    <input
-                      type="text"
-                      value={newVendorForm.contactFirstName}
-                      onChange={(e) => setNewVendorForm(prev => ({ ...prev, contactFirstName: e.target.value }))}
-                      className="flex-1 border border-gray-300 rounded-r-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
-                    />
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Contact First Name</label>
+                    <div className="flex items-center">
+                      <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">
+                        <User className="w-4 h-4" />
+                      </span>
+                      <input
+                        type="text"
+                        value={newVendorForm.contactFirstName}
+                        onChange={(e) => setNewVendorForm(prev => ({ ...prev, contactFirstName: e.target.value }))}
+                        className="flex-1 border border-gray-300 rounded-r-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+                      />
+                    </div>
                   </div>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Contact Last Name</label>
-                  <div className="flex items-center">
-                    <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">👤</span>
-                    <input
-                      type="text"
-                      value={newVendorForm.contactLastName}
-                      onChange={(e) => setNewVendorForm(prev => ({ ...prev, contactLastName: e.target.value }))}
-                      className="flex-1 border border-gray-300 rounded-r-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
-                    />
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Contact Last Name</label>
+                    <div className="flex items-center">
+                      <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">
+                        <User className="w-4 h-4" />
+                      </span>
+                      <input
+                        type="text"
+                        value={newVendorForm.contactLastName}
+                        onChange={(e) => setNewVendorForm(prev => ({ ...prev, contactLastName: e.target.value }))}
+                        className="flex-1 border border-gray-300 rounded-r-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+                      />
+                    </div>
                   </div>
-                </div>
 
-                <div className="md:col-span-2">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Street Address</label>
-                  <div className="flex items-center">
-                    <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">📍</span>
-                    <input
-                      type="text"
-                      value={newVendorForm.streetAddress}
-                      onChange={(e) => setNewVendorForm(prev => ({ ...prev, streetAddress: e.target.value }))}
-                      className="flex-1 border border-gray-300 rounded-r-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
-                    />
+                  <div className="md:col-span-2">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Street Address</label>
+                    <div className="flex items-center">
+                      <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">
+                        <MapPin className="w-4 h-4" />
+                      </span>
+                      <input
+                        type="text"
+                        value={newVendorForm.streetAddress}
+                        onChange={(e) => setNewVendorForm(prev => ({ ...prev, streetAddress: e.target.value }))}
+                        className="flex-1 border border-gray-300 rounded-r-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+                      />
+                    </div>
                   </div>
-                </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Suite/Apt</label>
-                  <div className="flex items-center">
-                    <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">#</span>
-                    <input
-                      type="text"
-                      value={newVendorForm.suiteApt}
-                      onChange={(e) => setNewVendorForm(prev => ({ ...prev, suiteApt: e.target.value }))}
-                      className="flex-1 border border-gray-300 rounded-r-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
-                    />
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Suite/Apt</label>
+                    <div className="flex items-center">
+                      <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">
+                        <Hash className="w-4 h-4" />
+                      </span>
+                      <input
+                        type="text"
+                        value={newVendorForm.suiteApt}
+                        onChange={(e) => setNewVendorForm(prev => ({ ...prev, suiteApt: e.target.value }))}
+                        className="flex-1 border border-gray-300 rounded-r-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+                      />
+                    </div>
                   </div>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">City</label>
-                  <div className="flex items-center">
-                    <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">📍</span>
-                    <input
-                      type="text"
-                      value={newVendorForm.city}
-                      onChange={(e) => setNewVendorForm(prev => ({ ...prev, city: e.target.value }))}
-                      className="flex-1 border border-gray-300 rounded-r-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
-                    />
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">City</label>
+                    <div className="flex items-center">
+                      <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">
+                        <MapPin className="w-4 h-4" />
+                      </span>
+                      <input
+                        type="text"
+                        value={newVendorForm.city}
+                        onChange={(e) => setNewVendorForm(prev => ({ ...prev, city: e.target.value }))}
+                        className="flex-1 border border-gray-300 rounded-r-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+                      />
+                    </div>
                   </div>
-                </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Province</label>
-                  <div className="flex items-center">
-                    <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">📍</span>
-                    <input
-                      type="text"
-                      value={newVendorForm.province}
-                      onChange={(e) => setNewVendorForm(prev => ({ ...prev, province: e.target.value }))}
-                      className="flex-1 border border-gray-300 rounded-r-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
-                    />
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Province</label>
+                    <div className="flex items-center">
+                      <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">
+                        <MapPin className="w-4 h-4" />
+                      </span>
+                      <input
+                        type="text"
+                        value={newVendorForm.province}
+                        onChange={(e) => setNewVendorForm(prev => ({ ...prev, province: e.target.value }))}
+                        className="flex-1 border border-gray-300 rounded-r-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+                      />
+                    </div>
                   </div>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Postal Code</label>
-                  <div className="flex items-center">
-                    <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">🏷️</span>
-                    <input
-                      type="text"
-                      value={newVendorForm.postalCode}
-                      onChange={(e) => setNewVendorForm(prev => ({ ...prev, postalCode: e.target.value }))}
-                      className="flex-1 border border-gray-300 rounded-r-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
-                    />
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Postal Code</label>
+                    <div className="flex items-center">
+                      <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">
+                        <Tag className="w-4 h-4" />
+                      </span>
+                      <input
+                        type="text"
+                        value={newVendorForm.postalCode}
+                        onChange={(e) => setNewVendorForm(prev => ({ ...prev, postalCode: e.target.value }))}
+                        className="flex-1 border border-gray-300 rounded-r-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+                      />
+                    </div>
                   </div>
-                </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Country</label>
-                  <select
-                    value={newVendorForm.country}
-                    onChange={(e) => setNewVendorForm(prev => ({ ...prev, country: e.target.value }))}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
-                  >
-                    <option value="CA">CA</option>
-                    <option value="US">US</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">RIN</label>
-                  <div className="flex items-center">
-                    <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">🪪</span>
-                    <input
-                      type="text"
-                      value={newVendorForm.rin}
-                      onChange={(e) => setNewVendorForm(prev => ({ ...prev, rin: e.target.value }))}
-                      className="flex-1 border border-gray-300 rounded-r-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
-                    />
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Country</label>
+                    <select
+                      value={newVendorForm.country}
+                      onChange={(e) => setNewVendorForm(prev => ({ ...prev, country: e.target.value }))}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+                    >
+                      <option value="CA">CA</option>
+                      <option value="US">US</option>
+                    </select>
                   </div>
-                </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">RIN</label>
+                    <div className="flex items-center">
+                      <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">
+                        <CreditCard className="w-4 h-4" />
+                      </span>
+                      <input
+                        type="text"
+                        value={newVendorForm.rin}
+                        onChange={(e) => setNewVendorForm(prev => ({ ...prev, rin: e.target.value }))}
+                        className="flex-1 border border-gray-300 rounded-r-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+                      />
+                    </div>
+                  </div>
 
-                <div className="md:col-span-2">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Salesperson Registration #</label>
-                  <div className="flex items-center">
-                    <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">🧑‍💼</span>
-                    <input
-                      type="text"
-                      value={newVendorForm.salespersonRegistration}
-                      onChange={(e) => setNewVendorForm(prev => ({ ...prev, salespersonRegistration: e.target.value }))}
-                      className="flex-1 border border-gray-300 rounded-r-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
-                    />
+                  <div className="md:col-span-2">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Salesperson Registration #</label>
+                    <div className="flex items-center">
+                      <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">
+                        <Briefcase className="w-4 h-4" />
+                      </span>
+                      <input
+                        type="text"
+                        value={newVendorForm.salespersonRegistration}
+                        onChange={(e) => setNewVendorForm(prev => ({ ...prev, salespersonRegistration: e.target.value }))}
+                        className="flex-1 border border-gray-300 rounded-r-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+                      />
+                    </div>
                   </div>
-                </div>
-                <div className="md:col-span-2">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Company MVDA #</label>
-                  <div className="flex items-center">
-                    <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">#</span>
-                    <input
-                      type="text"
-                      value={newVendorForm.companyMvda}
-                      onChange={(e) => setNewVendorForm(prev => ({ ...prev, companyMvda: e.target.value }))}
-                      className="flex-1 border border-gray-300 rounded-r-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
-                    />
+                  <div className="md:col-span-2">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Company MVDA #</label>
+                    <div className="flex items-center">
+                      <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">
+                        <Hash className="w-4 h-4" />
+                      </span>
+                      <input
+                        type="text"
+                        value={newVendorForm.companyMvda}
+                        onChange={(e) => setNewVendorForm(prev => ({ ...prev, companyMvda: e.target.value }))}
+                        className="flex-1 border border-gray-300 rounded-r-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+                      />
+                    </div>
                   </div>
-                </div>
-                <div className="md:col-span-2">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Tax Number</label>
-                  <div className="flex items-center">
-                    <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">#</span>
-                    <input
-                      type="text"
-                      value={newVendorForm.taxNumber}
-                      onChange={(e) => setNewVendorForm(prev => ({ ...prev, taxNumber: e.target.value }))}
-                      className="flex-1 border border-gray-300 rounded-r-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
-                    />
+                  <div className="md:col-span-2">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Tax Number</label>
+                    <div className="flex items-center">
+                      <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">
+                        <Hash className="w-4 h-4" />
+                      </span>
+                      <input
+                        type="text"
+                        value={newVendorForm.taxNumber}
+                        onChange={(e) => setNewVendorForm(prev => ({ ...prev, taxNumber: e.target.value }))}
+                        className="flex-1 border border-gray-300 rounded-r-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+                      />
+                    </div>
                   </div>
-                </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
-                  <div className="flex items-center">
-                    <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">📞</span>
-                    <input
-                      type="text"
-                      value={newVendorForm.phone}
-                      onChange={(e) => setNewVendorForm(prev => ({ ...prev, phone: e.target.value }))}
-                      className="flex-1 border border-gray-300 rounded-r-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
-                    />
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
+                    <div className="flex items-center">
+                      <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">
+                        <Phone className="w-4 h-4" />
+                      </span>
+                      <input
+                        type="text"
+                        value={newVendorForm.phone}
+                        onChange={(e) => setNewVendorForm(prev => ({ ...prev, phone: e.target.value }))}
+                        className="flex-1 border border-gray-300 rounded-r-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+                      />
+                    </div>
                   </div>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Mobile</label>
-                  <div className="flex items-center">
-                    <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">📱</span>
-                    <input
-                      type="text"
-                      value={newVendorForm.mobile}
-                      onChange={(e) => setNewVendorForm(prev => ({ ...prev, mobile: e.target.value }))}
-                      className="flex-1 border border-gray-300 rounded-r-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
-                    />
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Mobile</label>
+                    <div className="flex items-center">
+                      <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">
+                        <Smartphone className="w-4 h-4" />
+                      </span>
+                      <input
+                        type="text"
+                        value={newVendorForm.mobile}
+                        onChange={(e) => setNewVendorForm(prev => ({ ...prev, mobile: e.target.value }))}
+                        className="flex-1 border border-gray-300 rounded-r-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+                      />
+                    </div>
                   </div>
-                </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-                  <div className="flex items-center">
-                    <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">✉️</span>
-                    <input
-                      type="email"
-                      value={newVendorForm.email}
-                      onChange={(e) => setNewVendorForm(prev => ({ ...prev, email: e.target.value }))}
-                      className="flex-1 border border-gray-300 rounded-r-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
-                    />
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                    <div className="flex items-center">
+                      <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">
+                        <Mail className="w-4 h-4" />
+                      </span>
+                      <input
+                        type="email"
+                        value={newVendorForm.email}
+                        onChange={(e) => setNewVendorForm(prev => ({ ...prev, email: e.target.value }))}
+                        className="flex-1 border border-gray-300 rounded-r-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+                      />
+                    </div>
                   </div>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Fax</label>
-                  <div className="flex items-center">
-                    <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">📠</span>
-                    <input
-                      type="text"
-                      value={newVendorForm.fax}
-                      onChange={(e) => setNewVendorForm(prev => ({ ...prev, fax: e.target.value }))}
-                      className="flex-1 border border-gray-300 rounded-r-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
-                    />
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Fax</label>
+                    <div className="flex items-center">
+                      <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">
+                        <Printer className="w-4 h-4" />
+                      </span>
+                      <input
+                        type="text"
+                        value={newVendorForm.fax}
+                        onChange={(e) => setNewVendorForm(prev => ({ ...prev, fax: e.target.value }))}
+                        className="flex-1 border border-gray-300 rounded-r-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+                      />
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
 
-            <div className="flex justify-end gap-2 px-6 py-4">
-              <button
-                type="button"
-                onClick={() => setShowNewVendorModal(false)}
-                disabled={savingNewVendor}
-                className="rounded-md bg-red-500 px-4 py-2 text-sm font-medium text-white hover:bg-red-600"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleNewVendorOk}
-                disabled={savingNewVendor}
-                className="rounded-md bg-[#118df0] px-4 py-2 text-sm font-medium text-white hover:bg-[#0d6ebd]"
-              >
-                {savingNewVendor ? 'Saving...' : 'OK'}
-              </button>
+              <div className="flex justify-end gap-2 px-6 py-4">
+                <button
+                  type="button"
+                  onClick={() => setShowNewVendorModal(false)}
+                  disabled={savingNewVendor}
+                  className="rounded-md bg-red-500 px-4 py-2 text-sm font-medium text-white hover:bg-red-600"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleNewVendorOk}
+                  disabled={savingNewVendor}
+                  className="rounded-md bg-[#118df0] px-4 py-2 text-sm font-medium text-white hover:bg-[#0d6ebd]"
+                >
+                  {savingNewVendor ? 'Saving...' : 'OK'}
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   )
 }

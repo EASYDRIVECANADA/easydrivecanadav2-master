@@ -2,6 +2,18 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
+import { 
+  Hash, 
+  Calendar, 
+  Grid3X3, 
+  Gauge, 
+  Car, 
+  Settings, 
+  Scissors, 
+  Palette, 
+  Key,
+  Info
+} from 'lucide-react'
 
 interface VehicleFormData {
   id?: string
@@ -542,21 +554,27 @@ export default function VehicleDetailsTab({ formData, onChange, onFormDataChange
           <div>
             <label className="block text-sm text-gray-600 mb-1">Year</label>
             <div className="relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">📅</span>
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
+                <Calendar className="w-4 h-4" />
+              </span>
               <input type="number" name="year" value={formData.year || ''} onChange={onChange} placeholder="year" className="w-full border border-gray-300 rounded pl-10 pr-3 py-2 text-sm focus:ring-1 focus:ring-[#118df0] focus:border-[#118df0]" />
             </div>
           </div>
           <div>
             <label className="block text-sm text-gray-600 mb-1">Make</label>
             <div className="relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">🚗</span>
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
+                <Car className="w-4 h-4" />
+              </span>
               <input type="text" name="make" value={formData.make || ''} onChange={onChange} placeholder="make" className="w-full border border-gray-300 rounded pl-10 pr-3 py-2 text-sm focus:ring-1 focus:ring-[#118df0] focus:border-[#118df0]" />
             </div>
           </div>
           <div>
             <label className="block text-sm text-gray-600 mb-1">Model</label>
             <div className="relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">⚙</span>
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
+                <Settings className="w-4 h-4" />
+              </span>
               <input type="text" name="model" value={formData.model || ''} onChange={onChange} placeholder="model" className="w-full border border-gray-300 rounded pl-10 pr-3 py-2 text-sm focus:ring-1 focus:ring-[#118df0] focus:border-[#118df0]" />
             </div>
           </div>
@@ -684,14 +702,18 @@ export default function VehicleDetailsTab({ formData, onChange, onFormDataChange
             <div>
               <label className="block text-sm text-gray-600 mb-1">Exterior Colour</label>
               <div className="relative">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">🎨</span>
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
+                  <Palette className="w-4 h-4" />
+                </span>
                 <input type="text" name="exteriorColor" value={formData.exteriorColor || ''} onChange={onChange} placeholder="exterior colour" className="w-full border border-gray-300 rounded pl-10 pr-3 py-2 text-sm focus:ring-1 focus:ring-[#118df0] focus:border-[#118df0]" />
               </div>
             </div>
             <div>
               <label className="block text-sm text-gray-600 mb-1">Interior Colour</label>
               <div className="relative">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">🎨</span>
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
+                  <Palette className="w-4 h-4" />
+                </span>
                 <input type="text" name="interiorColor" value={formData.interiorColor || ''} onChange={onChange} placeholder="interior colour" className="w-full border border-gray-300 rounded pl-10 pr-3 py-2 text-sm focus:ring-1 focus:ring-[#118df0] focus:border-[#118df0]" />
               </div>
             </div>
@@ -700,7 +722,9 @@ export default function VehicleDetailsTab({ formData, onChange, onFormDataChange
             <div>
               <label className="block text-sm text-gray-600 mb-1">Key #</label>
               <div className="relative">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">🔑</span>
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
+                  <Key className="w-4 h-4" />
+                </span>
                 <input type="text" name="keyNumber" value={formData.keyNumber || ''} onChange={onChange} placeholder="key #" className="w-full border border-gray-300 rounded pl-10 pr-3 py-2 text-sm focus:ring-1 focus:ring-[#118df0] focus:border-[#118df0]" />
               </div>
             </div>
@@ -754,11 +778,13 @@ export default function VehicleDetailsTab({ formData, onChange, onFormDataChange
 
           {/* Tips */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
-            <div className="bg-blue-50 border border-blue-200 rounded p-3">
-              <p className="text-xs text-blue-800"><strong>ⓘ Tip:</strong> Add your keywords below instead of the trim field above to give your ads a bit more information.</p>
+            <div className="bg-blue-50 border border-blue-200 rounded p-3 flex gap-2">
+              <Info className="w-4 h-4 text-blue-800 mt-0.5 flex-shrink-0" />
+              <p className="text-xs text-blue-800"><strong>Tip:</strong> Add your keywords below instead of the trim field above to give your ads a bit more information.</p>
             </div>
-            <div className="bg-blue-50 border border-blue-200 rounded p-3">
-              <p className="text-xs text-blue-800"><strong>ⓘ Tip:</strong> Add your feedwords below to send additional information to your website provider.</p>
+            <div className="bg-blue-50 border border-blue-200 rounded p-3 flex gap-2">
+              <Info className="w-4 h-4 text-blue-800 mt-0.5 flex-shrink-0" />
+              <p className="text-xs text-blue-800"><strong>Tip:</strong> Add your feedwords below to send additional information to your website provider.</p>
             </div>
           </div>
 

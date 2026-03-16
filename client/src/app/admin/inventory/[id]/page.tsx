@@ -1,9 +1,19 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import type { ComponentType } from 'react'
 import { useRouter, useParams, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabaseClient'
+import {
+  CarFront,
+  ClipboardList,
+  BadgeDollarSign,
+  Receipt,
+  ShieldCheck,
+  ImageIcon,
+  FolderOpen,
+} from 'lucide-react'
 
 // Tab Components
 import VehicleDetailsTab from './tabs/VehicleDetailsTab'
@@ -73,14 +83,16 @@ interface VehicleFormData extends Omit<Partial<Vehicle>, 'features'> {
 
 type TabType = 'details' | 'images' | 'disclosures' | 'purchase' | 'costs' | 'warranty' | 'files'
 
-const TABS: { id: TabType; label: string; icon: string }[] = [
-  { id: 'details', label: 'Vehicle Details', icon: '🚗' },
-  { id: 'disclosures', label: 'Disclosures', icon: '📋' },
-  { id: 'purchase', label: 'Purchase', icon: '💵' },
-  { id: 'costs', label: 'Costs', icon: '📊' },
-  { id: 'warranty', label: 'Warranty', icon: '🛡️' },
-  { id: 'images', label: 'Images', icon: '🖼️' },
-  { id: 'files', label: 'Files', icon: '📁' },
+type TabIcon = ComponentType<{ className?: string }>
+
+const TABS: { id: TabType; label: string; icon: TabIcon }[] = [
+  { id: 'details', label: 'Vehicle Details', icon: CarFront },
+  { id: 'disclosures', label: 'Disclosures', icon: ClipboardList },
+  { id: 'purchase', label: 'Purchase', icon: BadgeDollarSign },
+  { id: 'costs', label: 'Costs', icon: Receipt },
+  { id: 'warranty', label: 'Warranty', icon: ShieldCheck },
+  { id: 'images', label: 'Images', icon: ImageIcon },
+  { id: 'files', label: 'Files', icon: FolderOpen },
 ]
 
 export default function AdminEditVehiclePage() {
@@ -422,20 +434,23 @@ export default function AdminEditVehiclePage() {
         {/* Tab Navigation */}
         <div className="w-full px-4 sm:px-6 lg:px-8 border-t border-gray-200">
           <nav className="flex gap-1 overflow-x-auto" aria-label="Tabs">
-            {TABS.map((tab) => (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
-                  activeTab === tab.id
-                    ? 'border-[#118df0] text-[#118df0]'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                }`}
-              >
-                <span>{tab.icon}</span>
-                <span>{tab.label}</span>
-              </button>
-            ))}
+            {TABS.map((tab) => {
+              const Icon = tab.icon
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
+                    activeTab === tab.id
+                      ? 'border-black text-black'
+                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  }`}
+                >
+                  <Icon className={`w-4 h-4 ${activeTab === tab.id ? 'text-black' : 'text-gray-500'}`} />
+                  <span>{tab.label}</span>
+                </button>
+              )
+            })}
           </nav>
         </div>
       </div>

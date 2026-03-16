@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { motion, type Transition } from 'framer-motion'
 import { supabase } from '@/lib/supabaseClient'
 
 // Supported tax rates
@@ -71,7 +72,7 @@ export default function CostsTab({ vehicleId, vehiclePrice, stockNumber }: Costs
     qty: 1,
     discount: 0,
     tax: 0,
-    taxType: 'HST',
+    taxType: 'Exempt',
   })
 
   // Load purchase price with preference for shared vehicle UUID
@@ -389,14 +390,18 @@ export default function CostsTab({ vehicleId, vehiclePrice, stockNumber }: Costs
       qty: 1,
       discount: 0,
       tax: 0,
-      taxType: 'HST',
+      taxType: 'Exempt',
     })
     setShowModal(true)
   }
 
   const openEditModal = (item: CostItem) => {
     setEditingCost(item)
-    setModalForm(item)
+    setModalForm({
+      ...item,
+      taxType: item.taxType || 'Exempt',
+      tax: item.tax ?? 0,
+    })
     setShowModal(true)
   }
 
@@ -427,7 +432,8 @@ export default function CostsTab({ vehicleId, vehiclePrice, stockNumber }: Costs
     const qty = modalForm.qty || 1
     const discount = modalForm.discount || 0
     const rate = TAX_RATES[modalForm.taxType || 'Exempt'] ?? 0
-    const tax = Math.max(0, (price * qty) - discount) * rate
+    const taxable = Math.max(0, price * qty - discount)
+    const tax = modalForm.taxType && modalForm.taxType !== 'Exempt' ? taxable * rate : 0
     const total = (price * qty) - discount + tax
 
     if (editingCost) {
@@ -435,16 +441,16 @@ export default function CostsTab({ vehicleId, vehiclePrice, stockNumber }: Costs
         ...prev,
         additionalExpenses: prev.additionalExpenses.map(item =>
           item.id === editingCost.id
-            ? { ...modalForm, id: item.id, price, qty, discount, tax, taxType: modalForm.taxType || 'HST', total } as CostItem
+            ? { ...modalForm, id: item.id, price, qty, discount, tax, taxType: modalForm.taxType || 'Exempt', total } as CostItem
             : item
         )
       }))
 
       // Persist edit to Supabase (when possible), then refresh from Supabase
       try {
-        if (editingCost?.id) {
-          const dbId = (editingCost as any).dbId ?? editingCost.id
-          const q = supabase
+        const dbId = (editingCost as any).dbId ?? editingCost.id
+        if (dbId) {
+          await supabase
             .from('edc_costs')
             .update({
               name: modalForm.name || '',
@@ -456,14 +462,12 @@ export default function CostsTab({ vehicleId, vehiclePrice, stockNumber }: Costs
               quantity: qty,
               discount: discount,
               tax: tax,
-              tax_type: modalForm.taxType || 'HST',
+              tax_type: modalForm.taxType || 'Exempt',
               total: total,
+              stock_number: stockNumber || null,
+              vehicle_id: vehicleId,
             })
             .eq('id', dbId as any)
-          const { error } = await q
-          if (error) {
-            console.error('Failed to update cost in Supabase:', error)
-          }
         }
       } catch (err) {
         console.error('Error updating cost:', err)
@@ -483,7 +487,7 @@ export default function CostsTab({ vehicleId, vehiclePrice, stockNumber }: Costs
         qty,
         discount,
         tax,
-        taxType: modalForm.taxType || 'HST',
+        taxType: modalForm.taxType || 'Exempt',
         total,
       }
       setCostsData(prev => ({
@@ -723,44 +727,54 @@ export default function CostsTab({ vehicleId, vehiclePrice, stockNumber }: Costs
               const expensesPercent = total > 0 ? (additionalExpensesTotal / total) * 100 : 33
               const profitPercent = total > 0 ? (Math.max(0, potentialProfit) / total) * 100 : 34
               const circumference = 2 * Math.PI * 35
+              const baseStroke = 20
+
               const purchaseDash = (purchasePercent / 100) * circumference
               const expensesDash = (expensesPercent / 100) * circumference
               const profitDash = (profitPercent / 100) * circumference
-              
+
+              const transition: Transition = { duration: 0.6, ease: 'easeInOut' }
+
               return (
                 <svg viewBox="0 0 100 100" className="w-full h-full transform -rotate-90">
-                  {/* Purchase (Blue) */}
-                  <circle
+                  <motion.circle
                     cx="50"
                     cy="50"
                     r="35"
                     fill="transparent"
                     stroke="#3b82f6"
-                    strokeWidth="20"
-                    strokeDasharray={`${purchaseDash} ${circumference}`}
-                    strokeDashoffset="0"
+                    strokeWidth={baseStroke}
+                    animate={{
+                      strokeDasharray: `${purchaseDash} ${circumference}`,
+                      strokeDashoffset: 0,
+                    }}
+                    transition={transition}
                   />
-                  {/* Expenses (Red) */}
-                  <circle
+                  <motion.circle
                     cx="50"
                     cy="50"
                     r="35"
                     fill="transparent"
                     stroke="#ef4444"
-                    strokeWidth="20"
-                    strokeDasharray={`${expensesDash} ${circumference}`}
-                    strokeDashoffset={`${-purchaseDash}`}
+                    strokeWidth={baseStroke}
+                    animate={{
+                      strokeDasharray: `${expensesDash} ${circumference}`,
+                      strokeDashoffset: -purchaseDash,
+                    }}
+                    transition={transition}
                   />
-                  {/* Profit (Green) */}
-                  <circle
+                  <motion.circle
                     cx="50"
                     cy="50"
                     r="35"
                     fill="transparent"
                     stroke="#22c55e"
-                    strokeWidth="20"
-                    strokeDasharray={`${profitDash} ${circumference}`}
-                    strokeDashoffset={`${-(purchaseDash + expensesDash)}`}
+                    strokeWidth={baseStroke}
+                    animate={{
+                      strokeDasharray: `${profitDash} ${circumference}`,
+                      strokeDashoffset: -(purchaseDash + expensesDash),
+                    }}
+                    transition={transition}
                   />
                 </svg>
               )
@@ -793,7 +807,7 @@ export default function CostsTab({ vehicleId, vehiclePrice, stockNumber }: Costs
         {/* Summary Numbers */}
         <div className="space-y-3">
           <div className="flex justify-between items-center py-2 border-b border-gray-100">
-            <span className="text-sm text-gray-600">💰 Vehicle Purchase Price:</span>
+            <span className="text-sm text-gray-600">Vehicle Purchase Price:</span>
             <span className="font-semibold">${costsData.purchasePrice.toLocaleString()}</span>
           </div>
           <div className="flex justify-between items-center py-2 border-b border-gray-100">
@@ -805,11 +819,11 @@ export default function CostsTab({ vehicleId, vehiclePrice, stockNumber }: Costs
             <span className="font-semibold">${additionalExpensesTotal.toLocaleString()}</span>
           </div>
           <div className="flex justify-between items-center py-2 border-b border-gray-100 bg-blue-50 px-2 rounded">
-            <span className="text-sm font-medium text-blue-800">💰 Total Invested:</span>
+            <span className="text-sm font-medium text-blue-800">Total Invested:</span>
             <span className="font-bold text-blue-800">${totalInvested.toLocaleString()}</span>
           </div>
           <div className="flex justify-between items-center py-2 border-b border-gray-100">
-            <span className="text-sm text-gray-600">💰 Total Tax:</span>
+            <span className="text-sm text-gray-600">Total Tax:</span>
             <span className="font-semibold">${totalTax.toLocaleString()}</span>
           </div>
           <div className="flex justify-between items-center py-2 bg-gray-100 px-2 rounded">
@@ -1044,7 +1058,7 @@ export default function CostsTab({ vehicleId, vehiclePrice, stockNumber }: Costs
                     />
                     <select
                       name="taxType"
-                      value={modalForm.taxType || 'HST'}
+                      value={modalForm.taxType || 'Exempt'}
                       onChange={handleModalChange}
                       className="bg-gray-50 border border-gray-200 rounded-lg px-4 py-2.5 text-gray-900 focus:bg-white focus:ring-2 focus:ring-[#118df0] focus:border-transparent transition-all cursor-pointer"
                     >

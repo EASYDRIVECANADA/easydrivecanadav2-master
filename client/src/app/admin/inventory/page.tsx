@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef, useMemo } from 'react'
+import { motion } from 'framer-motion'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabaseClient'
@@ -276,28 +277,67 @@ export default function AdminInventoryPage() {
     }
   }
 
-  const fetchDrawerCosts = async (stockNumber?: string) => {
-    if (!stockNumber) return
-    try {
+  const fetchDrawerCosts = async (vehicleId?: string, stockNumber?: string) => {
+    const toNumber = (val: any) => {
+      const cleaned = String(val ?? '0').replace(/[^0-9.-]/g, '')
+      const num = Number(cleaned)
+      return Number.isFinite(num) ? num : 0
+    }
+
+    const runQuery = async (filters: Record<string, any>) => {
       const { data, error } = await supabase
         .from('edc_costs')
         .select('*')
-        .eq('stock_number', stockNumber)
+        .match(filters)
         .order('created_at', { ascending: true })
+      if (error || !Array.isArray(data)) return null
+      return data
+    }
 
-      if (!error && Array.isArray(data)) {
-        const additionalTotal = data.reduce((sum, r: any) => {
-          const total = parseFloat(r.total ?? '0') || 0
-          return sum + total
-        }, 0)
-        const taxTotal = data.reduce((sum, r: any) => {
-          const tax = parseFloat(r.tax ?? '0') || 0
-          return sum + tax
-        }, 0)
-        setDrawerCosts((prev: any) => ({ ...prev, additionalExpenses: additionalTotal, taxTotal }))
+    try {
+      let rows: any[] | null = null
+      if (vehicleId) {
+        rows = await runQuery({ vehicle_id: vehicleId })
+        // Some schemas store vehicleId directly in edc_costs.id
+        if (!rows) {
+          rows = await runQuery({ id: vehicleId })
+        }
       }
+      if (!rows && stockNumber) {
+        rows = await runQuery({ stock_number: stockNumber })
+      }
+      if (!rows) {
+        // fallback: try vehicle costs_data
+        try {
+          const { data } = await supabase
+            .from('edc_vehicles')
+            .select('costs_data')
+            .eq('id', vehicleId || '')
+            .maybeSingle()
+          if (data?.costs_data) {
+            const incoming = typeof data.costs_data === 'string' ? JSON.parse(data.costs_data) : data.costs_data
+            const add = toNumber(incoming?.additionalExpenses ?? incoming?.additionalExpensesTotal)
+            setDrawerCosts((prev: any) => ({ ...prev, additionalExpenses: add, taxTotal: 0 }))
+          }
+        } catch {}
+        return
+      }
+
+      const additionalTotal = rows.reduce((sum, r: any) => {
+        const price = toNumber((r as any).amount ?? (r as any).price)
+        const qty = toNumber((r as any).quantity ?? (r as any).qty ?? 1)
+        const discount = toNumber((r as any).discount)
+        const tax = toNumber((r as any).tax)
+        const totalField = toNumber((r as any).total)
+        const computed = Math.max(0, price * qty - discount + tax)
+        const total = totalField || computed
+        return sum + total
+      }, 0)
+
+      const taxTotal = rows.reduce((sum, r: any) => sum + toNumber((r as any).tax), 0)
+      setDrawerCosts((prev: any) => ({ ...prev, additionalExpenses: additionalTotal, taxTotal }))
     } catch (err) {
-      console.error('Error fetching edc_costs by stock number:', err)
+      console.error('Error fetching edc_costs for drawer:', err)
     }
   }
 
@@ -311,12 +351,12 @@ export default function AdminInventoryPage() {
       taxTotal: 0,
     })
     fetchDrawerPurchase(stock)
-    fetchDrawerCosts(stock)
+    fetchDrawerCosts(drawerVehicle?.id, stock)
 
     const ch1 = supabase
       .channel(`drawer-costs-${stock}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'edc_costs', filter: `stock_number=eq.${stock}` }, () => {
-        fetchDrawerCosts(stock)
+        fetchDrawerCosts(drawerVehicle?.id, stock)
       })
       .subscribe()
 
@@ -407,7 +447,7 @@ export default function AdminInventoryPage() {
     }
   }
 
-      const handleOpenAddModal = () => {
+  const handleOpenAddModal = () => {
     if (!canAddVehicle) {
       openAlert(
         'Vehicle limit reached',
@@ -1163,23 +1203,22 @@ export default function AdminInventoryPage() {
               </div>
             </div>
           </div>
-
           <div className="p-5 overflow-y-auto">
             <h4 className="text-base font-semibold text-slate-900 mb-4 text-center">Profit Analysis</h4>
             {(() => {
               const purchasePrice = Number(drawerCosts.purchasePrice || 0)
-              const acv = Number(drawerCosts.actualCashValue || 0)
               const additionalExpenses = Number(drawerCosts.additionalExpenses || 0)
-              const totalInvested = purchasePrice + additionalExpenses - acv
+              const acvDisplay = additionalExpenses // show ACV as total costs per request
+              const totalInvested = purchasePrice + additionalExpenses
               const selling = Number(drawerVehicle.price || 0)
-              const taxRate = 0.13 // HST 13%
-              const tax = selling * taxRate
+              const taxTotal = Number(drawerCosts.taxTotal || 0)
+              const tax = taxTotal
               const allInPrice = selling + tax
               const profit = selling - totalInvested
               
               //// Pie chart calculations - show breakdown of total invested
               const circumference = 2 * Math.PI * 35
-              const netPurchase = purchasePrice - acv
+              const netPurchase = purchasePrice
               // Include positive profit in the donut so a green segment appears when profitable.
               const positiveProfit = profit > 0 ? profit : 0
               const chartTotal = netPurchase + additionalExpenses + positiveProfit
@@ -1196,33 +1235,45 @@ export default function AdminInventoryPage() {
                 <div className="space-y-4">
                   <div className="flex items-center justify-center gap-4">
                     <svg viewBox="0 0 100 100" className="w-40 h-40 -rotate-90">
-                      {/* Blue segment - Purchase (net of ACV) */}
-                      <circle 
-                        cx="50" cy="50" r="35" 
-                        fill="transparent" 
-                        stroke="#2563eb" 
-                        strokeWidth="20" 
-                        strokeDasharray={`${purchaseDash} ${circumference}`}
-                        strokeDashoffset="0"
+                      <motion.circle
+                        cx="50"
+                        cy="50"
+                        r="35"
+                        fill="transparent"
+                        stroke="#2563eb"
+                        strokeWidth="20"
+                        animate={{
+                          strokeDasharray: `${purchaseDash} ${circumference}`,
+                          strokeDashoffset: 0,
+                        }}
+                        transition={{ duration: 0.6, ease: 'easeInOut' }}
                       />
-                      {/* Red segment - Expenses */}
-                      <circle 
-                        cx="50" cy="50" r="35" 
-                        fill="transparent" 
-                        stroke="#dc2626" 
-                        strokeWidth="20" 
-                        strokeDasharray={`${expensesDash} ${circumference}`}
-                        strokeDashoffset={`-${purchaseDash}`}
+                      <motion.circle
+                        cx="50"
+                        cy="50"
+                        r="35"
+                        fill="transparent"
+                        stroke="#dc2626"
+                        strokeWidth="20"
+                        animate={{
+                          strokeDasharray: `${expensesDash} ${circumference}`,
+                          strokeDashoffset: -purchaseDash,
+                        }}
+                        transition={{ duration: 0.6, ease: 'easeInOut' }}
                       />
-                      {/* Green segment - Profit (only when positive) */}
                       {profit > 0 && (
-                        <circle 
-                          cx="50" cy="50" r="35" 
-                          fill="transparent" 
-                          stroke="#16a34a" 
-                          strokeWidth="20" 
-                          strokeDasharray={`${profitDash} ${circumference}`}
-                          strokeDashoffset={`-${purchaseDash + expensesDash}`}
+                        <motion.circle
+                          cx="50"
+                          cy="50"
+                          r="35"
+                          fill="transparent"
+                          stroke="#16a34a"
+                          strokeWidth="20"
+                          animate={{
+                            strokeDasharray: `${profitDash} ${circumference}`,
+                            strokeDashoffset: -(purchaseDash + expensesDash),
+                          }}
+                          transition={{ duration: 0.6, ease: 'easeInOut' }}
                         />
                       )}
                     </svg>
@@ -1246,7 +1297,7 @@ export default function AdminInventoryPage() {
                   <div className="text-center text-sm text-gray-600">Selling: {formatPrice(selling)}</div>
                   <div className="space-y-2 text-[15px]">
                     <div className="flex justify-between text-gray-700"><span className="font-medium text-gray-600">Vehicle Purchase Price:</span><span>{formatPrice(purchasePrice)}</span></div>
-                    <div className="flex justify-between text-gray-700"><span className="font-medium text-gray-600">Actual Cash Value:</span><span>{formatPrice(acv)}</span></div>
+                    <div className="flex justify-between text-gray-700"><span className="font-medium text-gray-600">Actual Cash Value:</span><span>{formatPrice(acvDisplay)}</span></div>
                     <div className="flex justify-between text-gray-700"><span className="font-medium text-gray-600">Additional Expenses:</span><span>{formatPrice(additionalExpenses)}</span></div>
                     <div className="flex justify-between text-gray-900"><span className="font-semibold">Total Invested:</span><span className="font-semibold">{formatPrice(totalInvested)}</span></div>
                     <div className="flex justify-between text-gray-700"><span className="font-medium text-gray-600">Vehicle Selling Price:</span><span>{formatPrice(selling)}</span></div>
