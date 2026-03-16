@@ -1062,11 +1062,6 @@ export default function CostsTab({ vehicleId, vehiclePrice, stockNumber }: Costs
                       onChange={handleModalChange}
                       className="bg-gray-50 border border-gray-200 rounded-lg px-4 py-2.5 text-gray-900 focus:bg-white focus:ring-2 focus:ring-[#118df0] focus:border-transparent transition-all cursor-pointer"
                     >
-                      <option value="HST">HST 13%</option>
-                      <option value="RST">RST 8%</option>
-                      <option value="GST">GST 5%</option>
-                      <option value="PST">PST 6%</option>
-                      <option value="QST">QST 9.975%</option>
                       <option value="Exempt">Exempt 0%</option>
                     </select>
                   </div>

@@ -991,15 +991,10 @@ export default function PurchaseTab({ vehicleId, stockNumber, onError }: Purchas
               <label className="block text-sm font-medium text-gray-700 mb-1">Select Tax Rates</label>
               <select
                 name="taxType"
-                value={formData.taxType || 'HST'}
+                value={formData.taxType || 'Exempt'}
                 onChange={handleChange}
                 className="w-48 border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
               >
-                <option value="HST">HST 13%</option>
-                <option value="RST">RST 8%</option>
-                <option value="GST">GST 5%</option>
-                <option value="PST">PST 6%</option>
-                <option value="QST">QST 9.975%</option>
                 <option value="Exempt">Exempt 0%</option>
               </select>
             </div>
@@ -1018,7 +1013,7 @@ export default function PurchaseTab({ vehicleId, stockNumber, onError }: Purchas
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">{String(formData.taxType || 'HST').replace(/\bRTS\b/gi, 'RST').replace(/(\d+)\.00%/g, '$1%')}</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">{formData.taxType || 'Exempt'}</label>
             <div className="flex items-center">
               <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">
                 <DollarSign className="w-4 h-4" />
