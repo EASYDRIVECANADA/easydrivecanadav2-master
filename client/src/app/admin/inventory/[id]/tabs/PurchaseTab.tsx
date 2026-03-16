@@ -53,6 +53,10 @@ interface PurchaseData {
   paymentStatus?: string
   vendorCountry?: string
   driverLicense?: string
+  paymentType?: string
+  paymentDate?: string
+  paymentTransactionNumber?: string
+  paymentNotes?: string
 }
 
 interface VendorRow {
@@ -125,6 +129,7 @@ export default function PurchaseTab({ vehicleId, stockNumber, onError }: Purchas
   const [publicIdType, setPublicIdType] = useState<'dl' | 'rin'>('dl')
   const driverLicenseRef = useRef<HTMLInputElement | null>(null)
   const rinRef = useRef<HTMLInputElement | null>(null)
+  const [showPaymentDetails, setShowPaymentDetails] = useState(false)
 
   const computeTaxes = (d: PurchaseData): PurchaseData => {
     const next: PurchaseData = { ...d }
@@ -263,6 +268,10 @@ export default function PurchaseTab({ vehicleId, stockNumber, onError }: Purchas
           paymentStatus: toStr(pick(['paymentStatus', 'payment_status'])),
           salespersonRegistration: toStr(pick(['salespersonRegistration', 'salesperson_registration'])),
           companyMvda: toStr(pick(['companyMvda', 'company_mvda'])),
+          paymentType: toStr(pick(['paymentType', 'payment_type'])),
+          paymentDate: toStr(pick(['paymentDate', 'payment_date'])),
+          paymentTransactionNumber: toStr(pick(['paymentTransactionNumber', 'payment_transaction_number'])),
+          paymentNotes: toStr(pick(['paymentNotes', 'payment_notes'])),
         }
 
         setFormData(prev => computeTaxes({ ...prev, ...Object.fromEntries(Object.entries(pref).filter(([, v]) => v !== undefined)) }))
@@ -950,7 +959,7 @@ export default function PurchaseTab({ vehicleId, stockNumber, onError }: Purchas
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">City</label>
             <div className="flex items-center">
@@ -963,6 +972,33 @@ export default function PurchaseTab({ vehicleId, stockNumber, onError }: Purchas
                 placeholder="city"
                 className="flex-1 border border-gray-300 rounded-r-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
               />
+            </div>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">--</label>
+            <div className="flex items-center">
+              <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">📍</span>
+              <select
+                name="vendorProvince"
+                value={formData.vendorProvince || ''}
+                onChange={handleChange}
+                className="flex-1 border border-gray-300 rounded-r-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+              >
+               
+                <option value="ON">ON</option>
+                <option value="QC">QC</option>
+                <option value="NS">NS</option>
+                <option value="NB">NB</option>
+                <option value="MB">MB</option>
+                <option value="BC">BC</option>
+                <option value="PE">PE</option>
+                <option value="SK">SK</option>
+                <option value="AB">AB</option>
+                <option value="NL">NL</option>
+                <option value="YT">YT</option>
+                <option value="NU">NU</option>
+                <option value="NT">NT</option>
+              </select>
             </div>
           </div>
           <div>
@@ -1039,7 +1075,7 @@ export default function PurchaseTab({ vehicleId, stockNumber, onError }: Purchas
             <input
               type="number"
               name="licenseFee"
-              value={formData.licenseFee || 0}
+              value={formData.licenseFee ? formData.licenseFee : ''}
               onChange={handleChange}
               className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
             />
@@ -1071,7 +1107,7 @@ export default function PurchaseTab({ vehicleId, stockNumber, onError }: Purchas
             <input
               type="number"
               name="purchasePrice"
-              value={formData.purchasePrice || 0}
+              value={formData.purchasePrice ? formData.purchasePrice : ''}
               onChange={handleChange}
               className="flex-1 border border-gray-300 rounded-r-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
             />
@@ -1084,7 +1120,7 @@ export default function PurchaseTab({ vehicleId, stockNumber, onError }: Purchas
             <input
               type="number"
               name="actualCashValue"
-              value={formData.actualCashValue || 0}
+              value={formData.actualCashValue ? formData.actualCashValue : ''}
               onChange={handleChange}
               className="flex-1 border border-gray-300 rounded-r-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
             />
@@ -1097,7 +1133,7 @@ export default function PurchaseTab({ vehicleId, stockNumber, onError }: Purchas
             <input
               type="number"
               name="discount"
-              value={formData.discount || 0}
+              value={formData.discount ? formData.discount : ''}
               onChange={handleChange}
               className="flex-1 border border-gray-300 rounded-r-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
             />
@@ -1139,13 +1175,13 @@ export default function PurchaseTab({ vehicleId, stockNumber, onError }: Purchas
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">{formData.taxType || 'HST'}</label>
+          <label className="block text-sm font-medium text-gray-700 mb-1">{String(formData.taxType || 'HST').replace(/\bRTS\b/gi, 'RST').replace(/(\d+)\.00%/g, '$1%')}</label>
           <div className="flex items-center">
             <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">$</span>
             <input
               type="number"
               name="vehicleTax"
-              value={formData.vehicleTax || 0}
+              value={formData.vehicleTax ? formData.vehicleTax : ''}
               onChange={handleChange}
               readOnly={!formData.taxOverride}
               className={`flex-1 border border-gray-300 rounded-r-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent ${formData.taxOverride ? '' : 'bg-gray-100'}`}
@@ -1159,7 +1195,7 @@ export default function PurchaseTab({ vehicleId, stockNumber, onError }: Purchas
             <input
               type="number"
               name="totalVehicleTax"
-              value={formData.totalVehicleTax || 0}
+              value={formData.totalVehicleTax ? formData.totalVehicleTax : ''}
               onChange={handleChange}
               readOnly
               className="flex-1 border border-gray-300 rounded-r-lg px-3 py-2 bg-gray-100"
@@ -1187,14 +1223,71 @@ export default function PurchaseTab({ vehicleId, stockNumber, onError }: Purchas
             <option value="problem">Problem</option>
             <option value="voided">Voided</option>
           </select>
-          <a
-            className="text-sm text-gray-500 hover:underline cursor-pointer"
-            onClick={() => setShowNewVendorModal(true)}
+          <button
+            type="button"
+            onClick={() => setShowPaymentDetails(!showPaymentDetails)}
+            className="text-sm text-[#118df0] hover:underline"
           >
-            Add new »
-          </a>
+            {showPaymentDetails ? 'Less «' : 'More »'}
+          </button>
         </div>
       </div>
+
+      {/* Payment Details (Expandable) */}
+      {showPaymentDetails && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Payment Type</label>
+            <select
+              name="paymentType"
+              value={formData.paymentType || ''}
+              onChange={handleChange}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+            >
+              <option value="">None</option>
+              <option value="cash">Cash</option>
+              <option value="check">Check</option>
+              <option value="wire">Wire</option>
+              <option value="credit_card">Credit Card</option>
+              <option value="debit_card">Debit Card</option>
+              <option value="financing">Financing</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Payment Date</label>
+            <input
+              type="date"
+              name="paymentDate"
+              value={formData.paymentDate || ''}
+              onChange={handleChange}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Payment Transaction #</label>
+            <input
+              type="text"
+              name="paymentTransactionNumber"
+              value={formData.paymentTransactionNumber || ''}
+              onChange={handleChange}
+              placeholder="Transaction number"
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Payment Notes</label>
+            <input
+              type="text"
+              name="paymentNotes"
+              value={formData.paymentNotes || ''}
+              onChange={handleChange}
+              placeholder="Payment notes"
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+            />
+          </div>
+        </div>
+      )}
 
       {/* Action Buttons */}
       <div className="mt-8 flex gap-4">

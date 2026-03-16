@@ -21,6 +21,7 @@ export default function NewVehiclePage() {
   const [webhookUserId, setWebhookUserId] = useState<string | null>(null)
   const [showUpgradeModal, setShowUpgradeModal] = useState(false)
   const [gatingError, setGatingError] = useState('')
+  const [assignmentUsers, setAssignmentUsers] = useState<Array<{ id: string; first_name: string | null; last_name: string | null; email: string | null }>>([])
   const stockAutofillRanRef = useRef(false)
   const [vinConfirmOpen, setVinConfirmOpen] = useState(false)
   const [vinConfirmDontShow, setVinConfirmDontShow] = useState(false)
@@ -147,6 +148,21 @@ export default function NewVehiclePage() {
     refreshAdToolbar()
   }
 
+  // Build a display name from first/last or email local-part
+  const displayUserName = (r: { first_name?: string | null; last_name?: string | null; email?: string | null }) => {
+    const f = String(r.first_name || '').trim()
+    const l = String(r.last_name || '').trim()
+    const name = [f, l].filter(Boolean).join(' ').trim()
+    if (name) return name
+    const e = String(r.email || '').trim()
+    if (!e) return ''
+    const local = (e.split('@')[0] || e)
+      .replace(/[_\-.]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+    return local.replace(/\b\w/g, (m) => m.toUpperCase())
+  }
+
   useEffect(() => {
     try {
       const raw = localStorage.getItem('edc_new_vehicle_wizard')
@@ -267,6 +283,30 @@ export default function NewVehiclePage() {
     return () => {
       cancelled = true
     }
+  }, [])
+
+  // Load assignable users for the current account to populate Assignment select
+  useEffect(() => {
+    let cancelled = false
+    const loadUsers = async () => {
+      try {
+        const dbId = await getLoggedInAdminDbUserId()
+        if (!dbId) {
+          if (!cancelled) setAssignmentUsers([])
+          return
+        }
+        const { data } = await supabase
+          .from('users')
+          .select('id, first_name, last_name, email')
+          .eq('user_id', dbId)
+          .order('first_name', { ascending: true })
+        if (!cancelled) setAssignmentUsers(Array.isArray(data) ? (data as any) : [])
+      } catch {
+        if (!cancelled) setAssignmentUsers([])
+      }
+    }
+    loadUsers()
+    return () => { cancelled = true }
   }, [])
 
   useEffect(() => {
@@ -908,9 +948,8 @@ export default function NewVehiclePage() {
                 <div>
                   <label className="block text-sm text-gray-600 mb-1">Condition</label>
                   <select name="condition" value={formData.condition} onChange={handleChange} className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:ring-1 focus:ring-[#118df0] focus:border-[#118df0]">
-                    <option value="Used">Used</option>
                     <option value="New">New</option>
-                    <option value="Certified">Certified</option>
+                    <option value="Used">Used</option>
                   </select>
                 </div>
                 <div>
@@ -928,17 +967,23 @@ export default function NewVehiclePage() {
                   <select name="statusColour" value={formData.statusColour} onChange={handleChange} className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:ring-1 focus:ring-[#118df0] focus:border-[#118df0]">
                     <option value="">Colour</option>
                     <option value="Green">Green</option>
-                    <option value="Yellow">Yellow</option>
-                    <option value="Red">Red</option>
+                    <option value="Black">Black</option>
+                    <option value="Grey">Grey</option>
                     <option value="Blue">Blue</option>
+                    <option value="Yellow">Yellow</option>
+                    <option value="Orange">Orange</option>
+                    <option value="Red">Red</option>
+                    <option value="Purple">Purple</option>
+                    <option value="Pink">Pink</option>
                   </select>
                 </div>
                 <div>
                   <label className="block text-sm text-gray-600 mb-1">Retail/Wholesale</label>
                   <select name="retailWholesale" value={formData.retailWholesale} onChange={handleChange} className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:ring-1 focus:ring-[#118df0] focus:border-[#118df0]">
                     <option value="">Classification</option>
-                    <option value="Retail">Retail</option>
                     <option value="Wholesale">Wholesale</option>
+                    <option value="Retail">Retail</option>
+                    <option value="Other">Other</option>
                   </select>
                 </div>
               </div>
@@ -953,9 +998,12 @@ export default function NewVehiclePage() {
                   <label className="block text-sm text-gray-600 mb-1 flex items-center gap-1">Assignment <span className="text-blue-500 cursor-help" title="Assign to a user">ⓘ</span></label>
                   <select name="assignment" value={formData.assignment} onChange={handleChange} className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:ring-1 focus:ring-[#118df0] focus:border-[#118df0]">
                     <option value="">None</option>
-                    <option value="Sales">Sales</option>
-                    <option value="Service">Service</option>
-                    <option value="Manager">Manager</option>
+                    {assignmentUsers.map((u) => {
+                      const name = displayUserName(u)
+                      return name ? (
+                        <option key={u.id} value={name}>{name}</option>
+                      ) : null
+                    })}
                   </select>
                 </div>
               </div>
@@ -1064,24 +1112,43 @@ export default function NewVehiclePage() {
                   <select name="vehicleType" value={formData.vehicleType} onChange={handleChange} className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:ring-1 focus:ring-[#118df0] focus:border-[#118df0]">
                     <option value="">Vehicle Type</option>
                     <option value="Car">Car</option>
-                    <option value="Truck">Truck</option>
-                    <option value="SUV">SUV</option>
                     <option value="Van">Van</option>
+                    <option value="MiniVan">MiniVan</option>
+                    <option value="SUV">SUV</option>
+                    <option value="Truck">Truck</option>
+                    <option value="Heavy Truck">Heavy Truck</option>
+                    <option value="Transport Trailer">Transport Trailer</option>
+                    <option value="Boat">Boat</option>
+                    <option value="RV">RV</option>
+                    <option value="ATV">ATV</option>
                     <option value="Motorcycle">Motorcycle</option>
+                    <option value="Snowmobile">Snowmobile</option>
+                    <option value="Farm Equipment">Farm Equipment</option>
+                    <option value="Heavy Equipment">Heavy Equipment</option>
+                    <option value="Other">Other</option>
                   </select>
                 </div>
                 <div>
                   <label className="block text-sm text-gray-600 mb-1">Body Type</label>
                   <select name="bodyStyle" value={formData.bodyStyle} onChange={handleChange} className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:ring-1 focus:ring-[#118df0] focus:border-[#118df0]">
                     <option value="">Body Style</option>
-                    <option value="Sedan">Sedan</option>
-                    <option value="SUV">SUV</option>
-                    <option value="Truck">Truck</option>
-                    <option value="Coupe">Coupe</option>
-                    <option value="Hatchback">Hatchback</option>
-                    <option value="Wagon">Wagon</option>
-                    <option value="Van">Van</option>
+                    <option value="4 Door Hatchback">4 Door Hatchback</option>
+                    <option value="2 Door Hatchback">2 Door Hatchback</option>
+                    <option value="2 Door SUV">2 Door SUV</option>
+                    <option value="4 Door SUV">4 Door SUV</option>
+                    <option value="Cargo Minivan">Cargo Minivan</option>
+                    <option value="Cargo Van">Cargo Van</option>
                     <option value="Convertible">Convertible</option>
+                    <option value="Convertible SUV">Convertible SUV</option>
+                    <option value="Crew Cab Pickup">Crew Cab Pickup</option>
+                    <option value="Ext Cab Pickup">Ext Cab Pickup</option>
+                    <option value="Passenger Minivan">Passenger Minivan</option>
+                    <option value="Passenger Van">Passenger Van</option>
+                    <option value="Regular Cab Pickup">Regular Cab Pickup</option>
+                    <option value="Coupe">Coupe</option>
+                    <option value="Sedan">Sedan</option>
+                    <option value="Wagon">Wagon</option>
+                    <option value="Other">Other</option>
                   </select>
                 </div>
               </div>
@@ -1106,7 +1173,8 @@ export default function NewVehiclePage() {
                       <option value="Diesel">Diesel</option>
                       <option value="Hybrid">Hybrid</option>
                       <option value="Electric">Electric</option>
-                      <option value="Plug-in Hybrid">Plug-in Hybrid</option>
+                      <option value="Natural Gas">Natural Gas</option>
+                      <option value="Flex Fuel">Flex Fuel</option>
                     </select>
                   </div>
                 </div>
@@ -1120,9 +1188,10 @@ export default function NewVehiclePage() {
                     <label className="block text-sm text-gray-600 mb-1">Transmission</label>
                     <select name="transmission" value={formData.transmission} onChange={handleChange} className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:ring-1 focus:ring-[#118df0] focus:border-[#118df0]">
                       <option value="">Transmission Type</option>
+                      <option value="Manual-5">Manual-5</option>
+                      <option value="Manual-6">Manual-6</option>
+                      <option value="Tiptronic">Tiptronic</option>
                       <option value="Automatic">Automatic</option>
-                      <option value="Manual">Manual</option>
-                      <option value="CVT">CVT</option>
                     </select>
                   </div>
                   <div>
@@ -1132,7 +1201,7 @@ export default function NewVehiclePage() {
                       <option value="FWD">FWD</option>
                       <option value="RWD">RWD</option>
                       <option value="AWD">AWD</option>
-                      <option value="4WD">4WD</option>
+                      <option value="4X4">4X4</option>
                     </select>
                   </div>
                 </div>
