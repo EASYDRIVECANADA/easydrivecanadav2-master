@@ -11,7 +11,7 @@ declare global {
 }
 
 type FieldType = 'signature' | 'initial' | 'stamp' | 'dateSigned' | 'name' | 'company' | 'title' | 'text' | 'checkbox'
-type Field = { id: string; type: FieldType; x: number; y: number; width: number; height: number; page: number; value?: string }
+type Field = { id: string; type: FieldType; x: number; y: number; width: number; height: number; page: number; value?: string; fileIndex?: number }
 
 const PAGE_WIDTH = 816
 const PAGE_HEIGHT = 1056
@@ -91,18 +91,18 @@ function DealsSignaturePageInner() {
   
   // Support two flows:
   // 1. dealId flow (from Deals table): ?dealId=227
-  // 2. email flow (from E-Signature tab): ?email@example.com
+  // 2. sigId flow (from E-Signature tab): ?09a9fc8c-3257-4c0f-ab34-ab742da96bd9
   const dealId = useMemo(() => {
     return searchParams.get('dealId') || ''
   }, [searchParams])
 
-  const recipientEmail = useMemo(() => {
-    // If dealId is present, don't use email flow
+  const sigId = useMemo(() => {
+    // If dealId is present, don't use sigId flow
     if (searchParams.get('dealId')) return ''
     const raw = searchParams.toString()
-    // The email is the first key (before any =)
-    const firstKey = raw.split('=')[0] || raw.split('&')[0] || ''
-    return decodeURIComponent(firstKey).trim().toLowerCase()
+    // The ID is passed as the first key with no value: ?<uuid>
+    const firstKey = raw.split('=')[0].split('&')[0] || ''
+    return decodeURIComponent(firstKey).trim()
   }, [searchParams])
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
@@ -121,6 +121,7 @@ function DealsSignaturePageInner() {
   const [saveModalOpen, setSaveModalOpen] = useState(false)
   const [saveOk, setSaveOk] = useState<boolean | null>(null)
   const [saveMessage, setSaveMessage] = useState<string>('')
+  const [recipientEmail, setRecipientEmail] = useState('')
   
   // Document state
   const [sigRecord, setSigRecord] = useState<any>(null)
@@ -130,13 +131,16 @@ function DealsSignaturePageInner() {
   const [docMime, setDocMime] = useState<string | null>(null)
   const [pdfDataUrl, setPdfDataUrl] = useState<string | null>(null)
 
+  const [uploadedFiles, setUploadedFiles] = useState<Array<{ file_name: string; file_type: string; file_b64: string }>>([])
+  const [selectedFileIndex, setSelectedFileIndex] = useState(0)
+
   const [dealData, setDealData] = useState<any>(null)
 
   const title = useMemo(() => {
     if (dealId) return `E-Signature Request`
-    if (recipientEmail) return `E-Signature Request`
+    if (sigId) return `E-Signature Request`
     return 'Signature'
-  }, [dealId, recipientEmail])
+  }, [dealId, sigId])
 
   // Load document - supports both dealId flow and email flow
   useEffect(() => {
@@ -174,9 +178,9 @@ function DealsSignaturePageInner() {
         return
       }
 
-      // Flow 2: email from E-Signature tab
-      if (!recipientEmail) {
-        setError('No recipient email or deal ID provided')
+      // Flow 2: sigId from URL (?<uuid>)
+      if (!sigId) {
+        setError('No signature ID or deal ID provided')
         setLoading(false)
         return
       }
@@ -186,10 +190,10 @@ function DealsSignaturePageInner() {
         setError(null)
         setPageImages([])
 
-        // Fetch signature record by email
-        const sigRes = await fetch(`/api/esignature/signature-by-email?email=${encodeURIComponent(recipientEmail)}`, { cache: 'no-store' })
+        // Fetch signature record by ID
+        const sigRes = await fetch(`/api/esignature/signature/${encodeURIComponent(sigId)}`, { cache: 'no-store' })
         if (!sigRes.ok) {
-          throw new Error('No signature request found for this email')
+          throw new Error('No signature request found for this ID')
         }
         const sigData = await sigRes.json()
         if (!sigData || !sigData.document_file) {
@@ -198,8 +202,46 @@ function DealsSignaturePageInner() {
 
         setSigRecord(sigData)
 
-        // Normalize document_file to data URL
-        const normalized = normalizeToDataUrl(String(sigData.document_file || ''), 'application/pdf')
+        // Derive recipient email from the record (may be a JSON array)
+        const rawEmail = String(sigData.email || '').trim()
+        let derivedEmail = rawEmail
+        if (rawEmail.startsWith('[')) {
+          try {
+            const parsed = JSON.parse(rawEmail)
+            derivedEmail = Array.isArray(parsed) ? (parsed[0] || '') : rawEmail
+          } catch {}
+        }
+        setRecipientEmail(String(derivedEmail).trim().toLowerCase())
+
+        // Parse document_file — may be a JSON array of files or a plain base64 string
+        const rawDocFile = String(sigData.document_file || '').trim()
+        let fileList: Array<{ file_name: string; file_type: string; file_b64: string }> = []
+        let docFileForViewer = rawDocFile
+
+        if (rawDocFile.startsWith('[')) {
+          try {
+            const parsed = JSON.parse(rawDocFile)
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              fileList = parsed
+              docFileForViewer = parsed[0]?.file_b64 || rawDocFile
+            }
+          } catch {}
+        } else if (rawDocFile.startsWith('{')) {
+          try {
+            const parsed = JSON.parse(rawDocFile)
+            if (parsed?.file_b64) {
+              fileList = [parsed]
+              docFileForViewer = parsed.file_b64
+            }
+          } catch {}
+        }
+
+        if (fileList.length > 0) {
+          setUploadedFiles(fileList)
+          setSelectedFileIndex(0)
+        }
+
+        const normalized = normalizeToDataUrl(docFileForViewer, 'application/pdf')
         if (!normalized) throw new Error('Invalid document file')
 
         setDocMime(normalized.mime)
@@ -222,7 +264,7 @@ function DealsSignaturePageInner() {
     }
 
     loadDocument()
-  }, [dealId, recipientEmail])
+  }, [dealId, sigId])
 
   // Generate Bill of Sale PDF for dealId flow
   useEffect(() => {
@@ -505,14 +547,25 @@ function DealsSignaturePageInner() {
         // ignore
       }
 
+      // Build per-file payload: each file with its own fields
+      const filesWithFields = uploadedFiles.length > 0
+        ? uploadedFiles.map((f, idx) => ({
+            file_name: f.file_name,
+            file_type: f.file_type,
+            file_b64: f.file_b64,
+            fields: fields.filter(field => (field.fileIndex ?? 0) === idx),
+          }))
+        : null
+
       const hookRes = await fetch('https://primary-production-6722.up.railway.app/webhook/receive-signature', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           id: sigRecord?.id || null,
-          email: recipientEmail,
+          email: [recipientEmail].filter(Boolean),
           signature_b64: b64,
           ip_address: ipAddress,
+          files: filesWithFields,
         }),
       })
 
@@ -531,6 +584,17 @@ function DealsSignaturePageInner() {
     }
 
     setSaving(false)
+  }
+
+  const handleSwitchFile = (index: number) => {
+    const file = uploadedFiles[index]
+    if (!file) return
+    setSelectedFileIndex(index)
+    setPageImages([])
+    const normalized = normalizeToDataUrl(file.file_b64, file.file_type || 'application/pdf')
+    if (!normalized) return
+    setDocMime(normalized.mime)
+    setPdfDataUrl(normalized.url)
   }
 
   useEffect(() => {
@@ -717,9 +781,31 @@ function DealsSignaturePageInner() {
           <>
             {/* Document with fields */}
             <div className="mb-6">
-              <div className="mb-4">
-                <div className="text-sm font-semibold text-white">Document</div>
-                <div className="text-xs text-slate-400">Review the document below. Fields are highlighted where you need to take action.</div>
+              <div className="mb-4 flex items-center justify-between flex-wrap gap-2">
+                <div>
+                  <div className="text-sm font-semibold text-white">Document</div>
+                  <div className="text-xs text-slate-400">Review the document below. Fields are highlighted where you need to take action.</div>
+                </div>
+                {/* File tabs — visible when there are multiple files */}
+                {uploadedFiles.length > 1 && (
+                  <div className="flex items-center gap-1 bg-white/10 rounded-lg p-1 overflow-x-auto max-w-full">
+                    {uploadedFiles.map((file, idx) => (
+                      <button
+                        key={`sig-file-tab-${idx}`}
+                        type="button"
+                        onClick={() => handleSwitchFile(idx)}
+                        title={file.file_name}
+                        className={`shrink-0 px-3 py-1.5 rounded-md text-xs font-medium transition-colors truncate max-w-[160px] ${
+                          selectedFileIndex === idx
+                            ? 'bg-white text-blue-700 shadow-sm'
+                            : 'text-slate-300 hover:text-white hover:bg-white/10'
+                        }`}
+                      >
+                        {file.file_name || `File ${idx + 1}`}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
 
               <div className="flex justify-center overflow-auto">
@@ -731,7 +817,7 @@ function DealsSignaturePageInner() {
                   {pageImages.length > 0 ? (
                     pageImages.map((img, idx) => {
                       const pageNo = idx + 1
-                      const pageFields = fields.filter(f => f.page === pageNo)
+                      const pageFields = fields.filter(f => f.page === pageNo && (f.fileIndex ?? 0) === selectedFileIndex)
                       const isLast = idx === pageImages.length - 1
                       return (
                         <div key={pageNo} className="relative">
@@ -772,7 +858,7 @@ function DealsSignaturePageInner() {
                         alt="Document"
                         className="w-full h-full object-contain"
                       />
-                      {fields.filter(f => f.page === 1).map((field) => (
+                      {fields.filter(f => f.page === 1 && (f.fileIndex ?? 0) === selectedFileIndex).map((field) => (
                         <div
                           key={field.id}
                           className="absolute border-2 border-blue-400 bg-blue-50/80 rounded cursor-pointer hover:bg-blue-100/90 transition-colors"

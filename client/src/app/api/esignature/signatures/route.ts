@@ -59,6 +59,38 @@ export async function GET(request: Request) {
     console.log('[API /esignature/signatures] records count:', records.length)
     console.log('[API /esignature/signatures] first record:', records[0])
 
+    const parseEmailArray = (raw: any): string[] => {
+      if (!raw) return []
+      const s = String(raw).trim()
+      if (s.startsWith('[')) {
+        try {
+          const parsed = JSON.parse(s)
+          if (Array.isArray(parsed)) return parsed.map((e: any) => String(e).trim()).filter(Boolean)
+        } catch {}
+      }
+      return s ? [s] : []
+    }
+
+    const parseDocumentTitle = (raw: any): string => {
+      if (!raw) return 'Untitled Document'
+      const s = String(raw).trim()
+      if (s.startsWith('[')) {
+        try {
+          const parsed = JSON.parse(s)
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            return parsed[0]?.file_name || 'Document'
+          }
+        } catch {}
+      }
+      if (s.startsWith('{')) {
+        try {
+          const parsed = JSON.parse(s)
+          if (parsed?.file_name) return parsed.file_name
+        } catch {}
+      }
+      return 'Document'
+    }
+
     const truthy = (v: any) => {
       const s = String(v ?? '').trim().toLowerCase()
       return s === 'true' || s === '1' || s === 'yes' || s === 'y' || s === 'on'
@@ -143,12 +175,17 @@ export async function GET(request: Request) {
       const totalSigners = 2
       const completedSigners = status === 'completed' ? totalSigners : 0
 
+      const allRecipients = parseEmailArray(r.email)
+      const recipient = allRecipients[0] || ''
+      const docTitle = parseDocumentTitle(r.document_file)
+
       return {
         id: r.id,
         dealId: r.id,
-        title: r.document_file ? `Document - ${r.document_file.substring(0, 30)}...` : 'Untitled Document',
-        recipient: r.email || '',
-        recipientName: r.full_name || r.email || '',
+        title: docTitle,
+        recipient,
+        allRecipients,
+        recipientName: r.full_name || recipient || '',
         status,
         createdDate: r.created_at || new Date().toISOString(),
         lastModified: r.updated_at || r.created_at || new Date().toISOString(),

@@ -13,6 +13,7 @@ type Document = {
   title: string
   recipient: string
   recipientName: string
+  allRecipients?: string[]
   status: 'draft' | 'sent' | 'completed' | 'declined' | 'expired'
   createdDate: string
   lastModified: string
@@ -45,10 +46,11 @@ export default function ESignaturePage() {
   const [sendResultModalOpen, setSendResultModalOpen] = useState(false)
   const [sendResultOk, setSendResultOk] = useState<boolean>(true)
   const [sendResultMessage, setSendResultMessage] = useState('')
+  const [recipientModalDoc, setRecipientModalDoc] = useState<Document | null>(null)
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [isSuccessModalOpen, setIsSuccessModalOpen] = useState(false)
-  const [uploadFile, setUploadFile] = useState<File | null>(null)
-  const [uploadEmail, setUploadEmail] = useState('')
+  const [uploadFiles, setUploadFiles] = useState<File[]>([])
+  const [uploadEmailInputs, setUploadEmailInputs] = useState<string[]>([''])
   const [uploadName, setUploadName] = useState('')
   const [uploadCompany, setUploadCompany] = useState('')
   const [uploadTitle, setUploadTitle] = useState('')
@@ -172,8 +174,8 @@ export default function ESignaturePage() {
 
   const handleCloseModal = () => {
     setIsModalOpen(false)
-    setUploadFile(null)
-    setUploadEmail('')
+    setUploadFiles([])
+    setUploadEmailInputs([''])
     setUploadName('')
     setUploadCompany('')
     setUploadTitle('')
@@ -185,8 +187,36 @@ export default function ESignaturePage() {
   }
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (file) setUploadFile(file)
+    const files = Array.from(e.target.files || [])
+    setUploadFiles(files)
+  }
+
+  const parseUploadEmails = (values: string[]) => {
+    const seen = new Set<string>()
+    return values
+      .map((email) => email.trim().toLowerCase())
+      .filter((email) => {
+        if (!email) return false
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return false
+        if (seen.has(email)) return false
+        seen.add(email)
+        return true
+      })
+  }
+
+  const handleUploadEmailChange = (index: number, value: string) => {
+    setUploadEmailInputs((prev) => prev.map((item, i) => (i === index ? value : item)))
+  }
+
+  const handleAddUploadEmail = () => {
+    setUploadEmailInputs((prev) => [...prev, ''])
+  }
+
+  const handleRemoveUploadEmail = (index: number) => {
+    setUploadEmailInputs((prev) => {
+      if (prev.length === 1) return ['']
+      return prev.filter((_, i) => i !== index)
+    })
   }
 
   const fileToBase64 = (file: File): Promise<string> => {
@@ -200,8 +230,13 @@ export default function ESignaturePage() {
 
   const handleModalSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!uploadFile) {
-      alert('Please select a file to upload')
+    if (uploadFiles.length === 0) {
+      alert('Please select at least one file to upload')
+      return
+    }
+    const recipients = parseUploadEmails(uploadEmailInputs)
+    if (recipients.length === 0) {
+      alert('Please enter at least one valid recipient email')
       return
     }
     setUploading(true)
@@ -213,13 +248,17 @@ export default function ESignaturePage() {
       }
       const userIdForPayload = userId
 
-      // Convert files to base64
-      const fileB64 = await fileToBase64(uploadFile)
+      const filesPayload = await Promise.all(
+        uploadFiles.map(async (file) => ({
+          file_name: file.name,
+          file_type: file.type,
+          file_b64: await fileToBase64(file),
+        }))
+      )
+
       const payload = {
-        file_name: uploadFile.name,
-        file_type: uploadFile.type,
-        file_b64: fileB64,
-        email: uploadEmail,
+        files: filesPayload,
+        emails: recipients,
         name: uploadName,
         company: uploadCompany,
         title: uploadTitle,
@@ -234,39 +273,40 @@ export default function ESignaturePage() {
       })
       if (!res.ok) throw new Error('Upload failed')
 
-      // Check if response text is "Done"
       const responseText = await res.text()
-      if (responseText.trim() === 'Done') {
-        // Deduct 1 credit after successful upload
+      if (responseText.trim() !== 'Done') {
+        throw new Error('Unexpected response from server')
+      }
+
+      const successCount = filesPayload.length * recipients.length
+
+      if (successCount > 0) {
         try {
           const raw = typeof window !== 'undefined' ? window.localStorage.getItem('edc_admin_session') : null
           const parsed = raw ? JSON.parse(raw) : null
           const senderEmail = String(parsed?.email ?? '').trim().toLowerCase()
-          
+
           if (senderEmail) {
-            await fetch('/api/esign/deduct-credit', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ email: senderEmail }),
-            })
+            for (let i = 0; i < successCount; i += 1) {
+              await fetch('/api/esign/deduct-credit', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email: senderEmail }),
+              })
+            }
           }
         } catch (err) {
           console.error('Failed to deduct credit:', err)
-          // Don't block the upload success flow if credit deduction fails
         }
 
-        // Close upload modal and show success modal
         handleCloseModal()
         setIsSuccessModalOpen(true)
-        // Refresh documents from signature table API
         const queryParam = `user_id=${encodeURIComponent(userIdForPayload)}`
         const docsRes = await fetch(`/api/esignature/signatures?${queryParam}`, { cache: 'no-store' })
         if (docsRes.ok) {
           const json = await docsRes.json()
           if (json.documents) setDocuments(json.documents)
         }
-      } else {
-        throw new Error('Unexpected response from server')
       }
     } catch (err: any) {
       alert(`Upload failed: ${err?.message || 'Unknown error'}`)
@@ -463,15 +503,28 @@ export default function ESignaturePage() {
         try {
           if (typeof window === 'undefined') return ''
           const appOrigin = 'https://easydrivecanada.com'
-          return `${appOrigin}/admin/sales/deals/signature?${encodeURIComponent(toEmail)}`
+          return `${appOrigin}/admin/sales/deals/signature?${encodeURIComponent(doc.id)}`
         } catch {
           return ''
         }
       })()
 
+      // Parse all recipient emails from the record (may be a JSON array string)
+      const parseAllEmails = (raw: any): string[] => {
+        const s = String(raw || '').trim()
+        if (s.startsWith('[')) {
+          try {
+            const parsed = JSON.parse(s)
+            if (Array.isArray(parsed)) return parsed.map((e: any) => String(e).trim()).filter(Boolean)
+          } catch {}
+        }
+        return s ? [s] : []
+      }
+      const allEmails = parseAllEmails(sigData.email)
+
       const payload = {
         id: doc.id,
-        email: toEmail,
+        email: allEmails,
         full_name: sigData.full_name || doc.recipientName || '',
         company: sigData.company || '',
         title: sigData.title || '',
@@ -971,12 +1024,22 @@ export default function ESignaturePage() {
                         </div>
                       </td>
                       <td className="px-4 py-4">
-                        <div className="flex items-center gap-2 min-w-0">
-                          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center text-white text-xs font-semibold">
+                        <button
+                          type="button"
+                          onClick={() => { if ((doc.allRecipients?.length ?? 0) > 0) setRecipientModalDoc(doc) }}
+                          className="flex items-center gap-2 min-w-0 text-left hover:opacity-80 transition-opacity"
+                          title={(doc.allRecipients?.length ?? 0) > 1 ? `${doc.allRecipients!.length} recipients — click to view all` : doc.recipient}
+                        >
+                          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center text-white text-xs font-semibold shrink-0">
                             {doc.recipient.charAt(0).toUpperCase()}
                           </div>
-                          <span className="text-sm text-slate-700 truncate min-w-0">{doc.recipient}</span>
-                        </div>
+                          <div className="min-w-0">
+                            <span className="text-sm text-slate-700 truncate block">{doc.recipient}</span>
+                            {(doc.allRecipients?.length ?? 0) > 1 && (
+                              <span className="text-xs text-blue-500 font-medium">+{doc.allRecipients!.length - 1} more</span>
+                            )}
+                          </div>
+                        </button>
                       </td>
                       <td className="px-4 py-4">{getStatusBadge(doc.status)}</td>
                       <td className="px-4 py-4">
@@ -1104,6 +1167,7 @@ export default function ESignaturePage() {
                   <input
                     ref={fileInputRef}
                     type="file"
+                    multiple
                     accept=".pdf,.doc,.docx,.png,.jpg,.jpeg"
                     onChange={handleFileSelect}
                     className="hidden"
@@ -1120,31 +1184,67 @@ export default function ESignaturePage() {
                     </div>
                     <div className="text-left">
                       <p className="text-sm font-medium text-slate-700">
-                        {uploadFile ? uploadFile.name : 'Click to upload file'}
+                        {uploadFiles.length > 0
+                          ? `${uploadFiles.length} file${uploadFiles.length > 1 ? 's' : ''} selected`
+                          : 'Click to upload file(s)'}
                       </p>
-                      <p className="text-xs text-slate-500">PDF, DOC, DOCX, PNG, JPG up to 10MB</p>
+                      <p className="text-xs text-slate-500">PDF, DOC, DOCX, PNG, JPG up to 10MB each</p>
                     </div>
                   </label>
                 </div>
+                {uploadFiles.length > 0 ? (
+                  <div className="mt-2 space-y-1 max-h-24 overflow-auto text-xs text-slate-500">
+                    {uploadFiles.map((file) => (
+                      <div key={`${file.name}-${file.size}-${file.lastModified}`} className="truncate">
+                        {file.name}
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
               </div>
 
               {/* Email */}
               <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-2">Email Address</label>
-                <div className="relative">
-                  <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 12a4 4 0 10-8 0 4 4 0 008 0zm0 0v1.5a2.5 2.5 0 005 0V12a9 9 0 10-9 9m4.5-1.206a8.959 8.959 0 01-4.5 1.207" />
-                    </svg>
-                  </div>
-                  <input
-                    type="email"
-                    value={uploadEmail}
-                    onChange={(e) => setUploadEmail(e.target.value)}
-                    placeholder="recipient@example.com"
-                    className="w-full pl-10 pr-4 py-3 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
-                    required
-                  />
+                <div className="flex items-center justify-between gap-3 mb-2">
+                  <label className="block text-sm font-semibold text-slate-700">Email Address(es)</label>
+                  <button
+                    type="button"
+                    onClick={handleAddUploadEmail}
+                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-blue-200 text-blue-600 text-xs font-semibold hover:bg-blue-50 transition-colors"
+                  >
+                    <span className="text-sm leading-none">+</span>
+                    Add email
+                  </button>
+                </div>
+                <div className="space-y-3">
+                  {uploadEmailInputs.map((emailValue, index) => (
+                    <div key={`upload-email-${index}`} className="flex items-start gap-2">
+                      <div className="relative flex-1">
+                        <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
+                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 12a4 4 0 10-8 0 4 4 0 008 0zm0 0v1.5a2.5 2.5 0 005 0V12a9 9 0 10-9 9m4.5-1.206a8.959 8.959 0 01-4.5 1.207" />
+                          </svg>
+                        </div>
+                        <input
+                          type="email"
+                          value={emailValue}
+                          onChange={(e) => handleUploadEmailChange(index, e.target.value)}
+                          placeholder={`recipient${index + 1}@example.com`}
+                          className="w-full pl-10 pr-4 py-3 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                          required={index === 0}
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveUploadEmail(index)}
+                        disabled={uploadEmailInputs.length === 1}
+                        className="h-[50px] px-3 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                        aria-label={`Remove email ${index + 1}`}
+                      >
+                        -
+                      </button>
+                    </div>
+                  ))}
                 </div>
               </div>
 
@@ -1217,7 +1317,7 @@ export default function ESignaturePage() {
                 </button>
                 <button
                   type="submit"
-                  disabled={uploading || !uploadFile}
+                  disabled={uploading || uploadFiles.length === 0}
                   className="flex-1 px-4 py-3 bg-gradient-to-r from-blue-600 to-blue-500 text-white font-medium rounded-xl shadow-lg shadow-blue-500/25 hover:shadow-blue-500/40 hover:scale-[1.02] transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
                 >
                   {uploading ? (
@@ -1229,7 +1329,7 @@ export default function ESignaturePage() {
                       Uploading...
                     </span>
                   ) : (
-                    'Upload Document'
+                    'Upload Document(s)'
                   )}
                 </button>
               </div>
@@ -1296,6 +1396,40 @@ export default function ESignaturePage() {
                 className="h-9 px-6 rounded-full bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700"
               >
                 OK
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {recipientModalDoc && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setRecipientModalDoc(null)} />
+          <div className="relative w-full max-w-sm rounded-2xl border border-slate-200 bg-white shadow-2xl overflow-hidden">
+            <div className="px-6 py-4 border-b border-slate-200">
+              <div className="text-base font-bold text-slate-900">Recipients</div>
+              <div className="mt-0.5 text-xs text-slate-500 truncate">{recipientModalDoc.title}</div>
+            </div>
+            <div className="px-6 py-4 space-y-2 max-h-72 overflow-auto">
+              {(recipientModalDoc.allRecipients && recipientModalDoc.allRecipients.length > 0
+                ? recipientModalDoc.allRecipients
+                : [recipientModalDoc.recipient]
+              ).map((email, idx) => (
+                <div key={`recip-${idx}`} className="flex items-center gap-3 py-2 border-b border-slate-100 last:border-0">
+                  <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center text-white text-xs font-semibold shrink-0">
+                    {email.charAt(0).toUpperCase()}
+                  </div>
+                  <span className="text-sm text-slate-700 break-all">{email}</span>
+                </div>
+              ))}
+            </div>
+            <div className="px-6 py-4 flex justify-end border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setRecipientModalDoc(null)}
+                className="h-9 px-6 rounded-full bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700"
+              >
+                Close
               </button>
             </div>
           </div>

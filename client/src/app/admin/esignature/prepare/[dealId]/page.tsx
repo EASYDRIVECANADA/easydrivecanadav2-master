@@ -12,7 +12,7 @@ declare global {
 }
 
 type FieldType = 'signature' | 'initial' | 'stamp' | 'dateSigned' | 'name' | 'company' | 'title' | 'text' | 'checkbox'
-type Field = { id: string; type: FieldType; x: number; y: number; width: number; height: number; page: number; value?: string }
+type Field = { id: string; type: FieldType; x: number; y: number; width: number; height: number; page: number; value?: string; fileIndex?: number }
 
 const FIELD_TYPES: { type: FieldType; label: string; defaultW: number; defaultH: number }[] = [
   { type: 'signature', label: 'Signature', defaultW: 200, defaultH: 60 },
@@ -174,6 +174,8 @@ export default function PrepareDocumentPage() {
   const [docMime, setDocMime] = useState<string | null>(null)
   const [pageImages, setPageImages] = useState<string[]>([])
   const [renderFailed, setRenderFailed] = useState(false)
+  const [uploadedFiles, setUploadedFiles] = useState<Array<{ file_name: string; file_type: string; file_b64: string }>>([]) 
+  const [selectedFileIndex, setSelectedFileIndex] = useState(0)
 
   const [actionModalOpen, setActionModalOpen] = useState(false)
   const [actionModalOk, setActionModalOk] = useState<boolean>(true)
@@ -410,7 +412,35 @@ export default function PrepareDocumentPage() {
             // This is a signature table record with an uploaded document
             setDealData({ signature: sigData })
 
-            const normalized = normalizeToDataUrl(String(sigData.document_file || ''), 'application/pdf')
+            // Parse document_file - could be a JSON array of files or a plain base64 string
+            const rawDocFile = String(sigData.document_file || '').trim()
+            let fileList: Array<{ file_name: string; file_type: string; file_b64: string }> = []
+            let docFileForViewer = rawDocFile
+
+            if (rawDocFile.startsWith('[')) {
+              try {
+                const parsed = JSON.parse(rawDocFile)
+                if (Array.isArray(parsed) && parsed.length > 0) {
+                  fileList = parsed
+                  docFileForViewer = parsed[0]?.file_b64 || rawDocFile
+                }
+              } catch {}
+            } else if (rawDocFile.startsWith('{')) {
+              try {
+                const parsed = JSON.parse(rawDocFile)
+                if (parsed?.file_b64) {
+                  fileList = [parsed]
+                  docFileForViewer = parsed.file_b64
+                }
+              } catch {}
+            }
+
+            if (fileList.length > 0) {
+              setUploadedFiles(fileList)
+              setSelectedFileIndex(0)
+            }
+
+            const normalized = normalizeToDataUrl(docFileForViewer, 'application/pdf')
             console.log('[Load] normalized:', { url: normalized?.url?.substring(0, 60), mime: normalized?.mime })
             if (!normalized) throw new Error('Missing document_file')
 
@@ -721,7 +751,7 @@ export default function PrepareDocumentPage() {
     const page = Math.min(Math.max(Math.floor(docY / PAGE_HEIGHT) + 1, 1), totalPages)
     const y = docY - (page - 1) * PAGE_HEIGHT
     const cfg = FIELD_TYPES.find(f => f.type === draggedSidebarType)!
-    const newField: Field = { id: `f-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, type: draggedSidebarType, x, y, width: cfg.defaultW, height: cfg.defaultH, page }
+    const newField: Field = { id: `f-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, type: draggedSidebarType, x, y, width: cfg.defaultW, height: cfg.defaultH, page, fileIndex: selectedFileIndex }
     setFields(prev => {
       const next = [...prev, newField]
       pushHistory(next)
@@ -751,6 +781,26 @@ export default function PrepareDocumentPage() {
       return next
     })
   }, [pushHistory])
+
+  const handleSwitchFile = useCallback((index: number) => {
+    const file = uploadedFiles[index]
+    if (!file) return
+    setSelectedFileIndex(index)
+    setPageImages([])
+    setRenderFailed(false)
+    const normalized = normalizeToDataUrl(file.file_b64, file.file_type || 'application/pdf')
+    if (!normalized) return
+    setDocMime(normalized.mime)
+    setPdfDataUrl(normalized.url)
+    if (normalized.mime === 'application/pdf') {
+      const pages = getPdfPageCountFromDataUrl(normalized.url)
+      setTotalPages(pages)
+      setPdfPageUrls(Array.from({ length: pages }, () => normalized.url))
+    } else {
+      setTotalPages(1)
+      setPdfPageUrls([normalized.url])
+    }
+  }, [uploadedFiles])
 
   const handleDownload = async () => {
     setDownloading(true)
@@ -1076,6 +1126,26 @@ export default function PrepareDocumentPage() {
 
         <div className="flex-1" />
 
+        {uploadedFiles.length > 1 && (
+          <div className="flex items-center gap-1 mr-2 bg-gray-100 rounded-lg p-1 max-w-[280px] overflow-x-auto">
+            {uploadedFiles.map((file, idx) => (
+              <button
+                key={`file-tab-${idx}`}
+                type="button"
+                onClick={() => handleSwitchFile(idx)}
+                title={file.file_name}
+                className={`shrink-0 px-2.5 py-1 rounded-md text-xs font-medium transition-colors truncate max-w-[120px] ${
+                  selectedFileIndex === idx
+                    ? 'bg-white text-blue-600 shadow-sm'
+                    : 'text-gray-500 hover:text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                {file.file_name || `File ${idx + 1}`}
+              </button>
+            ))}
+          </div>
+        )}
+
         <button
           onClick={handleDownload}
           disabled={downloading}
@@ -1225,8 +1295,8 @@ export default function PrepareDocumentPage() {
               <div ref={el => { guidesRef.current.vLine = el }} className="absolute top-0 w-px bg-pink-500 pointer-events-none" style={{ display: 'none', height: '100%', zIndex: 100 }} />
               <div ref={el => { guidesRef.current.hLine = el }} className="absolute left-0 h-px bg-pink-500 pointer-events-none" style={{ display: 'none', width: '100%', zIndex: 100 }} />
 
-              {/* Rendered fields */}
-              {fields.map((field) => {
+              {/* Rendered fields - only for the currently displayed file */}
+              {fields.filter((f) => (f.fileIndex ?? 0) === selectedFileIndex).map((field) => {
                 const isSelected = selectedFieldId === field.id
                 const isActive = interactionRef.current.fieldId === field.id
 
