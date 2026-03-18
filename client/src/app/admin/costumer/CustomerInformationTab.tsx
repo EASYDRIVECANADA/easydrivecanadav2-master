@@ -1,10 +1,24 @@
 
 'use client'
 
-import { type Dispatch, type SetStateAction, useEffect, useRef } from 'react'
+import { type Dispatch, type SetStateAction, useEffect, useRef, useState } from 'react'
 
+import { supabase } from '@/lib/supabaseClient'
 import type { CustomerForm } from './types'
 import { CustomerDateIconField, CustomerIconField, PillIdToggle, PillModeToggle } from './ui'
+
+type SalespersonUser = { id: string; first_name?: string | null; last_name?: string | null; email?: string | null }
+
+const displayUserName = (r: SalespersonUser) => {
+  const f = String(r.first_name || '').trim()
+  const l = String(r.last_name || '').trim()
+  const name = [f, l].filter(Boolean).join(' ').trim()
+  if (name) return name
+  const e = String(r.email || '').trim()
+  if (!e) return ''
+  const local = (e.split('@')[0] || e).replace(/[_\-.]+/g, ' ').replace(/\s+/g, ' ').trim()
+  return local.replace(/\b\w/g, (m) => m.toUpperCase())
+}
 
 export default function CustomerInformationTab({
   form,
@@ -17,6 +31,7 @@ export default function CustomerInformationTab({
 }) {
   const editorRef = useRef<HTMLDivElement | null>(null)
   const colorRef = useRef<HTMLInputElement | null>(null)
+  const [salespersonUsers, setSalespersonUsers] = useState<SalespersonUser[]>([])
 
   useEffect(() => {
     const el = editorRef.current
@@ -24,6 +39,38 @@ export default function CustomerInformationTab({
     const next = form.notes ?? ''
     if (el.innerHTML !== next) el.innerHTML = next
   }, [form.notes])
+
+  useEffect(() => {
+    let cancelled = false
+    const loadUsers = async () => {
+      try {
+        const raw = typeof window !== 'undefined' ? window.localStorage.getItem('edc_admin_session') : null
+        const parsed = raw ? JSON.parse(raw) : null
+        let userId = String(parsed?.user_id ?? '').trim()
+        if (!userId && parsed?.email) {
+          const email = String(parsed.email).trim().toLowerCase()
+          const { data: userRow } = await supabase
+            .from('users')
+            .select('user_id')
+            .eq('email', email)
+            .limit(1)
+            .maybeSingle()
+          userId = String((userRow as any)?.user_id ?? '').trim()
+        }
+        if (!userId) { if (!cancelled) setSalespersonUsers([]); return }
+        const { data } = await supabase
+          .from('users')
+          .select('id, first_name, last_name, email')
+          .eq('user_id', userId)
+          .order('first_name', { ascending: true })
+        if (!cancelled) setSalespersonUsers(Array.isArray(data) ? (data as SalespersonUser[]) : [])
+      } catch {
+        if (!cancelled) setSalespersonUsers([])
+      }
+    }
+    loadUsers()
+    return () => { cancelled = true }
+  }, [])
 
   const exec = (command: string, value?: string) => {
     const el = editorRef.current
@@ -243,8 +290,11 @@ export default function CustomerInformationTab({
               onChange={(e) => setForm((p: CustomerForm) => ({ ...p, salesperson: e.target.value }))}
               className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
             >
-              <option value="Nawshad Syed">Nawshad Syed</option>
-              <option value="Syed Islam">Syed Islam</option>
+              <option value="">None</option>
+              {salespersonUsers.map((u) => {
+                const name = displayUserName(u)
+                return name ? <option key={u.id} value={name}>{name}</option> : null
+              })}
             </select>
           </div>
         </div>
@@ -415,8 +465,11 @@ export default function CustomerInformationTab({
               onChange={(e) => setForm((p) => ({ ...p, salesperson: e.target.value }))}
               className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
             >
-              <option value="Nawshad Syed">Nawshad Syed</option>
-              <option value="Syed Islam">Syed Islam</option>
+              <option value="">None</option>
+              {salespersonUsers.map((u) => {
+                const name = displayUserName(u)
+                return name ? <option key={u.id} value={name}>{name}</option> : null
+              })}
             </select>
           </div>
         </div>
