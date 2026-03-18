@@ -268,7 +268,7 @@ export default function AdminPage() {
     }
 
     try {
-      const parsed = JSON.parse(sessionStr) as { email?: string; role?: string }
+      const parsed = JSON.parse(sessionStr) as { email?: string; role?: string; user_id?: string }
       console.log('[checkAuth] parsed session:', parsed)
       if (parsed?.email) {
         // Fetch fresh role from database to sync with subscription changes
@@ -288,7 +288,25 @@ export default function AdminPage() {
             currentRole = String(roleJson.role).trim()
             console.log('[checkAuth] updated role from API:', currentRole)
             // Update localStorage with fresh role
-            const updatedSession = { email: parsed.email, role: currentRole }
+            let resolvedUserId = String(parsed?.user_id ?? '').trim()
+            if (!resolvedUserId && parsed.email) {
+              try {
+                const { data: ownerRow } = await supabase
+                  .from('users')
+                  .select('user_id')
+                  .eq('email', String(parsed.email).trim().toLowerCase())
+                  .limit(1)
+                  .maybeSingle()
+                resolvedUserId = String((ownerRow as any)?.user_id ?? '').trim()
+              } catch {
+                // ignore
+              }
+            }
+            const updatedSession = {
+              email: parsed.email,
+              role: currentRole,
+              user_id: resolvedUserId || undefined,
+            }
             localStorage.setItem('edc_admin_session', JSON.stringify(updatedSession))
             console.log('[checkAuth] localStorage updated with new role')
           } else {
@@ -351,7 +369,26 @@ export default function AdminPage() {
         return
       }
 
-      const session = { email: data.email, role: data.role }
+      let resolvedUserId = String((data as any)?.user_id ?? '').trim()
+      if (!resolvedUserId) {
+        try {
+          const { data: ownerRow } = await supabase
+            .from('users')
+            .select('user_id')
+            .eq('email', normalizedEmail)
+            .limit(1)
+            .maybeSingle()
+          resolvedUserId = String((ownerRow as any)?.user_id ?? '').trim()
+        } catch {
+          // ignore
+        }
+      }
+
+      const session = {
+        email: data.email,
+        role: data.role,
+        user_id: resolvedUserId || undefined,
+      }
       localStorage.setItem('edc_admin_session', JSON.stringify(session))
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new Event('edc_admin_session_changed'))
@@ -389,15 +426,25 @@ export default function AdminPage() {
       if (!rawEmail) return null
 
       const { data, error } = await supabase
-        .from('edc_account_verifications')
-        .select('id')
+        .from('users')
+        .select('user_id')
         .eq('email', rawEmail)
-        .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle()
 
       if (error) return null
-      return (data as any)?.id ?? null
+      const resolvedUserId = String((data as any)?.user_id ?? '').trim()
+      if (resolvedUserId) {
+        const nextSession = {
+          ...parsed,
+          user_id: resolvedUserId,
+        }
+        localStorage.setItem('edc_admin_session', JSON.stringify(nextSession))
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new Event('edc_admin_session_changed'))
+        }
+      }
+      return resolvedUserId || null
     } catch {
       return null
     }

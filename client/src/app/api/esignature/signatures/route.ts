@@ -21,15 +21,20 @@ export async function GET(request: Request) {
 
     const url = new URL(request.url)
     const userIdParam = url.searchParams.get('user_id')
+    const emailParam = url.searchParams.get('email')
 
-    console.log('[API /esignature/signatures] user_id:', userIdParam)
+    console.log('[API /esignature/signatures] user_id:', userIdParam, 'email:', emailParam)
 
-    if (!userIdParam) {
-      return NextResponse.json({ error: 'user_id is required' }, { status: 400 })
+    if (!userIdParam && !emailParam) {
+      return NextResponse.json({ error: 'user_id or email is required' }, { status: 400 })
     }
 
-    // Query signature table filtered by user_id
-    const queryUrl = `${baseUrl}/rest/v1/signature?user_id=eq.${encodeURIComponent(userIdParam)}&order=created_at.desc`
+    const filter = userIdParam
+      ? `user_id=eq.${encodeURIComponent(userIdParam)}`
+      : `email=eq.${encodeURIComponent(emailParam!)}`
+
+    // Query signature table filtered by user_id or email
+    const queryUrl = `${baseUrl}/rest/v1/signature?${filter}&order=created_at.desc`
     console.log('[API /esignature/signatures] queryUrl:', queryUrl)
 
     const res = await fetch(queryUrl, {

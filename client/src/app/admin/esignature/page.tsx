@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import jsPDF from 'jspdf'
 
 import { renderBillOfSalePdf, type BillOfSaleData } from '../sales/deals/new/billOfSalePdf'
+import { supabase } from '@/lib/supabaseClient'
 
 type Document = {
   id: string
@@ -51,9 +52,7 @@ export default function ESignaturePage() {
   const [uploadName, setUploadName] = useState('')
   const [uploadCompany, setUploadCompany] = useState('')
   const [uploadTitle, setUploadTitle] = useState('')
-  const [uploadSignature, setUploadSignature] = useState<File | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const signatureInputRef = useRef<HTMLInputElement>(null)
   const esignModalResolverRef = useRef<((value: boolean) => void) | null>(null)
   const [esignModalOpen, setEsignModalOpen] = useState(false)
   const [esignModalTitle, setEsignModalTitle] = useState('')
@@ -178,9 +177,7 @@ export default function ESignaturePage() {
     setUploadName('')
     setUploadCompany('')
     setUploadTitle('')
-    setUploadSignature(null)
     if (fileInputRef.current) fileInputRef.current.value = ''
-    if (signatureInputRef.current) signatureInputRef.current.value = ''
   }
 
   const handleCloseSuccessModal = () => {
@@ -190,16 +187,6 @@ export default function ESignaturePage() {
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (file) setUploadFile(file)
-  }
-
-  const handleSignatureFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (file) setUploadSignature(file)
-  }
-
-  const clearSignature = () => {
-    setUploadSignature(null)
-    if (signatureInputRef.current) signatureInputRef.current.value = ''
   }
 
   const fileToBase64 = (file: File): Promise<string> => {
@@ -219,32 +206,25 @@ export default function ESignaturePage() {
     }
     setUploading(true)
     try {
-      // Get user_id from localStorage
-      let userId = ''
-      try {
-        const raw = typeof window !== 'undefined' ? window.localStorage.getItem('edc_admin_session') : null
-        const parsed = raw ? JSON.parse(raw) : null
-        userId = String(parsed?.user_id ?? '').trim()
-      } catch {
-        userId = ''
+      const { userId, email: userEmail } = await resolveUser()
+      if (!userId) {
+        alert('Please log in again to upload (missing user ID).')
+        return
       }
+      const userIdForPayload = userId
 
       // Convert files to base64
       const fileB64 = await fileToBase64(uploadFile)
-      const signatureB64 = uploadSignature ? await fileToBase64(uploadSignature) : ''
-
       const payload = {
         file_name: uploadFile.name,
         file_type: uploadFile.type,
         file_b64: fileB64,
-        signature_name: uploadSignature?.name || '',
-        signature_type: uploadSignature?.type || '',
-        signature_b64: signatureB64,
         email: uploadEmail,
         name: uploadName,
         company: uploadCompany,
         title: uploadTitle,
-        user_id: userId,
+        user_id: userIdForPayload,
+        user_email: userEmail,
       }
 
       const res = await fetch('https://primary-production-6722.up.railway.app/webhook/file', {
@@ -279,7 +259,8 @@ export default function ESignaturePage() {
         handleCloseModal()
         setIsSuccessModalOpen(true)
         // Refresh documents from signature table API
-        const docsRes = await fetch(`/api/esignature/signatures?user_id=${encodeURIComponent(userId)}`, { cache: 'no-store' })
+        const queryParam = `user_id=${encodeURIComponent(userIdForPayload)}`
+        const docsRes = await fetch(`/api/esignature/signatures?${queryParam}`, { cache: 'no-store' })
         if (docsRes.ok) {
           const json = await docsRes.json()
           if (json.documents) setDocuments(json.documents)
@@ -337,20 +318,78 @@ export default function ESignaturePage() {
     return items.reduce((s: number, i: any) => s + (Number(i?.[amtKey] ?? 0) || 0), 0)
   }
 
+  const persistUserSession = (userId: string, email?: string) => {
+    if (typeof window === 'undefined' || !userId) return
+    try {
+      const raw = window.localStorage.getItem('edc_admin_session')
+      const parsed = raw ? JSON.parse(raw) : {}
+      const next = {
+        ...parsed,
+        user_id: userId,
+        email: parsed?.email || email || '',
+      }
+      window.localStorage.setItem('edc_admin_session', JSON.stringify(next))
+      window.dispatchEvent(new Event('edc_admin_session_changed'))
+    } catch {
+      // ignore
+    }
+  }
+
+  const resolveUser = async (): Promise<{ userId: string; email: string }> => {
+    // Require user_id; include email only as metadata.
+    try {
+      const { data } = await supabase.auth.getSession()
+      const authId = String(data.session?.user?.id ?? '').trim()
+      const authEmail = String(data.session?.user?.email ?? '').trim().toLowerCase()
+      if (authId) {
+        persistUserSession(authId, authEmail)
+        return { userId: authId, email: authEmail }
+      }
+    } catch {
+      // ignore
+    }
+
+    let storedId = ''
+    let storedEmail = ''
+    try {
+      const raw = typeof window !== 'undefined' ? window.localStorage.getItem('edc_admin_session') : null
+      const parsed = raw ? JSON.parse(raw) : null
+      storedId = String(parsed?.user_id ?? '').trim()
+      storedEmail = String(parsed?.email ?? '').trim().toLowerCase()
+      if (storedId) return { userId: storedId, email: storedEmail }
+    } catch {
+      // ignore
+    }
+
+    // Fallback: resolve user_id from users table by email
+    if (storedEmail) {
+      try {
+        const { data: userRow } = await supabase
+          .from('users')
+          .select('user_id')
+          .eq('email', storedEmail)
+          .limit(1)
+          .maybeSingle()
+        const resolvedId = String((userRow as any)?.user_id ?? '').trim()
+        if (resolvedId) {
+          persistUserSession(resolvedId, storedEmail)
+          return { userId: resolvedId, email: storedEmail }
+        }
+      } catch {
+        // ignore
+      }
+    }
+
+    return { userId: '', email: storedEmail }
+  }
+
   useEffect(() => {
     const fetchDocuments = async () => {
       try {
         setLoading(true)
         setError(null)
 
-        let userId = ''
-        try {
-          const raw = typeof window !== 'undefined' ? window.localStorage.getItem('edc_admin_session') : null
-          const parsed = raw ? JSON.parse(raw) : null
-          userId = String(parsed?.user_id ?? '').trim()
-        } catch {
-          userId = ''
-        }
+        const { userId, email } = await resolveUser()
 
         if (!userId) {
           setError('Please log in to view signature documents')
@@ -358,9 +397,10 @@ export default function ESignaturePage() {
           return
         }
 
-        console.log('[Page] Fetching with user_id:', userId)
+        const queryParam = `user_id=${encodeURIComponent(userId)}`
+        console.log('[Page] Fetching signatures with', { userId, email })
 
-        const res = await fetch(`/api/esignature/signatures?user_id=${encodeURIComponent(userId)}`, { cache: 'no-store' })
+        const res = await fetch(`/api/esignature/signatures?${queryParam}`, { cache: 'no-store' })
         console.log('[Page] API response status:', res.status)
         
         if (!res.ok) {
@@ -383,7 +423,7 @@ export default function ESignaturePage() {
       }
     }
 
-    fetchDocuments()
+    void fetchDocuments()
   }, [])
 
   const handleSendSignatureRequest = async (doc: Document) => {
@@ -1163,51 +1203,6 @@ export default function ESignaturePage() {
                     placeholder="e.g. Sales Manager"
                     className="w-full pl-10 pr-4 py-3 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
                   />
-                </div>
-              </div>
-
-              {/* Signature */}
-              <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-2">Signature Image</label>
-                <div className="relative">
-                  <input
-                    ref={signatureInputRef}
-                    type="file"
-                    accept=".png,.jpg,.jpeg"
-                    onChange={handleSignatureFileSelect}
-                    className="hidden"
-                    id="signature-upload"
-                  />
-                  <label
-                    htmlFor="signature-upload"
-                    className="flex items-center justify-center gap-3 w-full px-4 py-4 border-2 border-dashed border-slate-300 rounded-xl hover:border-blue-400 hover:bg-blue-50/50 transition-all cursor-pointer group"
-                  >
-                    <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center group-hover:bg-blue-200 transition-colors">
-                      <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                      </svg>
-                    </div>
-                    <div className="text-left flex-1">
-                      <p className="text-sm font-medium text-slate-700">
-                        {uploadSignature ? uploadSignature.name : 'Click to upload signature image'}
-                      </p>
-                      <p className="text-xs text-slate-500">PNG, JPG up to 5MB</p>
-                    </div>
-                    {uploadSignature && (
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.preventDefault()
-                          clearSignature()
-                        }}
-                        className="p-1.5 text-red-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                      >
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                        </svg>
-                      </button>
-                    )}
-                  </label>
                 </div>
               </div>
 
