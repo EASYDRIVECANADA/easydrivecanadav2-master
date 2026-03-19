@@ -123,6 +123,9 @@ function DealsSignaturePageInner() {
   const [saveMessage, setSaveMessage] = useState<string>('')
   const [recipientEmail, setRecipientEmail] = useState('')
   const [currentSigningField, setCurrentSigningField] = useState<string | null>(null)
+  const [isDealPurchaserSignature, setIsDealPurchaserSignature] = useState(false)
+  const [purchaserSigned, setPurchaserSigned] = useState(false)
+  const [purchaserSigOverlayY, setPurchaserSigOverlayY] = useState<number | null>(null)
   
   // Document state
   const [sigRecord, setSigRecord] = useState<any>(null)
@@ -338,7 +341,9 @@ function DealsSignaturePageInner() {
         }
 
         const pdf = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'letter' })
-        renderBillOfSalePdf(pdf, billData, { pageStart: 1, totalPages: 3 })
+        const { sigLineY } = renderBillOfSalePdf(pdf, billData, { pageStart: 1, totalPages: 3 })
+        // Scale from PDF pt coords to rendered pixel overlay coords
+        setPurchaserSigOverlayY(Math.round(sigLineY * (PAGE_HEIGHT / 792)))
 
         // Convert PDF to data URL
         const pdfBlob = pdf.output('blob')
@@ -554,31 +559,54 @@ function DealsSignaturePageInner() {
         // ignore
       }
 
-      // Build per-file payload: each file with its own fields
-      const filesWithFields = uploadedFiles.length > 0
-        ? uploadedFiles.map((f, idx) => ({
-            file_name: f.file_name,
-            file_type: f.file_type,
-            file_b64: f.file_b64,
-            fields: fields.filter(field => (field.fileIndex ?? 0) === idx),
-          }))
-        : null
+      if (isDealPurchaserSignature && dealId) {
+        // Purchaser signature from Bill of Sale – send to /webhook/receive
+        const c = dealData?.customer || {}
+        const purchaserName = [c.firstname, c.lastname].filter(Boolean).join(' ') || ''
+        const hookRes = await fetch('https://primary-production-6722.up.railway.app/webhook/receive', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            dealId,
+            type: 'purchaser_signature',
+            purchaser_name: purchaserName,
+            signature_b64: b64,
+            ip_address: ipAddress,
+            signed_at: new Date().toISOString(),
+          }),
+        })
+        if (!hookRes.ok) {
+          const t = await hookRes.text().catch(() => '')
+          throw new Error(t || `Webhook failed (${hookRes.status})`)
+        }
+        setPurchaserSigned(true)
+      } else {
+        // E-signature flow – send to /webhook/receive-signature
+        const filesWithFields = uploadedFiles.length > 0
+          ? uploadedFiles.map((f, idx) => ({
+              file_name: f.file_name,
+              file_type: f.file_type,
+              file_b64: f.file_b64,
+              fields: fields.filter(field => (field.fileIndex ?? 0) === idx),
+            }))
+          : null
 
-      const hookRes = await fetch('https://primary-production-6722.up.railway.app/webhook/receive-signature', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          id: sigRecord?.id || null,
-          email: [recipientEmail].filter(Boolean),
-          signature_b64: b64,
-          ip_address: ipAddress,
-          files: filesWithFields,
-        }),
-      })
+        const hookRes = await fetch('https://primary-production-6722.up.railway.app/webhook/receive-signature', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            id: sigRecord?.id || null,
+            email: [recipientEmail].filter(Boolean),
+            signature_b64: b64,
+            ip_address: ipAddress,
+            files: filesWithFields,
+          }),
+        })
 
-      if (!hookRes.ok) {
-        const t = await hookRes.text().catch(() => '')
-        throw new Error(t || `Webhook failed (${hookRes.status})`)
+        if (!hookRes.ok) {
+          const t = await hookRes.text().catch(() => '')
+          throw new Error(t || `Webhook failed (${hookRes.status})`)
+        }
       }
 
       setSaveOk(true)
@@ -588,6 +616,8 @@ function DealsSignaturePageInner() {
       setSaveOk(false)
       setSaveMessage(err instanceof Error ? err.message : 'Failed to save signature.')
       setSaveModalOpen(true)
+    } finally {
+      setIsDealPurchaserSignature(false)
     }
 
     setSaving(false)
@@ -860,6 +890,38 @@ function DealsSignaturePageInner() {
                                 {renderFieldContent(field)}
                               </div>
                             ))}
+                            {/* Purchaser signature overlay — dealId flow, page 1 only */}
+                            {dealId && pageNo === 1 && purchaserSigOverlayY !== null && (
+                              <div
+                                className="absolute border-2 border-blue-400 bg-blue-50/80 rounded hover:bg-blue-100/90 transition-colors"
+                                style={{
+                                  left: `${Math.round(96 * PAGE_WIDTH / 612)}px`,
+                                  top: `${purchaserSigOverlayY - 34}px`,
+                                  width: `${Math.round(199 * PAGE_WIDTH / 612)}px`,
+                                  height: '34px',
+                                }}
+                                title="Purchaser Signature"
+                              >
+                                {purchaserSigned && signatureDataUrl ? (
+                                  <img
+                                    src={signatureDataUrl}
+                                    alt="Purchaser Signature"
+                                    className="w-full h-full object-contain p-1"
+                                    style={{ background: 'transparent' }}
+                                  />
+                                ) : (
+                                  <div
+                                    className="flex items-center justify-center h-full text-blue-600 text-xs font-medium cursor-pointer"
+                                    onClick={() => {
+                                      setIsDealPurchaserSignature(true)
+                                      setSignatureModalOpen(true)
+                                    }}
+                                  >
+                                    Signature
+                                  </div>
+                                )}
+                              </div>
+                            )}
                           </div>
 
                           <div className="w-full flex items-center justify-center py-3">
@@ -902,6 +964,7 @@ function DealsSignaturePageInner() {
                 </div>
               </div>
             </div>
+
 
           </>
         )}

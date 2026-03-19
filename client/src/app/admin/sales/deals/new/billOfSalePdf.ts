@@ -88,7 +88,7 @@ export function renderBillOfSalePdf(
   doc: jsPDF,
   data: BillOfSaleData,
   opts?: { pageStart?: number; totalPages?: number }
-): void {
+): { sigLineY: number } {
   const W = doc.internal.pageSize.getWidth()   // 612
   const H = doc.internal.pageSize.getHeight()  // 792
   const ML = 36  // margin left
@@ -762,6 +762,7 @@ export function renderBillOfSalePdf(
   doc.setTextColor(GRAY_LINE)
   doc.text(`${pageStart + 2}/${totalPages}`, W - MR, H - 20, { align: 'right' })
 
+  return { sigLineY }
 }
 
 export function generateBillOfSalePdf(data: BillOfSaleData): string {
