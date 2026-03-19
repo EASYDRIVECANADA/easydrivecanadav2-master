@@ -122,6 +122,7 @@ function DealsSignaturePageInner() {
   const [saveOk, setSaveOk] = useState<boolean | null>(null)
   const [saveMessage, setSaveMessage] = useState<string>('')
   const [recipientEmail, setRecipientEmail] = useState('')
+  const [currentSigningField, setCurrentSigningField] = useState<string | null>(null)
   
   // Document state
   const [sigRecord, setSigRecord] = useState<any>(null)
@@ -530,6 +531,12 @@ function DealsSignaturePageInner() {
     }
     setSignatureDataUrl(url)
 
+    // Stamp signature image onto the field that triggered the modal
+    if (currentSigningField) {
+      setFields(prev => prev.map(f => f.id === currentSigningField ? { ...f, value: url } : f))
+      setCurrentSigningField(null)
+    }
+
     setSaving(true)
     setSaveModalOpen(false)
     setSaveOk(null)
@@ -684,10 +691,20 @@ function DealsSignaturePageInner() {
   const renderFieldContent = (field: Field) => {
     switch (field.type) {
       case 'signature':
+        if (field.value) {
+          return (
+            <img
+              src={field.value}
+              alt="Signature"
+              className="w-full h-full object-contain p-1"
+              style={{ background: 'transparent' }}
+            />
+          )
+        }
         return (
-          <div 
+          <div
             className="flex items-center justify-center h-full text-blue-600 text-xs font-medium cursor-pointer hover:bg-blue-100/90"
-            onClick={() => setSignatureModalOpen(true)}
+            onClick={() => { setCurrentSigningField(field.id); setSignatureModalOpen(true) }}
           >
             Here need to Sign
           </div>
