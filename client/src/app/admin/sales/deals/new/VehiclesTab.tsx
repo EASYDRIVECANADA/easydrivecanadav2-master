@@ -39,14 +39,50 @@ export default function VehiclesTab({
   prefillSelected?: any
   autoSaved?: boolean
 }) {
-  const [query, setQuery] = useState('')
+  const [query, setQuery] = useState(() => {
+    if (Array.isArray(initialData) && initialData.length > 0) {
+      const v = initialData[0]
+      if (v.selected_make || v.selected_year) {
+        return [v.selected_year ? String(v.selected_year) : '', v.selected_make ?? '', v.selected_model ?? '', v.selected_trim ?? ''].filter(Boolean).join(' ')
+      }
+    }
+    return ''
+  })
   const [open, setOpen] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [results, setResults] = useState<VehicleRow[]>([])
-  const [selected, setSelected] = useState<VehicleRow | null>(null)
+  const [selected, setSelected] = useState<VehicleRow | null>(() => {
+    if (Array.isArray(initialData) && initialData.length > 0) {
+      const v = initialData[0]
+      if (v.selected_make || v.selected_year || v.selected_stock_number) {
+        return {
+          id: v.selected_id ?? v.id ?? '',
+          year: v.selected_year ?? null,
+          make: v.selected_make ?? null,
+          model: v.selected_model ?? null,
+          trim: v.selected_trim ?? null,
+          stock_number: v.selected_stock_number ?? null,
+          vin: v.selected_vin ?? null,
+          status: v.selected_status ?? null,
+          exterior_color: v.selected_exterior_color ?? null,
+          interior_color: v.selected_interior_color ?? null,
+          odometer: v.selected_odometer ?? null,
+          odometer_unit: v.selected_odometer_unit ?? null,
+          created_at: v.created_at ?? null,
+        }
+      }
+    }
+    return null
+  })
   const [odoEditing, setOdoEditing] = useState(false)
-  const [odoDraft, setOdoDraft] = useState('')
+  const [odoDraft, setOdoDraft] = useState(() => {
+    if (Array.isArray(initialData) && initialData.length > 0) {
+      const odo = initialData[0]?.selected_odometer
+      return odo !== null && odo !== undefined ? String(odo) : ''
+    }
+    return ''
+  })
 
   // Track if prefill has been applied to prevent re-applying
   const prefillApplied = useRef(false)
@@ -207,9 +243,18 @@ export default function VehiclesTab({
   const [vinInsufficientOpen, setVinInsufficientOpen] = useState(false)
   const [vinInsufficientMessage, setVinInsufficientMessage] = useState('')
   const vinConfirmActionRef = useRef<null | (() => Promise<void>)>(null)
-  const [hasBeenSaved, setHasBeenSaved] = useState(() => Array.isArray(initialData) && initialData.length > 0)
+  const [hasBeenSaved, setHasBeenSaved] = useState(() => {
+    // Don't treat autoSaved as "saved" - it's just prefill from Buy Now
+    if (autoSaved) return false
+    // Only true if we have real saved data (with selected_* fields populated)
+    if (Array.isArray(initialData) && initialData.length > 0) {
+      const v = initialData[0]
+      return !!(v.selected_make || v.selected_year || v.selected_stock_number)
+    }
+    return false
+  })
   const [lastSaveWasUpdate, setLastSaveWasUpdate] = useState(false)
-  const formMode: 'create' | 'edit' = hasBeenSaved || (Array.isArray(initialData) && initialData.length > 0) ? 'edit' : 'create'
+  const formMode: 'create' | 'edit' = hasBeenSaved ? 'edit' : 'create'
   const [manualSelectedCleared, setManualSelectedCleared] = useState(false)
   const inlineEditorRef = useRef<HTMLDivElement | null>(null)
   const execInline = (cmd: string, value?: string) => {
@@ -1131,6 +1176,9 @@ export default function VehiclesTab({
     setLoading(true)
     setError(null)
     try {
+      // Get logged-in user's ID to filter vehicles
+      const userId = await getWebhookUserId().catch(() => null)
+
       const selectCols = [
         'id',
         'year',
@@ -1150,6 +1198,12 @@ export default function VehiclesTab({
       ].join(',')
 
       let req = supabase.from('edc_vehicles').select(selectCols)
+      
+      // Filter by user_id to only show user's own inventory
+      if (userId) {
+        req = req.eq('user_id', userId)
+      }
+
       if (term) {
         req = req.or(
           [`make.ilike.%${term}%`, `model.ilike.%${term}%`, `trim.ilike.%${term}%`, `stock_number.ilike.%${term}%`, `vin.ilike.%${term}%`].join(

@@ -28,6 +28,7 @@ export default function WorksheetTab({
   const [worksheetSaving, setWorksheetSaving] = useState(false)
   const [worksheetSaveError, setWorksheetSaveError] = useState<string | null>(null)
   const [showSavedModal, setShowSavedModal] = useState(false)
+  const [hasBeenSaved, setHasBeenSaved] = useState(() => Boolean(d?.id))
   const [purchasePrice, setPurchasePrice] = useState(d.purchase_price ?? '0')
   const [discount, setDiscount] = useState(d.discount ?? '0')
   const [taxCode, setTaxCode] = useState<string>(d.tax_code ?? 'HST')
@@ -695,6 +696,7 @@ export default function WorksheetTab({
 
     const payload = {
       category: 'worksheet',
+      id: norm(d.id ?? null),
       dealId: norm(dealId),
       dealMode: norm(dealMode),
       dealType: norm(dealType),
@@ -976,6 +978,7 @@ export default function WorksheetTab({
         throw new Error((json && (json.error || json.message)) || text || `Save failed (${res.status})`)
       }
 
+      setHasBeenSaved(true)
       setShowSavedModal(true)
       window.setTimeout(() => {
         setShowSavedModal(false)
@@ -1219,6 +1222,7 @@ export default function WorksheetTab({
         </div>
         <div className="h-6 px-2 rounded bg-green-600 text-white text-xs font-semibold flex items-center">Total: ${fmtMoney(feesTotal + feesTaxTotal)}</div>
       </div>
+
       <div className="p-3">
         <div className="relative flex items-center">
           <input
@@ -1235,18 +1239,8 @@ export default function WorksheetTab({
               }
             }}
           />
-          <svg
-            className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M21 21l-4.35-4.35m1.35-5.65a7 7 0 11-14 0 7 7 0 0114 0z"
-            />
+          <svg className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35m1.35-5.65a7 7 0 11-14 0 7 7 0 0114 0z" />
           </svg>
           {feePresetMatches.length > 0 ? (
             <div className="absolute left-0 right-0 top-[44px] z-20 bg-white border border-gray-200 rounded shadow max-h-56 overflow-auto">
@@ -1256,7 +1250,10 @@ export default function WorksheetTab({
                   type="button"
                   className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50"
                   onMouseDown={(e) => e.preventDefault()}
-                  onClick={() => { addFeeFromPreset(p); setFeePresetOpen(false) }}
+                  onClick={() => {
+                    addFeeFromPreset(p)
+                    setFeePresetOpen(false)
+                  }}
                 >
                   <div className="font-semibold text-gray-800">{p.name}</div>
                   <div className="text-xs text-gray-500">${fmtMoney(Number(p.fee_amount ?? 0))}</div>
@@ -1264,12 +1261,7 @@ export default function WorksheetTab({
               ))}
             </div>
           ) : null}
-          <button
-            type="button"
-            onClick={addFeeFromSearch}
-            className="ml-2 h-10 px-3 rounded bg-[#118df0] text-white text-xs font-semibold hover:bg-[#0d6ebd]"
-            title="Add Fee"
-          >
+          <button type="button" onClick={addFeeFromSearch} className="ml-2 h-10 px-3 rounded bg-[#118df0] text-white text-xs font-semibold hover:bg-[#0d6ebd]" title="Add Fee">
             +
           </button>
         </div>
@@ -1286,35 +1278,16 @@ export default function WorksheetTab({
             <div className="grid grid-cols-[40px_1fr_1fr_140px_80px] text-xs">
               <div className="p-2" />
               <div className="p-2">
-                <input
-                  className="w-full h-8 px-2 border border-gray-200 rounded text-sm"
-                  value={feeDraft.name}
-                  onChange={(e) => setFeeDraft({ ...feeDraft, name: e.target.value })}
-                />
+                <input className="w-full h-8 px-2 border border-gray-200 rounded text-sm" value={feeDraft.name} onChange={(e) => setFeeDraft({ ...feeDraft, name: e.target.value })} />
               </div>
               <div className="p-2">
-                <textarea
-                  className="w-full h-8 px-2 border border-gray-200 rounded text-sm"
-                  value={feeDraft.desc}
-                  onChange={(e) => setFeeDraft({ ...feeDraft, desc: e.target.value })}
-                />
+                <textarea className="w-full h-8 px-2 border border-gray-200 rounded text-sm" value={feeDraft.desc} onChange={(e) => setFeeDraft({ ...feeDraft, desc: e.target.value })} />
               </div>
               <div className="p-2">
-                <input
-                  className="w-full h-8 px-2 border border-gray-200 rounded text-sm"
-                  value={feeDraft.amount}
-                  onChange={(e) => setFeeDraft({ ...feeDraft, amount: e.target.value.replace(/[^0-9.]/g, '') })}
-                />
+                <input className="w-full h-8 px-2 border border-gray-200 rounded text-sm" value={feeDraft.amount} onChange={(e) => setFeeDraft({ ...feeDraft, amount: e.target.value.replace(/[^0-9.]/g, '') })} />
               </div>
               <div className="p-2 flex items-center justify-center">
-                <button
-                  type="button"
-                  className="h-8 w-8 rounded bg-[#118df0] text-white text-xs font-semibold hover:bg-[#0d6ebd]"
-                  title="Save"
-                  onClick={commitFeeDraft}
-                >
-                  ✓
-                </button>
+                <button type="button" className="h-8 w-8 rounded bg-[#118df0] text-white text-xs font-semibold hover:bg-[#0d6ebd]" title="Save" onClick={commitFeeDraft}>✓</button>
               </div>
             </div>
           ) : null}
@@ -1326,35 +1299,16 @@ export default function WorksheetTab({
               <div key={f.id} className="grid grid-cols-[40px_1fr_1fr_140px_80px] text-xs">
                 <div className="p-2" />
                 <div className="p-2">
-                  <input
-                    className="w-full h-8 px-2 border border-gray-200 rounded text-sm"
-                    value={editingDraft.name}
-                    onChange={(e) => setEditingDraft({ ...editingDraft, name: e.target.value })}
-                  />
+                  <input className="w-full h-8 px-2 border border-gray-200 rounded text-sm" value={editingDraft.name} onChange={(e) => setEditingDraft({ ...editingDraft, name: e.target.value })} />
                 </div>
                 <div className="p-2">
-                  <textarea
-                    className="w-full h-8 px-2 border border-gray-200 rounded text-sm"
-                    value={editingDraft.desc}
-                    onChange={(e) => setEditingDraft({ ...editingDraft, desc: e.target.value })}
-                  />
+                  <textarea className="w-full h-8 px-2 border border-gray-200 rounded text-sm" value={editingDraft.desc} onChange={(e) => setEditingDraft({ ...editingDraft, desc: e.target.value })} />
                 </div>
                 <div className="p-2">
-                  <input
-                    className="w-full h-8 px-2 border border-gray-200 rounded text-sm"
-                    value={editingDraft.amount}
-                    onChange={(e) => setEditingDraft({ ...editingDraft, amount: e.target.value.replace(/[^0-9.]/g, '') })}
-                  />
+                  <input className="w-full h-8 px-2 border border-gray-200 rounded text-sm" value={editingDraft.amount} onChange={(e) => setEditingDraft({ ...editingDraft, amount: e.target.value.replace(/[^0-9.]/g, '') })} />
                 </div>
                 <div className="p-2 flex items-center justify-center">
-                  <button
-                    type="button"
-                    className="h-8 w-8 rounded bg-[#118df0] text-white text-xs font-semibold hover:bg-[#0d6ebd]"
-                    title="Save"
-                    onClick={commitEditFee}
-                  >
-                    ✓
-                  </button>
+                  <button type="button" className="h-8 w-8 rounded bg-[#118df0] text-white text-xs font-semibold hover:bg-[#0d6ebd]" title="Save" onClick={commitEditFee}>✓</button>
                 </div>
               </div>
             ) : (
@@ -1378,14 +1332,7 @@ export default function WorksheetTab({
                 <div className="p-2">{f.desc}</div>
                 <div className="p-2">${fmtMoney(Number(f.amount || 0))}</div>
                 <div className="p-2 text-center">
-                  <button
-                    type="button"
-                    className="px-2 text-gray-600 hover:text-gray-800"
-                    onClick={() => openFeeDetails(f.id)}
-                    title="More"
-                  >
-                    ...
-                  </button>
+                  <button type="button" className="px-2 text-gray-600 hover:text-gray-800" onClick={() => openFeeDetails(f.id)} title="More">...</button>
                 </div>
               </div>
             )
@@ -2192,7 +2139,7 @@ export default function WorksheetTab({
           disabled={worksheetSaving}
           className="h-10 px-6 rounded bg-[#118df0] text-white text-sm font-semibold hover:bg-[#0d6ebd] disabled:opacity-60 disabled:cursor-not-allowed"
         >
-          {worksheetSaving ? 'Saving…' : 'Save'}
+          {worksheetSaving ? (hasBeenSaved ? 'Updating…' : 'Saving…') : hasBeenSaved ? 'Update' : 'Save'}
         </button>
       </div>
 

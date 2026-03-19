@@ -432,6 +432,8 @@ export default function CustomersTabNew({
 
   const [showSavedModal, setShowSavedModal] = useState(false)
 
+  const [hasBeenSaved, setHasBeenSaved] = useState(() => Boolean(initialData?.id))
+
   const [forms, setForms] = useState<DealCustomerForm[]>(() => {
 
     if (initialData) {
@@ -1040,6 +1042,8 @@ export default function CustomersTabNew({
 
         ...normalizedCustomer,
 
+        id: initialData?.id ?? null,
+
         dealId: dealId ?? '',
 
         dealDate: dealDate ?? '',
@@ -1172,6 +1176,7 @@ export default function CustomersTabNew({
 
 
 
+      setHasBeenSaved(true)
       setShowSavedModal(true)
 
       window.setTimeout(() => {
@@ -2714,7 +2719,7 @@ export default function CustomersTabNew({
 
           >
 
-            Save
+            {saving ? (hasBeenSaved ? 'Updating…' : 'Saving…') : hasBeenSaved ? 'Update' : 'Save'}
 
           </button>
 

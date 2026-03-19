@@ -41,21 +41,35 @@ export default function DeliveryTab({
   const [showSuccessModal, setShowSuccessModal] = useState(false)
   const [showSaveErrorModal, setShowSaveErrorModal] = useState(false)
   const [saveErrorModalMessage, setSaveErrorModalMessage] = useState<string>('Unsuccessful save')
+  const [hasBeenSaved, setHasBeenSaved] = useState(() => Boolean(dd?.id))
 
   useEffect(() => {
     const loadNames = async () => {
       try {
-        const { data, error } = await supabase
-          .from('edc_account_verifications')
-          .select('full_name')
-          .not('full_name', 'is', null)
-          .order('full_name', { ascending: true })
+        const dbId = await getLoggedInAdminDbUserId()
+        if (!dbId) {
+          setStaffNames([])
+          return
+        }
 
-        if (error) throw error
+        const [ownerRes, subRes] = await Promise.all([
+          supabase.from('edc_account_verifications').select('full_name').eq('id', dbId).maybeSingle(),
+          supabase.from('users').select('first_name, last_name, email').eq('user_id', dbId).order('first_name', { ascending: true }),
+        ])
 
-        const names = (data || [])
-          .map((r: any) => (typeof r?.full_name === 'string' ? r.full_name.trim() : ''))
-          .filter((n: string) => !!n)
+        const names: string[] = []
+
+        const ownerName = ((ownerRes.data as any)?.full_name ?? '').trim()
+        if (ownerName) names.push(ownerName)
+
+        if (Array.isArray(subRes.data)) {
+          for (const u of subRes.data as any[]) {
+            const fn = (u.first_name || '').trim()
+            const ln = (u.last_name || '').trim()
+            const name = [fn, ln].filter(Boolean).join(' ') || (u.email || '').trim()
+            if (name && !names.includes(name)) names.push(name)
+          }
+        }
 
         setStaffNames(names)
         if (names.length > 0) {
@@ -69,6 +83,7 @@ export default function DeliveryTab({
     }
 
     void loadNames()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const getLoggedInAdminDbUserId = async (): Promise<string | null> => {
@@ -164,7 +179,7 @@ export default function DeliveryTab({
         category: 'delivery',
         formMode: formMode ?? null,
         user_id: user_id || null,
-        id: toNull(dealId),
+        id: toNull(dd?.id ?? null),
         dealId: toNull(dealId),
         dealMode: toNull(dealMode),
         deliveryDate: toNull(deliveryDate),
@@ -190,13 +205,11 @@ export default function DeliveryTab({
       })
       const raw = await res.text().catch(() => '')
       if (!res.ok) throw new Error(raw || `Save failed (${res.status})`)
-      const ok = raw.trim().toLowerCase() === 'done'
-      if (!ok) throw new Error(raw || 'Webhook did not confirm save. Expected "Done"')
 
-      resetDelivery()
-      router.push('/admin/sales/deals')
+      setHasBeenSaved(true)
+      setShowSuccessModal(true)
     } catch (e: any) {
-      const msg = e?.message || 'Failed to save delivery'
+      const msg = e?.message || 'Failed to save delivery information'
       setSaveError(msg)
       setSaveErrorModalMessage(msg)
       setShowSaveErrorModal(true)
@@ -352,7 +365,7 @@ export default function DeliveryTab({
             <div className="border border-gray-200 bg-white shadow-sm">
               <div className="h-9 px-3 bg-gray-700 text-white text-xs flex items-center gap-2">
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3M5 11h14" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3M5 11h14M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                 </svg>
                 New Task
@@ -521,7 +534,7 @@ export default function DeliveryTab({
           onClick={handleSave}
           className="h-10 px-6 rounded bg-[#118df0] text-white text-sm font-semibold hover:bg-[#0d6ebd] disabled:opacity-50"
         >
-          {saving ? 'Saving...' : 'Save'}
+          {saving ? (hasBeenSaved ? 'Updating...' : 'Saving...') : hasBeenSaved ? 'Update' : 'Save'}
         </button>
       </div>
     </div>

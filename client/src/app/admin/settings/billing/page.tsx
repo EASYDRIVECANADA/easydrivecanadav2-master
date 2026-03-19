@@ -2,6 +2,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import { supabase } from '@/lib/supabaseClient'
 
 export default function SettingsBillingPage() {
   return <BillingPage />
@@ -141,19 +142,42 @@ function BillingPage() {
   useEffect(() => {
     if (typeof window === 'undefined') return
 
-    const readEmail = () => {
+    const readSession = () => {
       try {
         const raw = window.localStorage.getItem('edc_admin_session')
-        if (!raw) return ''
-        const parsed = JSON.parse(raw) as { email?: string }
-        return String(parsed?.email || '').trim().toLowerCase()
+        if (!raw) return { email: '', userId: '' }
+        const parsed = JSON.parse(raw) as { email?: string; user_id?: string }
+        return {
+          email: String(parsed?.email || '').trim().toLowerCase(),
+          userId: String(parsed?.user_id || '').trim(),
+        }
       } catch {
-        return ''
+        return { email: '', userId: '' }
       }
     }
 
-    const email = readEmail()
-    if (!email) return
+    const resolveOwnerEmail = async (): Promise<string> => {
+      const { email, userId } = readSession()
+      if (!userId) return email
+      try {
+        // Look up the owner row (the row with a role set) sharing this user_id
+        const { data } = await supabase
+          .from('users')
+          .select('email')
+          .eq('user_id', userId)
+          .not('role', 'is', null)
+          .limit(1)
+        const ownerEmail = String((Array.isArray(data) ? data[0] : data)?.email || '').trim().toLowerCase()
+        return ownerEmail || email
+      } catch {
+        return email
+      }
+    }
+
+    const placeholder = readSession().email
+    if (!placeholder) return
+
+    let email = placeholder
 
     const fetchPaymentMethods = async () => {
       setLoadingPaymentMethods(true)
@@ -244,10 +268,14 @@ function BillingPage() {
       }
     }
 
-    void fetchSubscriptionStatus()
-    void fetchTransactions()
-    void fetchPaymentMethods()
-    void fetchBalance()
+    void (async () => {
+      email = await resolveOwnerEmail()
+      if (!email) return
+      void fetchSubscriptionStatus()
+      void fetchTransactions()
+      void fetchPaymentMethods()
+      void fetchBalance()
+    })()
 
     try {
       const params = new URLSearchParams(window.location.search)

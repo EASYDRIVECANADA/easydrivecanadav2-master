@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
+import { motion } from 'framer-motion'
 
 type DealRow = {
   dealId: string
@@ -35,6 +36,7 @@ export default function DealsPage() {
   const [selectedDeal, setSelectedDeal] = useState<DealRow | null>(null)
   const [customersOpen, setCustomersOpen] = useState(true)
   const [profitOpen, setProfitOpen] = useState(false)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
 
   // Delete state
   const [deleteTarget, setDeleteTarget] = useState<DealRow | null>(null)
@@ -179,6 +181,51 @@ export default function DealsPage() {
     router.push('/admin/sales/deals/signature')
   }
 
+  const allSelected = selectedIds.size > 0 && paged.length > 0 && selectedIds.size === paged.length
+  const toggleSelectAll = (checked: boolean) => {
+    if (checked) {
+      setSelectedIds(new Set(paged.map(d => d.dealId)))
+    } else {
+      setSelectedIds(new Set())
+    }
+  }
+  const toggleSelect = (dealId: string, checked: boolean) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev)
+      if (checked) next.add(dealId)
+      else next.delete(dealId)
+      return next
+    })
+  }
+
+  const handleDeleteSelected = async () => {
+    if (selectedIds.size === 0) return
+    const selected = rows.filter((d) => selectedIds.has(d.dealId))
+    if (selected.length === 0) return
+
+    if (!confirm(`Delete ${selected.length} selected deal(s)?`)) return
+
+    try {
+      setDeleting(true)
+      const promises = selected.map((d) =>
+        fetch('/api/deals/delete', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ dealId: d.dealId }),
+        })
+      )
+      await Promise.all(promises)
+      setRows((prev) => prev.filter((r) => !selectedIds.has(r.dealId)))
+      if (selectedDeal && selectedIds.has(selectedDeal.dealId)) setSelectedDeal(null)
+      setSelectedIds(new Set())
+    } catch (e: any) {
+      console.error('[Bulk Delete] Error:', e)
+      alert(e?.message || 'Failed to delete deals')
+    } finally {
+      setDeleting(false)
+    }
+  }
+
   const handleDelete = async () => {
     if (!deleteTarget) return
     try {
@@ -297,13 +344,40 @@ export default function DealsPage() {
           <div className="mt-4 rounded-xl border border-danger-500/20 bg-danger-500/5 text-danger-600 px-4 py-3 text-sm">{fetchError}</div>
         ) : null}
 
+        {selectedIds.size > 0 && (
+          <div className="bg-white rounded-2xl border border-slate-200/60 p-3 mb-5" style={{ boxShadow: '0 1px 3px rgba(0,0,0,.04)' }}>
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <div className="text-sm font-semibold text-slate-700">
+                {selectedIds.size} selected
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleDeleteSelected}
+                  disabled={deleting}
+                  className="edc-btn-danger text-sm"
+                >
+                  {deleting ? 'Deleting...' : 'Delete'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         <div className="edc-card mt-4 overflow-hidden">
           <div className="overflow-x-auto">
             <table className="edc-table">
               <thead>
                 <tr>
                   <th className="w-10"></th>
-                  <th className="w-10"></th>
+                  <th className="w-10">
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4"
+                      checked={allSelected}
+                      onChange={(e) => toggleSelectAll(e.target.checked)}
+                    />
+                  </th>
                   <th>ID</th>
                   <th>Primary Customer</th>
                   <th>Vehicle</th>
@@ -349,8 +423,13 @@ export default function DealsPage() {
                           </svg>
                         </button>
                       </td>
-                      <td className="px-2 py-3">
-                        <input type="checkbox" className="h-4 w-4" />
+                      <td className="px-2 py-3" onClick={(e) => e.stopPropagation()}>
+                        <input
+                          type="checkbox"
+                          className="h-4 w-4"
+                          checked={selectedIds.has(r.dealId)}
+                          onChange={(e) => toggleSelect(r.dealId, e.target.checked)}
+                        />
                       </td>
                       <td className="px-4 py-3 text-sm font-medium text-slate-800 whitespace-nowrap">{r.dealId}</td>
                       <td className="px-4 py-3 text-sm text-slate-600 whitespace-nowrap">{r.primaryCustomer}</td>
@@ -362,17 +441,7 @@ export default function DealsPage() {
                       <td className="px-4 py-3 text-sm text-slate-600 whitespace-nowrap">{r.other}</td>
                       <td className="px-4 py-3 text-sm text-slate-600 whitespace-nowrap">{r.reference}</td>
                       <td className="px-2 py-3 text-center">
-                        <button
-                          type="button"
-                          onClick={(e) => { e.stopPropagation(); setDeleteTarget(r) }}
-                          className="w-8 h-8 rounded-lg bg-danger-500/5 hover:bg-danger-500/10 flex items-center justify-center transition-colors"
-                          title="Delete deal"
-                          aria-label="Delete deal"
-                        >
-                          <svg className="w-4 h-4 text-danger-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                          </svg>
-                        </button>
+                        {/* Delete button removed - use bulk delete instead */}
                       </td>
                     </tr>
                   ))
@@ -507,19 +576,61 @@ export default function DealsPage() {
               const vehicleProfit = sellingPrice - purchasePrice + additionalExpenses
               const totalProfit = vehicleProfit + feesTotal + accTotal + warTotal + insTotal
 
-              // Donut chart
-              const total = sellingPrice || 1
-              const profitPct = Math.min(100, Math.max(5, ((totalProfit / total) * 100)))
-              const rd = 50
-              const circ = 2 * Math.PI * rd
-              const offset = circ - (profitPct / 100) * circ
+              // Donut chart with animation
+              const circumference = 2 * Math.PI * 35
+              const purchasePct = sellingPrice > 0 ? (purchasePrice / sellingPrice) * 100 : 0
+              const expensesPct = sellingPrice > 0 ? (additionalExpenses / sellingPrice) * 100 : 0
+              const profitPct = sellingPrice > 0 ? (totalProfit / sellingPrice) * 100 : 0
+
+              const purchaseDash = (purchasePct / 100) * circumference
+              const expensesDash = (expensesPct / 100) * circumference
+              const profitDash = (profitPct / 100) * circumference
 
               return (
                 <div>
                   <div className="flex justify-center mb-5">
-                    <svg width="140" height="140" viewBox="0 0 120 120">
-                      <circle cx="60" cy="60" r="56" fill="#16a34a" />
-                      <line x1="60" y1="6" x2="60" y2="60" stroke="#ffffff" strokeWidth="4" strokeLinecap="round" />
+                    <svg viewBox="0 0 100 100" className="w-40 h-40 -rotate-90">
+                      <motion.circle
+                        cx="50"
+                        cy="50"
+                        r="35"
+                        fill="transparent"
+                        stroke="#2563eb"
+                        strokeWidth="20"
+                        animate={{
+                          strokeDasharray: `${purchaseDash} ${circumference}`,
+                          strokeDashoffset: 0,
+                        }}
+                        transition={{ duration: 0.6, ease: 'easeInOut' }}
+                      />
+                      <motion.circle
+                        cx="50"
+                        cy="50"
+                        r="35"
+                        fill="transparent"
+                        stroke="#dc2626"
+                        strokeWidth="20"
+                        animate={{
+                          strokeDasharray: `${expensesDash} ${circumference}`,
+                          strokeDashoffset: -purchaseDash,
+                        }}
+                        transition={{ duration: 0.6, ease: 'easeInOut' }}
+                      />
+                      {totalProfit > 0 && (
+                        <motion.circle
+                          cx="50"
+                          cy="50"
+                          r="35"
+                          fill="transparent"
+                          stroke="#16a34a"
+                          strokeWidth="20"
+                          animate={{
+                            strokeDasharray: `${profitDash} ${circumference}`,
+                            strokeDashoffset: -(purchaseDash + expensesDash),
+                          }}
+                          transition={{ duration: 0.6, ease: 'easeInOut' }}
+                        />
+                      )}
                     </svg>
                   </div>
                   <div className="space-y-2 text-sm">

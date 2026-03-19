@@ -24,7 +24,16 @@ function SalesNewDealPageContent() {
 
   // Store initial vehicleId to only affect first load
   const [initialVehicleId] = useState(vehicleId)
-  const [activeTab, setActiveTab] = useState<DealTab>(initialVehicleId ? 'vehicles' : 'customers')
+  const [activeTab, setActiveTab] = useState<DealTab>('customers')
+  const [unlockedTabs, setUnlockedTabs] = useState<Set<DealTab>>(() =>
+    editDealId
+      ? new Set<DealTab>(['customers', 'vehicles', 'worksheet', 'disclosures', 'delivery'])
+      : new Set<DealTab>(['customers'])
+  )
+  const unlockTab = (tab: DealTab) => {
+    setUnlockedTabs(prev => new Set(Array.from(prev).concat(tab)))
+    setActiveTab(tab)
+  }
   const [dealId] = useState(() => {
     // If editing, reuse the existing dealId from the URL
     if (typeof window !== 'undefined' && editDealId) return editDealId
@@ -137,11 +146,7 @@ function SalesNewDealPageContent() {
     }
   }
 
-  // Track whether auto-save has fired for showroom prefill
-  const autoSaveRan = useRef(false)
-  const [autoSavedVehicles, setAutoSavedVehicles] = useState(false)
-  const [autoSavedWorksheet, setAutoSavedWorksheet] = useState(false)
-  const [autoSavedDisclosures, setAutoSavedDisclosures] = useState(false)
+  // Auto-save removed - prefill data will display but not save until user clicks Save
 
   const parseJsonLoose = (v: any) => {
     if (!v) return null
@@ -255,111 +260,7 @@ function SalesNewDealPageContent() {
     }
   }, [])
 
-  // Auto-save prefilled data to Supabase on first load when coming from showroom
-  useEffect(() => {
-    if (!vehiclePrefill?.vehicle || autoSaveRan.current) return
-    autoSaveRan.current = true
-    const v = vehiclePrefill.vehicle
-    const sellPrice = getVehicleSellPrice(v)
-    const currentDealId = dealId
-
-    // 1) Auto-save Vehicles directly to Supabase
-    fetch('/api/deals/insert', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        table: 'edc_deals_vehicles',
-        data: {
-          id: currentDealId,
-          selected_stock_number: v.stock_number ?? null,
-          selected_year: v.year ?? null,
-          selected_make: v.make ?? null,
-          selected_model: v.model ?? null,
-          selected_trim: v.trim ?? null,
-          selected_vin: v.vin ?? null,
-          selected_exterior_color: v.exterior_color ?? null,
-          selected_interior_color: v.interior_color ?? null,
-          selected_odometer: v.odometer ?? v.mileage ?? null,
-          selected_odometer_unit: v.odometer_unit ?? null,
-          selected_status: v.status ?? null,
-        },
-      }),
-    })
-      .then((r) => r.json())
-      .then((j) => {
-        console.log('[Auto-save Vehicles] Response:', j)
-        setAutoSavedVehicles(true)
-      })
-      .catch((e) => console.error('[Auto-save Vehicles] Error:', e))
-
-    // 2) Auto-save Worksheet directly to Supabase
-    const purchase = vehiclePrefill.purchase
-    fetch('/api/deals/insert', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        table: 'edc_deals_worksheet',
-        data: {
-          id: currentDealId,
-          deal_type: 'Cash',
-          deal_date: dealDate,
-          deal_mode: 'RTL',
-          purchase_price: String(sellPrice || 0),
-          discount: '0',
-          subtotal: String(sellPrice || 0),
-          trade_value: '0',
-          actual_cash_value: '0',
-          net_difference: '0',
-          tax_code: 'HST',
-          tax_rate: '0.13',
-          tax_override: false,
-          tax_manual: '0',
-          total_tax: String(Number(sellPrice || 0) * 0.13),
-          lien_payout: '0',
-          trade_equity: '0',
-          license_fee: purchase?.license_fee ?? null,
-          new_plates: false,
-          renewal_only: false,
-          total_balance_due: String(Number(sellPrice || 0) * 1.13),
-          fees: [],
-          accessories: [],
-          warranties: [],
-          insurances: [],
-          payments: [],
-        },
-      }),
-    })
-      .then((r) => r.json())
-      .then((j) => {
-        console.log('[Auto-save Worksheet] Response:', j)
-        setAutoSavedWorksheet(true)
-      })
-      .catch((e) => console.error('[Auto-save Worksheet] Error:', e))
-
-    // 3) Auto-save Disclosures directly to Supabase
-    const disc = vehiclePrefill.disclosures
-    const discHtml = Array.isArray(disc) && disc.length > 0
-      ? disc.map((d: any) => `<p><strong>${d.disclosures_tittle || ''}</strong></p><p>${d.disclosures_body || ''}</p>`).join('')
-      : ''
-    fetch('/api/deals/insert', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        table: 'edc_deals_disclosures',
-        data: {
-          id: currentDealId,
-          disclosures_html: discHtml || null,
-          conditions: null,
-        },
-      }),
-    })
-      .then((r) => r.json())
-      .then((j) => {
-        console.log('[Auto-save Disclosures] Response:', j)
-        setAutoSavedDisclosures(true)
-      })
-      .catch((e) => console.error('[Auto-save Disclosures] Error:', e))
-  }, [vehiclePrefill, dealId, dealDate])
+  // Auto-save removed - vehicle will display from prefillSelected but won't save until user clicks Save button
 
   // Close print menu on outside click
   useEffect(() => {
@@ -907,11 +808,14 @@ function SalesNewDealPageContent() {
             <button
               key={t.key}
               type="button"
-              onClick={() => setActiveTab(t.key)}
+              onClick={() => { if (unlockedTabs.has(t.key)) setActiveTab(t.key) }}
+              disabled={!unlockedTabs.has(t.key)}
               className={
-                activeTab === t.key
-                  ? 'h-10 px-4 rounded bg-[#118df0] text-white text-sm font-semibold'
-                  : 'h-10 px-4 rounded bg-white/70 text-gray-700 text-sm font-semibold hover:bg-white'
+                !unlockedTabs.has(t.key)
+                  ? 'h-10 px-4 rounded bg-gray-100 text-gray-400 text-sm font-semibold cursor-not-allowed opacity-50'
+                  : activeTab === t.key
+                    ? 'h-10 px-4 rounded bg-[#118df0] text-white text-sm font-semibold'
+                    : 'h-10 px-4 rounded bg-white/70 text-gray-700 text-sm font-semibold hover:bg-white'
               }
             >
               {t.label}
@@ -931,7 +835,7 @@ function SalesNewDealPageContent() {
                   dealDate={dealDate}
                   dealType={dealType}
                   dealMode={isRetail ? 'RTL' : 'WHL'}
-                  onSaved={() => setActiveTab('vehicles')}
+                  onSaved={() => unlockTab('vehicles')}
                   initialData={prefill?.customer ?? null}
                 />
               </div>
@@ -940,9 +844,9 @@ function SalesNewDealPageContent() {
                   dealId={dealId}
                   dealMode={isRetail ? 'RTL' : 'WHL'}
                   dealType={dealType}
-                  onSaved={() => setActiveTab('worksheet')}
-                  initialData={prefill?.vehicles ?? (autoSavedVehicles ? [{ id: dealId }] : null)}
-                  autoSaved={autoSavedVehicles}
+                  onSaved={() => unlockTab('worksheet')}
+                  initialData={prefill?.vehicles ?? null}
+                  autoSaved={false}
                   prefillSelected={initialVehicleId && vehiclePrefill?.vehicle ? {
                     id: vehiclePrefill.vehicle.id,
                     year: vehiclePrefill.vehicle.year,
@@ -966,11 +870,10 @@ function SalesNewDealPageContent() {
                   dealType={dealType}
                   dealDate={dealDate}
                   formMode={formMode}
-                  onSaved={() => setActiveTab('disclosures')}
-                  autoSaved={autoSavedWorksheet}
+                  onSaved={() => unlockTab('disclosures')}
+                  autoSaved={false}
                   initialData={prefill?.worksheet ?? (
                     initialVehicleId && vehiclePrefill?.vehicle ? {
-                      ...(autoSavedWorksheet ? { id: dealId } : {}),
                       purchase_price: String(getVehicleSellPrice(vehiclePrefill.vehicle)),
                       discount: '0',
                       tax_code: 'HST',
@@ -988,17 +891,9 @@ function SalesNewDealPageContent() {
                   dealMode={isRetail ? 'RTL' : 'WHL'}
                   dealType={dealType}
                   formMode={formMode}
-                  onSaved={() => setActiveTab('delivery')}
-                  autoSaved={autoSavedDisclosures}
-                  initialData={prefill?.disclosures ?? (
-                    initialVehicleId && vehiclePrefill?.disclosures && vehiclePrefill.disclosures.length > 0
-                      ? {
-                          ...(autoSavedDisclosures ? { id: dealId } : {}),
-                          disclosures_html: vehiclePrefill.disclosures.map((d: any) => `<p><strong>${d.disclosures_tittle || ''}</strong></p><p>${d.disclosures_body || ''}</p>`).join(''),
-                          conditions: '',
-                        }
-                      : null
-                  )}
+                  onSaved={() => unlockTab('delivery')}
+                  autoSaved={false}
+                  initialData={prefill?.disclosures ?? null}
                 />
               </div>
               <div style={{ display: activeTab === 'delivery' ? 'block' : 'none' }}>

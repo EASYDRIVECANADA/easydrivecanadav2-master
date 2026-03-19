@@ -61,6 +61,8 @@ export default function DisclosuresTab({
   }
   const editorRef = useRef<HTMLDivElement | null>(null)
   const colorRef = useRef<HTMLInputElement | null>(null)
+  const [hasBeenSaved, setHasBeenSaved] = useState(() => Boolean(initialData?.id))
+
   const [html, setHtml] = useState(initialData?.disclosures_html ?? '')
   const [conditions, setConditions] = useState(initialData?.conditions ?? '')
   const [saving, setSaving] = useState(false)
@@ -143,7 +145,8 @@ export default function DisclosuresTab({
 
       const payload = {
         category: 'deals-disclosures',
-        id: dealId || null,
+        id: initialData?.id ?? dealId ?? null,
+        dealId: dealId ?? null,
         dealMode: dealMode ?? null,
         dealType: dealType ?? null,
         formMode: formMode ?? null,
@@ -171,6 +174,7 @@ export default function DisclosuresTab({
         throw new Error((json && (json.error || json.message)) || text || `Save failed (${res.status})`)
       }
 
+      setHasBeenSaved(true)
       setShowSavedModal(true)
       window.setTimeout(() => {
         setShowSavedModal(false)
@@ -362,7 +366,7 @@ export default function DisclosuresTab({
           disabled={saving}
           className="h-10 px-6 rounded bg-[#118df0] text-white text-sm font-semibold hover:bg-[#0d6ebd] disabled:opacity-60 disabled:cursor-not-allowed"
         >
-          {saving ? 'Saving…' : 'Save'}
+          {saving ? (hasBeenSaved ? 'Updating…' : 'Saving…') : hasBeenSaved ? 'Update' : 'Save'}
         </button>
       </div>
     </div>

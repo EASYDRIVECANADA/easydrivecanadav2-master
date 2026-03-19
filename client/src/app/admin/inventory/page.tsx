@@ -402,12 +402,14 @@ export default function AdminInventoryPage() {
         const sessionEmail = String(parsed?.email || '').trim().toLowerCase()
         const sessionUserId = String(parsed?.user_id || '').trim()
 
-        const { data: roleById } = sessionUserId
-          ? await supabase.from('users').select('role').eq('user_id', sessionUserId).maybeSingle()
+        const { data: roleByIdArr } = sessionUserId
+          ? await supabase.from('users').select('role').eq('user_id', sessionUserId).not('role', 'is', null).limit(1)
           : ({ data: null } as any)
-        const { data: roleByEmail } = !roleById?.role && sessionEmail
-          ? await supabase.from('users').select('role').eq('email', sessionEmail).maybeSingle()
+        const roleById = Array.isArray(roleByIdArr) ? roleByIdArr[0] : roleByIdArr
+        const { data: roleByEmailArr } = !roleById?.role && sessionEmail
+          ? await supabase.from('users').select('role').eq('email', sessionEmail).not('role', 'is', null).limit(1)
           : ({ data: null } as any)
+        const roleByEmail = Array.isArray(roleByEmailArr) ? roleByEmailArr[0] : roleByEmailArr
 
         const r = String((roleById as any)?.role ?? (roleByEmail as any)?.role ?? '').trim().toLowerCase()
         if (r === 'admin') return
@@ -420,10 +422,12 @@ export default function AdminInventoryPage() {
       const sessionStr = typeof window !== 'undefined' ? window.localStorage.getItem('edc_admin_session') : null
       const sessionEmail = sessionStr ? String((JSON.parse(sessionStr) as any)?.email || '').trim().toLowerCase() : ''
 
-      const { data: uById } = await supabase.from('users').select('role').eq('user_id', userId).maybeSingle()
-      const { data: uByEmail } = !uById?.role && sessionEmail
-        ? await supabase.from('users').select('role').eq('email', sessionEmail).maybeSingle()
+      const { data: uByIdArr } = await supabase.from('users').select('role').eq('user_id', userId).not('role', 'is', null).limit(1)
+      const uById = Array.isArray(uByIdArr) ? uByIdArr[0] : uByIdArr
+      const { data: uByEmailArr } = !uById?.role && sessionEmail
+        ? await supabase.from('users').select('role').eq('email', sessionEmail).not('role', 'is', null).limit(1)
         : ({ data: null } as any)
+      const uByEmail = Array.isArray(uByEmailArr) ? uByEmailArr[0] : uByEmailArr
 
       const rawRole = String((uById as any)?.role ?? (uByEmail as any)?.role ?? '').trim().toLowerCase()
       setAccountRole(rawRole)
