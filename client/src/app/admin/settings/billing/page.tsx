@@ -269,12 +269,29 @@ function BillingPage() {
     }
 
     void (async () => {
-      email = await resolveOwnerEmail()
-      if (!email) return
+      const ownerEmail = await resolveOwnerEmail()
+      if (!ownerEmail) return
+      
+      // Use owner email for subscription/payment methods (shared at account level)
+      email = ownerEmail
       void fetchSubscriptionStatus()
       void fetchTransactions()
       void fetchPaymentMethods()
-      void fetchBalance()
+      
+      // Use logged-in user's own email for balance (personal to each user)
+      const userEmail = readSession().email
+      if (userEmail) {
+        const res = await fetch('/api/users/balance', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: userEmail }),
+        })
+        const json = await res.json().catch(() => null)
+        if (res.ok) {
+          const nextBalance = Number(json?.balance ?? 0)
+          setBalance(Number.isFinite(nextBalance) ? nextBalance : 0)
+        }
+      }
     })()
 
     try {
