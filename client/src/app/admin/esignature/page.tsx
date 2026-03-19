@@ -47,6 +47,12 @@ export default function ESignaturePage() {
   const [sendResultOk, setSendResultOk] = useState<boolean>(true)
   const [sendResultMessage, setSendResultMessage] = useState('')
   const [recipientModalDoc, setRecipientModalDoc] = useState<Document | null>(null)
+  const [downloadFilesCtx, setDownloadFilesCtx] = useState<{
+    files: Array<{ file_name: string; file_type: string; file_b64: string }>
+    sigData: any
+    fields: EsignField[]
+  } | null>(null)
+  const [downloadingFileIdx, setDownloadingFileIdx] = useState<number | null>(null)
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [isSuccessModalOpen, setIsSuccessModalOpen] = useState(false)
   const [uploadFiles, setUploadFiles] = useState<File[]>([])
@@ -558,164 +564,133 @@ export default function ESignaturePage() {
     }
   }
 
+  // Core PDF renderer for a single file entry
+  const performFileDownload = async (
+    fileEntry: { file_name: string; file_type: string; file_b64: string },
+    sigData: any,
+    fields: EsignField[],
+    fileIndex = 0
+  ) => {
+    const pdfjsLib = await loadPdfJs()
+    const b64Raw = fileEntry.file_b64
+    let pdfSrc = b64Raw
+    if (!b64Raw.startsWith('data:') && !b64Raw.startsWith('http')) {
+      const mt = fileEntry.file_type || 'application/pdf'
+      pdfSrc = `data:${mt};base64,${b64Raw}`
+    }
+    const b64 = pdfSrc.includes(',') ? pdfSrc.split(',')[1] : pdfSrc
+    const PAGE_WIDTH = 816
+    const PAGE_HEIGHT = 1056
+    const PDF_RENDER_QUALITY = 4
+    const pdfDoc = await pdfjsLib.getDocument({ data: atob(b64) }).promise
+    const numPages = pdfDoc.numPages
+    const pageImages: string[] = []
+    for (let i = 1; i <= numPages; i++) {
+      const page = await pdfDoc.getPage(i)
+      const unscaledViewport = page.getViewport({ scale: 1 })
+      const scaleToWidth = PAGE_WIDTH / unscaledViewport.width
+      const viewport = page.getViewport({ scale: scaleToWidth * PDF_RENDER_QUALITY })
+      const canvas = document.createElement('canvas')
+      canvas.width = viewport.width
+      canvas.height = viewport.height
+      const ctx = canvas.getContext('2d')
+      if (ctx) {
+        ctx.fillStyle = '#ffffff'
+        ctx.fillRect(0, 0, canvas.width, canvas.height)
+        await page.render({ canvasContext: ctx, viewport }).promise
+        pageImages.push(canvas.toDataURL('image/png'))
+      }
+    }
+    if (pageImages.length === 0) throw new Error('Failed to render PDF pages')
+    const pdf = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'letter' })
+    const pdfW = pdf.internal.pageSize.getWidth()
+    const pdfH = pdf.internal.pageSize.getHeight()
+    for (let i = 0; i < pageImages.length; i++) {
+      if (i > 0) pdf.addPage()
+      pdf.addImage(pageImages[i], 'PNG', 0, 0, pdfW, pdfH)
+    }
+    const fullName = String(sigData?.full_name ?? '').trim()
+    const initials = fullName ? fullName.split(' ').map((n: string) => n[0]).join('').toUpperCase() : ''
+    const signature = String(sigData?.signature_image ?? '').trim()
+    const signedDate = (() => {
+      const raw = String(sigData?.signed_at ?? sigData?.updated_at ?? sigData?.created_at ?? '').trim()
+      if (!raw) return ''
+      try { const d = new Date(raw); return Number.isNaN(d.getTime()) ? '' : d.toLocaleDateString('en-CA') } catch { return '' }
+    })()
+    const xScale = pdfW / PAGE_WIDTH
+    const yScale = pdfH / PAGE_HEIGHT
+    const fileFields = fields.filter(f => (f as any).fileIndex === undefined ? fileIndex === 0 : (f as any).fileIndex === fileIndex)
+    fileFields.forEach(field => {
+      const pageNum = Math.min(Math.max(field.page || 1, 1), pdf.getNumberOfPages())
+      pdf.setPage(pageNum)
+      const x = field.x * xScale; const y = field.y * yScale
+      const w = field.width * xScale; const h = field.height * yScale
+      try {
+        switch (field.type) {
+          case 'signature':
+            if (signature) { let src = signature; if (!signature.startsWith('data:') && !signature.startsWith('http')) src = `data:image/png;base64,${signature}`; pdf.addImage(src, 'PNG', x, y, w, h) }
+            break
+          case 'initial':
+            if (initials) { pdf.setTextColor(29,78,216); pdf.setFontSize(14); pdf.setFont('helvetica','bold'); pdf.text(initials,x+w/2,y+h/2,{align:'center',baseline:'middle'}); pdf.setFont('helvetica','normal') }
+            break
+          case 'stamp':
+            pdf.setDrawColor(220,38,38); pdf.setTextColor(220,38,38)
+            pdf.circle(x+w/2,y+h/2,Math.max(Math.min(w,h)/2-2,2),'S'); pdf.circle(x+w/2,y+h/2,Math.max(Math.min(w,h)/2-8,1),'S')
+            pdf.setFontSize(12); pdf.setFont('helvetica','bold'); pdf.text('APPROVED',x+w/2,y+h/2-5,{align:'center'})
+            pdf.setFontSize(9); pdf.setFont('helvetica','normal'); pdf.text(new Date().toLocaleDateString('en-CA'),x+w/2,y+h/2+8,{align:'center'})
+            break
+          case 'dateSigned':
+            if (signedDate) { pdf.setTextColor(55,65,81); pdf.setFontSize(10); pdf.text(signedDate,x+w/2,y+h/2,{align:'center',baseline:'middle'}) }
+            break
+          case 'name':
+            pdf.setTextColor(17,24,39); pdf.setFontSize(10)
+            if (fullName) pdf.text(fullName,x+5,y+h/2,{baseline:'middle'})
+            else if (field.value) pdf.text(String(field.value),x+5,y+h/2,{baseline:'middle'})
+            break
+          case 'company': case 'title': case 'text':
+            pdf.setTextColor(55,65,81); pdf.setFontSize(10)
+            if (field.value) pdf.text(String(field.value),x+5,y+h/2,{baseline:'middle'})
+            break
+          case 'checkbox':
+            pdf.setDrawColor(37,99,235); pdf.roundedRect(x+w/2-7.5,y+h/2-7.5,15,15,2,2,'S')
+            if (['true','1','yes'].includes(String(field.value??'').toLowerCase())) { pdf.setTextColor(37,99,235); pdf.setFontSize(12); pdf.text('✓',x+w/2,y+h/2+1,{align:'center',baseline:'middle'}) }
+            break
+        }
+      } catch (err) { console.error('Field render error:', field.id, err) }
+    })
+    const safeName = (fileEntry.file_name || 'document').replace(/[^a-z0-9._-]/gi, '_')
+    pdf.save(safeName.endsWith('.pdf') ? safeName : `${safeName}.pdf`)
+  }
+
   const handleDownloadDocument = async (doc: Document) => {
     if (typeof window === 'undefined') return
-
     try {
-      // 1. Fetch signature record to get document_file
       const sigRes = await fetch(`/api/esignature/signature/${encodeURIComponent(doc.id)}`, { cache: 'no-store' })
       if (!sigRes.ok) throw new Error('Failed to load signature record')
       const sigData = await sigRes.json()
       if (!sigData?.document_file) throw new Error('No document file found')
 
-      // 2. Fetch fields for this document
       const fieldsRes = await fetch(`/api/esignature/fields?dealId=${encodeURIComponent(doc.id)}`, { cache: 'no-store' })
       const fieldsJson = fieldsRes.ok ? await fieldsRes.json().catch(() => null) : null
       const fields: EsignField[] = Array.isArray(fieldsJson?.fields) ? fieldsJson.fields : []
 
-      // 3. Load PDF.js
-      const pdfjsLib = await loadPdfJs()
-
-      // 4. Convert document_file to proper data URL
-      let pdfSrc = sigData.document_file
-      if (!pdfSrc.startsWith('data:')) {
-        pdfSrc = `data:application/pdf;base64,${pdfSrc}`
+      // Parse document_file: may be JSON array, JSON object, or plain base64
+      const rawDoc = String(sigData.document_file || '').trim()
+      let fileList: Array<{ file_name: string; file_type: string; file_b64: string }> = []
+      if (rawDoc.startsWith('[')) {
+        try { const p = JSON.parse(rawDoc); if (Array.isArray(p) && p.length > 0) fileList = p } catch {}
+      } else if (rawDoc.startsWith('{')) {
+        try { const p = JSON.parse(rawDoc); if (p?.file_b64) fileList = [p] } catch {}
+      }
+      if (fileList.length === 0) {
+        fileList = [{ file_name: doc.title || 'document.pdf', file_type: 'application/pdf', file_b64: rawDoc }]
       }
 
-      // 5. Load and render PDF pages to images
-      const pdfDoc = await pdfjsLib.getDocument({ data: atob(pdfSrc.split(',')[1]) }).promise
-      const numPages = pdfDoc.numPages
-      const PAGE_WIDTH = 816
-      const PAGE_HEIGHT = 1056
-      const PDF_RENDER_QUALITY = 4
-      const pageImages: string[] = []
-
-      for (let i = 1; i <= numPages; i++) {
-        const page = await pdfDoc.getPage(i)
-        const unscaledViewport = page.getViewport({ scale: 1 })
-        const scaleToWidth = PAGE_WIDTH / unscaledViewport.width
-        const viewport = page.getViewport({ scale: scaleToWidth * PDF_RENDER_QUALITY })
-
-        const canvas = document.createElement('canvas')
-        canvas.width = viewport.width
-        canvas.height = viewport.height
-        const ctx = canvas.getContext('2d')
-        if (ctx) {
-          ctx.fillStyle = '#ffffff'
-          ctx.fillRect(0, 0, canvas.width, canvas.height)
-          await page.render({ canvasContext: ctx, viewport }).promise
-          pageImages.push(canvas.toDataURL('image/png'))
-        }
+      if (fileList.length === 1) {
+        await performFileDownload(fileList[0], sigData, fields, 0)
+      } else {
+        setDownloadFilesCtx({ files: fileList, sigData, fields })
       }
-
-      if (pageImages.length === 0) throw new Error('Failed to render PDF pages')
-
-      // 6. Create output PDF with jsPDF
-      const pdf = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'letter' })
-      const pdfW = pdf.internal.pageSize.getWidth()
-      const pdfH = pdf.internal.pageSize.getHeight()
-
-      for (let i = 0; i < pageImages.length; i++) {
-        if (i > 0) pdf.addPage()
-        pdf.addImage(pageImages[i], 'PNG', 0, 0, pdfW, pdfH)
-      }
-
-      // 7. Overlay fields
-      const fullName = String(sigData.full_name ?? '').trim()
-      const initials = fullName ? fullName.split(' ').map((n: string) => n[0]).join('').toUpperCase() : ''
-      const signature = String(sigData.signature_image ?? '').trim()
-      const signedDate = (() => {
-        const raw = String(sigData.signed_at ?? sigData.updated_at ?? sigData.created_at ?? '').trim()
-        if (!raw) return ''
-        try {
-          const d = new Date(raw)
-          return Number.isNaN(d.getTime()) ? '' : d.toLocaleDateString('en-CA')
-        } catch { return '' }
-      })()
-
-      const xScale = pdfW / PAGE_WIDTH
-      const yScale = pdfH / PAGE_HEIGHT
-
-      fields.forEach(field => {
-        const pageNum = Math.min(Math.max(field.page || 1, 1), pdf.getNumberOfPages())
-        pdf.setPage(pageNum)
-        const x = field.x * xScale
-        const y = field.y * yScale
-        const w = field.width * xScale
-        const h = field.height * yScale
-
-        try {
-          switch (field.type) {
-            case 'signature':
-              if (signature) {
-                let src = signature
-                if (!signature.startsWith('data:') && !signature.startsWith('http')) {
-                  src = `data:image/png;base64,${signature}`
-                }
-                pdf.addImage(src, 'PNG', x, y, w, h)
-              }
-              break
-            case 'initial':
-              if (initials) {
-                pdf.setTextColor(29, 78, 216)
-                pdf.setFontSize(14)
-                pdf.setFont('helvetica', 'bold')
-                pdf.text(initials, x + w / 2, y + h / 2, { align: 'center', baseline: 'middle' })
-                pdf.setFont('helvetica', 'normal')
-              }
-              break
-            case 'stamp':
-              pdf.setDrawColor(220, 38, 38)
-              pdf.setTextColor(220, 38, 38)
-              pdf.circle(x + w / 2, y + h / 2, Math.max(Math.min(w, h) / 2 - 2, 2), 'S')
-              pdf.circle(x + w / 2, y + h / 2, Math.max(Math.min(w, h) / 2 - 8, 1), 'S')
-              pdf.setFontSize(12)
-              pdf.setFont('helvetica', 'bold')
-              pdf.text('APPROVED', x + w / 2, y + h / 2 - 5, { align: 'center' })
-              pdf.setFontSize(9)
-              pdf.setFont('helvetica', 'normal')
-              pdf.text(new Date().toLocaleDateString('en-CA'), x + w / 2, y + h / 2 + 8, { align: 'center' })
-              break
-            case 'dateSigned':
-              if (signedDate) {
-                pdf.setTextColor(55, 65, 81)
-                pdf.setFontSize(10)
-                pdf.text(signedDate, x + w / 2, y + h / 2, { align: 'center', baseline: 'middle' })
-              }
-              break
-            case 'name':
-              pdf.setTextColor(17, 24, 39)
-              pdf.setFontSize(10)
-              if (fullName) {
-                pdf.text(fullName, x + 5, y + h / 2, { baseline: 'middle' })
-              } else if (field.value) {
-                pdf.text(String(field.value), x + 5, y + h / 2, { baseline: 'middle' })
-              }
-              break
-            case 'company':
-            case 'title':
-            case 'text':
-              pdf.setTextColor(55, 65, 81)
-              pdf.setFontSize(10)
-              if (field.value) pdf.text(String(field.value), x + 5, y + h / 2, { baseline: 'middle' })
-              break
-            case 'checkbox':
-              pdf.setDrawColor(37, 99, 235)
-              pdf.roundedRect(x + w / 2 - 7.5, y + h / 2 - 7.5, 15, 15, 2, 2, 'S')
-              if (['true', '1', 'yes'].includes(String(field.value ?? '').toLowerCase())) {
-                pdf.setTextColor(37, 99, 235)
-                pdf.setFontSize(12)
-                pdf.text('✓', x + w / 2, y + h / 2 + 1, { align: 'center', baseline: 'middle' })
-              }
-              break
-          }
-        } catch (err) {
-          console.error('Field render error:', field.id, err)
-        }
-      })
-
-      // 8. Save PDF
-      pdf.save(`Document_${doc.id}_with_fields.pdf`)
     } catch (err: any) {
       console.error('Download error:', err)
       alert(`Download failed: ${err?.message || 'Unknown error'}`)
@@ -1527,6 +1502,62 @@ export default function ESignaturePage() {
                 className="px-5 py-2 text-sm font-semibold text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
               >
                 {esignModalBlocking ? 'OK' : 'Continue'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Download files picker modal — shown when document has multiple files */}
+      {downloadFilesCtx && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/40" onClick={() => { setDownloadFilesCtx(null); setDownloadingFileIdx(null) }} />
+          <div className="relative w-full max-w-sm rounded-2xl border border-slate-200 bg-white shadow-2xl overflow-hidden">
+            <div className="px-6 py-4 border-b border-slate-200">
+              <div className="text-base font-bold text-slate-900">Select file to download</div>
+              <div className="mt-0.5 text-xs text-slate-500">This document has {downloadFilesCtx.files.length} files</div>
+            </div>
+            <div className="px-6 py-4 space-y-2 max-h-72 overflow-auto">
+              {downloadFilesCtx.files.map((file, idx) => (
+                <div key={`dl-file-${idx}`} className="flex items-center justify-between gap-3 py-2 border-b border-slate-100 last:border-0">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <svg className="w-5 h-5 text-blue-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                    <span className="text-sm text-slate-700 truncate">{file.file_name || `File ${idx + 1}`}</span>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={downloadingFileIdx === idx}
+                    onClick={async () => {
+                      setDownloadingFileIdx(idx)
+                      try {
+                        await performFileDownload(file, downloadFilesCtx.sigData, downloadFilesCtx.fields, idx)
+                      } catch (err: any) {
+                        alert(`Download failed: ${err?.message || 'Unknown error'}`)
+                      } finally {
+                        setDownloadingFileIdx(null)
+                      }
+                    }}
+                    className="shrink-0 h-8 px-3 rounded-lg bg-green-600 text-white text-xs font-semibold hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-1"
+                  >
+                    {downloadingFileIdx === idx ? (
+                      <svg className="w-3 h-3 animate-spin" viewBox="0 0 24 24" fill="none"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+                    ) : (
+                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+                    )}
+                    {downloadingFileIdx === idx ? 'Downloading...' : 'Download'}
+                  </button>
+                </div>
+              ))}
+            </div>
+            <div className="px-6 py-4 flex justify-end border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => { setDownloadFilesCtx(null); setDownloadingFileIdx(null) }}
+                className="h-9 px-6 rounded-full bg-slate-100 text-slate-700 text-sm font-semibold hover:bg-slate-200"
+              >
+                Close
               </button>
             </div>
           </div>

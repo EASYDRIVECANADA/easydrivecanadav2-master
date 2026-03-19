@@ -850,8 +850,8 @@ export default function PrepareDocumentPage() {
       const xScale = pdfW / PAGE_WIDTH
       const yScale = pdfH / PAGE_HEIGHT
 
-      // Overlay fields on their respective pages
-      fields.forEach(field => {
+      // Overlay fields on their respective pages — only for the currently viewed file
+      fields.filter(f => (f.fileIndex ?? 0) === selectedFileIndex).forEach(field => {
         const pageNum = Math.min(Math.max(field.page || 1, 1), pdf.getNumberOfPages())
         pdf.setPage(pageNum)
 
@@ -938,7 +938,6 @@ export default function PrepareDocumentPage() {
 
       // Save the PDF
       pdf.save(`Document_${dealId}_with_fields.pdf`)
-      openActionModal(true, 'Download started', 'Your document is downloading now.')
     } catch (e: any) {
       openActionModal(false, 'Download failed', String(e?.message || 'Unknown error'))
     } finally {

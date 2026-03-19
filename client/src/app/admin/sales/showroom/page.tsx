@@ -113,7 +113,10 @@ export default function CustomerShowroomPage() {
             return []
           }
         }
-        const res = await fetch('/api/vehicles', { cache: 'no-store' })
+        const storedSession = typeof window !== 'undefined' ? window.localStorage.getItem('edc_admin_session') : null
+        const sessionData = storedSession ? (() => { try { return JSON.parse(storedSession) } catch { return null } })() : null
+        const userId = String(sessionData?.user_id ?? '').trim()
+        const res = await fetch(userId ? `/api/vehicles?user_id=${encodeURIComponent(userId)}` : '/api/vehicles', { cache: 'no-store' })
         const json = await res.json().catch(() => ({}))
         if (!res.ok || json.error) throw new Error(json.error || `Failed to fetch vehicles (${res.status})`)
 

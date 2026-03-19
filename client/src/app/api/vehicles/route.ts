@@ -5,7 +5,7 @@ export const dynamic = 'force-dynamic'
 export const revalidate = 0
 export const fetchCache = 'force-no-store'
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
     const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
@@ -16,11 +16,16 @@ export async function GET() {
       )
     }
 
+    const url = new URL(request.url)
+    const userId = url.searchParams.get('user_id')?.trim() || ''
+
     const supabase = createClient(supabaseUrl, supabaseAnonKey, {
       auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
     })
 
-    const queryPromise = supabase.from('edc_vehicles').select('*').order('created_at', { ascending: false })
+    let query = supabase.from('edc_vehicles').select('*').order('created_at', { ascending: false })
+    if (userId) query = query.eq('user_id', userId)
+    const queryPromise = query
 
     const timeoutMs = 6000
     const timeoutPromise = new Promise<never>((_, reject) => {
