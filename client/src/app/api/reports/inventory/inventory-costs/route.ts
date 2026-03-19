@@ -60,6 +60,7 @@ export async function GET(request: Request) {
     const statusRaw = url.searchParams.get('status')
     const statuses = splitStatuses(statusRaw)
     const perPage = Math.max(1, Number(url.searchParams.get('perPage') ?? '50') || 50)
+    const userId = String(url.searchParams.get('userId') ?? '').trim()
 
     const supabaseUrl = String(process.env.NEXT_PUBLIC_SUPABASE_URL || '').replace(/\/+$/, '')
     const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
@@ -83,7 +84,9 @@ export async function GET(request: Request) {
       'total',
     ].join(',')
 
-    const costsUrl = `${supabaseUrl}/rest/v1/edc_costs?select=${encodeURIComponent(costSelect)}&order=created_at.desc&limit=${encodeURIComponent(String(Math.min(5000, Math.max(50, perPage * 20))))}`
+    const costsQs = [`select=${encodeURIComponent(costSelect)}`, `order=created_at.desc`, `limit=${encodeURIComponent(String(Math.min(5000, Math.max(50, perPage * 20))))}`]
+    if (userId) costsQs.push(`user_id=eq.${encodeURIComponent(userId)}`)
+    const costsUrl = `${supabaseUrl}/rest/v1/edc_costs?${costsQs.join('&')}`
     const cRes = await fetch(costsUrl, {
       method: 'GET',
       headers: {

@@ -69,6 +69,7 @@ export async function GET(request: Request) {
     const to = normalizeDateIso(url.searchParams.get('to'))
     const statusRaw = url.searchParams.get('status')
     const statuses = splitStatuses(statusRaw)
+    const userId = String(url.searchParams.get('userId') ?? '').trim()
 
     const supabaseUrl = String(process.env.NEXT_PUBLIC_SUPABASE_URL || '').replace(/\/+$/, '')
     const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
@@ -93,6 +94,7 @@ export async function GET(request: Request) {
     ].join(',')
 
     const purchaseFilters: string[] = [`select=${encodeURIComponent(purchaseSelect)}`]
+    if (userId) purchaseFilters.push(`user_id=eq.${encodeURIComponent(userId)}`)
     if (from) purchaseFilters.push(`purchased_on=gte.${encodeURIComponent(from)}`)
     if (to) purchaseFilters.push(`purchased_on=lte.${encodeURIComponent(to)}`)
     purchaseFilters.push('order=purchased_on.desc')

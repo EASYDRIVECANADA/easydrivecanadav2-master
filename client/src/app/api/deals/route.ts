@@ -7,8 +7,9 @@ export const fetchCache = 'force-no-store'
 const baseUrl = (process.env.NEXT_PUBLIC_SUPABASE_URL || '').replace(/\/+$/, '')
 const apiKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 
-async function queryAll(table: string) {
-  const res = await fetch(`${baseUrl}/rest/v1/${table}?order=created_at.desc`, {
+async function queryAll(table: string, extraFilter?: string) {
+  const filter = extraFilter ? `&${extraFilter}` : ''
+  const res = await fetch(`${baseUrl}/rest/v1/${table}?order=created_at.desc${filter}`, {
     method: 'GET',
     headers: { 'apikey': apiKey, 'Authorization': `Bearer ${apiKey}` },
     cache: 'no-store',
@@ -22,11 +23,15 @@ function getDealId(row: any): string {
   return String(row.dealid ?? row.dealId ?? row.deal_id ?? row.id ?? '')
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const url = new URL(request.url)
+    const userId = String(url.searchParams.get('userId') ?? '').trim()
+    const userFilter = userId ? `user_id=eq.${encodeURIComponent(userId)}` : undefined
+
     // Fetch all columns from all 5 tables in parallel
     const [customers, vehicles, worksheets, disclosures, deliveries] = await Promise.all([
-      queryAll('edc_deals_customers'),
+      queryAll('edc_deals_customers', userFilter),
       queryAll('edc_deals_vehicles'),
       queryAll('edc_deals_worksheet'),
       queryAll('edc_deals_disclosures'),

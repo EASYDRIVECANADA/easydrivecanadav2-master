@@ -43,7 +43,14 @@ export default function InventoryValuePage() {
         setLoading(true)
         setError(null)
 
+        let userId = ''
+        try {
+          const raw = typeof window !== 'undefined' ? window.localStorage.getItem('edc_admin_session') : null
+          if (raw) userId = String((JSON.parse(raw) as { user_id?: string })?.user_id ?? '').trim()
+        } catch { userId = '' }
+
         const qs = new URLSearchParams()
+        if (userId) qs.set('userId', userId)
         if (status) qs.set('status', status)
         if (valueOn) qs.set('valueOn', valueOn)
 

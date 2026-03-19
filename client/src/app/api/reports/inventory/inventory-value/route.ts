@@ -81,6 +81,7 @@ export async function GET(request: Request) {
     const statusRaw = url.searchParams.get('status')
     const statuses = splitStatuses(statusRaw)
     const valueOn = normalizeDateIso(url.searchParams.get('valueOn'))
+    const userId = String(url.searchParams.get('userId') ?? '').trim()
 
     const supabaseUrl = String(process.env.NEXT_PUBLIC_SUPABASE_URL || '').replace(/\/+$/, '')
     const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
@@ -105,6 +106,7 @@ export async function GET(request: Request) {
     ].join(',')
 
     const vQs: string[] = [`select=${encodeURIComponent(vehicleSelect)}`, 'order=created_at.desc', 'limit=5000']
+    if (userId) vQs.push(`user_id=eq.${encodeURIComponent(userId)}`)
     const vUrl = `${supabaseUrl}/rest/v1/edc_vehicles?${vQs.join('&')}`
     const vRes = await fetch(vUrl, {
       method: 'GET',

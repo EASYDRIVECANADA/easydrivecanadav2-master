@@ -74,6 +74,7 @@ export async function GET(request: Request) {
     const statuses = splitStatuses(statusRaw)
     const filterType = String(url.searchParams.get('filterType') ?? 'Purchased Between').trim()
     const perPage = Math.max(1, Number(url.searchParams.get('perPage') ?? '150') || 150)
+    const userId = String(url.searchParams.get('userId') ?? '').trim()
 
     const supabaseUrl = String(process.env.NEXT_PUBLIC_SUPABASE_URL || '').replace(/\/+$/, '')
     const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
@@ -99,6 +100,7 @@ export async function GET(request: Request) {
     ].join(',')
 
     const purchaseQs: string[] = [`select=${encodeURIComponent(purchaseSelect)}`]
+    if (userId) purchaseQs.push(`user_id=eq.${encodeURIComponent(userId)}`)
     purchaseQs.push('order=purchased_on.desc')
     purchaseQs.push(`limit=${encodeURIComponent(String(Math.min(5000, Math.max(50, perPage * 20))))}`)
 

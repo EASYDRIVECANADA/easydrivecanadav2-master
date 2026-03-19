@@ -64,6 +64,7 @@ export async function GET(request: Request) {
     const typeFilter = normalizeFilterValue(url.searchParams.get('type'))
     const statusFilter = normalizeFilterValue(url.searchParams.get('status'))
     const certFilter = normalizeFilterValue(url.searchParams.get('cert'))
+    const userId = String(url.searchParams.get('userId') ?? '').trim()
 
     const supabaseUrl = String(process.env.NEXT_PUBLIC_SUPABASE_URL || '').replace(/\/+$/, '')
     const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
@@ -93,6 +94,7 @@ export async function GET(request: Request) {
     ].join(',')
 
     const qs: string[] = [`select=${encodeURIComponent(select)}`, 'order=created_at.desc', 'limit=5000']
+    if (userId) qs.push(`user_id=eq.${encodeURIComponent(userId)}`)
     if (statusFilter) qs.push(`status=eq.${encodeURIComponent(statusFilter)}`)
 
     const vehiclesUrl = `${supabaseUrl}/rest/v1/edc_vehicles?${qs.join('&')}`

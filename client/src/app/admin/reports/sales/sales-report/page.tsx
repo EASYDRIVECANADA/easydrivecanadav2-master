@@ -79,7 +79,17 @@ export default function SalesReportPage() {
         setLoading(true)
         setError(null)
 
-        const res = await fetch('/api/deals', { cache: 'no-store' })
+        let userId = ''
+        try {
+          const raw = typeof window !== 'undefined' ? window.localStorage.getItem('edc_admin_session') : null
+          if (raw) {
+            const parsed = JSON.parse(raw) as { user_id?: string }
+            userId = String(parsed?.user_id ?? '').trim()
+          }
+        } catch { userId = '' }
+
+        const qs = userId ? `?userId=${encodeURIComponent(userId)}` : ''
+        const res = await fetch(`/api/deals${qs}`, { cache: 'no-store' })
         if (!res.ok) throw new Error(`Failed to fetch deals (${res.status})`)
         const json = await res.json()
         if (json?.error) throw new Error(json.error)
