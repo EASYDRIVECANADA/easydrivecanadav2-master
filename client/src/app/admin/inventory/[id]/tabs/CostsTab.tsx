@@ -940,8 +940,7 @@ export default function CostsTab({ vehicleId, vehiclePrice, stockNumber }: Costs
                             const name = String(t.name || '').trim()
                             let rate = typeof t.rate === 'number' ? t.rate : parseFloat(String(t.rate || '0'))
                             if (!Number.isFinite(rate)) rate = 0
-                            if (rate > 1) rate = rate / 100
-                            const pct = (rate * 100).toFixed(2).replace(/\.?0+$/, '')
+                            const pct = (rate > 1 ? rate : rate * 100).toFixed(2).replace(/\.?0+$/, '')
                             return (
                               <option key={t.id} value={name}>
                                 {name} {pct}%
