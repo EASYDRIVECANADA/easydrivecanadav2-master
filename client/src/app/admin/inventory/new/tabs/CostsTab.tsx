@@ -113,37 +113,10 @@ const CostsTab = forwardRef<CostsTabHandle, CostsTabProps>(function CostsTab({ v
   }, [costsData, vehicleId])
 
   useEffect(() => {
-    const getLoggedInAdminDbUserId = async (): Promise<string | null> => {
-      try {
-        if (typeof window === 'undefined') return null
-        const raw = window.localStorage.getItem('edc_admin_session')
-        if (!raw) return null
-        const parsed = JSON.parse(raw) as { email?: string; user_id?: string }
-        const sessionUserId = String(parsed?.user_id ?? '').trim()
-        if (sessionUserId) return sessionUserId
-        const email = String(parsed?.email ?? '').trim().toLowerCase()
-        if (!email) return null
-
-        const { data, error } = await supabase
-          .from('edc_account_verifications')
-          .select('id')
-          .eq('email', email)
-          .order('created_at', { ascending: false })
-          .limit(1)
-          .maybeSingle()
-
-        if (error) return null
-        return (data as any)?.id ?? null
-      } catch {
-        return null
-      }
-    }
-
     const load = async () => {
       setLoadingTaxPresets(true)
       try {
-        const scopedUserId = await getLoggedInAdminDbUserId()
-        if (!scopedUserId) {
+        if (!userId) {
           setTaxPresets([])
           return
         }
@@ -151,7 +124,7 @@ const CostsTab = forwardRef<CostsTabHandle, CostsTabProps>(function CostsTab({ v
         const { data, error } = await supabase
           .from('presets_tax')
           .select('id, name, rate, default_tax_rate')
-          .eq('user_id', scopedUserId)
+          .eq('user_id', userId)
           .order('name', { ascending: true })
 
         if (error) throw error

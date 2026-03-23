@@ -14,6 +14,13 @@ const TAX_RATES: Record<string, number> = {
   Exempt: 0,
 }
 
+type TaxPresetRow = {
+  id: string
+  name: string | null
+  rate: number | string | null
+  default_tax_rate: boolean | null
+}
+
 interface CostItem {
   id: string
   date: string
@@ -56,6 +63,8 @@ export default function CostsTab({ vehicleId, vehiclePrice, stockNumber }: Costs
     additionalExpenses: [],
   })
   const [userId, setUserId] = useState<string | null>(null)
+  const [taxPresets, setTaxPresets] = useState<TaxPresetRow[]>([])
+  const [loadingTaxPresets, setLoadingTaxPresets] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [saving, setSaving] = useState(false)
 
@@ -83,6 +92,51 @@ export default function CostsTab({ vehicleId, vehiclePrice, stockNumber }: Costs
     void resolve()
   }, [])
 
+  useEffect(() => {
+    const load = async () => {
+      setLoadingTaxPresets(true)
+      try {
+        if (!userId) {
+          setTaxPresets([])
+          return
+        }
+
+        const { data, error } = await supabase
+          .from('presets_tax')
+          .select('id, name, rate, default_tax_rate')
+          .eq('user_id', userId)
+          .order('name', { ascending: true })
+
+        if (error) throw error
+        const rows = Array.isArray(data) ? (data as TaxPresetRow[]) : []
+        setTaxPresets(rows)
+      } catch {
+        setTaxPresets([])
+      } finally {
+        setLoadingTaxPresets(false)
+      }
+    }
+
+    void load()
+  }, [userId])
+
+  useEffect(() => {
+    if (!taxPresets.length) {
+      setModalForm((prev) => ({ ...prev, taxType: 'Exempt' }))
+      return
+    }
+
+    setModalForm((prev) => {
+      const current = String(prev.taxType || '').trim()
+      const hasCurrent = current && taxPresets.some((t) => String(t.name || '').trim() === current)
+      if (hasCurrent) return prev
+      const defaultRow = taxPresets.find((t) => Boolean(t.default_tax_rate) && String(t.name || '').trim())
+      const firstRow = taxPresets.find((t) => String(t.name || '').trim())
+      const nextName = String((defaultRow || firstRow)?.name || 'Exempt').trim()
+      return { ...prev, taxType: nextName || 'Exempt' }
+    })
+  }, [taxPresets])
+
   const [showModal, setShowModal] = useState(false)
   const [showSearchTip, setShowSearchTip] = useState(true)
   const [showPresetTip, setShowPresetTip] = useState(true)
@@ -101,218 +155,33 @@ export default function CostsTab({ vehicleId, vehiclePrice, stockNumber }: Costs
     taxType: 'Exempt',
   })
 
-  // Load purchase price with preference for shared vehicle UUID
-  const fetchPurchasePrice = async () => {
-    try {
-      let row: any = null
+  const resolveTaxRate = (taxType: string | undefined) => {
+    const key = String(taxType || '').trim()
+    if (!key) return 0
 
-      // 1) edc_purchase.id === vehicleId
-      try {
-        const { data, error } = await supabase
-          .from('edc_purchase')
-          .select('purchase_price')
-          .eq('id', vehicleId)
-          .order('updated_at', { ascending: false })
-          .limit(1)
-          .maybeSingle()
-        if (!error && data) row = data
-      } catch {}
-
-      // 2) explicit vehicle_id
-      if (!row) {
-        try {
-          const { data, error } = await supabase
-            .from('edc_purchase')
-            .select('purchase_price')
-            .eq('vehicle_id', vehicleId)
-            .order('updated_at', { ascending: false })
-            .limit(1)
-            .maybeSingle()
-          if (!error && data) row = data
-        } catch {}
-      }
-
-      // 3) fallback to stock_number
-      if (!row && stockNumber) {
-        try {
-          const { data, error } = await supabase
-            .from('edc_purchase')
-            .select('purchase_price')
-            .eq('stock_number', stockNumber)
-            .order('updated_at', { ascending: false })
-            .limit(1)
-            .maybeSingle()
-          if (!error && data) row = data
-        } catch {}
-      }
-
-      if (!row) return
-      const price = Number((row as any)?.purchase_price || 0)
-      setCostsData(prev => ({ ...prev, purchasePrice: Number.isFinite(price) ? price : 0 }))
-    } catch (err) {
-      console.error('Error fetching purchase price:', err)
+    const preset = taxPresets.find((t) => String(t.name || '').trim() === key)
+    if (preset) {
+      let n = typeof preset.rate === 'number' ? preset.rate : parseFloat(String(preset.rate || '0'))
+      if (!Number.isFinite(n)) n = 0
+      if (n > 1) n = n / 100
+      return n
     }
+
+    return TAX_RATES[key] ?? 0
   }
 
-  // Helper: fetch costs strictly by stock number (used by realtime/polling refreshes)
-  const fetchCostsByStock = async () => {
-    if (!stockNumber) return
-    try {
-      const { data, error } = await supabase
-        .from('edc_costs')
-        .select('*')
-        .eq('stock_number', stockNumber)
-        .order('created_at', { ascending: true })
-
-      if (!error && Array.isArray(data) && data.length) {
-        const mapped = data.map((r: any): CostItem => {
-          const price = parseFloat(r.amount ?? '0') || 0
-          const qty = parseFloat(r.quantity ?? '1') || 1
-          const discount = parseFloat(r.discount ?? '0') || 0
-          const tax = parseFloat(r.tax ?? '0') || 0
-          const total = parseFloat(r.total ?? String(Math.max(0, price * qty - discount + tax))) || (price * qty - discount + tax)
-          return {
-            id: String(r.id ?? Date.now()),
-            dbId: r.id,
-            date: (r.created_at ? String(r.created_at).split('T')[0] : new Date().toISOString().split('T')[0]),
-            name: r.name || '',
-            groupName: r.group_name || '',
-            description: r.description || '',
-            vendor: r.vendor || '',
-            invoiceRef: r.invoice_reference || '',
-            price,
-            qty,
-            discount,
-            tax,
-            taxType: r.tax_type || 'HST',
-            total,
-          }
-        })
-
-        setCostsData(prev => ({ ...prev, additionalExpenses: mapped }))
-      }
-    } catch (err) {
-      console.error('Error fetching edc_costs by stock number:', err)
-    }
-  }
-
-  useEffect(() => {
-    fetchPurchasePrice()
-  }, [vehicleId, stockNumber])
-
-  useEffect(() => {
-    fetchCostsData()
-    fetchCostsAny()
-  }, [vehicleId, stockNumber])
-
-  // Realtime: refresh costs when edc_costs changes for this stock number
-  useEffect(() => {
-    if (!stockNumber) return
-    const channel = supabase
-      .channel(`realtime-costs-${stockNumber}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'edc_costs', filter: `stock_number=eq.${stockNumber}` }, () => {
-        fetchCostsByStock()
-      })
-      .subscribe()
-    return () => {
-      supabase.removeChannel(channel)
-    }
-  }, [stockNumber])
-
-  /// Realtime: refresh purchase price when edc_purchase changes for this stock number
-  useEffect(() => {
-    if (!stockNumber) return
-    const channel = supabase
-      .channel(`realtime-purchase-${stockNumber}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'edc_purchase', filter: `stock_number=eq.${stockNumber}` }, () => {
-        fetchPurchasePrice()
-      })
-      .subscribe()
-    return () => {
-      supabase.removeChannel(channel)
-    }
-  }, [stockNumber])
-
-  /// Polling fallback: periodically refresh when realtime is not firing
-  useEffect(() => {
-    if (!stockNumber) return
-    const id = setInterval(() => {
-      fetchCostsByStock()
-      fetchPurchasePrice()
-    }, 2000)
-    return () => clearInterval(id)
-  }, [stockNumber])
-
-  // Realtime: watch edc_vehicles updates for this vehicle (costs_data or price changes)
-  useEffect(() => {
-    if (!vehicleId) return
-    const channel = supabase
-      .channel(`realtime-vehicle-${vehicleId}`)
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'edc_vehicles', filter: `id=eq.${vehicleId}` }, (payload) => {
-        const row: any = payload?.new || {}
-        try {
-          const nextCosts = row.costs_data ? (typeof row.costs_data === 'string' ? JSON.parse(row.costs_data) : row.costs_data) : null
-          setCostsData(prev => {
-            const merged: CostsData = {
-              ...prev,
-              ...(nextCosts || {}),
-              listPrice: typeof row.price === 'number' ? row.price : prev.listPrice,
-              salePrice: row.saleprice === null || row.saleprice === undefined ? prev.salePrice : (Number(row.saleprice) || 0),
-            }
-            if (!Array.isArray((nextCosts as any)?.additionalExpenses) || (nextCosts as any).additionalExpenses.length === 0) {
-              merged.additionalExpenses = prev.additionalExpenses
-            }
-            return merged
-          })
-        } catch {
-          // ignore parse errors
-        }
-      })
-      .subscribe()
-    return () => {
-      supabase.removeChannel(channel)
-    }
-  }, [vehicleId])
-
-  const fetchCostsData = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('edc_vehicles')
-        .select('costs_data, price, saleprice')
-        .eq('id', vehicleId)
-        .maybeSingle()
-
-      if (data) {
-        if (data.costs_data) {
-          const incoming = typeof data.costs_data === 'string'
-            ? JSON.parse(data.costs_data)
-            : data.costs_data
-          setCostsData(prev => ({
-            ...prev,
-            ...incoming,
-            additionalExpenses: Array.isArray(incoming?.additionalExpenses) && incoming.additionalExpenses.length
-              ? incoming.additionalExpenses
-              : prev.additionalExpenses,
-          }))
-        }
-        if (data.price) {
-          setCostsData(prev => ({ ...prev, listPrice: data.price }))
-        }
-        if ((data as any).saleprice !== null && (data as any).saleprice !== undefined) {
-          const sp = Number((data as any).saleprice || 0)
-          setCostsData(prev => ({ ...prev, salePrice: Number.isFinite(sp) ? sp : 0 }))
-        }
-      }
-    } catch (error) {
-      console.error('Error fetching costs data:', error)
-    }
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, value } = e.target
+    setCostsData((prev) => ({
+      ...prev,
+      [name]: parseFloat(value) || 0,
+    }))
   }
 
   const fetchCostsAny = async () => {
     try {
       let rows: any[] | null = null
 
-      // 1) Primary: vehicleId column
       try {
         const { data, error } = await supabase
           .from('edc_costs')
@@ -322,7 +191,6 @@ export default function CostsTab({ vehicleId, vehiclePrice, stockNumber }: Costs
         if (!error && Array.isArray(data) && data.length) rows = data as any[]
       } catch {}
 
-      // 2) Legacy: edc_costs.id === edc_vehicles.id
       if (!rows) {
         try {
           const { data, error } = await supabase
@@ -334,7 +202,6 @@ export default function CostsTab({ vehicleId, vehiclePrice, stockNumber }: Costs
         } catch {}
       }
 
-      // 3) Fallback: stock_number
       if (!rows && stockNumber) {
         try {
           const { data, error } = await supabase
@@ -347,23 +214,6 @@ export default function CostsTab({ vehicleId, vehiclePrice, stockNumber }: Costs
       }
 
       if (!rows) return
-
-      if (rows.length === 1) {
-        const single = rows[0] || {}
-        const rawCosts = single.costs_data || (single as any).costs_data_json
-        if (rawCosts) {
-          try {
-            const parsed = typeof rawCosts === 'string' ? JSON.parse(rawCosts) : rawCosts
-            const expenses = Array.isArray(parsed?.additionalExpenses) ? parsed.additionalExpenses : null
-            if (expenses && expenses.length) {
-              setCostsData(prev => ({ ...prev, additionalExpenses: expenses }))
-              return
-            }
-          } catch {
-            // ignore
-          }
-        }
-      }
 
       const mapped = rows.map((r: any): CostItem => {
         const price = parseFloat(r.amount ?? '0') || 0
@@ -384,23 +234,15 @@ export default function CostsTab({ vehicleId, vehiclePrice, stockNumber }: Costs
           qty,
           discount,
           tax,
-          taxType: r.tax_type || 'HST',
+          taxType: r.tax_type || 'Exempt',
           total,
         }
       })
 
-      setCostsData(prev => ({ ...prev, additionalExpenses: mapped }))
+      setCostsData((prev) => ({ ...prev, additionalExpenses: mapped }))
     } catch (err) {
       console.error('Error fetching edc_costs:', err)
     }
-  }
-
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const { name, value } = e.target
-    setCostsData(prev => ({
-      ...prev,
-      [name]: parseFloat(value) || 0
-    }))
   }
 
   const openAddModal = () => {
@@ -447,7 +289,7 @@ export default function CostsTab({ vehicleId, vehiclePrice, stockNumber }: Costs
       const qty = Number(next.qty || 1)
       const discount = Number(next.discount || 0)
       const subtotal = Math.max(0, price * qty - discount)
-      const rate = TAX_RATES[next.taxType || 'Exempt'] ?? 0
+      const rate = resolveTaxRate(next.taxType || 'Exempt')
       next.tax = subtotal * rate
       return next
     })
@@ -457,7 +299,7 @@ export default function CostsTab({ vehicleId, vehiclePrice, stockNumber }: Costs
     const price = modalForm.price || 0
     const qty = modalForm.qty || 1
     const discount = modalForm.discount || 0
-    const rate = TAX_RATES[modalForm.taxType || 'Exempt'] ?? 0
+    const rate = resolveTaxRate(modalForm.taxType || 'Exempt')
     const taxable = Math.max(0, price * qty - discount)
     const tax = modalForm.taxType && modalForm.taxType !== 'Exempt' ? taxable * rate : 0
     const total = (price * qty) - discount + tax
@@ -498,7 +340,7 @@ export default function CostsTab({ vehicleId, vehiclePrice, stockNumber }: Costs
       } catch (err) {
         console.error('Error updating cost:', err)
       } finally {
-        await fetchCostsByStock()
+        await fetchCostsAny()
       }
     } else {
       const newItem: CostItem = {
@@ -535,7 +377,7 @@ export default function CostsTab({ vehicleId, vehiclePrice, stockNumber }: Costs
         })
         if (res.ok) {
           // Optionally inspect response body if needed
-          await fetchCostsByStock()
+          await fetchCostsAny()
         } else {
           console.error('Webhook responded with non-OK status:', res.status)
         }
@@ -555,7 +397,7 @@ export default function CostsTab({ vehicleId, vehiclePrice, stockNumber }: Costs
           const price = Number(updated.price || 0)
           const qty = Number(updated.qty || 1)
           const discount = Number(updated.discount || 0)
-          const rate = TAX_RATES[updated.taxType || 'Exempt'] ?? 0
+          const rate = resolveTaxRate(updated.taxType || 'Exempt')
           const tax = Math.max(0, (price * qty) - discount) * rate
           updated.tax = tax
           updated.total = (price * qty) - discount + tax
@@ -589,7 +431,7 @@ export default function CostsTab({ vehicleId, vehiclePrice, stockNumber }: Costs
     } catch (err) {
       console.error('Error deleting cost:', err)
     } finally {
-      await fetchCostsByStock()
+      await fetchCostsAny()
     }
   }
 
@@ -1089,7 +931,26 @@ export default function CostsTab({ vehicleId, vehiclePrice, stockNumber }: Costs
                       onChange={handleModalChange}
                       className="bg-gray-50 border border-gray-200 rounded-lg px-4 py-2.5 text-gray-900 focus:bg-white focus:ring-2 focus:ring-[#118df0] focus:border-transparent transition-all cursor-pointer"
                     >
-                      <option value="Exempt">Exempt 0%</option>
+                      {loadingTaxPresets ? (
+                        <option value="">Loading...</option>
+                      ) : taxPresets.length ? (
+                        taxPresets
+                          .filter((t) => String(t.name || '').trim())
+                          .map((t) => {
+                            const name = String(t.name || '').trim()
+                            let rate = typeof t.rate === 'number' ? t.rate : parseFloat(String(t.rate || '0'))
+                            if (!Number.isFinite(rate)) rate = 0
+                            if (rate > 1) rate = rate / 100
+                            const pct = (rate * 100).toFixed(2).replace(/\.?0+$/, '')
+                            return (
+                              <option key={t.id} value={name}>
+                                {name} {pct}%
+                              </option>
+                            )
+                          })
+                      ) : (
+                        <option value="Exempt">Exempt 0%</option>
+                      )}
                     </select>
                   </div>
                 </div>
