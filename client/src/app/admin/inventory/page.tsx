@@ -258,15 +258,15 @@ export default function AdminInventoryPage() {
         .from('edc_purchase')
         .select('purchase_price, actual_cash_value')
         .eq('stock_number', stockNumber)
-        .order('updated_at', { ascending: false })
         .limit(1)
-        .single()
       if (error) {
         console.error('Failed to fetch purchase values:', error)
         return
       }
-      const price = Number(data?.purchase_price || 0)
-      const acv = Number(data?.actual_cash_value || 0)
+      const row = Array.isArray(data) ? data[0] : data
+      if (!row) return
+      const price = Number(row.purchase_price || 0)
+      const acv = Number(row.actual_cash_value || 0)
       setDrawerCosts((prev: any) => ({
         ...prev,
         purchasePrice: isNaN(price) ? 0 : price,

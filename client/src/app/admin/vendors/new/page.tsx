@@ -300,7 +300,7 @@ function AdminVendorsNewPageInner() {
       </div>
 
       {resultOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true">
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4" role="dialog" aria-modal="true">
           <div className="edc-overlay absolute inset-0" onMouseDown={() => { setResultOpen(false); router.push('/admin/vendors'); router.refresh(); }} />
           <div className="edc-modal w-full max-w-md relative">
             <div className="px-6 py-4 border-b border-slate-100">

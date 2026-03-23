@@ -26,6 +26,7 @@ export default function AdminCostumerPage() {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [isCreate, setIsCreate] = useState(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [bulkDeleting, setBulkDeleting] = useState(false)
   const [activeTab, setActiveTab] = useState<'customer' | 'credit' | 'history'>('customer')
   const [printDropdownOpen, setPrintDropdownOpen] = useState(false)
   const [creditConsent, setCreditConsent] = useState(false)
@@ -528,6 +529,7 @@ export default function AdminCostumerPage() {
     try {
       const user_id = await getWebhookUserId().catch(() => null)
       if (!user_id) return
+      await supabase.from('edc_creditapp').delete().eq('customer_id', id).eq('user_id', user_id)
       const { error } = await supabase.from('edc_customer').delete().eq('id', id).eq('user_id', user_id)
       if (error) throw error
       setRows((prev) => prev.filter((r) => r.id !== id))
@@ -545,6 +547,33 @@ export default function AdminCostumerPage() {
       setSaveErrorOpen(true)
     } finally {
       setDeletingId(null)
+    }
+  }
+
+  const handleBulkDelete = async () => {
+    const ids = Object.keys(checked).filter((k) => checked[k])
+    if (!ids.length) return
+    const ok = confirm(`Delete ${ids.length} customer${ids.length > 1 ? 's' : ''}?`)
+    if (!ok) return
+    setBulkDeleting(true)
+    try {
+      const user_id = await getWebhookUserId().catch(() => null)
+      if (!user_id) return
+      await supabase.from('edc_creditapp').delete().in('customer_id', ids).eq('user_id', user_id)
+      const { error } = await supabase.from('edc_customer').delete().in('id', ids).eq('user_id', user_id)
+      if (error) throw error
+      setRows((prev) => prev.filter((r) => !ids.includes(r.id)))
+      setChecked({})
+      setCheckedAll(false)
+      if (editingId && ids.includes(editingId)) {
+        setShowCreate(false)
+        setEditingId(null)
+      }
+    } catch (err) {
+      setSaveErrorMessage(`Failed to delete: ${err instanceof Error ? err.message : String(err)}`)
+      setSaveErrorOpen(true)
+    } finally {
+      setBulkDeleting(false)
     }
   }
 
@@ -730,7 +759,7 @@ export default function AdminCostumerPage() {
   return (
     <div className="min-h-screen">
       {saveSuccessOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center" role="dialog" aria-modal="true">
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center" role="dialog" aria-modal="true">
           <div className="edc-overlay absolute inset-0" onMouseDown={closeSuccessModal} />
           <div className="edc-modal relative w-[360px]">
             <div className="h-11 px-4 border-b border-slate-100 flex items-center justify-between">
@@ -750,7 +779,7 @@ export default function AdminCostumerPage() {
       ) : null}
 
       {saveErrorOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center" role="dialog" aria-modal="true">
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center" role="dialog" aria-modal="true">
           <div className="edc-overlay absolute inset-0" onMouseDown={() => setSaveErrorOpen(false)} />
           <div className="edc-modal relative w-[360px]">
             <div className="h-11 px-4 border-b border-slate-100 flex items-center justify-between">
@@ -912,17 +941,34 @@ export default function AdminCostumerPage() {
                 </div>
               </div>
 
-              <button
-                type="button"
-                onClick={handleOpenCreate}
-                className="w-10 h-10 rounded-xl bg-[#1EA7FF] text-white flex items-center justify-center hover:bg-[#0B1F3A] transition-colors"
-                aria-label="Add new costumer"
-                title="Add new costumer"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                </svg>
-              </button>
+              {Object.values(checked).some(Boolean) ? (
+                <button
+                  type="button"
+                  onClick={() => void handleBulkDelete()}
+                  disabled={bulkDeleting}
+                  className="h-10 px-4 rounded-xl bg-red-600 text-white text-sm font-semibold flex items-center gap-2 hover:bg-red-700 disabled:opacity-50 transition-colors"
+                  title="Delete selected"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 11v6m4-6v6" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 7h6m2 0H7m2 0V5a2 2 0 012-2h2a2 2 0 012 2v2" />
+                  </svg>
+                  {bulkDeleting ? 'Deleting…' : `Delete (${Object.values(checked).filter(Boolean).length})`}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleOpenCreate}
+                  className="w-10 h-10 rounded-xl bg-[#1EA7FF] text-white flex items-center justify-center hover:bg-[#0B1F3A] transition-colors"
+                  aria-label="Add new costumer"
+                  title="Add new costumer"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                  </svg>
+                </button>
+              )}
 
               <div className="w-20">
                 <select
@@ -947,7 +993,7 @@ export default function AdminCostumerPage() {
                 <thead>
                   <tr className="bg-slate-50/80">
                     <th className="w-10"></th>
-                    <th className="w-10">
+                    <th className="w-10 text-center">
                       <input
                         type="checkbox"
                         className="h-4 w-4"
@@ -962,7 +1008,6 @@ export default function AdminCostumerPage() {
                     <th>Email</th>
                     <th>DL</th>
                     <th>DOB</th>
-                    <th className="w-10"></th>
                   </tr>
                 </thead>
 
@@ -1005,32 +1050,12 @@ export default function AdminCostumerPage() {
                       <td className="px-6 py-3 text-sm text-cyan-700 whitespace-nowrap">{r.email}</td>
                       <td className="px-6 py-3 text-sm text-slate-600 whitespace-nowrap">{r.dl || r.rin || '—'}</td>
                       <td className="px-6 py-3 text-sm text-slate-600 whitespace-nowrap">{r.dob}</td>
-                      <td className="px-3 py-3 text-right">
-                        <button
-                          type="button"
-                          className={
-                            deletingId === r.id
-                              ? 'text-slate-200 cursor-not-allowed'
-                              : 'text-slate-400 hover:text-danger-500 transition-colors'
-                          }
-                          aria-label="Delete"
-                          disabled={deletingId === r.id}
-                          onClick={() => handleDelete(r.id)}
-                          title="Delete"
-                        >
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7" />
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 11v6m4-6v6" />
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 7h6m2 0H7m2 0V5a2 2 0 012-2h2a2 2 0 012 2v2" />
-                          </svg>
-                        </button>
-                      </td>
                     </tr>
                   ))}
 
                   {pageRows.length === 0 ? (
                     <tr>
-                      <td className="px-6 py-10 text-center text-sm text-slate-400" colSpan={9}>
+                      <td className="px-6 py-10 text-center text-sm text-slate-400" colSpan={8}>
                         No results.
                       </td>
                     </tr>

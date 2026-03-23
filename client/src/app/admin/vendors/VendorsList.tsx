@@ -31,6 +31,9 @@ export default function VendorsList({ compact }: { compact?: boolean }) {
   const [confirmTitle, setConfirmTitle] = useState('')
   const [confirmMessage, setConfirmMessage] = useState('')
 
+  const [checked, setChecked] = useState<Record<string, boolean>>({})
+  const [checkedAll, setCheckedAll] = useState(false)
+
   const getLoggedInAdminDbUserId = useCallback(async (): Promise<string | null> => {
     try {
       if (typeof window === 'undefined') return null
@@ -150,8 +153,32 @@ export default function VendorsList({ compact }: { compact?: boolean }) {
       const { error: delErr } = await supabase.from('edc_vendors').delete().eq('id', row.id)
       if (delErr) throw delErr
       await fetchRows()
+      setChecked((prev) => { const next = { ...prev }; delete next[row.id]; return next })
     }
     setConfirmOpen(true)
+  }
+
+  const confirmBulkDelete = () => {
+    const ids = Object.keys(checked).filter((k) => checked[k])
+    if (!ids.length) return
+    setConfirmTitle('Delete Vendors')
+    setConfirmMessage(`Are you sure you want to delete ${ids.length} vendor${ids.length > 1 ? 's' : ''}?`)
+    confirmActionRef.current = async () => {
+      const { error: delErr } = await supabase.from('edc_vendors').delete().in('id', ids)
+      if (delErr) throw delErr
+      await fetchRows()
+      setChecked({})
+      setCheckedAll(false)
+    }
+    setConfirmOpen(true)
+  }
+
+  const toggleAll = (next: boolean) => {
+    setCheckedAll(next)
+    if (!next) { setChecked({}); return }
+    const nextChecked: Record<string, boolean> = {}
+    for (const r of paged) nextChecked[r.id] = true
+    setChecked(nextChecked)
   }
 
   const runConfirm = async () => {
@@ -179,17 +206,33 @@ export default function VendorsList({ compact }: { compact?: boolean }) {
               placeholder="Search vendors..."
               className="h-10 w-72 max-w-full pl-4 pr-4 rounded-xl border border-slate-200 bg-white text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#1EA7FF]/30 focus:border-[#1EA7FF]/40 transition-all"
             />
-            <button
-              type="button"
-              onClick={openAdd}
-              className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-[#1EA7FF] text-white hover:bg-[#0B1F3A] transition-colors"
-              title="Add Vendor"
-              aria-label="Add Vendor"
-            >
-              <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-              </svg>
-            </button>
+            {Object.values(checked).some(Boolean) ? (
+              <button
+                type="button"
+                onClick={confirmBulkDelete}
+                className="inline-flex h-10 items-center gap-2 px-4 rounded-xl bg-red-600 text-white text-sm font-semibold hover:bg-red-700 transition-colors"
+                title="Delete selected"
+              >
+                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7" />
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M10 11v6m4-6v6" />
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 7h6m2 0H7m2 0V5a2 2 0 012-2h2a2 2 0 012 2v2" />
+                </svg>
+                Delete ({Object.values(checked).filter(Boolean).length})
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={openAdd}
+                className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-[#1EA7FF] text-white hover:bg-[#0B1F3A] transition-colors"
+                title="Add Vendor"
+                aria-label="Add Vendor"
+              >
+                <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                </svg>
+              </button>
+            )}
           </div>
 
           <div className="flex items-center gap-2">
@@ -215,7 +258,15 @@ export default function VendorsList({ compact }: { compact?: boolean }) {
             <thead className="bg-slate-50/80 text-slate-600">
               <tr>
                 <th className="w-10 px-3 py-3 text-left font-semibold"></th>
-                <th className="w-10 px-2 py-3 text-left font-semibold"></th>
+                <th className="w-10 px-2 py-3 text-center font-semibold">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4"
+                    checked={checkedAll && paged.length > 0}
+                    onChange={(e) => toggleAll(e.target.checked)}
+                    aria-label="Select all"
+                  />
+                </th>
                 <th className="px-3 py-3 text-left font-semibold">NAME</th>
                 <th className="w-52 px-3 py-3 text-left font-semibold">PHONE</th>
                 <th className="w-52 px-3 py-3 text-left font-semibold">MOBILE</th>
@@ -247,20 +298,14 @@ export default function VendorsList({ compact }: { compact?: boolean }) {
                         </svg>
                       </button>
                     </td>
-                    <td className="px-2 py-2">
-                      <button
-                        type="button"
-                        onClick={() => confirmDelete(r)}
-                        className="text-red-400 hover:text-red-600 transition-colors"
-                        title="Delete"
-                        aria-label="Delete"
-                      >
-                        <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M3 6h18" />
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M8 6V4h8v2" />
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M19 6l-1 14H6L5 6" />
-                        </svg>
-                      </button>
+                    <td className="px-2 py-2 text-center">
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4"
+                        checked={!!checked[r.id]}
+                        onChange={(e) => setChecked((prev) => ({ ...prev, [r.id]: e.target.checked }))}
+                        aria-label={`Select ${r.vendor_name || ''}`}
+                      />
                     </td>
                     <td className="px-3 py-2">{r.vendor_name || ''}</td>
                     <td className="px-3 py-2 text-slate-900">{r.phone || ''}</td>
@@ -299,7 +344,7 @@ export default function VendorsList({ compact }: { compact?: boolean }) {
       </div>
 
       {confirmOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onMouseDown={() => setConfirmOpen(false)} />
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md relative">
             <div className="px-6 py-4 border-b border-slate-100">

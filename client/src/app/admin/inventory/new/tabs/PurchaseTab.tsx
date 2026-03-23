@@ -114,6 +114,7 @@ const PurchaseTab = forwardRef<PurchaseTabHandle, PurchaseTabProps>(function Pur
     totalVehicleTax: 0,
   })
   const [saving, setSaving] = useState(false)
+  const [alreadySaved, setAlreadySaved] = useState(false)
   const [taxPresets, setTaxPresets] = useState<TaxPresetRow[]>([])
   const [loadingTaxPresets, setLoadingTaxPresets] = useState(false)
   const [vendorSearch, setVendorSearch] = useState('')
@@ -213,7 +214,19 @@ const PurchaseTab = forwardRef<PurchaseTabHandle, PurchaseTabProps>(function Pur
   }, [formData, vehicleId])
 
   useEffect(() => {
-    // webhook-driven: no client-side supabase prefill
+    // Check if a purchase record already exists to prevent double-add
+    const checkExisting = async () => {
+      if (!stockNumber) return
+      const { data } = await supabase
+        .from('edc_purchase')
+        .select('id')
+        .eq('stock_number', String(stockNumber).trim())
+        .limit(1)
+      if (Array.isArray(data) && data.length > 0) {
+        setAlreadySaved(true)
+      }
+    }
+    void checkExisting()
   }, [vehicleId, stockNumber])
 
   useEffect(() => {
@@ -556,7 +569,8 @@ const PurchaseTab = forwardRef<PurchaseTabHandle, PurchaseTabProps>(function Pur
         })
       )
 
-      const res = await fetch('/api/purchase', {
+      const endpoint = alreadySaved ? '/api/updatepurchase' : '/api/purchase'
+      const res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
@@ -569,6 +583,7 @@ const PurchaseTab = forwardRef<PurchaseTabHandle, PurchaseTabProps>(function Pur
         throw new Error(text || 'Webhook did not return done')
       }
 
+      setAlreadySaved(true)
       return true
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error)

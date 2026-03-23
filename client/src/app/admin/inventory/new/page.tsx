@@ -19,6 +19,14 @@ import WarrantyTab from './tabs/WarrantyTab'
 
 type TabType = 'details' | 'disclosures' | 'purchase' | 'costs' | 'warranty'
 
+const normalizeStockNumber = (raw: string) => {
+  const trimmed = String(raw || '').trim()
+  if (!trimmed) return ''
+  const match = trimmed.match(/(\d+)\s*$/)
+  if (!match?.[1]) return trimmed.toUpperCase()
+  return String(Number(match[1]))
+}
+
 export default function NewVehiclePage() {
   const [activeTab, setActiveTab] = useState<TabType>('details')
   const [createdVehicleId, setCreatedVehicleId] = useState<string>('')
@@ -103,6 +111,9 @@ export default function NewVehiclePage() {
   const [saveModalTitle, setSaveModalTitle] = useState('')
   const [saveModalMessage, setSaveModalMessage] = useState('')
   const [pendingNextTab, setPendingNextTab] = useState<TabType | null>(null)
+  const [stockNumberTaken, setStockNumberTaken] = useState(false)
+  const [stockChecking, setStockChecking] = useState(false)
+  const stockCheckTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const adEditorRef = useRef<HTMLDivElement | null>(null)
   const lastAdHtmlRef = useRef<string>('')
   const [adToolbar, setAdToolbar] = useState({
@@ -452,7 +463,31 @@ export default function NewVehiclePage() {
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target
-    if (name === 'stockNumber') return
+    if (name === 'stockNumber') {
+      setFormData({ ...formData, stockNumber: value })
+      setStockNumberTaken(false)
+      if (stockCheckTimerRef.current) clearTimeout(stockCheckTimerRef.current)
+      const trimmed = value.trim()
+      if (!trimmed) return
+      setStockChecking(true)
+      stockCheckTimerRef.current = setTimeout(async () => {
+        try {
+          const normalizedInput = normalizeStockNumber(trimmed)
+          const { data } = await supabase
+            .from('edc_vehicles')
+            .select('stock_number')
+            .limit(500)
+          const taken = Array.isArray(data)
+            && data.some((row: any) => normalizeStockNumber(String(row?.stock_number ?? '')) === normalizedInput)
+          setStockNumberTaken(taken)
+        } catch {
+          setStockNumberTaken(false)
+        } finally {
+          setStockChecking(false)
+        }
+      }, 500)
+      return
+    }
     setFormData({ ...formData, [name]: value })
   }
 
@@ -1093,8 +1128,25 @@ export default function NewVehiclePage() {
                   <label className="block text-sm text-gray-600 mb-1">Stock #</label>
                   <div className="relative">
                     <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">#</span>
-                    <input type="text" name="stockNumber" value={formData.stockNumber} onChange={() => {}} disabled placeholder="1012" className="w-full border border-gray-300 rounded pl-8 pr-3 py-2 text-sm bg-gray-50 text-gray-700 cursor-not-allowed" />
+                    <input
+                      type="text"
+                      name="stockNumber"
+                      value={formData.stockNumber}
+                      onChange={handleChange}
+                      placeholder="1012"
+                      className={`w-full border rounded pl-8 pr-3 py-2 text-sm focus:outline-none focus:ring-1 ${
+                        stockNumberTaken
+                          ? 'border-red-500 bg-red-50 text-red-700 focus:ring-red-400 focus:border-red-500'
+                          : 'border-gray-300 bg-white text-gray-700 focus:ring-[#118df0] focus:border-[#118df0]'
+                      }`}
+                    />
                   </div>
+                  {stockNumberTaken && (
+                    <p className="mt-1 text-xs text-red-600 font-medium">Stock # is already taken, please use another number.</p>
+                  )}
+                  {stockChecking && (
+                    <p className="mt-1 text-xs text-gray-400">Checking availability…</p>
+                  )}
                 </div>
                 <div>
                   <label className="block text-sm text-gray-600 mb-1">In Stock Date</label>

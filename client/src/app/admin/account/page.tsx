@@ -755,16 +755,21 @@ export default function AdminAccountPage() {
       }}
     >
       <div className="relative z-10">
-        <div className="px-6 py-5 bg-transparent">
-          <div className="flex items-center justify-between gap-4">
+        <div className="px-6 pt-8 pb-4 bg-transparent">
+          <div className="flex items-center gap-4">
+            <div className="h-10 w-10 rounded-xl bg-white/10 backdrop-blur flex items-center justify-center shrink-0">
+              <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+              </svg>
+            </div>
             <div>
               <h1 className="text-2xl font-bold text-white drop-shadow-[0_2px_8px_rgba(0,0,0,0.55)]">Account Settings</h1>
-              <p className="text-sm text-white/90 mt-1 drop-shadow-[0_2px_8px_rgba(0,0,0,0.55)]">Manage your admin session and verification details.</p>
+              <p className="text-sm text-white/70 mt-0.5 drop-shadow-[0_2px_8px_rgba(0,0,0,0.55)]">Manage your admin session and verification details.</p>
             </div>
           </div>
         </div>
 
-        <div className="px-6 py-6">
+        <div className="px-6 pb-10">
         {validationModalOpen ? (
           <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4" role="dialog" aria-modal="true">
             <button
@@ -1204,344 +1209,308 @@ export default function AdminAccountPage() {
             <div className="p-4 rounded-xl border border-red-200 bg-red-50 text-danger-600 text-sm">{error}</div>
           ) : null}
 
-          <div className="mt-4 p-6 rounded-2xl border border-white/30 bg-white/55 backdrop-blur-md shadow-[0_18px_50px_rgba(0,0,0,0.22)]">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-              <div>
-                <div className="text-sm font-semibold text-slate-800">Profile</div>
-                <div className="mt-1 text-xs text-slate-500">Signed in as</div>
-                <div className="mt-1 text-sm font-medium text-slate-800 break-all">{session?.email || '—'}</div>
+          <div className="mt-4 rounded-2xl border border-white/30 bg-white/55 backdrop-blur-md shadow-[0_18px_50px_rgba(0,0,0,0.22)] overflow-hidden">
+
+            {/* ── Profile header ── */}
+            <div className="px-6 pt-6 pb-5 flex flex-col sm:flex-row sm:items-center gap-4 border-b border-white/30">
+              <div className="h-16 w-16 rounded-2xl overflow-hidden border-2 border-white/60 shadow-md bg-white/80 flex items-center justify-center shrink-0">
+                {profileImgSrc ? (
+                  <img src={profileImgSrc as string} alt="Profile" className="h-full w-full object-cover" />
+                ) : (
+                  <span className="text-2xl font-bold text-slate-600">
+                    {String(session?.email || 'A').trim().charAt(0).toUpperCase()}
+                  </span>
+                )}
               </div>
-              <div className="flex flex-col items-start sm:items-end gap-2">
-                <span
-                  className={
-                    displayRole === 'ADMIN'
-                      ? 'inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-purple-100 text-purple-800'
-                      : 'inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-blue-100 text-blue-800'
-                  }
-                >
-                  {displayRoleLabel}
-                </span>
-                <span
-                  className={
-                    isFromVerification
-                      ? 'inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800'
-                      : 'inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-slate-100 text-slate-700'
-                  }
-                >
-                  {isFromVerification ? 'Verified via Gmail' : 'Access-code account'}
-                </span>
+              <div className="flex-1 min-w-0">
+                <div className="text-base font-semibold text-slate-800 truncate">
+                  {deriveNameFromEmail(session?.email || '') || 'Account'}
+                </div>
+                <div className="mt-0.5 text-sm text-slate-500 truncate">{session?.email || '—'}</div>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <span className={displayRole === 'ADMIN'
+                    ? 'inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-purple-100 text-purple-800'
+                    : 'inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-100 text-blue-800'
+                  }>
+                    {displayRoleLabel}
+                  </span>
+                  <span className={isFromVerification
+                    ? 'inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800'
+                    : 'inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-slate-100 text-slate-600'
+                  }>
+                    {isFromVerification && (
+                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                      </svg>
+                    )}
+                    {isFromVerification ? 'Verified' : 'Access-code account'}
+                  </span>
+                </div>
               </div>
             </div>
 
-            <div className="mt-5 flex flex-col sm:flex-row sm:items-center gap-4">
-              <div className="flex items-center gap-3">
-                <div className="h-12 w-12 rounded-full overflow-hidden border-2 border-black bg-white flex items-center justify-center">
-                  {profileImgSrc ? (
-                    <img
-                      src={profileImgSrc as string}
-                      alt="Profile"
-                      className="h-full w-full object-cover"
-                    />
-                  ) : (
-                    <span className="text-sm font-semibold text-slate-700">{String(session?.email || 'A').trim().charAt(0).toUpperCase()}</span>
-                  )}
-                </div>
-                <div className="min-w-0">
-                  <div className="text-sm font-semibold text-slate-800">Profile photo</div>
-                  <div className="text-xs text-slate-500">Upload a square photo for best results.</div>
-                </div>
-              </div>
-
-              <div className="flex-1" />
-
-              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-                <input
-                  type="file"
-                  accept="image/*"
-                  className="block w-full text-sm text-slate-600 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-slate-100 file:text-slate-700 hover:file:bg-slate-200"
-                  onChange={(e) => {
-                    setProfileFile(e.target.files?.[0] || null)
-                    setProfileUploadError('')
-                  }}
-                />
-              </div>
+            {/* ── Tab nav — at the top ── */}
+            <div className="px-6 pt-4 flex gap-1 bg-white/20">
+              <button
+                type="button"
+                onClick={() => setShowManageAccount(false)}
+                className={`px-5 py-2 rounded-t-lg text-sm font-semibold transition-colors ${
+                  !showManageAccount
+                    ? 'bg-white text-slate-900 shadow-sm'
+                    : 'text-slate-600 hover:text-slate-800 hover:bg-white/40'
+                }`}
+              >
+                <span className="flex items-center gap-2">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V8a2 2 0 00-2-2h-5m-4 0V5a2 2 0 114 0v1m-4 0a2 2 0 104 0" />
+                  </svg>
+                  Validate ID
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowManageAccount(true)}
+                className={`px-5 py-2 rounded-t-lg text-sm font-semibold transition-colors ${
+                  showManageAccount
+                    ? 'bg-white text-slate-900 shadow-sm'
+                    : 'text-slate-600 hover:text-slate-800 hover:bg-white/40'
+                }`}
+              >
+                <span className="flex items-center gap-2">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                  </svg>
+                  Manage Account
+                </span>
+              </button>
             </div>
 
-            {profileUploadError ? <div className="mt-2 text-sm text-danger-600">{profileUploadError}</div> : null}
+            {/* ── Tab content ── */}
+            <div className="bg-white/60 rounded-b-2xl px-6 py-6">
 
-            {!showManageAccount ? (
-              isFromVerification ? (
-                <div className="mt-6 grid grid-cols-1 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-slate-600 mb-1">Full name</label>
-                    <input
-                      className="edc-input bg-white border border-black disabled:opacity-100 disabled:text-slate-900"
-                      value={verification?.full_name || ''}
-                      disabled
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-slate-600 mb-1">Address</label>
-                    <input
-                      className="edc-input bg-white border border-black disabled:opacity-100 disabled:text-slate-900"
-                      value={verification?.address || ''}
-                      disabled
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-slate-600 mb-1">Driver license number</label>
-                    <input
-                      className="edc-input bg-white border border-black disabled:opacity-100 disabled:text-slate-900"
-                      value={verification?.license_number || ''}
-                      disabled
-                    />
-                  </div>
+              {loading ? (
+                <div className="flex items-center gap-3 text-sm text-slate-500 py-4">
+                  <div className="h-4 w-4 rounded-full border-2 border-slate-400 border-t-transparent animate-spin" />
+                  Loading…
                 </div>
-              ) : (
-                <div className="mt-6">
-                  <div className="text-sm font-medium text-slate-700">Upload Image</div>
-                  <div className="mt-2 text-xs text-slate-500">Upload a clear photo of your driver’s license.</div>
+              ) : !showManageAccount ? (
 
-                  <div className="mt-4 flex items-center gap-2">
-                    <input
-                      type="file"
-                      accept="image/*"
-                      className="block w-full text-sm text-slate-600 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-slate-100 file:text-slate-700 hover:file:bg-slate-200"
-                      onChange={(e) => {
-                        setLicenseFile(e.target.files?.[0] || null)
-                        setLicenseSendError('')
-                        setLicenseSendResult('')
-                      }}
-                    />
-                    <button
-                      type="button"
-                      onClick={sendLicenseForValidation}
-                      disabled={!licenseFile || sendingLicense}
-                      className="px-3 py-1.5 rounded-md bg-navy-900 hover:bg-navy-800 text-white text-xs font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      {sendingLicense ? 'Sending…' : 'Send'}
-                    </button>
-                  </div>
-
-                  {licensePreviewUrl ? (
-                    <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 overflow-hidden">
-                      <img src={licensePreviewUrl} alt="License preview" className="w-full max-h-80 object-contain" />
+                /* ── VALIDATE ID TAB ── */
+                isFromVerification ? (
+                  <div>
+                    <div className="flex items-center gap-2 mb-5">
+                      <div className="h-8 w-8 rounded-full bg-emerald-100 flex items-center justify-center">
+                        <svg className="w-4 h-4 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                        </svg>
+                      </div>
+                      <div>
+                        <div className="text-sm font-semibold text-slate-800">Identity Verified</div>
+                        <div className="text-xs text-slate-500">Your driver&apos;s license details are on file.</div>
+                      </div>
                     </div>
-                  ) : null}
+                    <div className="grid grid-cols-1 gap-4">
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Full name</label>
+                        <input className="edc-input bg-white border border-slate-200 disabled:opacity-100 disabled:text-slate-800 rounded-lg" value={verification?.full_name || ''} disabled />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Address</label>
+                        <input className="edc-input bg-white border border-slate-200 disabled:opacity-100 disabled:text-slate-800 rounded-lg" value={verification?.address || ''} disabled />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Driver license number</label>
+                        <input className="edc-input bg-white border border-slate-200 disabled:opacity-100 disabled:text-slate-800 rounded-lg" value={verification?.license_number || ''} disabled />
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div>
+                    <div className="mb-5">
+                      <div className="text-sm font-semibold text-slate-800">Upload Driver&apos;s License</div>
+                      <div className="mt-1 text-xs text-slate-500">Upload a clear photo of your driver&apos;s license for identity verification.</div>
+                    </div>
+                    <div className="flex items-center gap-3 p-4 rounded-xl border-2 border-dashed border-slate-300 bg-white hover:border-blue-400 transition-colors">
+                      <svg className="w-8 h-8 text-slate-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                      </svg>
+                      <div className="flex-1 min-w-0">
+                        <input
+                          type="file"
+                          accept="image/*"
+                          className="block w-full text-sm text-slate-600 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-slate-100 file:text-slate-700 hover:file:bg-slate-200"
+                          onChange={(e) => { setLicenseFile(e.target.files?.[0] || null); setLicenseSendError(''); setLicenseSendResult('') }}
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={sendLicenseForValidation}
+                        disabled={!licenseFile || sendingLicense}
+                        className="shrink-0 px-4 py-2 rounded-lg bg-slate-900 text-white text-xs font-semibold hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                      >
+                        {sendingLicense ? 'Sending…' : 'Send'}
+                      </button>
+                    </div>
+                    {licensePreviewUrl ? (
+                      <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 overflow-hidden">
+                        <img src={licensePreviewUrl} alt="License preview" className="w-full max-h-80 object-contain" />
+                      </div>
+                    ) : null}
+                    {licenseSendError ? <div className="mt-3 p-3 rounded-lg bg-red-50 border border-red-200 text-sm text-red-700">{licenseSendError}</div> : null}
+                  </div>
+                )
 
-                  {licenseSendError ? (
-                    <div className="mt-4 text-sm text-danger-600">{licenseSendError}</div>
-                  ) : null}
+              ) : (
 
-                </div>
-              )
-            ) : (
-              <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                {Object.entries(usersRow || {}).length ? (
-                  Object.entries(usersRow || {})
-                    .filter(([k]) => visibleUserFields.includes(k))
-                    .map(([key, value]) =>
-                      key === 'password' ? (
-                        <div key={key} className="contents">
+                /* ── MANAGE ACCOUNT TAB ── */
+                <div className="space-y-6">
+
+                  {/* Profile photo — only on this tab */}
+                  <div className="p-4 rounded-xl border border-slate-200 bg-white">
+                    <div className="flex items-center gap-4">
+                      <div className="h-14 w-14 rounded-xl overflow-hidden border-2 border-slate-200 bg-slate-100 flex items-center justify-center shrink-0">
+                        {profileImgSrc ? (
+                          <img src={profileImgSrc as string} alt="Profile" className="h-full w-full object-cover" />
+                        ) : (
+                          <span className="text-lg font-bold text-slate-500">
+                            {String(session?.email || 'A').trim().charAt(0).toUpperCase()}
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-semibold text-slate-800">Profile photo</div>
+                        <div className="text-xs text-slate-500 mt-0.5">Upload a square photo for best results.</div>
+                        <div className="mt-2">
+                          <input
+                            type="file"
+                            accept="image/*"
+                            className="block w-full text-sm text-slate-600 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-slate-100 file:text-slate-700 hover:file:bg-slate-200"
+                            onChange={(e) => { setProfileFile(e.target.files?.[0] || null); setProfileUploadError('') }}
+                          />
+                        </div>
+                        {profileUploadError ? <div className="mt-1 text-xs text-red-600">{profileUploadError}</div> : null}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Account fields */}
+                  <div>
+                    <div className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3">Account Details</div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                      {Object.entries(usersRow || {}).length ? (
+                        Object.entries(usersRow || {})
+                          .filter(([k]) => visibleUserFields.includes(k))
+                          .map(([key, value]) =>
+                            key === 'password' ? (
+                              <div key={key} className="contents">
+                                <div>
+                                  <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Password</label>
+                                  <div className="relative">
+                                    <input
+                                      type={showPassword ? 'text' : 'password'}
+                                      className="edc-input bg-white border border-slate-200 rounded-lg pr-11"
+                                      value={editPassword}
+                                      onChange={(e) => setEditPassword(e.target.value)}
+                                    />
+                                    <button type="button" onClick={() => setShowPassword((v) => !v)}
+                                      className="absolute right-2 top-1/2 -translate-y-1/2 h-8 w-8 inline-flex items-center justify-center rounded-md text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition"
+                                    >
+                                      {showPassword ? (
+                                        <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                          <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" /><circle cx="12" cy="12" r="3" />
+                                        </svg>
+                                      ) : (
+                                        <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                          <path d="M10.733 5.08A10.744 10.744 0 0 1 12 5c6.5 0 10 7 10 7a18.16 18.16 0 0 1-1.67 2.68" />
+                                          <path d="M6.61 6.61A12.56 12.56 0 0 0 2 12s3.5 7 10 7c1.78 0 3.3-.33 4.6-.9" />
+                                          <path d="M8.71 8.71A3 3 0 0 0 12 15a3 3 0 0 0 3.29-3.29" /><path d="M3 3l18 18" />
+                                        </svg>
+                                      )}
+                                    </button>
+                                  </div>
+                                </div>
+                                <div className="flex flex-col justify-end">
+                                  <button
+                                    type="button"
+                                    onClick={() => void handleUpdateAccount()}
+                                    disabled={updatingAccount}
+                                    className="h-10 px-6 rounded-lg bg-slate-900 text-white text-sm font-semibold hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                  >
+                                    {updatingAccount ? 'Updating…' : 'Update'}
+                                  </button>
+                                  {updateAccountSuccess ? <div className="mt-1 text-xs text-emerald-700">{updateAccountSuccess}</div> : null}
+                                  {updateAccountError ? <div className="mt-1 text-xs text-red-600">{updateAccountError}</div> : null}
+                                </div>
+                              </div>
+                            ) : (
+                              <div key={key}>
+                                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">
+                                  {String(key).replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())}
+                                </label>
+                                <input
+                                  className="edc-input bg-white border border-slate-200 rounded-lg"
+                                  onChange={(e) => {
+                                    const next = e.target.value
+                                    if (key === 'first_name') setEditFirstName(next)
+                                    else if (key === 'last_name') setEditLastName(next)
+                                    else if (key === 'title') setEditTitle(next)
+                                    else if (key === 'phone') setEditPhone(next)
+                                    else if (key === 'mobile') setEditMobile(next)
+                                    else if (key === 'email') setEditEmail(next)
+                                  }}
+                                  value={
+                                    key === 'first_name' ? editFirstName
+                                      : key === 'last_name' ? editLastName
+                                      : key === 'title' ? editTitle
+                                      : key === 'phone' ? editPhone
+                                      : key === 'mobile' ? editMobile
+                                      : key === 'email' ? editEmail
+                                      : value == null ? ''
+                                      : typeof value === 'boolean' ? (value ? 'True' : 'False')
+                                      : String(value)
+                                  }
+                                />
+                              </div>
+                            )
+                          )
+                      ) : (
+                        <>
                           <div>
-                            <label className="block text-sm font-medium text-slate-600 mb-1">Password</label>
+                            <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Email</label>
+                            <input className="edc-input bg-white border border-slate-200 rounded-lg disabled:text-slate-800" value={adminUser?.email || session?.email || ''} disabled />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Role</label>
+                            <input className="edc-input bg-white border border-slate-200 rounded-lg disabled:text-slate-800" value={adminUser?.role || displayRole} disabled />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Status</label>
+                            <input className="edc-input bg-white border border-slate-200 rounded-lg disabled:text-slate-800" value={adminUser ? (adminUser.is_active ? 'Active' : 'Inactive') : '—'} disabled />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Password</label>
                             <div className="relative">
-                              <input
-                                type={showPassword ? 'text' : 'password'}
-                                className="edc-input bg-white border border-black pr-11"
-                                value={editPassword}
-                                onChange={(e) => setEditPassword(e.target.value)}
-                              />
-                              <button
-                                type="button"
-                                onClick={() => setShowPassword((v) => !v)}
-                                className="absolute right-2 top-1/2 -translate-y-1/2 z-10 h-8 w-8 inline-flex items-center justify-center rounded-md text-slate-700 hover:text-slate-900 hover:bg-slate-100 transition"
-                                aria-label={showPassword ? 'Hide password' : 'Show password'}
-                                title={showPassword ? 'Hide password' : 'Show password'}
-                              >
+                              <input type={showPassword ? 'text' : 'password'} className="edc-input bg-white border border-slate-200 rounded-lg pr-11 disabled:text-slate-800" value="" disabled />
+                              <button type="button" onClick={() => setShowPassword((v) => !v)} className="absolute right-2 top-1/2 -translate-y-1/2 h-8 w-8 inline-flex items-center justify-center rounded-md text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition">
                                 {showPassword ? (
-                                  <svg
-                                    className="h-4 w-4"
-                                    viewBox="0 0 24 24"
-                                    fill="none"
-                                    stroke="currentColor"
-                                    strokeWidth="2"
-                                    strokeLinecap="round"
-                                    strokeLinejoin="round"
-                                  >
-                                    <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" />
-                                    <circle cx="12" cy="12" r="3" />
-                                  </svg>
+                                  <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" /><circle cx="12" cy="12" r="3" /></svg>
                                 ) : (
-                                  <svg
-                                    className="h-4 w-4"
-                                    viewBox="0 0 24 24"
-                                    fill="none"
-                                    stroke="currentColor"
-                                    strokeWidth="2"
-                                    strokeLinecap="round"
-                                    strokeLinejoin="round"
-                                  >
+                                  <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                                     <path d="M10.733 5.08A10.744 10.744 0 0 1 12 5c6.5 0 10 7 10 7a18.16 18.16 0 0 1-1.67 2.68" />
                                     <path d="M6.61 6.61A12.56 12.56 0 0 0 2 12s3.5 7 10 7c1.78 0 3.3-.33 4.6-.9" />
-                                    <path d="M8.71 8.71A3 3 0 0 0 12 15a3 3 0 0 0 3.29-3.29" />
-                                    <path d="M3 3l18 18" />
+                                    <path d="M8.71 8.71A3 3 0 0 0 12 15a3 3 0 0 0 3.29-3.29" /><path d="M3 3l18 18" />
                                   </svg>
                                 )}
                               </button>
                             </div>
                           </div>
-
-                          <div>
-                            <label className="block text-sm font-medium text-slate-600 mb-1">&nbsp;</label>
-                            <button
-                              type="button"
-                              onClick={() => void handleUpdateAccount()}
-                              disabled={updatingAccount}
-                              className={
-                                updatingAccount
-                                  ? 'edc-btn-primary text-sm opacity-50 cursor-not-allowed'
-                                  : 'edc-btn-primary text-sm'
-                              }
-                            >
-                              {updatingAccount ? 'Updating…' : 'Update'}
-                            </button>
-                            {updateAccountSuccess ? <div className="mt-1 text-xs text-emerald-700">{updateAccountSuccess}</div> : null}
-                            {updateAccountError ? <div className="mt-1 text-xs text-danger-600">{updateAccountError}</div> : null}
-                          </div>
-                        </div>
-                      ) : (
-                        <div key={key}>
-                          <label className="block text-sm font-medium text-slate-600 mb-1">
-                            {String(key)
-                              .replace(/_/g, ' ')
-                              .replace(/\b\w/g, (c) => c.toUpperCase())}
-                          </label>
-                          <input
-                            className="edc-input bg-white border border-black"
-                            onChange={(e) => {
-                              const next = e.target.value
-                              if (key === 'first_name') setEditFirstName(next)
-                              else if (key === 'last_name') setEditLastName(next)
-                              else if (key === 'title') setEditTitle(next)
-                              else if (key === 'phone') setEditPhone(next)
-                              else if (key === 'mobile') setEditMobile(next)
-                              else if (key === 'email') setEditEmail(next)
-                            }}
-                            value={
-                              key === 'first_name'
-                                ? editFirstName
-                                : key === 'last_name'
-                                  ? editLastName
-                                  : key === 'title'
-                                    ? editTitle
-                                    : key === 'phone'
-                                      ? editPhone
-                                      : key === 'mobile'
-                                        ? editMobile
-                                        : key === 'email'
-                                          ? editEmail
-                                          : value == null
-                                            ? ''
-                                            : typeof value === 'boolean'
-                                              ? value
-                                                ? 'True'
-                                                : 'False'
-                                              : String(value)
-                            }
-                          />
-                        </div>
-                      )
-                    )
-                ) : (
-                  <>
-                    <div>
-                      <label className="block text-sm font-medium text-slate-600 mb-1">Email</label>
-                      <input
-                        className="edc-input bg-white border border-black disabled:opacity-100 disabled:text-slate-900"
-                        value={adminUser?.email || session?.email || ''}
-                        disabled
-                      />
+                        </>
+                      )}
                     </div>
-                    <div>
-                      <label className="block text-sm font-medium text-slate-600 mb-1">Role</label>
-                      <input
-                        className="edc-input bg-white border border-black disabled:opacity-100 disabled:text-slate-900"
-                        value={adminUser?.role || displayRole}
-                        disabled
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-slate-600 mb-1">Status</label>
-                      <input
-                        className="edc-input bg-white border border-black disabled:opacity-100 disabled:text-slate-900"
-                        value={adminUser ? (adminUser.is_active ? 'Active' : 'Inactive') : '—'}
-                        disabled
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-slate-600 mb-1">Password</label>
-                      <div className="relative">
-                        <input
-                          type={showPassword ? 'text' : 'password'}
-                          className="edc-input bg-white border border-black pr-11 disabled:opacity-100 disabled:text-slate-900"
-                          value=""
-                          disabled
-                        />
-                        <button
-                          type="button"
-                          onClick={() => setShowPassword((v) => !v)}
-                          className="absolute right-2 top-1/2 -translate-y-1/2 z-10 h-8 w-8 inline-flex items-center justify-center rounded-md text-slate-700 hover:text-slate-900 hover:bg-slate-100 transition"
-                          aria-label={showPassword ? 'Hide password' : 'Show password'}
-                          title={showPassword ? 'Hide password' : 'Show password'}
-                        >
-                          {showPassword ? (
-                            <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                              <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" />
-                              <circle cx="12" cy="12" r="3" />
-                            </svg>
-                          ) : (
-                            <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                              <path d="M10.733 5.08A10.744 10.744 0 0 1 12 5c6.5 0 10 7 10 7a18.16 18.16 0 0 1-1.67 2.68" />
-                              <path d="M6.61 6.61A12.56 12.56 0 0 0 2 12s3.5 7 10 7c1.78 0 3.3-.33 4.6-.9" />
-                              <path d="M8.71 8.71A3 3 0 0 0 12 15a3 3 0 0 0 3.29-3.29" />
-                              <path d="M3 3l18 18" />
-                            </svg>
-                          )}
-                        </button>
-                      </div>
-                    </div>
-                  </>
-                )}
-
-                <div className="lg:col-span-4" />
-              </div>
-            )}
-
-            <div className="mt-6 flex flex-col sm:flex-row gap-3">
-              <button
-                type="button"
-                onClick={() => {
-                  setShowManageAccount(false)
-                }}
-                className="edc-btn-ghost text-sm"
-              >
-                Validate ID
-              </button>
-              <button
-                type="button"
-                onClick={() => setShowManageAccount((v) => !v)}
-                className="edc-btn-ghost text-sm"
-              >
-                Manage Account
-              </button>
+                  </div>
+                </div>
+              )}
             </div>
-
-            {loading ? (
-              <div className="mt-4 text-sm text-slate-400">Loading…</div>
-            ) : null}
           </div>
         </div>
       </div>
