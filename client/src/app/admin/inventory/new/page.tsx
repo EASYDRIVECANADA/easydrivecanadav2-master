@@ -35,6 +35,7 @@ export default function NewVehiclePage() {
   const [purchaseSaved, setPurchaseSaved] = useState(false)
   const [costsSaved, setCostsSaved] = useState(false)
   const [webhookUserId, setWebhookUserId] = useState<string | null>(null)
+  const [userRole, setUserRole] = useState<string | null>(null)
   const [showUpgradeModal, setShowUpgradeModal] = useState(false)
   const [gatingError, setGatingError] = useState('')
   const [assignmentUsers, setAssignmentUsers] = useState<Array<{ id: string; first_name: string | null; last_name: string | null; email: string | null }>>([])
@@ -302,6 +303,17 @@ export default function NewVehiclePage() {
     const load = async () => {
       const id = await getWebhookUserId()
       if (!cancelled) setWebhookUserId(id)
+      if (id) {
+        try {
+          const { data } = await supabase
+            .from('users')
+            .select('role')
+            .eq('user_id', id)
+            .limit(1)
+            .maybeSingle()
+          if (!cancelled && (data as any)?.role) setUserRole(String((data as any).role))
+        } catch {}
+      }
     }
     load()
     return () => {
@@ -519,6 +531,7 @@ export default function NewVehiclePage() {
       const payload: Record<string, any> = {
         // Optional scoping for backend
         user_id: webhookUserId ?? undefined,
+        user_role: userRole ?? undefined,
 
         make: formData.make || null,
         model: formData.model || null,

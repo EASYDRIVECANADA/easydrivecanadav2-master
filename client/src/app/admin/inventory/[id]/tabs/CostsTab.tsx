@@ -55,8 +55,34 @@ export default function CostsTab({ vehicleId, vehiclePrice, stockNumber }: Costs
     actualCashValue: 0,
     additionalExpenses: [],
   })
+  const [userId, setUserId] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    const resolve = async () => {
+      try {
+        if (typeof window === 'undefined') return
+        const raw = window.localStorage.getItem('edc_admin_session')
+        if (!raw) return
+        const parsed = JSON.parse(raw) as { email?: string; user_id?: string }
+        const uid = String(parsed?.user_id ?? '').trim()
+        if (uid) { setUserId(uid); return }
+        const email = String(parsed?.email ?? '').trim().toLowerCase()
+        if (!email) return
+        const { data } = await supabase
+          .from('edc_account_verifications')
+          .select('id')
+          .eq('email', email)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+        if ((data as any)?.id) setUserId(String((data as any).id))
+      } catch {}
+    }
+    void resolve()
+  }, [])
+
   const [showModal, setShowModal] = useState(false)
   const [showSearchTip, setShowSearchTip] = useState(true)
   const [showPresetTip, setShowPresetTip] = useState(true)
@@ -286,29 +312,29 @@ export default function CostsTab({ vehicleId, vehiclePrice, stockNumber }: Costs
     try {
       let rows: any[] | null = null
 
-      // 1) schemas where edc_costs.id === edc_vehicles.id (single row)
+      // 1) Primary: vehicleId column
       try {
         const { data, error } = await supabase
           .from('edc_costs')
           .select('*')
-          .eq('id', vehicleId)
+          .eq('vehicleId', vehicleId)
           .order('created_at', { ascending: true })
         if (!error && Array.isArray(data) && data.length) rows = data as any[]
       } catch {}
 
-      // 2) explicit vehicle_id (possibly many rows)
+      // 2) Legacy: edc_costs.id === edc_vehicles.id
       if (!rows) {
         try {
           const { data, error } = await supabase
             .from('edc_costs')
             .select('*')
-            .eq('vehicle_id', vehicleId)
+            .eq('id', vehicleId)
             .order('created_at', { ascending: true })
           if (!error && Array.isArray(data) && data.length) rows = data as any[]
         } catch {}
       }
 
-      // 3) fallback to stock_number
+      // 3) Fallback: stock_number
       if (!rows && stockNumber) {
         try {
           const { data, error } = await supabase
@@ -501,6 +527,7 @@ export default function CostsTab({ vehicleId, vehiclePrice, stockNumber }: Costs
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
+            user_id: userId ?? null,
             stockNumber: stockNumber || null,
             vehicleId,
             cost: newItem,

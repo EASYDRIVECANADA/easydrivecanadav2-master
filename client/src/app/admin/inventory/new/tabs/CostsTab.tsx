@@ -326,25 +326,27 @@ const CostsTab = forwardRef<CostsTabHandle, CostsTabProps>(function CostsTab({ v
     try {
       let rows: any[] = []
 
-      const { data: byId, error: errId } = await supabase
+      // 1) Primary: vehicleId column
+      const { data: byVehicleId, error: errVehicleId } = await supabase
         .from('edc_costs')
         .select('*')
-        .eq('id', vehicleId)
+        .eq('vehicleId', vehicleId)
         .order('created_at', { ascending: true })
 
-      if (!errId && Array.isArray(byId) && byId.length) {
-        rows = byId as any[]
+      if (!errVehicleId && Array.isArray(byVehicleId) && byVehicleId.length) {
+        rows = byVehicleId as any[]
       }
 
+      // 2) Fallback: legacy id column match
       if (!rows.length) {
-        const { data: byVehicle, error: errVehicle } = await supabase
+        const { data: byId, error: errId } = await supabase
           .from('edc_costs')
           .select('*')
-          .eq('vehicle_id', vehicleId)
+          .eq('id', vehicleId)
           .order('created_at', { ascending: true })
 
-        if (!errVehicle && Array.isArray(byVehicle) && byVehicle.length) {
-          rows = byVehicle as any[]
+        if (!errId && Array.isArray(byId) && byId.length) {
+          rows = byId as any[]
         }
       }
 

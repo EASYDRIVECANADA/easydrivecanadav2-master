@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import {
   Search,
@@ -20,7 +20,7 @@ import {
   Printer,
 } from 'lucide-react'
 
-// Supported tax rates for purchase calculations
+// Fallback hardcoded tax rates (used when presets not yet loaded)
 const TAX_RATES: Record<string, number> = {
   HST: 0.13,
   RST: 0.08,
@@ -28,6 +28,13 @@ const TAX_RATES: Record<string, number> = {
   PST: 0.06,
   QST: 0.09975,
   Exempt: 0,
+}
+
+type TaxPresetRow = {
+  id: string
+  name: string | null
+  rate: number | string | null
+  default_tax_rate: boolean | null
 }
 
 interface PurchaseData {
@@ -117,6 +124,8 @@ export default function PurchaseTab({ vehicleId, stockNumber, onError }: Purchas
     totalVehicleTax: 0,
   })
   const [saving, setSaving] = useState(false)
+  const [taxPresets, setTaxPresets] = useState<TaxPresetRow[]>([])
+  const [loadingTaxPresets, setLoadingTaxPresets] = useState(false)
   const [vendorSearch, setVendorSearch] = useState('')
   const [vendorResults, setVendorResults] = useState<VendorRow[]>([])
   const [vendorLoading, setVendorLoading] = useState(false)
@@ -142,16 +151,73 @@ export default function PurchaseTab({ vehicleId, stockNumber, onError }: Purchas
     email: '',
     fax: '',
   })
+  const getLoggedInAdminDbUserId = useCallback(async (): Promise<string | null> => {
+    try {
+      if (typeof window === 'undefined') return null
+      const raw = window.localStorage.getItem('edc_admin_session')
+      if (!raw) return null
+      const parsed = JSON.parse(raw) as { email?: string; user_id?: string }
+      const sessionUserId = String(parsed?.user_id ?? '').trim()
+      if (sessionUserId) return sessionUserId
+      const email = String(parsed?.email ?? '').trim().toLowerCase()
+      if (!email) return null
+      const { data } = await supabase
+        .from('edc_account_verifications')
+        .select('id')
+        .eq('email', email)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      return (data as any)?.id ?? null
+    } catch {
+      return null
+    }
+  }, [])
+
+  useEffect(() => {
+    const load = async () => {
+      setLoadingTaxPresets(true)
+      try {
+        const uid = await getLoggedInAdminDbUserId()
+        if (!uid) { setTaxPresets([]); return }
+        const { data, error } = await supabase
+          .from('presets_tax')
+          .select('id, name, rate, default_tax_rate')
+          .eq('user_id', uid)
+          .order('name', { ascending: true })
+        if (error) throw error
+        setTaxPresets(Array.isArray(data) ? (data as TaxPresetRow[]) : [])
+      } catch {
+        setTaxPresets([])
+      } finally {
+        setLoadingTaxPresets(false)
+      }
+    }
+    void load()
+  }, [getLoggedInAdminDbUserId])
+
   const isCompany = formData.publicOrCompany === 'company'
   const [publicIdType, setPublicIdType] = useState<'dl' | 'rin'>('dl')
   const driverLicenseRef = useRef<HTMLInputElement | null>(null)
   const rinRef = useRef<HTMLInputElement | null>(null)
   const [showPaymentDetails, setShowPaymentDetails] = useState(false)
 
+  const resolveTaxRate = useCallback((taxType: string | undefined) => {
+    const key = String(taxType || '').trim()
+    const preset = taxPresets.find((t) => String(t.name || '').trim() === key)
+    if (preset) {
+      let n = typeof preset.rate === 'number' ? preset.rate : parseFloat(String(preset.rate || '0'))
+      if (!Number.isFinite(n)) n = 0
+      if (n > 1) n = n / 100
+      return n
+    }
+    return TAX_RATES[key] ?? 0
+  }, [taxPresets])
+
   const computeTaxes = (d: PurchaseData): PurchaseData => {
     const next: PurchaseData = { ...d }
     if (!next.taxOverride) {
-      const rate = TAX_RATES[next.taxType || 'Exempt'] ?? 0
+      const rate = resolveTaxRate(next.taxType || 'Exempt')
       const purchasePrice = Number(next.purchasePrice || 0)
       const acv = Number(next.actualCashValue || 0)
       const discount = Number(next.discount || 0)
@@ -995,7 +1061,26 @@ export default function PurchaseTab({ vehicleId, stockNumber, onError }: Purchas
                 onChange={handleChange}
                 className="w-48 border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
               >
-                <option value="Exempt">Exempt 0%</option>
+                {loadingTaxPresets ? (
+                  <option value="">Loading...</option>
+                ) : taxPresets.length ? (
+                  taxPresets
+                    .filter((t) => String(t.name || '').trim())
+                    .map((t) => {
+                      const name = String(t.name || '').trim()
+                      let rate = typeof t.rate === 'number' ? t.rate : parseFloat(String(t.rate || '0'))
+                      if (!Number.isFinite(rate)) rate = 0
+                      if (rate > 1) rate = rate / 100
+                      const pct = (rate * 100).toFixed(2).replace(/\.?0+$/, '')
+                      return (
+                        <option key={t.id} value={name}>
+                          {name} {pct}%
+                        </option>
+                      )
+                    })
+                ) : (
+                  <option value="Exempt">Exempt 0%</option>
+                )}
               </select>
             </div>
             <label className="mt-6 flex items-center gap-2">
