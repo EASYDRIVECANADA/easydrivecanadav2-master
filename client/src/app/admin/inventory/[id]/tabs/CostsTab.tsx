@@ -245,6 +245,53 @@ export default function CostsTab({ vehicleId, vehiclePrice, stockNumber }: Costs
     }
   }
 
+  const fetchPurchaseSummary = async () => {
+    try {
+      let row: any = null
+
+      try {
+        const { data, error } = await supabase
+          .from('edc_purchase')
+          .select('purchase_price, actual_cash_value')
+          .eq('vehicle_id', vehicleId)
+          .order('updated_at', { ascending: false })
+          .limit(1)
+        if (!error && Array.isArray(data) && data.length) row = data[0]
+      } catch {}
+
+      if (!row && stockNumber) {
+        try {
+          const { data, error } = await supabase
+            .from('edc_purchase')
+            .select('purchase_price, actual_cash_value')
+            .eq('stock_number', stockNumber)
+            .order('updated_at', { ascending: false })
+            .limit(1)
+          if (!error && Array.isArray(data) && data.length) row = data[0]
+        } catch {}
+      }
+
+      if (!row) return
+
+      const purchasePrice = Number(row.purchase_price || 0)
+      const actualCashValue = Number(row.actual_cash_value || 0)
+
+      setCostsData((prev) => ({
+        ...prev,
+        purchasePrice: Number.isFinite(purchasePrice) ? purchasePrice : 0,
+        actualCashValue: Number.isFinite(actualCashValue) ? actualCashValue : 0,
+      }))
+    } catch (err) {
+      console.error('Error fetching purchase summary:', err)
+    }
+  }
+
+  useEffect(() => {
+    if (!vehicleId) return
+    void fetchCostsAny()
+    void fetchPurchaseSummary()
+  }, [vehicleId, stockNumber])
+
   const openAddModal = () => {
     setEditingCost(null)
     setModalForm({
