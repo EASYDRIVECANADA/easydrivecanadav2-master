@@ -4,6 +4,30 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { supabase } from '@/lib/supabaseClient'
 
+const DEFAULT_FEE_TAX_LABEL = 'Default Tax 0 %'
+
+function normalizeFeeTaxSelection(selected?: Record<string, boolean>): Record<string, boolean> {
+  const next: Record<string, boolean> = { ...(selected || {}) }
+  const hasSelectedNonDefault = Object.entries(next).some(([k, v]) => k !== DEFAULT_FEE_TAX_LABEL && !!v)
+
+  if (hasSelectedNonDefault) {
+    next[DEFAULT_FEE_TAX_LABEL] = false
+  }
+
+  const hasAnySelected = Object.values(next).some(Boolean)
+  if (!hasAnySelected) {
+    return { [DEFAULT_FEE_TAX_LABEL]: true }
+  }
+
+  return next
+}
+
+function feeTaxSummaryLabel(selected?: Record<string, boolean>): string {
+  const normalized = normalizeFeeTaxSelection(selected)
+  const selectedNonDefault = Object.keys(normalized).filter((k) => k !== DEFAULT_FEE_TAX_LABEL && normalized[k])
+  return selectedNonDefault.length > 0 ? selectedNonDefault.join(', ') : DEFAULT_FEE_TAX_LABEL
+}
+
 export default function WorksheetTab({
   dealId,
   dealMode = 'RTL',
@@ -72,7 +96,7 @@ export default function WorksheetTab({
         desc: f.desc || '',
         amount: Number(f.amount) || 0,
         cost: Number(f.cost) || 0,
-        taxSelected: f.taxSelected || { 'Default Tax 0 %': true },
+        taxSelected: normalizeFeeTaxSelection(f.taxSelected || { [DEFAULT_FEE_TAX_LABEL]: true }),
         taxOverride: f.taxOverride || false,
         taxValues: f.taxValues || {},
       }))
@@ -84,7 +108,7 @@ export default function WorksheetTab({
   const [feeDetailsOpen, setFeeDetailsOpen] = useState(false)
   const [feeDetailsForId, setFeeDetailsForId] = useState<string | null>(null)
   const [feeTaxMenuOpen, setFeeTaxMenuOpen] = useState(false)
-  const [feeTaxSelected, setFeeTaxSelected] = useState<Record<string, boolean>>({ 'Default Tax 0 %': true })
+  const [feeTaxSelected, setFeeTaxSelected] = useState<Record<string, boolean>>({ [DEFAULT_FEE_TAX_LABEL]: true })
   const [feeTaxOverride, setFeeTaxOverride] = useState(false)
   const [feeShowTaxDetails, setFeeShowTaxDetails] = useState(false)
   const [feeTaxValues, setFeeTaxValues] = useState<Record<string, string>>({})
@@ -232,7 +256,7 @@ export default function WorksheetTab({
     closeAllDetails()
     const item = fees.find((x) => x.id === id)
     if (item) {
-      setFeeTaxSelected(item.taxSelected || { 'Default Tax 0 %': true })
+      setFeeTaxSelected(normalizeFeeTaxSelection(item.taxSelected || { [DEFAULT_FEE_TAX_LABEL]: true }))
       setFeeTaxOverride(item.taxOverride || false)
       setFeeTaxValues(item.taxValues || {})
     }
@@ -413,7 +437,7 @@ export default function WorksheetTab({
     setFeeDetailsOpen(false)
     setFeeDetailsForId(null)
     setFeeTaxMenuOpen(false)
-    setFeeTaxSelected({ 'Default Tax 0 %': true })
+    setFeeTaxSelected({ [DEFAULT_FEE_TAX_LABEL]: true })
     setFeeTaxOverride(false)
     setFeeShowTaxDetails(false)
     setFeeTaxValues({})
@@ -2170,7 +2194,7 @@ export default function WorksheetTab({
               <div className="flex items-center justify-between">
                 <div className="text-[#118df0] text-sm font-semibold cursor-pointer relative">
                   <button type="button" onClick={() => setFeeTaxMenuOpen((v) => !v)}>
-                    {Object.keys(feeTaxSelected).filter((k) => feeTaxSelected[k]).join(', ') || 'Default Tax 0 %'} ▾
+                    {feeTaxSummaryLabel(feeTaxSelected)} ▾
                   </button>
                   {feeTaxMenuOpen ? (
                     <div className="absolute mt-2 w-56 bg-white border border-gray-200 rounded shadow p-2 z-10">
@@ -2181,7 +2205,20 @@ export default function WorksheetTab({
                           const label = `${preset.name} ${preset.rate.toFixed(2)} %`
                           return (
                             <label key={preset.id} className="flex items-center gap-2 py-1 text-sm">
-                              <input type="checkbox" checked={!!feeTaxSelected[label]} onChange={(e) => setFeeTaxSelected((prev) => ({ ...prev, [label]: e.target.checked }))} />
+                              <input
+                                type="checkbox"
+                                checked={!!feeTaxSelected[label]}
+                                onChange={(e) => {
+                                  const checked = e.target.checked
+                                  setFeeTaxSelected((prev) => {
+                                    const next: Record<string, boolean> = { ...prev, [label]: checked }
+                                    if (checked) {
+                                      next[DEFAULT_FEE_TAX_LABEL] = false
+                                    }
+                                    return normalizeFeeTaxSelection(next)
+                                  })
+                                }}
+                              />
                               {label}
                             </label>
                           )
