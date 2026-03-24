@@ -35,6 +35,7 @@ export interface BillOfSaleData {
 
   // Settlement
   vehiclePrice: string
+  discount?: string
   omvicFee: string
   subtotal1: string
   netDifference: string
@@ -377,6 +378,7 @@ export function renderBillOfSalePdf(
 
   const settlementRows: [string, string][] = [
     ['Vehicle Price', fmtMoneyNoSign(data.vehiclePrice)],
+    ...(hasVal(data.discount) ? [['Discount', '-' + fmtMoneyNoSign(data.discount)] as [string, string]] : []),
     ...(includeOmvic ? [['OMVIC FEE', fmtMoneyNoSign(data.omvicFee)] as [string, string]] : []),
     ...(hasVal(data.feesTotal) ? [['Fees', fmtMoneyNoSign(data.feesTotal)] as [string, string]] : []),
     ...(hasVal(data.accessoriesTotal) ? [['Accessories', fmtMoneyNoSign(data.accessoriesTotal)] as [string, string]] : []),

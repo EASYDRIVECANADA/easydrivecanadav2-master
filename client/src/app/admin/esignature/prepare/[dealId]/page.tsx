@@ -582,6 +582,7 @@ export default function PrepareDocumentPage() {
           serviceDate: '',
           deliveryDate: d.delivery_date ?? '',
           vehiclePrice: String(price),
+          discount: String(discount),
           omvicFee: String(omvic),
           subtotal1: String(subtotal1),
           netDifference: String(netDiff),

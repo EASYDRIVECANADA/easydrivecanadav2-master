@@ -314,6 +314,7 @@ function DealsSignaturePageInner() {
           serviceDate: '',
           deliveryDate: d.delivery_date ?? '',
           vehiclePrice: String(w.vehicle_price ?? w.purchase_price ?? sv.price ?? 0),
+          discount: String(w.discount ?? 0),
           omvicFee: String(w.omvic_fee ?? 10),
           subtotal1: String(w.subtotal ?? 0),
           netDifference: String(w.net_difference ?? 0),

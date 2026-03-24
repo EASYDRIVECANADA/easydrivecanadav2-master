@@ -625,10 +625,10 @@ export default function WorksheetTab({
 
   const totalBalanceDue = useMemo(() => {
     const licenseAmount = licenseFee && licenseFee.trim() ? parseMoney(licenseFee) : 0
-    // Total = Net Difference (includes fees) + HST + License Fee + Lien - Trade Equity
+    // Total = Net Difference (includes fees) + HST + License Fee + Lien - Trade Equity - Payments
     // Fees are already in netDifference and taxed as part of vehicle HST, so don't add separate item taxes
-    return netDifference + totalTax + licenseAmount + parseMoney(lienPayout) - tradeEquity
-  }, [netDifference, totalTax, licenseFee, lienPayout, tradeEquity])
+    return netDifference + totalTax + licenseAmount + parseMoney(lienPayout) - tradeEquity - paymentsTotal
+  }, [netDifference, totalTax, licenseFee, lienPayout, tradeEquity, paymentsTotal])
 
   const financedAmount = useMemo(() => totalBalanceDue, [totalBalanceDue])
 
