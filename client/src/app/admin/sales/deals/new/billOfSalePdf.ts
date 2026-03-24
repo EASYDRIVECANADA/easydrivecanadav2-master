@@ -85,6 +85,38 @@ function fmtMoneyNoSign(v: string | number | null | undefined): string {
   return n.toLocaleString('en-CA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
+function htmlToPlainText(html: string | null | undefined): string {
+  if (!html) return ''
+
+  if (typeof window !== 'undefined') {
+    const el = window.document.createElement('div')
+    el.innerHTML = String(html)
+    return (el.innerText || el.textContent || '')
+      .replace(/\r/g, '')
+      .split('\n')
+      .map((line) => line.trimEnd())
+      .join('\n')
+      .trim()
+  }
+
+  return String(html)
+    .replace(/<\s*br\s*\/?>/gi, '\n')
+    .replace(/<\s*li[^>]*>/gi, '• ')
+    .replace(/<\/\s*(p|div|li|h[1-6]|tr)\s*>/gi, '\n')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/\r/g, '')
+    .split('\n')
+    .map((line) => line.replace(/\s+/g, ' ').trim())
+    .filter(Boolean)
+    .join('\n')
+}
+
 export function renderBillOfSalePdf(
   doc: jsPDF,
   data: BillOfSaleData,
@@ -454,23 +486,48 @@ export function renderBillOfSalePdf(
   doc.text('COMMENTS & DISCLOSURES', ML + CW / 2, y + 10, { align: 'center' })
   y += 18
 
-  // SALES FINAL notice
-  doc.setFontSize(7)
-  doc.setFont('helvetica', 'bold')
-  doc.setTextColor(DARK)
-  const salesFinalBold = 'SALES FINAL'
-  const salesFinalRest = ' Please review the entire contract, including all attached statements, before signing. This contract is final and binding once you have signed it unless the motor vehicle dealer has failed to comply with certain legal obligations.'
-  const salesFinalFull = `${salesFinalBold}${salesFinalRest}`
-  const salesFinalLines = doc.splitTextToSize(salesFinalFull, CW)
-  doc.text(salesFinalLines, ML, y + 10)
-  y += salesFinalLines.length * 10 + 6
-
-  doc.setFontSize(6)
+  const disclosureText = htmlToPlainText(data.commentsHtml)
+  doc.setFontSize(7.5)
   doc.setFont('helvetica', 'normal')
-  const ack = 'You acknowledge having read all the terms of the contract, including those on the reverse and on attached and or additional pages. You understand these terms make up the entire contract.'
-  const ackLines = doc.splitTextToSize(ack, CW)
-  doc.text(ackLines, ML, y + 10)
-  y += ackLines.length * 9 + 10
+  doc.setTextColor(DARK)
+  const normalizedDisclosure = disclosureText.replace(/\r/g, '').trim()
+  let sourceLines = normalizedDisclosure
+    ? normalizedDisclosure
+        .split('\n')
+        .map((line) => line.trim())
+        .filter(Boolean)
+    : []
+
+  if (sourceLines.length <= 1 && normalizedDisclosure) {
+    const compact = normalizedDisclosure.replace(/\s+/g, ' ').trim()
+    const numberedLines = compact.match(/\d+\)\s*.*?(?=(?:\s+\d+\)\s)|$)/g)
+    if (numberedLines && numberedLines.length > 1) {
+      sourceLines = numberedLines.map((line) => line.trim())
+    }
+  }
+
+  const contentX = ML + 4
+  const contentW = CW - 8
+  const lineHeight = 9
+  const wrappedLines: string[] = []
+
+  if (sourceLines.length === 0) {
+    wrappedLines.push('N/A')
+  } else {
+    for (const line of sourceLines) {
+      const wrapped = doc.splitTextToSize(line, contentW)
+      for (const w of wrapped) wrappedLines.push(w)
+    }
+  }
+
+  const boxY = y
+  const boxHeight = Math.max(20, wrappedLines.length * lineHeight + 8)
+  doc.setDrawColor(GRAY_LINE)
+  doc.setLineWidth(0.5)
+  doc.rect(ML, boxY, CW, boxHeight)
+  doc.text(wrappedLines, contentX, boxY + 9)
+
+  y = boxY + boxHeight + 8
 
   // Signatures
   doc.setDrawColor(DARK)
