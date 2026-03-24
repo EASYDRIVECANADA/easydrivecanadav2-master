@@ -6,6 +6,9 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { supabase } from '@/lib/supabaseClient'
 
+import Script from 'next/script'
+
+
 
 
 type ProspectRow = {
@@ -224,7 +227,7 @@ function IconInput({
 
   placeholder,
 
-  type = 'text',
+  type,
 
 }: {
 
@@ -242,6 +245,34 @@ function IconInput({
 
 }) {
 
+  const dateInputRef = useRef<HTMLInputElement>(null)
+
+  const isDateType = type === 'date'
+
+
+
+  const handleDateClick = () => {
+
+    if (dateInputRef.current) {
+
+      try {
+
+        dateInputRef.current.showPicker()
+
+      } catch {
+
+        dateInputRef.current.focus()
+
+        dateInputRef.current.click()
+
+      }
+
+    }
+
+  }
+
+
+
   return (
 
     <div>
@@ -250,25 +281,77 @@ function IconInput({
 
       <div className="flex items-stretch border border-gray-200 rounded bg-white shadow-sm overflow-hidden">
 
-        <div className="w-10 flex items-center justify-center bg-gray-100 text-gray-600 border-r border-gray-200">
+        <div 
+
+          className="w-10 flex items-center justify-center bg-gray-100 text-gray-600 border-r border-gray-200 cursor-pointer"
+
+          onClick={isDateType ? handleDateClick : undefined}
+
+        >
 
           {icon}
 
         </div>
 
-        <input
+        {isDateType ? (
 
-          type={type}
+          <div className="relative flex-1">
 
-          value={value}
+            <input
 
-          onChange={(e) => onChange(e.target.value)}
+              ref={dateInputRef}
 
-          placeholder={placeholder}
+              type="date"
 
-          className="flex-1 h-10 px-3 text-sm bg-white outline-none"
+              value={value || ''}
 
-        />
+              onChange={(e) => onChange(e.target.value)}
+
+              onClick={() => {
+
+                try { dateInputRef.current?.showPicker() } catch {}
+
+              }}
+
+              className={`w-full h-10 px-3 text-sm bg-white outline-none ${!value ? 'text-transparent' : 'text-gray-900'}`}
+
+              style={{ colorScheme: 'light' }}
+
+            />
+
+            {!value && (
+
+              <div 
+
+                className="absolute inset-0 flex items-center px-3 text-sm text-gray-400 bg-white pointer-events-none"
+
+              >
+
+                {placeholder}
+
+              </div>
+
+            )}
+
+          </div>
+
+        ) : (
+
+          <input
+
+            type={type}
+
+            value={value}
+
+            onChange={(e) => onChange(e.target.value)}
+
+            placeholder={placeholder}
+
+            className="flex-1 h-10 px-3 text-sm bg-white outline-none"
+
+          />
+
+        )}
 
       </div>
 
@@ -563,6 +646,178 @@ export default function CustomersTabNew({
   const [prospectOpen, setProspectOpen] = useState(false)
 
   const [prospectError, setProspectError] = useState<string | null>(null)
+
+  const [addressSuggestions, setAddressSuggestions] = useState<any[]>([])
+
+  const [showAddressSuggestions, setShowAddressSuggestions] = useState(false)
+
+  const [googleMapsLoaded, setGoogleMapsLoaded] = useState(false)
+
+  const addressInputRef = useRef<HTMLInputElement>(null)
+
+  const addressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+
+
+  const handleAddressSearch = (value: string) => {
+
+    if (addressTimerRef.current) clearTimeout(addressTimerRef.current)
+
+    if (value.length < 3) {
+
+      setAddressSuggestions([])
+
+      setShowAddressSuggestions(false)
+
+      return
+
+    }
+
+    
+
+    if (!googleMapsLoaded || !(window as any).google?.maps?.places) {
+
+      console.log('Google Maps not loaded yet, googleMapsLoaded:', googleMapsLoaded)
+
+      return
+
+    }
+
+
+
+    addressTimerRef.current = setTimeout(() => {
+
+      try {
+
+        const service = new (window as any).google.maps.places.AutocompleteService()
+
+        service.getPlacePredictions(
+
+          {
+
+            input: value,
+
+            componentRestrictions: { country: 'ca' },
+
+            types: ['address']
+
+          },
+
+          (predictions: any, status: any) => {
+
+            console.log('Places API response:', status, predictions)
+
+            if (status === 'OK' && predictions) {
+
+              setAddressSuggestions(predictions)
+
+              setShowAddressSuggestions(true)
+
+            } else {
+
+              setAddressSuggestions([])
+
+              setShowAddressSuggestions(false)
+
+            }
+
+          }
+
+        )
+
+      } catch {
+
+        setAddressSuggestions([])
+
+        setShowAddressSuggestions(false)
+
+      }
+
+    }, 300)
+
+  }
+
+
+
+  const handleAddressSelect = (item: any) => {
+
+    setForm((p) => ({ ...p, streetAddress: item.description }))
+
+    setShowAddressSuggestions(false)
+
+    setAddressSuggestions([])
+
+
+
+    if (!googleMapsLoaded) return
+
+
+
+    const service = new (window as any).google.maps.places.PlacesService(document.createElement('div'))
+
+    service.getDetails(
+
+      { placeId: item.place_id, fields: ['address_components'] },
+
+      (place: any, status: any) => {
+
+        if (status === 'OK' && place) {
+
+          const components = place.address_components || []
+
+          let streetNumber = ''
+
+          let route = ''
+
+          let city = ''
+
+          let province = ''
+
+          let postalCode = ''
+
+
+
+          components.forEach((c: any) => {
+
+            if (c.types.includes('street_number')) streetNumber = c.long_name
+
+            if (c.types.includes('route')) route = c.long_name
+
+            if (c.types.includes('locality')) city = c.long_name
+
+            if (c.types.includes('administrative_area_level_1')) province = c.short_name
+
+            if (c.types.includes('postal_code')) postalCode = c.long_name
+
+          })
+
+
+
+          const streetAddress = [streetNumber, route].filter(Boolean).join(' ')
+
+
+
+          setForm((p) => ({
+
+            ...p,
+
+            streetAddress: streetAddress || p.streetAddress,
+
+            city: city || p.city,
+
+            province: province || p.province,
+
+            postalCode: postalCode || p.postalCode
+
+          }))
+
+        }
+
+      }
+
+    )
+
+  }
 
 
 
@@ -1199,7 +1454,27 @@ export default function CustomersTabNew({
 
   return (
 
-    <div className="w-full">
+    <>
+
+      <Script
+
+        src="https://maps.googleapis.com/maps/api/js?key=AIzaSyB5cawxGOF203y8ePrVZd56Ijzrhw7l_g8&libraries=places"
+
+        onLoad={() => {
+
+          console.log('Google Maps loaded!', (window as any).google?.maps?.places)
+
+          setGoogleMapsLoaded(true)
+
+        }}
+
+        onError={(e) => console.error('Google Maps failed to load:', e)}
+
+        strategy="afterInteractive"
+
+      />
+
+      <div className="w-full">
 
       {showSavedModal ? (
 
@@ -2105,31 +2380,95 @@ export default function CustomersTabNew({
 
             <div className="text-xs text-gray-700 mb-1">Street Address</div>
 
-            <div className="flex items-stretch border border-gray-200 rounded bg-white shadow-sm overflow-hidden">
+            <div className="relative">
 
-              <div className="w-10 flex items-center justify-center bg-gray-100 text-gray-600 border-r border-gray-200">
+              <div className="flex items-stretch border border-gray-200 rounded bg-white shadow-sm overflow-hidden">
 
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <div className="w-10 flex items-center justify-center bg-gray-100 text-gray-600 border-r border-gray-200">
 
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 11c1.657 0 3-1.343 3-3S13.657 5 12 5 9 6.343 9 8s1.343 3 3 3z" />
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.5 8c0 7-7.5 13-7.5 13S4.5 15 4.5 8a7.5 7.5 0 1115 0z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 11c1.657 0 3-1.343 3-3S13.657 5 12 5 9 6.343 9 8s1.343 3 3 3z" />
 
-                </svg>
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.5 8c0 7-7.5 13-7.5 13S4.5 15 4.5 8a7.5 7.5 0 1115 0z" />
+
+                  </svg>
+
+                </div>
+
+                <input
+
+                  ref={addressInputRef}
+
+                  value={form.streetAddress}
+
+                  onChange={(e) => {
+
+                    const value = e.target.value
+
+                    setForm((p) => ({ ...p, streetAddress: value }))
+
+                    handleAddressSearch(value)
+
+                  }}
+
+                  onFocus={() => {
+
+                    if (addressSuggestions.length > 0) {
+
+                      setShowAddressSuggestions(true)
+
+                    }
+
+                  }}
+
+                  onBlur={() => {
+
+                    setTimeout(() => setShowAddressSuggestions(false), 200)
+
+                  }}
+
+                  placeholder="Enter a location"
+
+                  className="flex-1 h-10 px-3 text-sm bg-white outline-none"
+
+                />
 
               </div>
 
-              <input
+              {showAddressSuggestions && addressSuggestions.length > 0 && (
 
-                value={form.streetAddress}
+                <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-y-auto">
 
-                onChange={(e) => setForm((p) => ({ ...p, streetAddress: e.target.value }))}
+                  {addressSuggestions.map((suggestion: any) => (
 
-                placeholder="Enter a location"
+                    <div
 
-                className="flex-1 h-10 px-3 text-sm bg-white outline-none"
+                      key={suggestion.place_id}
 
-              />
+                      onClick={() => handleAddressSelect(suggestion)}
+
+                      className="px-4 py-2.5 hover:bg-gray-50 cursor-pointer border-b border-gray-100 last:border-b-0 flex items-start gap-2"
+
+                    >
+
+                      <svg className="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+
+                      </svg>
+
+                      <span className="text-sm text-gray-700">{suggestion.description}</span>
+
+                    </div>
+
+                  ))}
+
+                </div>
+
+              )}
 
             </div>
 
@@ -2728,6 +3067,8 @@ export default function CustomersTabNew({
       </div>
 
     </div>
+
+    </>
 
   )
 
