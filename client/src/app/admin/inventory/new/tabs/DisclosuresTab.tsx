@@ -60,6 +60,7 @@ const DisclosuresTab = forwardRef<DisclosuresTabHandle, DisclosuresTabProps>(fun
   const [presets, setPresets] = useState<Disclosure[]>([])
   const [loadingPresets, setLoadingPresets] = useState(false)
   const [presetsError, setPresetsError] = useState<string | null>(null)
+  const [hasExistingDisclosure, setHasExistingDisclosure] = useState(false)
   const editorRef = useRef<HTMLDivElement | null>(null)
   const [toolbarState, setToolbarState] = useState({
     bold: false,
@@ -136,6 +137,28 @@ const DisclosuresTab = forwardRef<DisclosuresTabHandle, DisclosuresTabProps>(fun
     document.addEventListener('selectionchange', onSel)
     return () => document.removeEventListener('selectionchange', onSel)
   }, [])
+
+  useEffect(() => {
+    const checkExisting = async () => {
+      const idStr = String(vehicleId || '').trim()
+      if (!idStr) return
+
+      const { data } = await supabase
+        .from('edc_disclosures')
+        .select('*')
+        .eq('vehicleId', idStr)
+        .maybeSingle()
+
+      if (data) {
+        setHasExistingDisclosure(true)
+        // Prefill existing data
+        if (data.brandtype) setBrandType(data.brandtype as any)
+        if (data.disclosures_body) setCustomNote(data.disclosures_body)
+      }
+    }
+
+    void checkExisting()
+  }, [vehicleId])
 
   useEffect(() => {
     let cancelled = false
@@ -276,25 +299,48 @@ const DisclosuresTab = forwardRef<DisclosuresTabHandle, DisclosuresTabProps>(fun
         return false
       }
 
-      const webhookBody = {
-        user_id: userId ?? null,
-        vehicleId: idStr,
-        stockNumber,
-        brandType,
-        disclosures: payloadDisclosures,
+      // Prepare disclosure data for database
+      const disclosuresTitle = payloadDisclosures.map(d => d.title).join(', ')
+      const disclosuresBody = payloadDisclosures.map(d => d.content).join('\n\n')
+
+      // Check if disclosure record exists by vehicleId
+      const { data: existingData } = await supabase
+        .from('edc_disclosures')
+        .select('id')
+        .eq('vehicleId', idStr)
+        .maybeSingle()
+
+      if (existingData?.id) {
+        // Update existing disclosure
+        const { error: updateError } = await supabase
+          .from('edc_disclosures')
+          .update({
+            stock_number: stockNumber || null,
+            brandtype: brandType,
+            disclosures_title: disclosuresTitle,
+            disclosures_body: disclosuresBody,
+            user_id: userId || null,
+          })
+          .eq('id', existingData.id)
+
+        if (updateError) throw new Error(updateError.message || 'Failed to update disclosures')
+      } else {
+        // Insert new disclosure
+        const { error: insertError } = await supabase
+          .from('edc_disclosures')
+          .insert({
+            vehicleId: idStr,
+            stock_number: stockNumber || null,
+            brandtype: brandType,
+            disclosures_title: disclosuresTitle,
+            disclosures_body: disclosuresBody,
+            user_id: userId || null,
+            created_at: new Date().toISOString(),
+          })
+
+        if (insertError) throw new Error(insertError.message || 'Failed to insert disclosures')
+        setHasExistingDisclosure(true)
       }
-
-      const res = await fetch('/api/disclosures', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(webhookBody),
-      })
-
-      const text = await res.text().catch(() => '')
-      if (!res.ok) throw new Error(text || `Webhook responded with ${res.status}`)
-      const lower = String(text || '').toLowerCase()
-      const ok = lower.includes('done') || lower.includes('success') || lower.includes('ok') || lower.includes('"success":true')
-      if (!ok) throw new Error(text || 'Unexpected webhook response')
 
       return true
     } catch (error) {
@@ -505,7 +551,7 @@ const DisclosuresTab = forwardRef<DisclosuresTabHandle, DisclosuresTabProps>(fun
         </div>
       </div>
 
-      {/* Save Button */}
+      {/* Save/Update Button */}
       {!hideSaveButton && (
         <div className="mt-6">
           <button
@@ -513,7 +559,7 @@ const DisclosuresTab = forwardRef<DisclosuresTabHandle, DisclosuresTabProps>(fun
             disabled={saving}
             className="w-full bg-[#118df0] text-white py-3 rounded-lg font-semibold hover:bg-[#0d6ebd] transition-colors disabled:opacity-50"
           >
-            {saving ? 'Saving...' : 'Save Disclosures'}
+            {saving ? (hasExistingDisclosure ? 'Updating...' : 'Saving...') : (hasExistingDisclosure ? 'Update Disclosures' : 'Save Disclosures')}
           </button>
         </div>
       )}

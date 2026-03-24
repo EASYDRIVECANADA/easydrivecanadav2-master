@@ -325,34 +325,7 @@ export default function AdminEditVehiclePage() {
         updated_at: new Date().toISOString(),
       }
 
-      // Prefer external webhook to perform the save
-      let webhookOk = false
-      try {
-        const res = await fetch('/api/webhook/add', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ id: String(params.id), vehicleId: String(params.id), ...payload }),
-        })
-        const text = await res.text().catch(() => '')
-        const lower = (text || '').toLowerCase()
-        webhookOk = res.ok && (lower.includes('done') || lower.includes('success'))
-        if (!webhookOk && !res.ok) {
-          console.error('Webhook error', res.status, text)
-        }
-      } catch (we) {
-        console.error('Webhook request failed:', we)
-        webhookOk = false
-      }
-
-      if (webhookOk) {
-        setSaveModalTitle('Saved')
-        setSaveModalMessage('Vehicle saved successfully.')
-        setSaveModalOpen(true)
-        await fetchVehicle()
-        return
-      }
-
-      // Fallback: directly update Supabase if webhook did not succeed
+      // Update directly to edc_vehicles table
       const { error } = await supabase
         .from('edc_vehicles')
         .update(payload)
@@ -360,7 +333,7 @@ export default function AdminEditVehiclePage() {
 
       if (error) {
         setSaveModalTitle('Save Failed')
-        setSaveModalMessage(error.message || 'Save failed (webhook + fallback).')
+        setSaveModalMessage(error.message || 'Failed to update vehicle.')
         setSaveModalOpen(true)
       } else {
         setSaveModalTitle('Saved')

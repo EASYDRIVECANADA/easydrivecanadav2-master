@@ -365,7 +365,7 @@ export default function CostsTab({ vehicleId, vehiclePrice, stockNumber }: Costs
       try {
         const dbId = (editingCost as any).dbId ?? editingCost.id
         if (dbId) {
-          await supabase
+          const { error: updateError } = await supabase
             .from('edc_costs')
             .update({
               name: modalForm.name || '',
@@ -380,12 +380,20 @@ export default function CostsTab({ vehicleId, vehiclePrice, stockNumber }: Costs
               tax_type: modalForm.taxType || 'Exempt',
               total: total,
               stock_number: stockNumber || null,
-              vehicle_id: vehicleId,
+              vehicleId: vehicleId,
             })
             .eq('id', dbId as any)
+          
+          if (updateError) {
+            console.error('Error updating cost:', updateError)
+            alert('Error updating cost: ' + updateError.message)
+          } else {
+            alert('Cost updated successfully!')
+          }
         }
       } catch (err) {
         console.error('Error updating cost:', err)
+        alert('Error updating cost: ' + (err instanceof Error ? err.message : String(err)))
       } finally {
         await fetchCostsAny()
       }
@@ -410,26 +418,35 @@ export default function CostsTab({ vehicleId, vehiclePrice, stockNumber }: Costs
         additionalExpenses: [...prev.additionalExpenses, newItem]
       }))
 
-      // Post to external webhook and wait for response, then refresh from Supabase if successful
+      // Insert directly to edc_costs table
       try {
-        const res = await fetch('https://primary-production-6722.up.railway.app/webhook/Cost', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            user_id: userId ?? null,
-            stockNumber: stockNumber || null,
-            vehicleId,
-            cost: newItem,
-          }),
-        })
-        if (res.ok) {
-          // Optionally inspect response body if needed
-          await fetchCostsAny()
+        const { error } = await supabase
+          .from('edc_costs')
+          .insert({
+            created_at: modalForm.date || new Date().toISOString(),
+            stock_number: stockNumber || null,
+            name: modalForm.name || '',
+            group_name: modalForm.groupName || '',
+            description: modalForm.description || '',
+            vendor: modalForm.vendor || '',
+            invoice_reference: modalForm.invoiceRef || '',
+            amount: price.toString(),
+            quantity: qty.toString(),
+            discount: discount.toString(),
+            tax: tax.toString(),
+            total: total.toString(),
+            tax_type: modalForm.taxType || 'Exempt',
+            user_id: userId || null,
+            vehicleId: vehicleId,
+          })
+        
+        if (error) {
+          console.error('Error inserting cost to database:', error)
         } else {
-          console.error('Webhook responded with non-OK status:', res.status)
+          await fetchCostsAny()
         }
       } catch (err) {
-        console.error('Failed to send cost to webhook:', err)
+        console.error('Failed to insert cost to database:', err)
       }
     }
     setShowModal(false)

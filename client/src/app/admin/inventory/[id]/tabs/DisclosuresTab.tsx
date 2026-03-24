@@ -397,23 +397,46 @@ const DisclosuresTab = forwardRef<DisclosuresTabHandle, DisclosuresTabProps>(fun
       }
 
       const body = String(customNote || '').trim()
+      
+      // Prepare disclosure title from selected disclosures
+      const disclosuresTitle = selectedDisclosures.map(d => d.title).join(', ')
 
-      const payload = {
-        vehicleId: String(vehicleId),
-        stock_number: sn,
-        brandtype: brandType,
-        disclosures_body: body || null,
+      // Check if disclosure record exists by vehicleId
+      const { data: existingData } = await supabase
+        .from('edc_disclosures')
+        .select('id')
+        .eq('vehicleId', String(vehicleId))
+        .maybeSingle()
+
+      if (existingData?.id) {
+        // Update existing disclosure
+        const { error: updateError } = await supabase
+          .from('edc_disclosures')
+          .update({
+            stock_number: sn,
+            brandtype: brandType,
+            disclosures_title: disclosuresTitle || null,
+            disclosures_body: body || null,
+          })
+          .eq('id', existingData.id)
+
+        if (updateError) throw new Error(updateError.message || 'Failed to update disclosures')
+      } else {
+        // Insert new disclosure
+        const { error: insertError } = await supabase
+          .from('edc_disclosures')
+          .insert({
+            vehicleId: String(vehicleId),
+            stock_number: sn,
+            brandtype: brandType,
+            disclosures_title: disclosuresTitle || null,
+            disclosures_body: body || null,
+            created_at: new Date().toISOString(),
+          })
+
+        if (insertError) throw new Error(insertError.message || 'Failed to insert disclosures')
       }
 
-      const res = await fetch('/api/updatedisclosures', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      })
-
-      const text = await res.text().catch(() => '')
-      if (!res.ok) throw new Error(text || `Webhook responded with ${res.status}`)
-      if (!String(text).toLowerCase().includes('done')) throw new Error('Webhook did not return Done')
       setResultModalTitle('Saved')
       setResultModalMessage('Disclosures saved successfully.')
       setResultModalOpen(true)

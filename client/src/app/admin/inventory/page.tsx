@@ -1032,25 +1032,34 @@ export default function AdminInventoryPage() {
   const performDelete = async (vehicle: Vehicle) => {
     setDeleting(vehicle.id)
     try {
-      const stockNumber = String(vehicle.stockNumber || '').trim()
+      // Delete related records by vehicleId
+      const { error: costsError } = await supabase
+        .from('edc_costs')
+        .delete()
+        .eq('vehicleId', vehicle.id)
+      if (costsError) console.error('Error deleting costs:', costsError)
 
-      if (stockNumber) {
-        const { error: costsError } = await supabase.from('edc_costs').delete().eq('stock_number', stockNumber)
-        if (costsError) throw costsError
+      const { error: disclosuresError } = await supabase
+        .from('edc_disclosures')
+        .delete()
+        .eq('vehicleId', vehicle.id)
+      if (disclosuresError) console.error('Error deleting disclosures:', disclosuresError)
 
-        const { error: disclosuresError } = await supabase.from('edc_disclosures').delete().eq('stock_number', stockNumber)
-        if (disclosuresError) throw disclosuresError
+      const { error: purchaseError } = await supabase
+        .from('edc_purchase')
+        .delete()
+        .eq('VehicleId', vehicle.id)
+      if (purchaseError) console.error('Error deleting purchase:', purchaseError)
 
-        const { error: purchaseByStockError } = await supabase.from('edc_purchase').delete().eq('stock_number', stockNumber)
-        if (purchaseByStockError) throw purchaseByStockError
-      }
-
-      const { error: purchaseByIdError } = await supabase.from('edc_purchase').delete().eq('id', vehicle.id)
-      if (purchaseByIdError) throw purchaseByIdError
-
-      const { error: vehicleError } = await supabase.from('edc_vehicles').delete().eq('id', vehicle.id)
+      // Delete the vehicle itself
+      const { error: vehicleError } = await supabase
+        .from('edc_vehicles')
+        .delete()
+        .eq('id', vehicle.id)
+      
       if (vehicleError) throw vehicleError
 
+      // Update UI state
       setVehicles((prev) => prev.filter((v) => v.id !== vehicle.id))
       setFilteredVehicles((prev) => prev.filter((v) => v.id !== vehicle.id))
       setSelectedIds((prev) => {
@@ -1059,9 +1068,11 @@ export default function AdminInventoryPage() {
         return next
       })
       if (drawerVehicle?.id === vehicle.id) closeDrawer()
+      
+      alert('Vehicle deleted successfully!')
     } catch (error) {
       console.error('Error deleting vehicle:', error)
-      openAlert('Delete failed', 'Failed to delete vehicle')
+      openAlert('Delete failed', 'Failed to delete vehicle: ' + (error instanceof Error ? error.message : String(error)))
     } finally {
       setDeleting(null)
     }

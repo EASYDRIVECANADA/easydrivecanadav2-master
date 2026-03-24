@@ -124,6 +124,7 @@ export default function PurchaseTab({ vehicleId, stockNumber, onError }: Purchas
     totalVehicleTax: 0,
   })
   const [saving, setSaving] = useState(false)
+  const [hasExistingPurchase, setHasExistingPurchase] = useState(false)
   const [taxPresets, setTaxPresets] = useState<TaxPresetRow[]>([])
   const [loadingTaxPresets, setLoadingTaxPresets] = useState(false)
   const [vendorSearch, setVendorSearch] = useState('')
@@ -238,31 +239,18 @@ export default function PurchaseTab({ vehicleId, stockNumber, onError }: Purchas
 
         let row: any = null
 
-        // 1) Schemas where edc_purchase.id === edc_vehicles.id
+        // 1) Primary: VehicleId column
         try {
           const { data, error } = await supabase
             .from('edc_purchase')
             .select('*')
-            .eq('id', vehicleId)
+            .eq('VehicleId', vehicleId)
             .order('created_at', { ascending: false })
             .limit(1)
           if (!error) row = Array.isArray(data) ? data[0] : null
         } catch {}
 
-        // 2) Explicit vehicle_id column
-        if (!row) {
-          try {
-            const { data, error } = await supabase
-              .from('edc_purchase')
-              .select('*')
-              .eq('vehicle_id', vehicleId)
-              .order('created_at', { ascending: false })
-              .limit(1)
-            if (!error) row = Array.isArray(data) ? data[0] : null
-          } catch {}
-        }
-
-        // 3) Fallback to stock number
+        // 2) Fallback to stock number
         if (!row && sn) {
           try {
             const { data, error } = await supabase
@@ -351,10 +339,10 @@ export default function PurchaseTab({ vehicleId, stockNumber, onError }: Purchas
           paymentStatus: toStr(pick(['paymentStatus', 'payment_status'])),
           salespersonRegistration: toStr(pick(['salespersonRegistration', 'salesperson_registration'])),
           companyMvda: toStr(pick(['companyMvda', 'company_mvda'])),
-          paymentType: toStr(pick(['paymentType', 'payment_type'])),
-          paymentDate: toStr(pick(['paymentDate', 'payment_date'])),
-          paymentTransactionNumber: toStr(pick(['paymentTransactionNumber', 'payment_transaction_number'])),
-          paymentNotes: toStr(pick(['paymentNotes', 'payment_notes'])),
+          paymentType: toStr(pick(['paymentType', 'Payment_Type', 'payment_type'])),
+          paymentDate: toStr(pick(['paymentDate', 'Payment_Date', 'payment_date'])),
+          paymentTransactionNumber: toStr(pick(['paymentTransactionNumber', 'Payment_Transaction_Number', 'payment_transaction_number'])),
+          paymentNotes: toStr(pick(['paymentNotes', 'Payment_Notes', 'payment_notes'])),
         }
 
         setFormData(prev => computeTaxes({ ...prev, ...Object.fromEntries(Object.entries(pref).filter(([, v]) => v !== undefined)) }))
@@ -507,18 +495,88 @@ export default function PurchaseTab({ vehicleId, stockNumber, onError }: Purchas
         })
       )
 
-      const res = await fetch('/api/updatepurchase', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      })
+      // Check if purchase record exists by VehicleId (VehicleId IS the primary key)
+      const { count: existingCount } = await supabase
+        .from('edc_purchase')
+        .select('VehicleId', { count: 'exact', head: true })
+        .eq('VehicleId', String(vehicleId))
 
-      const text = await res.text().catch(() => '')
-      if (!res.ok) throw new Error(text || `Webhook responded with ${res.status}`)
-      if (!String(text).toLowerCase().includes('done')) throw new Error('Webhook did not return Done')
+      const recordExists = (existingCount ?? 0) > 0
+
+      const dbPayload = {
+        stock_number: payload.stockNumber,
+        public_or_company: payload.publicOrCompany,
+        purchased_through_auction: payload.purchasedThroughAuction,
+        tax_type: payload.taxType,
+        purchase_price: payload.purchasePrice,
+        actual_cash_value: payload.actualCashValue,
+        discount: payload.discount,
+        tax_override: payload.taxOverride,
+        vehicle_tax: payload.vehicleTax,
+        total_vehicle_tax: payload.totalVehicleTax,
+        purchased_on: payload.purchasedOn,
+        date_received: payload.dateReceived,
+        date_delivered: payload.dateDelivered,
+        recon_completed_by: payload.reconCompletedBy,
+        title_received: payload.titleReceived,
+        ownership_status: payload.ownershipStatus,
+        ownership_notes: payload.ownershipNotes,
+        vendor_name: payload.vendorName,
+        driver_license: payload.driverLicense,
+        vendor_phone: payload.vendorPhone,
+        vendor_mobile: payload.vendorMobile,
+        vendor_fax: payload.vendorFax,
+        vendor_email: payload.vendorEmail,
+        vendor_location: payload.vendorLocation,
+        vendor_apt_suite: payload.vendorAptSuite,
+        vendor_city: payload.vendorCity,
+        vendor_postal_code: payload.vendorPostalCode,
+        plate_number: payload.plateNumber,
+        sale_state: payload.saleState,
+        payment_status: payload.paymentStatus,
+        vendor_country: payload.vendorCountry,
+        vendor_company: payload.vendorCompany,
+        vendor_province: payload.vendorProvince,
+        salesperson_registration: payload.salespersonRegistration,
+        company_mvda: payload.companyMvda,
+        rin: payload.rin,
+        tax_number: payload.taxNumber,
+        sale_status: payload.saleStatus,
+        license_fee: payload.licenseFee,
+        Payment_Type: payload.paymentType,
+        Payment_Date: payload.paymentDate,
+        Payment_Transaction_Number: payload.paymentTransactionNumber,
+        Payment_Notes: payload.paymentNotes,
+      }
+
+      if (recordExists) {
+        // Update existing purchase by VehicleId (primary key)
+        const { error: updateError } = await supabase
+          .from('edc_purchase')
+          .update(dbPayload)
+          .eq('VehicleId', String(vehicleId))
+
+        if (updateError) throw new Error(updateError.message || 'Failed to update purchase')
+        setHasExistingPurchase(true)
+        alert('Purchase information updated successfully!')
+      } else {
+        // Insert new purchase
+        const { error: insertError } = await supabase
+          .from('edc_purchase')
+          .insert({
+            VehicleId: String(vehicleId),
+            ...dbPayload,
+            created_at: new Date().toISOString(),
+          })
+
+        if (insertError) throw new Error(insertError.message || 'Failed to insert purchase')
+        setHasExistingPurchase(true)
+        alert('Purchase information saved successfully!')
+      }
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error)
       onError?.(msg)
+      alert('Error: ' + msg)
     } finally {
       setSaving(false)
     }
@@ -984,6 +1042,191 @@ export default function PurchaseTab({ vehicleId, stockNumber, onError }: Purchas
           )}
         </div>
 
+        {/* Contact Details */}
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
+            <div className="flex items-center">
+              <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">
+                <Phone className="w-4 h-4" />
+              </span>
+              <input
+                type="tel"
+                name="vendorPhone"
+                value={formData.vendorPhone || ''}
+                onChange={handleChange}
+                placeholder="phone"
+                className="flex-1 border border-gray-300 rounded-r-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+              />
+            </div>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Mobile</label>
+            <div className="flex items-center">
+              <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">
+                <Smartphone className="w-4 h-4" />
+              </span>
+              <input
+                type="tel"
+                name="vendorMobile"
+                value={formData.vendorMobile || ''}
+                onChange={handleChange}
+                placeholder="mobile"
+                className="flex-1 border border-gray-300 rounded-r-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+              />
+            </div>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Fax</label>
+            <div className="flex items-center">
+              <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">
+                <Printer className="w-4 h-4" />
+              </span>
+              <input
+                type="tel"
+                name="vendorFax"
+                value={formData.vendorFax || ''}
+                onChange={handleChange}
+                placeholder="fax"
+                className="flex-1 border border-gray-300 rounded-r-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+              />
+            </div>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+            <div className="flex items-center">
+              <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">
+                <Mail className="w-4 h-4" />
+              </span>
+              <input
+                type="email"
+                name="vendorEmail"
+                value={formData.vendorEmail || ''}
+                onChange={handleChange}
+                placeholder="email"
+                className="flex-1 border border-gray-300 rounded-r-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Address */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Enter a location</label>
+            <div className="flex items-center">
+              <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">
+                <MapPin className="w-4 h-4" />
+              </span>
+              <input
+                type="text"
+                name="vendorLocation"
+                value={formData.vendorLocation || ''}
+                onChange={handleChange}
+                placeholder="Enter a location"
+                className="flex-1 border border-gray-300 rounded-r-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+              />
+            </div>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Apt/Suite #</label>
+            <div className="flex items-center">
+              <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">
+                <Hash className="w-4 h-4" />
+              </span>
+              <input
+                type="text"
+                name="vendorAptSuite"
+                value={formData.vendorAptSuite || ''}
+                onChange={handleChange}
+                placeholder="apt/suite #"
+                className="flex-1 border border-gray-300 rounded-r-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+              />
+            </div>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">City</label>
+            <div className="flex items-center">
+              <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">
+                <MapPin className="w-4 h-4" />
+              </span>
+              <input
+                type="text"
+                name="vendorCity"
+                value={formData.vendorCity || ''}
+                onChange={handleChange}
+                placeholder="city"
+                className="flex-1 border border-gray-300 rounded-r-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+              />
+            </div>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Province</label>
+            <div className="flex items-center">
+              <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">
+                <MapPin className="w-4 h-4" />
+              </span>
+              <select
+                name="vendorProvince"
+                value={formData.vendorProvince || ''}
+                onChange={handleChange}
+                className="flex-1 border border-gray-300 rounded-r-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+              >
+                <option value="">--</option>
+                <option value="ON">ON</option>
+                <option value="QC">QC</option>
+                <option value="NS">NS</option>
+                <option value="NB">NB</option>
+                <option value="MB">MB</option>
+                <option value="BC">BC</option>
+                <option value="PE">PE</option>
+                <option value="SK">SK</option>
+                <option value="AB">AB</option>
+                <option value="NL">NL</option>
+                <option value="YT">YT</option>
+                <option value="NU">NU</option>
+                <option value="NT">NT</option>
+              </select>
+            </div>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Postal Code</label>
+            <div className="flex items-center">
+              <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">
+                <Tag className="w-4 h-4" />
+              </span>
+              <input
+                type="text"
+                name="vendorPostalCode"
+                value={formData.vendorPostalCode || ''}
+                onChange={handleChange}
+                placeholder="postal code"
+                className="flex-1 border border-gray-300 rounded-r-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+              />
+            </div>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Country</label>
+            <div className="flex items-center">
+              <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">
+                <MapPin className="w-4 h-4" />
+              </span>
+              <select
+                name="vendorCountry"
+                value={formData.vendorCountry || 'CA'}
+                onChange={handleChange}
+                className="flex-1 border border-gray-300 rounded-r-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+              >
+                <option value="CA">CA</option>
+                <option value="US">US</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
         {/* Purchased Through Auction */}
         <div className="border-t border-gray-200 pt-6 mb-6">
           <div className="flex items-center gap-4 p-4 bg-gray-50 rounded-lg">
@@ -1240,7 +1483,7 @@ export default function PurchaseTab({ vehicleId, stockNumber, onError }: Purchas
             disabled={saving}
             className="px-8 py-2 bg-[#118df0] text-white font-medium rounded hover:bg-[#0d6ebd] disabled:opacity-50 transition-colors"
           >
-            {saving ? 'Saving...' : 'Update'}
+            {saving ? (hasExistingPurchase ? 'Updating...' : 'Saving...') : (hasExistingPurchase ? 'Update Purchase Info' : 'Save Purchase Info')}
           </button>
         </div>
 

@@ -491,43 +491,35 @@ const CostsTab = forwardRef<CostsTabHandle, CostsTabProps>(function CostsTab({ v
         additionalExpenses: nextAdditionalExpenses,
       }))
 
-      // Add Cost should only use the /webhook/costs flow (proxied by /api/costs)
+      // Insert cost directly to edc_costs table
       try {
-        if (!stockNumber || !String(stockNumber).trim()) {
-          const msg = 'Missing stock number. Please set Stock # in Vehicle Details first.'
+        if (!vehicleId || !String(vehicleId).trim()) {
+          const msg = 'Missing vehicle ID. Please save Vehicle Details first.'
           onError?.(msg)
         } else {
-          const fullPayload: Record<string, any> = {
-            user_id: userId ?? null,
-            vehicleId: String(vehicleId),
-            stockNumber: String(stockNumber).trim(),
-            listPrice: costsData.listPrice,
-            salePrice: costsData.salePrice,
-            msrp: costsData.msrp,
-            purchasePrice: costsData.purchasePrice,
-            actualCashValue: costsData.actualCashValue,
-            additionalExpenses: nextAdditionalExpenses,
-          }
-
-          const payload = Object.fromEntries(
-            Object.entries(fullPayload).map(([k, v]) => {
-              if (v === undefined) return [k, null]
-              if (typeof v === 'string') {
-                const trimmed = v.trim()
-                return [k, trimmed === '' ? null : trimmed]
-              }
-              return [k, v]
+          const { error: insertError } = await supabase
+            .from('edc_costs')
+            .insert({
+              vehicleId: String(vehicleId),
+              stock_number: stockNumber || null,
+              name: newItem.name,
+              group_name: newItem.groupName,
+              description: newItem.description,
+              vendor: newItem.vendor,
+              invoice_reference: newItem.invoiceRef,
+              amount: newItem.price,
+              quantity: newItem.qty,
+              discount: newItem.discount,
+              tax: newItem.tax,
+              tax_type: newItem.taxType,
+              total: newItem.total,
+              user_id: userId || null,
+              created_at: new Date().toISOString(),
             })
-          )
 
-          const res = await fetch('/api/costs', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload),
-          })
-
-          const text = await res.text().catch(() => '')
-          if (!res.ok) throw new Error(text || `Webhook responded with ${res.status}`)
+          if (insertError) {
+            throw new Error(insertError.message || 'Failed to insert cost')
+          }
           await fetchCostsByStock()
         }
       } catch (err) {

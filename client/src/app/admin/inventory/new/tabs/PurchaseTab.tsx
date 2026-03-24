@@ -115,6 +115,7 @@ const PurchaseTab = forwardRef<PurchaseTabHandle, PurchaseTabProps>(function Pur
   })
   const [saving, setSaving] = useState(false)
   const [alreadySaved, setAlreadySaved] = useState(false)
+  const [hasExistingPurchase, setHasExistingPurchase] = useState(false)
   const [taxPresets, setTaxPresets] = useState<TaxPresetRow[]>([])
   const [loadingTaxPresets, setLoadingTaxPresets] = useState(false)
   const [vendorSearch, setVendorSearch] = useState('')
@@ -214,20 +215,70 @@ const PurchaseTab = forwardRef<PurchaseTabHandle, PurchaseTabProps>(function Pur
   }, [formData, vehicleId])
 
   useEffect(() => {
-    // Check if a purchase record already exists to prevent double-add
+    // Check if a purchase record already exists and prefill data
     const checkExisting = async () => {
-      if (!stockNumber) return
+      const idStr = String(vehicleId || '').trim()
+      if (!idStr) return
+
       const { data } = await supabase
         .from('edc_purchase')
-        .select('id')
-        .eq('stock_number', String(stockNumber).trim())
-        .limit(1)
-      if (Array.isArray(data) && data.length > 0) {
+        .select('*')
+        .eq('VehicleId', idStr)
+        .maybeSingle()
+
+      if (data) {
+        setHasExistingPurchase(true)
         setAlreadySaved(true)
+        // Prefill existing data
+        setFormData((prev) => ({
+          ...prev,
+          purchasedOn: data.purchased_on || prev.purchasedOn,
+          dateReceived: data.date_received || prev.dateReceived,
+          dateDelivered: data.date_delivered || prev.dateDelivered,
+          reconCompletedBy: data.recon_completed_by || prev.reconCompletedBy,
+          ownershipStatus: data.ownership_status || prev.ownershipStatus,
+          titleReceived: data.title_received || prev.titleReceived,
+          ownershipNotes: data.ownership_notes || prev.ownershipNotes,
+          vendorName: data.vendor_name || prev.vendorName,
+          vendorCompany: data.vendor_company || prev.vendorCompany,
+          vendorPhone: data.vendor_phone || prev.vendorPhone,
+          vendorMobile: data.vendor_mobile || prev.vendorMobile,
+          vendorFax: data.vendor_fax || prev.vendorFax,
+          vendorEmail: data.vendor_email || prev.vendorEmail,
+          vendorLocation: data.vendor_location || prev.vendorLocation,
+          vendorAptSuite: data.vendor_apt_suite || prev.vendorAptSuite,
+          vendorCity: data.vendor_city || prev.vendorCity,
+          vendorProvince: data.vendor_province || prev.vendorProvince,
+          vendorPostalCode: data.vendor_postal_code || prev.vendorPostalCode,
+          salespersonRegistration: data.salesperson_registration || prev.salespersonRegistration,
+          companyMvda: data.company_mvda || prev.companyMvda,
+          rin: data.rin || prev.rin,
+          taxNumber: data.tax_number || prev.taxNumber,
+          plateNumber: data.plate_number || prev.plateNumber,
+          saleStatus: data.sale_status || prev.saleStatus,
+          licenseFee: data.license_fee ?? prev.licenseFee,
+          purchasedThroughAuction: data.purchased_through_auction ?? prev.purchasedThroughAuction,
+          publicOrCompany: data.public_or_company || prev.publicOrCompany,
+          purchasePrice: data.purchase_price ?? prev.purchasePrice,
+          actualCashValue: data.actual_cash_value ?? prev.actualCashValue,
+          discount: data.discount ?? prev.discount,
+          taxType: data.tax_type || prev.taxType,
+          taxOverride: data.tax_override ?? prev.taxOverride,
+          vehicleTax: data.vehicle_tax ?? prev.vehicleTax,
+          totalVehicleTax: data.total_vehicle_tax ?? prev.totalVehicleTax,
+          saleState: data.sale_state || prev.saleState,
+          paymentStatus: data.payment_status || prev.paymentStatus,
+          vendorCountry: data.vendor_country || prev.vendorCountry,
+          driverLicense: data.driver_license || prev.driverLicense,
+          paymentType: data.Payment_Type || prev.paymentType,
+          paymentDate: data.Payment_Date || prev.paymentDate,
+          paymentTransactionNumber: data.Payment_Transaction_Number || prev.paymentTransactionNumber,
+          paymentNotes: data.Payment_Notes || prev.paymentNotes,
+        }))
       }
     }
     void checkExisting()
-  }, [vehicleId, stockNumber])
+  }, [vehicleId])
 
   useEffect(() => {
     const load = async () => {
@@ -542,20 +593,83 @@ const PurchaseTab = forwardRef<PurchaseTabHandle, PurchaseTabProps>(function Pur
         })
       )
 
-      const endpoint = alreadySaved ? '/api/updatepurchase' : '/api/purchase'
-      const res = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      })
+      // Check if purchase record exists by VehicleId (VehicleId IS the primary key - no id column)
+      const { count: existingCount } = await supabase
+        .from('edc_purchase')
+        .select('VehicleId', { count: 'exact', head: true })
+        .eq('VehicleId', String(vehicleId))
 
-      const text = await res.text().catch(() => '')
-      if (!res.ok) throw new Error(text || `Webhook responded with ${res.status}`)
+      const recordExists = (existingCount ?? 0) > 0
 
-      if (!String(text).toLowerCase().includes('done')) {
-        throw new Error(text || 'Webhook did not return done')
+      const dbPayload = {
+        stock_number: payload.stockNumber,
+        public_or_company: payload.publicOrCompany,
+        purchased_through_auction: payload.purchasedThroughAuction,
+        tax_type: payload.taxType,
+        purchase_price: payload.purchasePrice,
+        actual_cash_value: payload.actualCashValue,
+        discount: payload.discount,
+        tax_override: payload.taxOverride,
+        vehicle_tax: payload.vehicleTax,
+        total_vehicle_tax: payload.totalVehicleTax,
+        purchased_on: payload.purchasedOn,
+        date_received: payload.dateReceived,
+        date_delivered: payload.dateDelivered,
+        recon_completed_by: payload.reconCompletedBy,
+        title_received: payload.titleReceived,
+        ownership_status: payload.ownershipStatus,
+        ownership_notes: payload.ownershipNotes,
+        vendor_name: payload.vendorName,
+        driver_license: payload.driverLicense,
+        vendor_phone: payload.vendorPhone,
+        vendor_mobile: payload.vendorMobile,
+        vendor_fax: payload.vendorFax,
+        vendor_email: payload.vendorEmail,
+        vendor_location: payload.vendorLocation,
+        vendor_apt_suite: payload.vendorAptSuite,
+        vendor_city: payload.vendorCity,
+        vendor_postal_code: payload.vendorPostalCode,
+        plate_number: payload.plateNumber,
+        sale_state: payload.saleState,
+        payment_status: payload.paymentStatus,
+        vendor_country: payload.vendorCountry,
+        vendor_company: payload.vendorCompany,
+        vendor_province: payload.vendorProvince,
+        salesperson_registration: payload.salespersonRegistration,
+        company_mvda: payload.companyMvda,
+        rin: payload.rin,
+        tax_number: payload.taxNumber,
+        sale_status: payload.saleStatus,
+        license_fee: payload.licenseFee,
+        user_id: payload.user_id,
+        Payment_Type: payload.paymentType,
+        Payment_Date: payload.paymentDate,
+        Payment_Transaction_Number: payload.paymentTransactionNumber,
+        Payment_Notes: payload.paymentNotes,
       }
 
+      if (recordExists) {
+        // Update existing purchase by VehicleId (primary key)
+        const { error: updateError } = await supabase
+          .from('edc_purchase')
+          .update(dbPayload)
+          .eq('VehicleId', String(vehicleId))
+
+        if (updateError) throw new Error(updateError.message || 'Failed to update purchase')
+      } else {
+        // Insert new purchase
+        const { error: insertError } = await supabase
+          .from('edc_purchase')
+          .insert({
+            VehicleId: String(vehicleId),
+            ...dbPayload,
+            created_at: new Date().toISOString(),
+          })
+
+        if (insertError) throw new Error(insertError.message || 'Failed to insert purchase')
+      }
+
+      setHasExistingPurchase(true)
       setAlreadySaved(true)
       return true
     } catch (error) {
@@ -1435,7 +1549,7 @@ const PurchaseTab = forwardRef<PurchaseTabHandle, PurchaseTabProps>(function Pur
             disabled={saving}
             className="flex-1 bg-[#118df0] text-white py-3 rounded-lg font-semibold hover:bg-[#0d6ebd] transition-colors disabled:opacity-50"
           >
-            {saving ? 'Saving...' : 'Save Purchase Info'}
+            {saving ? (hasExistingPurchase ? 'Updating...' : 'Saving...') : (hasExistingPurchase ? 'Update Purchase Info' : 'Save Purchase Info')}
           </button>
         </div>
       )}

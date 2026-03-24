@@ -585,75 +585,204 @@ export default function NewVehiclePage() {
         updated_at: new Date().toISOString(),
       }
 
-      const res = await fetch('/api/webhook/add', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      })
-      const text = await res.text().catch(() => '')
-      const lower = (text || '').toLowerCase()
-      const hasSuccess = lower.includes('done') || lower.includes('success')
-      const isDuplicate = lower.includes('duplicate key') || lower.includes('unique constraint') || lower.includes('already exists')
-      const proceed = (res.ok && hasSuccess) || isDuplicate
-      if (!proceed) {
-        const msg = text || `Webhook error (${res.status})`
-        setError(msg)
-        setSaveModalTitle('Save Failed')
-        setSaveModalMessage(msg)
+      // If createdVehicleId exists, update; otherwise insert
+      if (createdVehicleId) {
+        // Update existing vehicle
+        const { error: updateError } = await supabase
+          .from('edc_vehicles')
+          .update({
+            make: payload.make,
+            model: payload.model,
+            year: payload.year,
+            trim: payload.trim,
+            stock_number: payload.stock_number,
+            key_number: payload.key_number,
+            key_description: payload.key_description,
+            series: payload.series,
+            equipment: payload.equipment,
+            vin: payload.vin,
+            price: payload.price,
+            mileage: payload.mileage,
+            status: payload.status,
+            inventory_type: payload.inventory_type,
+            fuel_type: payload.fuel_type,
+            transmission: payload.transmission,
+            body_style: payload.body_style,
+            drivetrain: payload.drivetrain,
+            city: payload.city,
+            province: payload.province,
+            exterior_color: payload.exterior_color,
+            interior_color: payload.interior_color,
+            description: payload.description,
+            ad_description: payload.ad_description,
+            features: payload.features,
+            condition: payload.condition,
+            status_colour: payload.status_colour,
+            retail_wholesale: payload.retail_wholesale,
+            substatus: payload.substatus,
+            assignment: payload.assignment,
+            lot_location: payload.lot_location,
+            keywords: payload.keywords,
+            feedwords: payload.feedwords,
+            odometer: payload.odometer,
+            odometer_unit: payload.odometer_unit,
+            in_stock_date: payload.in_stock_date,
+            vehicle_type: payload.vehicle_type,
+            engine: payload.engine,
+            cylinders: payload.cylinders,
+            doors: payload.doors,
+            other: payload.other,
+            notes: payload.notes,
+            distance_disclaimer: payload.distance_disclaimer,
+            feed_to_autotrader: payload.feed_to_autotrader,
+            feed_to_carpages: payload.feed_to_carpages,
+            feed_to_cargurus: payload.feed_to_cargurus,
+            certified: payload.certified,
+            verified: payload.verified,
+            updated_at: payload.updated_at,
+          })
+          .eq('id', createdVehicleId)
+
+        if (updateError) {
+          const msg = updateError.message || 'Failed to update vehicle'
+          setError(msg)
+          setSaveModalTitle('Update Failed')
+          setSaveModalMessage(msg)
+          setSaveModalOpen(true)
+          return
+        }
+
+        setSaveModalTitle('Updated')
+        setSaveModalMessage('Vehicle updated successfully.')
         setSaveModalOpen(true)
         return
       }
 
-      // Try to extract a created vehicle id from response JSON (if the webhook returns one)
-      let rid = ''
-      try {
-        const maybe = JSON.parse(text)
-        const src = Array.isArray(maybe) ? (maybe[0] || {}) : (maybe || {})
-        rid = String((src.id ?? src.vehicle_id ?? src.vehicleId ?? '') || '').trim()
-      } catch {}
+      // Insert new vehicle
+      const { data: insertedData, error: insertError } = await supabase
+        .from('edc_vehicles')
+        .insert({
+          user_id: webhookUserId || null,
+          make: payload.make,
+          model: payload.model,
+          year: payload.year,
+          trim: payload.trim,
+          stock_number: payload.stock_number,
+          key_number: payload.key_number,
+          key_description: payload.key_description,
+          series: payload.series,
+          equipment: payload.equipment,
+          vin: payload.vin,
+          price: payload.price,
+          mileage: payload.mileage,
+          status: payload.status,
+          inventory_type: payload.inventory_type,
+          fuel_type: payload.fuel_type,
+          transmission: payload.transmission,
+          body_style: payload.body_style,
+          drivetrain: payload.drivetrain,
+          city: payload.city,
+          province: payload.province,
+          exterior_color: payload.exterior_color,
+          interior_color: payload.interior_color,
+          description: payload.description,
+          ad_description: payload.ad_description,
+          features: payload.features,
+          condition: payload.condition,
+          status_colour: payload.status_colour,
+          retail_wholesale: payload.retail_wholesale,
+          substatus: payload.substatus,
+          assignment: payload.assignment,
+          lot_location: payload.lot_location,
+          keywords: payload.keywords,
+          feedwords: payload.feedwords,
+          odometer: payload.odometer,
+          odometer_unit: payload.odometer_unit,
+          in_stock_date: payload.in_stock_date,
+          vehicle_type: payload.vehicle_type,
+          engine: payload.engine,
+          cylinders: payload.cylinders,
+          doors: payload.doors,
+          other: payload.other,
+          notes: payload.notes,
+          distance_disclaimer: payload.distance_disclaimer,
+          feed_to_autotrader: payload.feed_to_autotrader,
+          feed_to_carpages: payload.feed_to_carpages,
+          feed_to_cargurus: payload.feed_to_cargurus,
+          certified: payload.certified,
+          verified: payload.verified,
+          created_at: payload.created_at,
+          updated_at: payload.updated_at,
+        })
+        .select('id')
+        .single()
 
-      // If ID not present in the response, poll Supabase using unique keys (stock_number or VIN)
-      const resolveCreatedId = async (): Promise<string | null> => {
-        try {
-          const stock = String(formData.stockNumber || '').trim()
-          const vin = String(formData.vin || '').trim()
-          if (stock) {
-            const { data } = await supabase
-              .from('edc_vehicles')
-              .select('id')
-              .eq('stock_number', stock)
-              .order('created_at', { ascending: false })
-              .limit(1)
-              .maybeSingle()
-            const id = (data as any)?.id ? String((data as any).id).trim() : ''
-            if (id) return id
-          }
-          if (vin) {
-            const { data } = await supabase
-              .from('edc_vehicles')
-              .select('id')
-              .eq('vin', vin)
-              .order('created_at', { ascending: false })
-              .limit(1)
-              .maybeSingle()
-            const id = (data as any)?.id ? String((data as any).id).trim() : ''
-            if (id) return id
-          }
-        } catch {}
-        return null
-      }
-
-      if (!rid) {
-        for (let i = 0; i < 12; i++) { // up to ~12s
-          const got = await resolveCreatedId()
-          if (got) { rid = got; break }
-          await new Promise(r => setTimeout(r, 1000))
+      if (insertError) {
+        const isDuplicate = insertError.message?.toLowerCase().includes('duplicate') || 
+                           insertError.message?.toLowerCase().includes('unique')
+        if (!isDuplicate) {
+          const msg = insertError.message || 'Failed to create vehicle'
+          setError(msg)
+          setSaveModalTitle('Save Failed')
+          setSaveModalMessage(msg)
+          setSaveModalOpen(true)
+          return
         }
+        // If duplicate, try to find existing vehicle
+        const stock = String(formData.stockNumber || '').trim()
+        const vin = String(formData.vin || '').trim()
+        let existingId = ''
+        if (stock) {
+          const { data } = await supabase
+            .from('edc_vehicles')
+            .select('id')
+            .eq('stock_number', stock)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle()
+          existingId = (data as any)?.id ? String((data as any).id).trim() : ''
+        }
+        if (!existingId && vin) {
+          const { data } = await supabase
+            .from('edc_vehicles')
+            .select('id')
+            .eq('vin', vin)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle()
+          existingId = (data as any)?.id ? String((data as any).id).trim() : ''
+        }
+        if (!existingId) {
+          const msg = 'Duplicate vehicle detected but could not locate existing record'
+          setSaveModalTitle('Save Failed')
+          setSaveModalMessage(msg)
+          setSaveModalOpen(true)
+          return
+        }
+        setCreatedVehicleId(existingId)
+        setSaveModalTitle('Saved')
+        setSaveModalMessage('Vehicle already exists. Loaded existing vehicle.')
+        setSaveModalOpen(true)
+        setAllowNextTabs(true)
+        setActiveTab('disclosures')
+        try {
+          const snapshot = {
+            activeTab: 'disclosures',
+            createdVehicleId: existingId,
+            disclosuresSaved: false,
+            purchaseSaved: false,
+            costsSaved: false,
+            formData,
+          }
+          localStorage.setItem('edc_new_vehicle_wizard', JSON.stringify(snapshot))
+        } catch {}
+        return
       }
 
+      const rid = insertedData?.id ? String(insertedData.id).trim() : ''
       if (!rid) {
-        const msg = 'Vehicle created via webhook, but the vehicle ID is not yet available. Please try again in a moment.'
-        setSaveModalTitle('Saved')
+        const msg = 'Vehicle created but ID not returned'
+        setSaveModalTitle('Save Failed')
         setSaveModalMessage(msg)
         setSaveModalOpen(true)
         return
@@ -950,11 +1079,7 @@ export default function NewVehiclePage() {
       <div className="bg-white shadow">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="py-6">
-            <Link href="/admin/inventory" className="flex items-center gap-2 text-[#118df0] hover:underline">
-              <ArrowLeft className="w-4 h-4" />
-              Back to Inventory
-            </Link>
-            <h1 className="text-3xl font-bold text-gray-900 mt-2">Add New Vehicle</h1>
+            <h1 className="text-3xl font-bold text-gray-900">Add New Vehicle</h1>
             <p className="mt-2 text-gray-600">Create a new inventory listing</p>
           </div>
         </div>
@@ -1524,14 +1649,14 @@ export default function NewVehiclePage() {
                 </div>
               </div>
 
-              {/* Save Button */}
+              {/* Save/Update Button */}
               <div className="flex justify-end pt-4">
                 <button
                   type="submit"
                   disabled={submitting}
                   className="px-8 py-2 bg-[#118df0] text-white font-medium rounded hover:bg-[#0d6ebd] disabled:opacity-50 transition-colors"
                 >
-                  {submitting ? 'Saving...' : 'Save'}
+                  {submitting ? (createdVehicleId ? 'Updating...' : 'Saving...') : (createdVehicleId ? 'Update' : 'Save')}
                 </button>
               </div>
             </div>
