@@ -115,6 +115,9 @@ export default function NewVehiclePage() {
   const [stockNumberTaken, setStockNumberTaken] = useState(false)
   const [stockChecking, setStockChecking] = useState(false)
   const stockCheckTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [vinDuplicate, setVinDuplicate] = useState(false)
+  const [vinChecking, setVinChecking] = useState(false)
+  const vinCheckTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const adEditorRef = useRef<HTMLDivElement | null>(null)
   const lastAdHtmlRef = useRef<string>('')
   const [adToolbar, setAdToolbar] = useState({
@@ -500,12 +503,67 @@ export default function NewVehiclePage() {
       }, 500)
       return
     }
+    if (name === 'vin') {
+      setFormData({ ...formData, vin: value })
+      setVinDuplicate(false)
+      if (vinCheckTimerRef.current) clearTimeout(vinCheckTimerRef.current)
+      const trimmed = value.trim()
+      if (trimmed.length < 5) {
+        setVinDuplicate(false)
+        return
+      }
+      setVinChecking(true)
+      vinCheckTimerRef.current = setTimeout(async () => {
+        try {
+          const { count } = await supabase
+            .from('edc_vehicles')
+            .select('id', { count: 'exact', head: true })
+            .eq('vin', trimmed)
+          setVinDuplicate((count ?? 0) > 0)
+        } catch {
+          setVinDuplicate(false)
+        } finally {
+          setVinChecking(false)
+        }
+      }, 600)
+      return
+    }
     setFormData({ ...formData, [name]: value })
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (submitting) return
+
+    // Stock# duplicate check before submitting
+    const stockToCheck = String((formData as any)?.stockNumber || '').trim()
+    if (stockToCheck) {
+      const normalizedStock = normalizeStockNumber(stockToCheck)
+      const { data: stockData } = await supabase
+        .from('edc_vehicles')
+        .select('stock_number')
+        .limit(500)
+      const stockTaken = Array.isArray(stockData)
+        && stockData.some((row: any) => normalizeStockNumber(String(row?.stock_number ?? '')) === normalizedStock)
+      if (stockTaken) {
+        setError('Stock # is already taken, please use another number.')
+        return
+      }
+    }
+
+    // VIN duplicate check before submitting
+    const vinToCheck = String((formData as any)?.vin || '').trim()
+    if (vinToCheck.length >= 5) {
+      const { count: vinCount } = await supabase
+        .from('edc_vehicles')
+        .select('id', { count: 'exact', head: true })
+        .eq('vin', vinToCheck)
+      if ((vinCount ?? 0) > 0) {
+        setError('VIN code is already taken. Use another VIN code to proceed.')
+        return
+      }
+    }
+
     setSubmitting(true)
     setError('')
 
@@ -1302,7 +1360,21 @@ export default function NewVehiclePage() {
                   <div className="flex">
                     <div className="relative flex-1">
                       <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs">▦</span>
-                      <input type="text" name="vin" value={formData.vin} onChange={handleChange} placeholder="VIN" className="w-full border border-gray-300 rounded-l pl-8 pr-3 py-2 text-sm focus:ring-1 focus:ring-[#118df0] focus:border-[#118df0]" />
+                      <input
+                        type="text"
+                        name="vin"
+                        value={formData.vin}
+                        onChange={handleChange}
+                        placeholder="VIN"
+                        className={`w-full border rounded-l pl-8 pr-3 py-2 text-sm focus:ring-1 ${
+                          vinDuplicate
+                            ? 'border-red-500 bg-red-50 text-red-700 focus:ring-red-400 focus:border-red-500'
+                            : 'border-gray-300 bg-white text-gray-700 focus:ring-[#118df0] focus:border-[#118df0]'
+                        }`}
+                      />
+                      {vinChecking && (
+                        <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-gray-400">checking…</span>
+                      )}
                     </div>
                     <button
                       type="button"
@@ -1313,6 +1385,9 @@ export default function NewVehiclePage() {
                       {sendingVin ? '...' : 'Decode'}
                     </button>
                   </div>
+                  {vinDuplicate && (
+                    <p className="mt-1 text-xs text-red-600 font-medium">VIN code is already taken. Use another VIN code to proceed.</p>
+                  )}
                 </div>
                 <div>
                   <label className="block text-sm text-gray-600 mb-1">Odometer</label>

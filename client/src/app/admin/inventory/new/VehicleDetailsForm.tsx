@@ -13,6 +13,8 @@ export default function VehicleDetailsForm({ formData, handleChange, setFormData
   const [sendingVin, setSendingVin] = useState(false)
   const [vinPrefilled, setVinPrefilled] = useState(false)
   const [lastVinSent, setLastVinSent] = useState<string>('')
+  const [vinDuplicate, setVinDuplicate] = useState(false)
+  const [vinChecking, setVinChecking] = useState(false)
   const [vinConfirmOpen, setVinConfirmOpen] = useState(false)
   const [vinConfirmDontShow, setVinConfirmDontShow] = useState(false)
   const [vinConfirmBalance, setVinConfirmBalance] = useState<number | null>(null)
@@ -41,6 +43,29 @@ export default function VehicleDetailsForm({ formData, handleChange, setFormData
       setVinPrefilled(false)
     }
   }, [formData?.vin, lastVinSent])
+
+  useEffect(() => {
+    const vin = String(formData?.vin || '').trim()
+    if (vin.length < 5) {
+      setVinDuplicate(false)
+      return
+    }
+    setVinChecking(true)
+    const timer = setTimeout(async () => {
+      try {
+        const { count } = await supabase
+          .from('edc_vehicles')
+          .select('id', { count: 'exact', head: true })
+          .eq('vin', vin)
+        setVinDuplicate((count ?? 0) > 0)
+      } catch {
+        setVinDuplicate(false)
+      } finally {
+        setVinChecking(false)
+      }
+    }, 600)
+    return () => clearTimeout(timer)
+  }, [formData?.vin])
 
   useEffect(() => {
     let alive = true
@@ -448,13 +473,22 @@ export default function VehicleDetailsForm({ formData, handleChange, setFormData
                 value={formData.vin}
                 onChange={handleChange}
                 placeholder="Vehicle Identification Number"
-                className="w-full border border-gray-300 rounded-lg pl-4 pr-10 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
+                className={`w-full border rounded-lg pl-4 pr-10 py-2 focus:ring-2 focus:border-transparent transition-colors ${
+                  vinDuplicate
+                    ? 'border-red-500 bg-red-50 focus:ring-red-300'
+                    : 'border-gray-300 focus:ring-[#118df0]'
+                }`}
               />
+              {vinChecking && (
+                <span className="absolute inset-y-0 right-10 flex items-center pr-2 text-xs text-gray-400">checking…</span>
+              )}
               {(!vinPrefilled || String(formData.vin).trim() !== lastVinSent) && (
                 <button
                   type="button"
                   title="Add VIN"
-                  className={`absolute inset-y-0 right-0 flex items-center px-3 text-white rounded-r-lg ${sendingVin ? 'bg-gray-400 cursor-not-allowed' : 'bg-[#118df0] hover:bg-[#0d6ebd]'}`}
+                  className={`absolute inset-y-0 right-0 flex items-center px-3 text-white rounded-r-lg ${
+                    sendingVin ? 'bg-gray-400 cursor-not-allowed' : 'bg-[#118df0] hover:bg-[#0d6ebd]'
+                  }`}
                   onClick={handleSendVin}
                   disabled={sendingVin}
                 >
@@ -462,6 +496,11 @@ export default function VehicleDetailsForm({ formData, handleChange, setFormData
                 </button>
               )}
             </div>
+            {vinDuplicate && (
+              <p className="mt-1 text-xs font-medium text-red-600">
+                VIN code is already taken. Use another VIN code to proceed.
+              </p>
+            )}
           </div>
           <div className="md:col-span-3 grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="md:col-span-2">
