@@ -170,6 +170,9 @@ export default function PrepareDocumentPage() {
   const [downloadModal, setDownloadModal] = useState(false)
   const [downloadingFileIdx, setDownloadingFileIdx] = useState<number | null>(null)
   const [sending, setSending] = useState(false)
+  const [addRecipientModal, setAddRecipientModal] = useState(false)
+  const [addRecipientForm, setAddRecipientForm] = useState({ email: '', full_name: '', company: '', title: '' })
+  const [addingRecipient, setAddingRecipient] = useState(false)
   const [dealData, setDealData] = useState<any>(null)
   const [zoom, setZoom] = useState(100)
   const [showGrid, setShowGrid] = useState(false)
@@ -1040,6 +1043,38 @@ export default function PrepareDocumentPage() {
     }
   }
 
+  const handleAddRecipient = async () => {
+    if (!addRecipientForm.email.trim()) return
+    setAddingRecipient(true)
+    try {
+      const res = await fetch(`/api/esignature/signature/${encodeURIComponent(dealId)}/add-recipient`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(addRecipientForm),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Failed to add recipient')
+      // Add new recipient to local state
+      setRecipients(prev => [
+        ...prev,
+        {
+          id: data.recipient.id,
+          email: data.recipient.email,
+          full_name: data.recipient.full_name || '',
+          company: data.recipient.company || '',
+          title: data.recipient.title || '',
+        },
+      ])
+      setAddRecipientModal(false)
+      setAddRecipientForm({ email: '', full_name: '', company: '', title: '' })
+      if (document.activeElement instanceof HTMLElement) document.activeElement.blur()
+    } catch (err: any) {
+      openActionModal(false, 'Error', err?.message || 'Failed to add recipient')
+    } finally {
+      setAddingRecipient(false)
+    }
+  }
+
   const handleSave = async () => {
     setSaving(true)
     try {
@@ -1320,6 +1355,14 @@ export default function PrepareDocumentPage() {
                       </button>
                     )
                   })}
+                  <button
+                    type="button"
+                    onClick={() => setAddRecipientModal(true)}
+                    className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-xs text-blue-600 hover:bg-blue-50 border border-dashed border-blue-300 transition-colors mt-1"
+                  >
+                    <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M12 5v14M5 12h14"/></svg>
+                    Add Recipient
+                  </button>
                 </div>
               </div>
             </div>
@@ -1466,13 +1509,14 @@ export default function PrepareDocumentPage() {
                 </>
               )}
 
-              {/* Drop overlay */}
+              {/* Drop overlay — raised above all fields while a sidebar drag is in progress */}
               <div
                 onDrop={handleDrop}
                 onDragOver={(e) => e.preventDefault()}
+                onDragEnter={(e) => e.preventDefault()}
                 onClick={() => setSelectedFieldId(null)}
                 className="absolute top-0 left-0 w-full h-full"
-                style={{ zIndex: 2, minHeight: `${PAGE_HEIGHT * totalPages * scale}px`, pointerEvents: 'auto' }}
+                style={{ zIndex: draggedSidebarType ? 200 : 2, minHeight: `${PAGE_HEIGHT * totalPages * scale}px`, pointerEvents: 'auto' }}
               />
 
               {/* Alignment guide lines */}
@@ -1587,6 +1631,127 @@ export default function PrepareDocumentPage() {
                 className="h-9 px-6 rounded-full bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700"
               >
                 OK
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {addRecipientModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/40" onClick={() => { if (!addingRecipient) setAddRecipientModal(false) }} />
+          <div className="relative w-full max-w-sm rounded-2xl bg-white shadow-2xl border border-slate-200 overflow-hidden">
+            {/* Header */}
+            <div className="px-6 pt-5 pb-4 border-b border-slate-100 flex items-center justify-between">
+              <div>
+                <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-0.5">
+                  Recipient {recipients.length + 1}
+                </div>
+                <div className="text-base font-bold text-slate-800">Add New Recipient</div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setAddRecipientModal(false)}
+                disabled={addingRecipient}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
+              >
+                <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6 6 18M6 6l12 12"/></svg>
+              </button>
+            </div>
+
+            {/* Form */}
+            <div className="px-6 py-5 space-y-4">
+              {/* Email */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1.5">Email Address</label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
+                    <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+                  </span>
+                  <input
+                    type="email"
+                    placeholder="recipient@example.com"
+                    value={addRecipientForm.email}
+                    onChange={e => setAddRecipientForm(f => ({ ...f, email: e.target.value }))}
+                    className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                </div>
+              </div>
+
+              {/* Full Name + Company */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1.5">Full Name</label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
+                      <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="8" r="4"/><path d="M6 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"/></svg>
+                    </span>
+                    <input
+                      type="text"
+                      placeholder="John Doe"
+                      value={addRecipientForm.full_name}
+                      onChange={e => setAddRecipientForm(f => ({ ...f, full_name: e.target.value }))}
+                      className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1.5">Company</label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
+                      <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="4" y="2" width="16" height="20" rx="2"/><path d="M9 22v-4h6v4M8 6h.01M16 6h.01M12 6h.01M8 10h.01M16 10h.01M12 10h.01"/></svg>
+                    </span>
+                    <input
+                      type="text"
+                      placeholder="Company Name"
+                      value={addRecipientForm.company}
+                      onChange={e => setAddRecipientForm(f => ({ ...f, company: e.target.value }))}
+                      className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Title */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1.5">Title / Position</label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
+                    <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/></svg>
+                  </span>
+                  <input
+                    type="text"
+                    placeholder="e.g. Sales Manager"
+                    value={addRecipientForm.title}
+                    onChange={e => setAddRecipientForm(f => ({ ...f, title: e.target.value }))}
+                    className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="px-6 pb-5 flex gap-3">
+              <button
+                type="button"
+                onClick={() => setAddRecipientModal(false)}
+                disabled={addingRecipient}
+                className="flex-1 h-10 rounded-xl border border-slate-200 text-sm font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleAddRecipient}
+                disabled={addingRecipient || !addRecipientForm.email.trim()}
+                className="flex-1 h-10 rounded-xl bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 disabled:opacity-50 transition-colors flex items-center justify-center gap-2"
+              >
+                {addingRecipient ? (
+                  <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2a10 10 0 1 0 10 10"/></svg>
+                ) : (
+                  <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M12 5v14M5 12h14"/></svg>
+                )}
+                {addingRecipient ? 'Adding...' : 'Add Recipient'}
               </button>
             </div>
           </div>
