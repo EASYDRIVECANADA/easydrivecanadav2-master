@@ -277,6 +277,12 @@ export default function ESignaturePage() {
       alert('Please select at least one file to upload')
       return
     }
+    const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10MB
+    const oversizedFiles = uploadFiles.filter(f => f.size > MAX_FILE_SIZE)
+    if (oversizedFiles.length > 0) {
+      alert(`File too large: "${oversizedFiles[0].name}" is ${(oversizedFiles[0].size / 1024 / 1024).toFixed(1)}MB. Maximum allowed size is 10MB per file.`)
+      return
+    }
     const parsedRecipients = parseUploadRecipients(uploadRecipients)
     const recipients = parsedRecipients.map((recipient) => recipient.email)
     if (recipients.length === 0) {
@@ -292,26 +298,16 @@ export default function ESignaturePage() {
       }
       const userIdForPayload = userId
 
-      const filesPayload = await Promise.all(
-        uploadFiles.map(async (file) => ({
-          file_name: file.name,
-          file_type: file.type,
-          file_b64: await fileToBase64(file),
-        }))
-      )
+      const formData = new FormData()
+      uploadFiles.forEach((file) => formData.append('files', file))
+      formData.append('recipient_details', JSON.stringify(parsedRecipients))
+      formData.append('user_id', userIdForPayload)
 
-      const payload = {
-        files: filesPayload,
-        recipient_details: parsedRecipients,
-        user_id: userIdForPayload,
-      }
-
-      console.log('[ESignature Upload] Sending to API:', JSON.stringify(payload).substring(0, 500))
+      console.log('[ESignature Upload] Sending to API, files:', uploadFiles.length, 'recipients:', parsedRecipients.length)
 
       const res = await fetch('/api/esignature/signatures', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+        body: formData,
       })
 
       console.log('[ESignature Upload] API response status:', res.status)
@@ -322,8 +318,7 @@ export default function ESignaturePage() {
         throw new Error(String(uploadJson?.error || uploadJson?.message || 'Upload failed'))
       }
 
-      const responseText = String(uploadJson?.webhookResponse ?? uploadJson?.message ?? '').trim()
-      const done = Boolean(uploadJson?.done) || /\bdone\b/i.test(responseText)
+      const done = Boolean(uploadJson?.success) || Boolean(uploadJson?.done)
       const successCount = Number(uploadJson?.count ?? recipients.length)
 
       handleCloseModal()
@@ -361,7 +356,7 @@ export default function ESignaturePage() {
         })()
       } else {
         setUploadResultOk(false)
-        setUploadResultMessage(`Webhook did not return "Done".\n\nStatus: ${uploadJson?.webhookStatus || 'unknown'}\nResponse: ${responseText || '(empty)'}\nURL: ${uploadJson?.webhookUrl || 'n/a'}`)
+        setUploadResultMessage(uploadJson?.error || 'Upload failed. Please try again.')
         setIsSuccessModalOpen(true)
       }
     } catch (err: any) {
@@ -505,7 +500,7 @@ export default function ESignaturePage() {
         if (!res.ok) {
           const errorText = await res.text().catch(() => '')
           console.error('[Page] API error response:', errorText)
-          throw new Error(`Failed to load signature documents (${res.status}): ${errorText}`)
+          throw new Error(`Failed to load signature documents (${res.status})`)
         }
         const json = await res.json()
         console.log('[Page] API response json:', json)
@@ -543,8 +538,6 @@ export default function ESignaturePage() {
 
     setSendingRequest(doc.id)
     try {
-      const toEmail = String(doc.recipient || '').trim().toLowerCase()
-
       const sigRes = await fetch(`/api/esignature/signature/${encodeURIComponent(doc.id)}`, { cache: 'no-store' })
       if (!sigRes.ok) {
         throw new Error('Failed to load signature record')
@@ -554,53 +547,52 @@ export default function ESignaturePage() {
         throw new Error('No document file found in signature record')
       }
 
-      const fieldsRes = await fetch(`/api/esignature/fields?dealId=${encodeURIComponent(doc.id)}`, { cache: 'no-store' })
-      const fieldsJson = fieldsRes.ok ? await fieldsRes.json().catch(() => null) : null
-      const fields: EsignField[] = Array.isArray(fieldsJson?.fields) ? fieldsJson.fields : []
+      const appOrigin = 'https://easydrivecanada.com'
 
-      const signatureLink = (() => {
+      // Extract the first document storage URL from document_file JSON
+      const getDocumentUrl = (raw: string): string => {
         try {
-          if (typeof window === 'undefined') return ''
-          const appOrigin = 'https://easydrivecanada.com'
-          return `${appOrigin}/admin/sales/deals/signature?${encodeURIComponent(doc.id)}`
+          const parsed = JSON.parse(raw)
+          const first = Array.isArray(parsed) ? parsed[0] : parsed
+          return first?.url || first?.file_url || first?.file_b64 || ''
         } catch {
-          return ''
+          return raw
         }
-      })()
+      }
+      const documentUrl = getDocumentUrl(sigData.document_file)
 
-      // Parse all recipient emails from the record (may be a JSON array string)
-      const parseAllEmails = (raw: any): string[] => {
-        const s = String(raw || '').trim()
-        if (s.startsWith('[')) {
-          try {
-            const parsed = JSON.parse(s)
-            if (Array.isArray(parsed)) return parsed.map((e: any) => String(e).trim()).filter(Boolean)
-          } catch {}
+      // Build per-recipient list: primary + siblings each get their own link
+      const siblings: any[] = sigData.siblings || []
+      const allRecipients = [
+        { id: sigData.id, email: sigData.email, full_name: sigData.full_name },
+        ...siblings.map((s: any) => ({ id: s.id, email: s.email, full_name: s.full_name })),
+      ]
+
+      // Send one webhook call per recipient — simplified payload: name, email, link, document_url
+      const sendErrors: string[] = []
+      for (const recipient of allRecipients) {
+        const signingLink = `${appOrigin}/admin/sales/deals/signature?${encodeURIComponent(recipient.id)}`
+        const payload = {
+          name: recipient.full_name || recipient.email || '',
+          email: recipient.email || '',
+          link: signingLink,
+          document_url: documentUrl,
         }
-        return s ? [s] : []
-      }
-      const allEmails = parseAllEmails(sigData.email)
 
-      const payload = {
-        id: doc.id,
-        email: allEmails,
-        full_name: sigData.full_name || doc.recipientName || '',
-        company: sigData.company || '',
-        title: sigData.title || '',
-        document_file: sigData.document_file,
-        fields: fields,
-        link: signatureLink,
+        const sendRes = await fetch('https://primary-production-6722.up.railway.app/webhook/request', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        })
+
+        if (!sendRes.ok) {
+          const t = await sendRes.text().catch(() => '')
+          sendErrors.push(`${recipient.email}: ${t || sendRes.status}`)
+        }
       }
 
-      const sendRes = await fetch('https://primary-production-6722.up.railway.app/webhook/request', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      })
-
-      if (!sendRes.ok) {
-        const t = await sendRes.text().catch(() => '')
-        throw new Error(t || `Webhook failed (${sendRes.status})`)
+      if (sendErrors.length > 0) {
+        throw new Error(`Some requests failed: ${sendErrors.join('; ')}`)
       }
 
       setSendResultOk(true)
@@ -627,10 +619,12 @@ export default function ESignaturePage() {
     const pdfjsLib = await loadPdfJs()
 
     let b64 = String(fileEntry.file_b64 || '').trim()
-    if (!b64 && fileEntry.file_url) {
-      const fileRes = await fetch(fileEntry.file_url, { cache: 'no-store' })
+    const fileUrl = (fileEntry as any).url || fileEntry.file_url || ''
+    if (!b64 && fileUrl) {
+      const fileRes = await fetch(fileUrl, { cache: 'no-store' })
       if (!fileRes.ok) throw new Error(`Unable to fetch file: ${fileEntry.file_name || 'document'}`)
-      b64 = arrayBufferToBase64(await fileRes.arrayBuffer())
+      const ab = await fileRes.arrayBuffer()
+      b64 = arrayBufferToBase64(ab)
     }
 
     if (!b64) {
@@ -671,9 +665,12 @@ export default function ESignaturePage() {
       if (i > 0) pdf.addPage()
       pdf.addImage(pageImages[i], 'PNG', 0, 0, pdfW, pdfH)
     }
-    const fullName = String(sigData?.full_name ?? '').trim()
-    const initials = fullName ? fullName.split(' ').map((n: string) => n[0]).join('').toUpperCase() : ''
-    const signature = String(sigData?.signature_image ?? '').trim()
+    // Build per-recipient array: primary first, then siblings
+    const recipients: any[] = [
+      sigData,
+      ...((sigData?.siblings as any[]) || []),
+    ]
+
     const signedDate = (() => {
       const raw = String(sigData?.signed_at ?? sigData?.updated_at ?? sigData?.created_at ?? '').trim()
       if (!raw) return ''
@@ -683,6 +680,17 @@ export default function ESignaturePage() {
     const yScale = pdfH / PAGE_HEIGHT
     const fileFields = fields.filter(f => (f as any).fileIndex === undefined ? fileIndex === 0 : (f as any).fileIndex === fileIndex)
     fileFields.forEach(field => {
+      const recipIdx = (field as any).recipientIndex ?? 0
+      const recip = recipients[recipIdx] ?? recipients[0] ?? sigData
+      const fullName = String(recip?.full_name ?? '').trim()
+      const initials = fullName ? fullName.split(' ').map((n: string) => n[0]).join('').toUpperCase() : ''
+      const rawSig = String(recip?.signature_image ?? '').trim()
+      const signature = rawSig
+        ? (rawSig.startsWith('data:') || rawSig.startsWith('http') ? rawSig : `data:image/png;base64,${rawSig}`)
+        : ''
+      const company = String(recip?.company ?? '').trim()
+      const title = String(recip?.title ?? '').trim()
+
       const pageNum = Math.min(Math.max(field.page || 1, 1), pdf.getNumberOfPages())
       pdf.setPage(pageNum)
       const x = field.x * xScale; const y = field.y * yScale
@@ -690,7 +698,7 @@ export default function ESignaturePage() {
       try {
         switch (field.type) {
           case 'signature':
-            if (signature) { let src = signature; if (!signature.startsWith('data:') && !signature.startsWith('http')) src = `data:image/png;base64,${signature}`; pdf.addImage(src, 'PNG', x, y, w, h) }
+            if (signature) { pdf.addImage(signature, 'PNG', x, y, w, h) }
             break
           case 'initial':
             if (initials) { pdf.setTextColor(29,78,216); pdf.setFontSize(14); pdf.setFont('helvetica','bold'); pdf.text(initials,x+w/2,y+h/2,{align:'center',baseline:'middle'}); pdf.setFont('helvetica','normal') }
@@ -709,7 +717,17 @@ export default function ESignaturePage() {
             if (fullName) pdf.text(fullName,x+5,y+h/2,{baseline:'middle'})
             else if (field.value) pdf.text(String(field.value),x+5,y+h/2,{baseline:'middle'})
             break
-          case 'company': case 'title': case 'text':
+          case 'company':
+            pdf.setTextColor(55,65,81); pdf.setFontSize(10)
+            if (company) pdf.text(company,x+5,y+h/2,{baseline:'middle'})
+            else if (field.value) pdf.text(String(field.value),x+5,y+h/2,{baseline:'middle'})
+            break
+          case 'title':
+            pdf.setTextColor(55,65,81); pdf.setFontSize(10)
+            if (title) pdf.text(title,x+5,y+h/2,{baseline:'middle'})
+            else if (field.value) pdf.text(String(field.value),x+5,y+h/2,{baseline:'middle'})
+            break
+          case 'text':
             pdf.setTextColor(55,65,81); pdf.setFontSize(10)
             if (field.value) pdf.text(String(field.value),x+5,y+h/2,{baseline:'middle'})
             break
@@ -1020,7 +1038,7 @@ export default function ESignaturePage() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
               <h3 className="text-lg font-semibold text-slate-900 mb-2">Error loading documents</h3>
-              <p className="text-sm text-slate-500">{error}</p>
+              <p className="text-sm text-slate-500">Unable to load documents. Please check your connection and try refreshing.</p>
             </div>
           ) : filteredDocuments.length === 0 ? (
             <div className="text-center py-16">
@@ -1112,6 +1130,24 @@ export default function ESignaturePage() {
                           </button>
                           <button
                             type="button"
+                            onClick={() => handleSendSignatureRequest(doc)}
+                            disabled={sendingRequest === doc.id}
+                            className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            title={sendingRequest === doc.id ? 'Sending...' : 'Send Signature Request'}
+                          >
+                            {sendingRequest === doc.id ? (
+                              <svg className="w-5 h-5 animate-spin" viewBox="0 0 24 24" fill="none">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V2C6.477 2 2 6.477 2 12h2z" />
+                              </svg>
+                            ) : (
+                              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z" />
+                              </svg>
+                            )}
+                          </button>
+                          <button
+                            type="button"
                             onClick={() => handleDownloadDocument(doc)}
                             disabled={sendingRequest === doc.id}
                             className="p-2 text-slate-400 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
@@ -1121,27 +1157,6 @@ export default function ESignaturePage() {
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" />
                             </svg>
                           </button>
-                          {doc.status === 'draft' && doc.recipient && (
-                            <button
-                              type="button"
-                              onClick={() => handleSendSignatureRequest(doc)}
-                              disabled={sendingRequest === doc.id}
-                              className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                              title={sendingRequest === doc.id ? 'Sending...' : 'Send Signature Request'}
-                            >
-                              {sendingRequest === doc.id ? (
-                                <svg className="w-5 h-5 animate-spin" viewBox="0 0 24 24" fill="none">
-                                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
-                                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V2C6.477 2 2 6.477 2 12h2z" />
-                                </svg>
-                              ) : (
-                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10l9-6 9 6-9 6-9-6z" />
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10v10l9-6 9 6V10" />
-                                </svg>
-                              )}
-                            </button>
-                          )}
                           <button
                             type="button"
                             onClick={() => handleDeleteDocument(doc)}

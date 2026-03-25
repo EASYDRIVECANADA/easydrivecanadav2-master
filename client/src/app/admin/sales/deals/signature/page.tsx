@@ -11,7 +11,7 @@ declare global {
 }
 
 type FieldType = 'signature' | 'initial' | 'stamp' | 'dateSigned' | 'name' | 'company' | 'title' | 'text' | 'checkbox'
-type Field = { id: string; type: FieldType; x: number; y: number; width: number; height: number; page: number; value?: string; fileIndex?: number }
+type Field = { id: string; type: FieldType; x: number; y: number; width: number; height: number; page: number; value?: string; fileIndex?: number; recipientIndex?: number }
 
 const PAGE_WIDTH = 816
 const PAGE_HEIGHT = 1056
@@ -67,6 +67,7 @@ const pdfDataUrlToBytes = (dataUrl: string): Uint8Array | null => {
 const normalizeToDataUrl = (raw: string, defaultMime: string): { url: string; mime: string } | null => {
   const trimmed = String(raw || '').trim()
   if (!trimmed) return null
+  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) return { url: trimmed, mime: defaultMime }
   if (trimmed.startsWith('data:')) {
     const mimeMatch = trimmed.match(/^data:([^;,]+)/)
     return { url: trimmed, mime: mimeMatch?.[1] || defaultMime }
@@ -217,7 +218,7 @@ function DealsSignaturePageInner() {
         }
         setRecipientEmail(String(derivedEmail).trim().toLowerCase())
 
-        // Parse document_file — may be a JSON array of files or a plain base64 string
+        // Parse document_file — may be a JSON array (new: {file_name,file_type,url} or old: {file_name,file_type,file_b64})
         const rawDocFile = String(sigData.document_file || '').trim()
         let fileList: Array<{ file_name: string; file_type: string; file_b64: string }> = []
         let docFileForViewer = rawDocFile
@@ -227,15 +228,17 @@ function DealsSignaturePageInner() {
             const parsed = JSON.parse(rawDocFile)
             if (Array.isArray(parsed) && parsed.length > 0) {
               fileList = parsed
-              docFileForViewer = parsed[0]?.file_b64 || rawDocFile
+              // Support both new (url) and old (file_b64) formats
+              docFileForViewer = parsed[0]?.url || parsed[0]?.file_b64 || rawDocFile
             }
           } catch {}
         } else if (rawDocFile.startsWith('{')) {
           try {
             const parsed = JSON.parse(rawDocFile)
-            if (parsed?.file_b64) {
+            const src = parsed?.url || parsed?.file_b64
+            if (src) {
               fileList = [parsed]
-              docFileForViewer = parsed.file_b64
+              docFileForViewer = src
             }
           } catch {}
         }
@@ -251,12 +254,41 @@ function DealsSignaturePageInner() {
         setDocMime(normalized.mime)
         setPdfDataUrl(normalized.url)
 
+        // Determine this recipient's index using siblings
+        // Primary = index 0; each sibling's index = its position + 1
+        const siblings: any[] = sigData.siblings || []
+        const siblingIdx = siblings.findIndex((s: any) => s.id === sigData.id)
+        const myRecipientIndex = siblingIdx >= 0 ? siblingIdx + 1 : 0
+
         // Load fields for this signature record
+        // Normalize signature_image to a usable data URL (may be raw base64 or already a data URL)
+        const rawSig = String(sigData.signature_image || '').trim()
+        const existingSig = rawSig
+          ? rawSig.startsWith('data:') || rawSig.startsWith('http')
+            ? rawSig
+            : `data:image/png;base64,${rawSig}`
+          : ''
+
         const fieldsRes = await fetch(`/api/esignature/fields?dealId=${encodeURIComponent(sigData.id)}`, { cache: 'no-store' })
         if (fieldsRes.ok) {
           const fieldsData = await fieldsRes.json()
           if (fieldsData.fields) {
-            setFields(fieldsData.fields)
+            // Filter to only this recipient's fields
+            const allFields: Field[] = fieldsData.fields
+            const myFields = allFields.filter(f => (f.recipientIndex ?? 0) === myRecipientIndex)
+            const baseFields = myFields.length > 0 ? myFields : allFields
+
+            // Pre-fill signature/initial fields if the recipient already has a signature saved
+            const filledFields = existingSig
+              ? baseFields.map(f =>
+                  (f.type === 'signature' || f.type === 'initial') && !f.value
+                    ? { ...f, value: existingSig }
+                    : f
+                )
+              : baseFields
+
+            setFields(filledFields)
+            if (existingSig) setSignatureDataUrl(existingSig)
           }
         }
 
@@ -370,11 +402,12 @@ function DealsSignaturePageInner() {
         if (!pdfDataUrl) return
         if (docMime !== 'application/pdf') return
 
-        const bytes = pdfDataUrlToBytes(pdfDataUrl)
-        if (!bytes) return
-
         const pdfjs = await loadPdfJsFromCdn()
-        const doc = await pdfjs.getDocument({ data: bytes }).promise
+        // Support both HTTP URL and base64 data URL
+        const isUrl = pdfDataUrl.startsWith('http://') || pdfDataUrl.startsWith('https://')
+        const loadArg = isUrl ? pdfDataUrl : (() => { const bytes = pdfDataUrlToBytes(pdfDataUrl); return bytes ? { data: bytes } : null })()
+        if (!loadArg) return
+        const doc = await pdfjs.getDocument(loadArg).promise
         const pages = Number(doc?.numPages || 1) || 1
         setTotalPages(pages)
 
@@ -629,7 +662,8 @@ function DealsSignaturePageInner() {
     if (!file) return
     setSelectedFileIndex(index)
     setPageImages([])
-    const normalized = normalizeToDataUrl(file.file_b64, file.file_type || 'application/pdf')
+    const src = (file as any).url || file.file_b64
+    const normalized = normalizeToDataUrl(src, file.file_type || 'application/pdf')
     if (!normalized) return
     setDocMime(normalized.mime)
     setPdfDataUrl(normalized.url)

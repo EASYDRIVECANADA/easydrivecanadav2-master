@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { createClient } from '@supabase/supabase-js'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -8,28 +9,11 @@ export const runtime = 'nodejs'
 const baseUrl = (process.env.NEXT_PUBLIC_SUPABASE_URL || '').replace(/\/+$/, '')
 const apiKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 
-type SignatureUploadFile = {
-  file_name: string
-  file_type: string
-  file_b64: string
-}
-
 type SignatureRecipientInput = {
   email: string
   name?: string
   company?: string
   title?: string
-}
-const ESIGN_UPLOAD_WEBHOOK_URL = 'https://primary-production-6722.up.railway.app/webhook/file'
-
-const webhookLooksUnregistered = (text: string) => /not\s+registered|requested\s+webhook/i.test(text)
-
-const getWebhookCandidates = (url: string): string[] => {
-  const list = [url]
-  if (url.includes('/webhook/')) {
-    list.push(url.replace('/webhook/', '/webhook-test/'))
-  }
-  return Array.from(new Set(list))
 }
 
 export async function GET(request: Request) {
@@ -77,7 +61,7 @@ export async function GET(request: Request) {
     if (!res.ok) {
       const errorText = await res.text()
       console.error('[API /esignature/signatures] error:', errorText)
-      throw new Error(`Failed to fetch signature table: ${res.status} - ${errorText}`)
+      throw new Error(`Failed to fetch signature table (${res.status})`)
     }
 
     const records = await res.json()
@@ -188,32 +172,48 @@ export async function GET(request: Request) {
       }
     }
 
-    // Map signature table records to document format
-    const documents = await Promise.all(records.map(async (r: any) => {
+    // Group records by document_file so multiple recipients of the same upload = 1 row
+    const groups = new Map<string, any[]>()
+    for (const r of records) {
+      const key = String(r.document_file || r.id)
+      if (!groups.has(key)) groups.set(key, [])
+      groups.get(key)!.push(r)
+    }
+
+    const documents = await Promise.all(Array.from(groups.values()).map(async (group) => {
+      const primary = group[0] // earliest record in this group
+
+      // Overall status: completed only if all are completed, otherwise lowest status
+      const statusRank = (s: string) =>
+        s === 'completed' ? 4 : s === 'sent' ? 3 : s === 'declined' ? 2 : s === 'expired' ? 1 : 0
+      const lowestStatus = group.reduce((prev, r) =>
+        statusRank(r.status) < statusRank(prev.status) ? r : prev, primary).status
+
       const status: 'draft' | 'sent' | 'completed' | 'declined' | 'expired' =
-        r.status === 'completed' ? 'completed' :
-        r.status === 'sent' ? 'sent' :
-        r.status === 'declined' ? 'declined' :
-        r.status === 'expired' ? 'expired' : 'draft'
+        lowestStatus === 'completed' ? 'completed' :
+        lowestStatus === 'sent' ? 'sent' :
+        lowestStatus === 'declined' ? 'declined' :
+        lowestStatus === 'expired' ? 'expired' : 'draft'
 
-      const { progressTotal, progressCompleted } = await computeProgress(r)
-      const totalSigners = 2
-      const completedSigners = status === 'completed' ? totalSigners : 0
+      const { progressTotal, progressCompleted } = await computeProgress(primary)
 
-      const allRecipients = parseEmailArray(r.email)
+      const allRecipients = group.map((r) => String(r.email || '').trim()).filter(Boolean)
       const recipient = allRecipients[0] || ''
-      const docTitle = parseDocumentTitle(r.document_file)
+      const docTitle = parseDocumentTitle(primary.document_file)
+      const totalSigners = group.length
+      const completedSigners = group.filter((r) => r.status === 'completed').length
 
       return {
-        id: r.id,
-        dealId: r.id,
+        id: primary.id,
+        dealId: primary.id,
+        rowIds: group.map((r) => r.id), // all DB row IDs in this group
         title: docTitle,
         recipient,
         allRecipients,
-        recipientName: r.full_name || recipient || '',
+        recipientName: group.map((r) => r.full_name || r.email || '').filter(Boolean).join(', '),
         status,
-        createdDate: r.created_at || new Date().toISOString(),
-        lastModified: r.updated_at || r.created_at || new Date().toISOString(),
+        createdDate: primary.created_at || new Date().toISOString(),
+        lastModified: primary.updated_at || primary.created_at || new Date().toISOString(),
         signers: totalSigners,
         completedSigners,
         progressTotal,
@@ -235,46 +235,54 @@ export async function GET(request: Request) {
   }
 }
 
+const STORAGE_BUCKET = 'esignature-docs'
+
+function getServiceClient() {
+  return createClient(
+    (process.env.NEXT_PUBLIC_SUPABASE_URL || '').replace(/\/+$/, ''),
+    process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '',
+    { auth: { persistSession: false } }
+  )
+}
+
 export async function POST(request: Request) {
   console.log('[API /esignature/signatures POST] Received upload request')
   try {
-    const body = await request.json().catch(() => null)
-    console.log('[API /esignature/signatures POST] Body received:', body ? 'yes' : 'no')
-    const files = Array.isArray(body?.files) ? (body.files as SignatureUploadFile[]) : []
-    const rawRecipients = Array.isArray(body?.recipient_details)
-      ? (body.recipient_details as SignatureRecipientInput[])
-      : []
-    const userId = String(body?.user_id ?? '').trim()
+    if (!baseUrl) {
+      return NextResponse.json({ error: 'Server configuration error: Missing Supabase URL' }, { status: 500 })
+    }
+    if (!apiKey) {
+      return NextResponse.json({ error: 'Server configuration error: Missing Supabase API key' }, { status: 500 })
+    }
+
+    const formData = await request.formData()
+    const files = formData.getAll('files') as File[]
+    const recipientDetailsRaw = String(formData.get('recipient_details') ?? '').trim()
+    const userId = String(formData.get('user_id') ?? '').trim()
 
     if (files.length === 0) {
       return NextResponse.json({ error: 'At least one file is required' }, { status: 400 })
     }
 
-    const normalizedFiles = files
-      .map((file) => ({
-        file_name: String(file?.file_name ?? '').trim(),
-        file_type: String(file?.file_type ?? '').trim() || 'application/pdf',
-        file_b64: String(file?.file_b64 ?? '').trim().replace(/^data:[^;]+;base64,/, ''),
-      }))
-      .filter((file) => file.file_b64)
-
-    if (normalizedFiles.length === 0) {
-      return NextResponse.json({ error: 'Uploaded files are invalid' }, { status: 400 })
+    let rawRecipients: SignatureRecipientInput[] = []
+    try {
+      rawRecipients = JSON.parse(recipientDetailsRaw)
+    } catch {
+      return NextResponse.json({ error: 'Invalid recipient_details format' }, { status: 400 })
     }
 
     const seenEmails = new Set<string>()
     const recipients = rawRecipients
-      .map((recipient) => ({
-        email: String(recipient?.email ?? '').trim().toLowerCase(),
-        name: String(recipient?.name ?? '').trim(),
-        company: String(recipient?.company ?? '').trim(),
-        title: String(recipient?.title ?? '').trim(),
+      .map((r) => ({
+        email: String(r?.email ?? '').trim().toLowerCase(),
+        name: String(r?.name ?? '').trim(),
+        company: String(r?.company ?? '').trim(),
+        title: String(r?.title ?? '').trim(),
       }))
-      .filter((recipient) => {
-        if (!recipient.email) return false
-        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipient.email)) return false
-        if (seenEmails.has(recipient.email)) return false
-        seenEmails.add(recipient.email)
+      .filter((r) => {
+        if (!r.email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(r.email)) return false
+        if (seenEmails.has(r.email)) return false
+        seenEmails.add(r.email)
         return true
       })
 
@@ -282,74 +290,77 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'At least one valid recipient is required' }, { status: 400 })
     }
 
-    console.log('[API /esignature/signatures POST] Sending to webhook:', ESIGN_UPLOAD_WEBHOOK_URL)
-    console.log('[API /esignature/signatures POST] Files count:', normalizedFiles.length)
-    console.log('[API /esignature/signatures POST] Recipients:', recipients.map(r => r.email))
+    const supabaseService = getServiceClient()
 
-    const webhookPayload = {
-      files: normalizedFiles,
-      recipients: recipients.map((recipient) => recipient.email),
-      recipient_details: recipients,
-      user_id: userId || null,
-    }
+    const uploadedFiles: { file_name: string; file_type: string; url: string }[] = []
 
-    const candidates = getWebhookCandidates(ESIGN_UPLOAD_WEBHOOK_URL)
-    let lastStatus = 0
-    let lastResponse = ''
-    let usedWebhookUrl = candidates[0]
+    for (const file of files) {
+      const safeName = `${Date.now()}-${file.name.replace(/[^a-zA-Z0-9.\-_]/g, '_')}`
+      const arrayBuffer = await file.arrayBuffer()
+      const fileBuffer = Buffer.from(arrayBuffer)
 
-    for (let i = 0; i < candidates.length; i += 1) {
-      const webhookUrl = candidates[i]
-      usedWebhookUrl = webhookUrl
+      console.log(`[API /esignature/signatures POST] Uploading: ${file.name} (${fileBuffer.byteLength} bytes) as ${safeName}`)
 
-      const webhookRes = await fetch(webhookUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(webhookPayload),
-        cache: 'no-store',
-      })
-
-      const webhookText = await webhookRes.text().catch(() => '')
-      const done = /\bdone\b/i.test(webhookText)
-      lastStatus = webhookRes.status
-      lastResponse = webhookText
-
-      console.log('[API /esignature/signatures POST] Webhook response status:', webhookRes.status)
-      console.log('[API /esignature/signatures POST] Webhook response text:', webhookText.substring(0, 200))
-
-      if (webhookRes.ok) {
-        return NextResponse.json({
-          success: done,
-          done,
-          count: recipients.length,
-          message: done ? 'Done' : 'Webhook response did not contain Done',
-          webhookStatus: webhookRes.status,
-          webhookResponse: webhookText,
-          webhookUrl,
+      const { data: uploadData, error: uploadError } = await supabaseService.storage
+        .from(STORAGE_BUCKET)
+        .upload(safeName, fileBuffer, {
+          contentType: file.type || 'application/octet-stream',
+          upsert: true,
         })
+
+      if (uploadError) {
+        console.error('[API /esignature/signatures POST] Storage upload error:', uploadError)
+        return NextResponse.json({ error: `Failed to upload file "${file.name}": ${uploadError.message}` }, { status: 500 })
       }
 
-      const canRetryWithTestWebhook = i < candidates.length - 1 && webhookLooksUnregistered(webhookText)
-      if (!canRetryWithTestWebhook) {
-        break
-      }
+      const { data: urlData } = supabaseService.storage
+        .from(STORAGE_BUCKET)
+        .getPublicUrl(uploadData.path)
+
+      uploadedFiles.push({ file_name: file.name, file_type: file.type, url: urlData.publicUrl })
+      console.log('[API /esignature/signatures POST] Uploaded successfully:', urlData.publicUrl)
     }
 
-    return NextResponse.json(
-      {
-        success: false,
-        done: false,
-        message: lastResponse || `Webhook error (${lastStatus || 502})`,
-        webhookStatus: lastStatus || 502,
-        webhookResponse: lastResponse,
-        webhookUrl: usedWebhookUrl,
+    // document_file stored as JSON (same for all recipients)
+    const documentFile = JSON.stringify(uploadedFiles)
+
+    // Insert one row per recipient
+    const rows = recipients.map((r) => ({
+      document_file: documentFile,
+      email: r.email,
+      full_name: r.name || null,
+      company: r.company || null,
+      title: r.title || null,
+      status: 'draft',
+      user_id: userId || null,
+    }))
+
+    console.log('[API /esignature/signatures POST] Inserting rows:', rows.length)
+
+    const insertRes = await fetch(`${baseUrl}/rest/v1/signature`, {
+      method: 'POST',
+      headers: {
+        'apikey': apiKey!,
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+        'Prefer': 'return=representation',
       },
-      { status: 502 }
-    )
+      body: JSON.stringify(rows),
+      cache: 'no-store',
+    })
+
+    if (!insertRes.ok) {
+      const errorText = await insertRes.text()
+      console.error('[API /esignature/signatures POST] Supabase insert error:', errorText)
+      return NextResponse.json({ error: `Failed to save documents: ${errorText}` }, { status: 500 })
+    }
+
+    const inserted = await insertRes.json()
+    console.log('[API /esignature/signatures POST] Inserted rows:', inserted.length)
+
+    return NextResponse.json({ success: true, count: inserted.length, documents: inserted })
   } catch (err: any) {
     console.error('[API /esignature/signatures POST] Error:', err)
-    return NextResponse.json({ error: err?.message || 'Failed to send upload to webhook' }, { status: 500 })
+    return NextResponse.json({ error: err?.message || 'Failed to save documents' }, { status: 500 })
   }
 }

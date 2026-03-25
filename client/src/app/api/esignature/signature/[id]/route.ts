@@ -49,7 +49,27 @@ export async function GET(
 
     const signature = records[0]
 
-    return NextResponse.json(signature, {
+    // Load sibling records (same user, same document_file) to get all recipients
+    let siblings: any[] = []
+    if (signature.user_id && signature.document_file) {
+      const siblingsRes = await fetch(
+        `${baseUrl}/rest/v1/signature?user_id=eq.${encodeURIComponent(signature.user_id)}&select=id,email,full_name,company,title,status,document_file,signature_image`,
+        {
+          method: 'GET',
+          headers: { 'apikey': apiKey, 'Authorization': `Bearer ${apiKey}` },
+          cache: 'no-store',
+        }
+      )
+      if (siblingsRes.ok) {
+        const allRecords: any[] = await siblingsRes.json().catch(() => [])
+        // Filter to only those sharing the same document_file
+        siblings = allRecords.filter(
+          (r: any) => r.id !== signature.id && String(r.document_file ?? '') === String(signature.document_file ?? '')
+        )
+      }
+    }
+
+    return NextResponse.json({ ...signature, siblings }, {
       headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0' },
     })
   } catch (err: any) {

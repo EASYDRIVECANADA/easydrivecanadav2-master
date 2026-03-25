@@ -12,7 +12,9 @@ declare global {
 }
 
 type FieldType = 'signature' | 'initial' | 'stamp' | 'dateSigned' | 'name' | 'company' | 'title' | 'text' | 'checkbox'
-type Field = { id: string; type: FieldType; x: number; y: number; width: number; height: number; page: number; value?: string; fileIndex?: number }
+type Field = { id: string; type: FieldType; x: number; y: number; width: number; height: number; page: number; value?: string; fileIndex?: number; recipientIndex?: number }
+type UploadedFile = { file_name: string; file_type: string; file_b64?: string; url?: string }
+type Recipient = { id: string; email: string; full_name?: string; company?: string; title?: string; signature_image?: string }
 
 const FIELD_TYPES: { type: FieldType; label: string; defaultW: number; defaultH: number }[] = [
   { type: 'signature', label: 'Signature', defaultW: 200, defaultH: 60 },
@@ -165,6 +167,9 @@ export default function PrepareDocumentPage() {
   const [selectedFieldId, setSelectedFieldId] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [downloading, setDownloading] = useState(false)
+  const [downloadModal, setDownloadModal] = useState(false)
+  const [downloadingFileIdx, setDownloadingFileIdx] = useState<number | null>(null)
+  const [sending, setSending] = useState(false)
   const [dealData, setDealData] = useState<any>(null)
   const [zoom, setZoom] = useState(100)
   const [showGrid, setShowGrid] = useState(false)
@@ -174,8 +179,10 @@ export default function PrepareDocumentPage() {
   const [docMime, setDocMime] = useState<string | null>(null)
   const [pageImages, setPageImages] = useState<string[]>([])
   const [renderFailed, setRenderFailed] = useState(false)
-  const [uploadedFiles, setUploadedFiles] = useState<Array<{ file_name: string; file_type: string; file_b64: string }>>([]) 
+  const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([])
   const [selectedFileIndex, setSelectedFileIndex] = useState(0)
+  const [recipients, setRecipients] = useState<Recipient[]>([])
+  const [activeRecipientIdx, setActiveRecipientIdx] = useState(0)
 
   const [actionModalOpen, setActionModalOpen] = useState(false)
   const [actionModalOk, setActionModalOk] = useState<boolean>(true)
@@ -412,9 +419,9 @@ export default function PrepareDocumentPage() {
             // This is a signature table record with an uploaded document
             setDealData({ signature: sigData })
 
-            // Parse document_file - could be a JSON array of files or a plain base64 string
+            // Parse document_file - JSON array with url (new) or file_b64 (old)
             const rawDocFile = String(sigData.document_file || '').trim()
-            let fileList: Array<{ file_name: string; file_type: string; file_b64: string }> = []
+            let fileList: UploadedFile[] = []
             let docFileForViewer = rawDocFile
 
             if (rawDocFile.startsWith('[')) {
@@ -422,16 +429,15 @@ export default function PrepareDocumentPage() {
                 const parsed = JSON.parse(rawDocFile)
                 if (Array.isArray(parsed) && parsed.length > 0) {
                   fileList = parsed
-                  docFileForViewer = parsed[0]?.file_b64 || rawDocFile
+                  // Prefer url (new storage format), fall back to file_b64
+                  docFileForViewer = parsed[0]?.url || parsed[0]?.file_b64 || rawDocFile
                 }
               } catch {}
             } else if (rawDocFile.startsWith('{')) {
               try {
                 const parsed = JSON.parse(rawDocFile)
-                if (parsed?.file_b64) {
-                  fileList = [parsed]
-                  docFileForViewer = parsed.file_b64
-                }
+                fileList = [parsed]
+                docFileForViewer = parsed?.url || parsed?.file_b64 || rawDocFile
               } catch {}
             }
 
@@ -439,6 +445,11 @@ export default function PrepareDocumentPage() {
               setUploadedFiles(fileList)
               setSelectedFileIndex(0)
             }
+
+            // Build recipients list: primary + siblings
+            const primaryRecipient: Recipient = { id: sigData.id, email: sigData.email || '', full_name: sigData.full_name, company: sigData.company, title: sigData.title, signature_image: sigData.signature_image }
+            const siblingRecipients: Recipient[] = (sigData.siblings || []).map((s: any) => ({ id: s.id, email: s.email || '', full_name: s.full_name, company: s.company, title: s.title, signature_image: s.signature_image }))
+            setRecipients([primaryRecipient, ...siblingRecipients])
 
             const normalized = normalizeToDataUrl(docFileForViewer, 'application/pdf')
             console.log('[Load] normalized:', { url: normalized?.url?.substring(0, 60), mime: normalized?.mime })
@@ -665,18 +676,24 @@ export default function PrepareDocumentPage() {
           return
         }
 
-        const bytes = pdfDataUrlToBytes(pdfDataUrl)
-        if (!bytes) {
-          console.log('[PDF Render] Failed to convert to bytes')
-          setRenderFailed(true)
-          return
-        }
-        console.log('[PDF Render] Bytes length:', bytes.length)
-
         const pdfjs = await loadPdfJsFromCdn()
         console.log('[PDF Render] PDF.js loaded')
-        
-        const doc = await pdfjs.getDocument({ data: bytes }).promise
+
+        let pdfSource: { data: Uint8Array } | { url: string }
+        if (pdfDataUrl.startsWith('http://') || pdfDataUrl.startsWith('https://')) {
+          pdfSource = { url: pdfDataUrl }
+        } else {
+          const bytes = pdfDataUrlToBytes(pdfDataUrl)
+          if (!bytes) {
+            console.log('[PDF Render] Failed to convert to bytes')
+            setRenderFailed(true)
+            return
+          }
+          console.log('[PDF Render] Bytes length:', bytes.length)
+          pdfSource = { data: bytes }
+        }
+
+        const doc = await pdfjs.getDocument(pdfSource).promise
         const pages = Number(doc?.numPages || 1) || 1
         console.log('[PDF Render] Document loaded, pages:', pages)
         setTotalPages(pages)
@@ -752,7 +769,7 @@ export default function PrepareDocumentPage() {
     const page = Math.min(Math.max(Math.floor(docY / PAGE_HEIGHT) + 1, 1), totalPages)
     const y = docY - (page - 1) * PAGE_HEIGHT
     const cfg = FIELD_TYPES.find(f => f.type === draggedSidebarType)!
-    const newField: Field = { id: `f-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, type: draggedSidebarType, x, y, width: cfg.defaultW, height: cfg.defaultH, page, fileIndex: selectedFileIndex }
+    const newField: Field = { id: `f-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, type: draggedSidebarType, x, y, width: cfg.defaultW, height: cfg.defaultH, page, fileIndex: selectedFileIndex, recipientIndex: activeRecipientIdx }
     setFields(prev => {
       const next = [...prev, newField]
       pushHistory(next)
@@ -789,7 +806,7 @@ export default function PrepareDocumentPage() {
     setSelectedFileIndex(index)
     setPageImages([])
     setRenderFailed(false)
-    const normalized = normalizeToDataUrl(file.file_b64, file.file_type || 'application/pdf')
+    const normalized = normalizeToDataUrl(file.url || file.file_b64 || '', file.file_type || 'application/pdf')
     if (!normalized) return
     setDocMime(normalized.mime)
     setPdfDataUrl(normalized.url)
@@ -803,141 +820,218 @@ export default function PrepareDocumentPage() {
     }
   }, [uploadedFiles])
 
+  // Render a specific uploaded file to page images using pdf.js
+  const renderFileToImages = async (fileIdx: number): Promise<string[]> => {
+    const file = uploadedFiles[fileIdx]
+    if (!file) throw new Error('File not found')
+    const src = (file as any).url || file.file_b64 || ''
+    if (!src) throw new Error('No file data')
+
+    const mime = file.file_type || 'application/pdf'
+    const isPdf = mime.includes('pdf') || src.startsWith('JVBERi0') || (src.startsWith('http') && src.toLowerCase().endsWith('.pdf'))
+
+    if (!isPdf) {
+      const dataUrl = src.startsWith('http') || src.startsWith('data:') ? src : `data:${mime};base64,${src}`
+      return [dataUrl]
+    }
+
+    const pdfjs = await loadPdfJsFromCdn()
+    const pdfSource = src.startsWith('http://') || src.startsWith('https://')
+      ? { url: src }
+      : (() => {
+          const raw = src.startsWith('data:') ? src.split(',')[1] || src : src
+          const binary = atob(raw)
+          const bytes = new Uint8Array(binary.length)
+          for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+          return { data: bytes }
+        })()
+
+    const doc = await pdfjs.getDocument(pdfSource).promise
+    const rendered: string[] = []
+    for (let p = 1; p <= doc.numPages; p++) {
+      const page = await doc.getPage(p)
+      const viewport0 = page.getViewport({ scale: 1 })
+      const viewport = page.getViewport({ scale: (PAGE_WIDTH / viewport0.width) * PDF_RENDER_QUALITY })
+      const canvas = document.createElement('canvas')
+      canvas.width = Math.floor(viewport.width)
+      canvas.height = Math.floor(viewport.height)
+      const ctx = canvas.getContext('2d')
+      if (ctx) await page.render({ canvasContext: ctx, viewport, background: 'white' }).promise
+      rendered.push(canvas.toDataURL('image/png'))
+    }
+    return rendered
+  }
+
+  // Render field overlays onto a jsPDF document for a given fileIndex
+  const overlayFieldsOnPdf = (pdf: any, fileIdx: number) => {
+    const sigData = (dealData as any)?.signature
+    const c = dealData?.customer || {}
+    const pdfW = pdf.internal.pageSize.getWidth()
+    const pdfH = pdf.internal.pageSize.getHeight()
+    const xScale = pdfW / PAGE_WIDTH
+    const yScale = pdfH / PAGE_HEIGHT
+
+    fields.filter(f => (f.fileIndex ?? 0) === fileIdx).forEach(field => {
+      const pageNum = Math.min(Math.max(field.page || 1, 1), pdf.getNumberOfPages())
+      pdf.setPage(pageNum)
+
+      const x = field.x * xScale
+      const y = field.y * yScale
+      const w = field.width * xScale
+      const h = field.height * yScale
+
+      // Per-recipient data
+      const rIdx = field.recipientIndex ?? 0
+      const r = recipients[rIdx]
+      const rName = r?.full_name || (rIdx === 0 ? (String(sigData?.full_name ?? '').trim() || [c.firstname, c.lastname].filter(Boolean).join(' ')) : '') || ''
+      const rInitials = rName ? rName.split(' ').map((n: string) => n[0]).join('').toUpperCase() : 'DS'
+      const rawSig = r?.signature_image || (rIdx === 0 ? String(sigData?.signature_image ?? c.signature ?? '').trim() : '')
+      const rSig = rawSig ? (rawSig.startsWith('data:') || rawSig.startsWith('http') ? rawSig : `data:image/png;base64,${rawSig}`) : ''
+      const rCompany = r?.company || ''
+      const rTitle = r?.title || ''
+      const signedAtRaw = rIdx === 0 ? String(sigData?.signed_at ?? sigData?.updated_at ?? sigData?.created_at ?? '').trim() : ''
+      const signedDate = (() => { try { if (!signedAtRaw) return ''; const d = new Date(signedAtRaw); return isNaN(d.getTime()) ? '' : d.toLocaleDateString('en-CA') } catch { return '' } })()
+
+      try {
+        switch (field.type) {
+          case 'signature':
+            if (rSig) pdf.addImage(rSig, 'PNG', x, y, w, h)
+            break
+          case 'initial':
+            pdf.setTextColor(29, 78, 216); pdf.setFontSize(14); pdf.setFont('helvetica', 'bold')
+            pdf.text(rInitials, x + w / 2, y + h / 2, { align: 'center', baseline: 'middle' })
+            pdf.setFont('helvetica', 'normal')
+            break
+          case 'stamp':
+            pdf.setDrawColor(220, 38, 38); pdf.setTextColor(220, 38, 38)
+            pdf.circle(x + w / 2, y + h / 2, Math.max(Math.min(w, h) / 2 - 2, 2), 'S')
+            pdf.circle(x + w / 2, y + h / 2, Math.max(Math.min(w, h) / 2 - 8, 1), 'S')
+            pdf.setFontSize(12); pdf.setFont('helvetica', 'bold')
+            pdf.text('APPROVED', x + w / 2, y + h / 2 - 5, { align: 'center' })
+            pdf.setFontSize(9); pdf.setFont('helvetica', 'normal')
+            pdf.text(new Date().toLocaleDateString('en-CA'), x + w / 2, y + h / 2 + 8, { align: 'center' })
+            break
+          case 'dateSigned':
+            pdf.setTextColor(55, 65, 81); pdf.setFontSize(10)
+            if (signedDate) pdf.text(signedDate, x + w / 2, y + h / 2, { align: 'center', baseline: 'middle' })
+            break
+          case 'name':
+            pdf.setTextColor(17, 24, 39); pdf.setFontSize(10)
+            if (rName) pdf.text(rName, x + 5, y + h / 2, { baseline: 'middle' })
+            else if (field.value) pdf.text(String(field.value), x + 5, y + h / 2, { baseline: 'middle' })
+            break
+          case 'company':
+            pdf.setTextColor(55, 65, 81); pdf.setFontSize(10)
+            if (rCompany) pdf.text(rCompany, x + 5, y + h / 2, { baseline: 'middle' })
+            else if (field.value) pdf.text(String(field.value), x + 5, y + h / 2, { baseline: 'middle' })
+            break
+          case 'title':
+            pdf.setTextColor(55, 65, 81); pdf.setFontSize(10)
+            if (rTitle) pdf.text(rTitle, x + 5, y + h / 2, { baseline: 'middle' })
+            else if (field.value) pdf.text(String(field.value), x + 5, y + h / 2, { baseline: 'middle' })
+            break
+          case 'text':
+            pdf.setTextColor(55, 65, 81); pdf.setFontSize(10)
+            if (field.value) pdf.text(String(field.value), x + 5, y + h / 2, { baseline: 'middle' })
+            break
+          case 'checkbox':
+            pdf.setDrawColor(37, 99, 235)
+            pdf.roundedRect(x + w / 2 - 7.5, y + h / 2 - 7.5, 15, 15, 2, 2, 'S')
+            if (['true', '1', 'yes'].includes(String(field.value ?? '').toLowerCase())) {
+              pdf.setTextColor(37, 99, 235); pdf.setFontSize(12)
+              pdf.text('✓', x + w / 2, y + h / 2 + 1, { align: 'center', baseline: 'middle' })
+            }
+            break
+        }
+      } catch (err) {
+        console.error('Failed to render field in download PDF:', field.id, err)
+      }
+    })
+  }
+
+  const handleDownloadFile = async (fileIdx: number) => {
+    setDownloadingFileIdx(fileIdx)
+    try {
+      const imgs = await renderFileToImages(fileIdx)
+      if (!imgs.length) throw new Error('No pages rendered')
+
+      const pdf = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'letter' })
+      const pdfW = pdf.internal.pageSize.getWidth()
+      const pdfH = pdf.internal.pageSize.getHeight()
+      imgs.forEach((img, i) => { if (i > 0) pdf.addPage(); if (img) pdf.addImage(img, 'PNG', 0, 0, pdfW, pdfH) })
+
+      overlayFieldsOnPdf(pdf, fileIdx)
+
+      const fileName = uploadedFiles[fileIdx]?.file_name?.replace(/\.[^.]+$/, '') || `Document_${fileIdx + 1}`
+      pdf.save(`${fileName}_with_fields.pdf`)
+    } catch (e: any) {
+      openActionModal(false, 'Download failed', String(e?.message || 'Unknown error'))
+    } finally {
+      setDownloadingFileIdx(null)
+    }
+  }
+
+  const handleSend = async () => {
+    if (sending) return
+    setSending(true)
+    try {
+      const sigRes = await fetch(`/api/esignature/signature/${encodeURIComponent(dealId)}`, { cache: 'no-store' })
+      if (!sigRes.ok) throw new Error('Failed to load signature record')
+      const sigData = await sigRes.json()
+      if (!sigData?.document_file) throw new Error('No document file found')
+
+      const getDocumentUrl = (raw: string): string => {
+        try {
+          const parsed = JSON.parse(raw)
+          const first = Array.isArray(parsed) ? parsed[0] : parsed
+          return first?.url || first?.file_url || first?.file_b64 || ''
+        } catch { return raw }
+      }
+      const documentUrl = getDocumentUrl(sigData.document_file)
+
+      const allRecipients = [
+        { id: sigData.id, email: sigData.email, full_name: sigData.full_name },
+        ...((sigData.siblings as any[]) || []).map((s: any) => ({ id: s.id, email: s.email, full_name: s.full_name })),
+      ]
+
+      const errors: string[] = []
+      for (const recip of allRecipients) {
+        const link = `https://easydrivecanada.com/admin/sales/deals/signature?${encodeURIComponent(recip.id)}`
+        const res = await fetch('https://primary-production-6722.up.railway.app/webhook/request', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: recip.full_name || recip.email || '', email: recip.email || '', link, document_url: documentUrl }),
+        })
+        if (!res.ok) errors.push(recip.email || recip.id)
+      }
+
+      if (errors.length > 0) throw new Error(`Failed for: ${errors.join(', ')}`)
+      openActionModal(true, 'Sent', `Signature request sent to ${allRecipients.length} recipient(s).`)
+    } catch (err: any) {
+      openActionModal(false, 'Send Failed', err?.message || 'Unknown error')
+    } finally {
+      setSending(false)
+    }
+  }
+
   const handleDownload = async () => {
+    // If multiple files, show file picker modal
+    if (uploadedFiles.length > 1) {
+      setDownloadModal(true)
+      return
+    }
+    // Single file — download directly
     setDownloading(true)
     try {
-      // Use the actual rendered page images (from the uploaded document_file) instead of generating a new Bill of Sale
-      if (!pageImages || pageImages.length === 0) {
-        throw new Error('No document pages available to download')
-      }
+      const imgs = uploadedFiles.length > 0 ? await renderFileToImages(0) : pageImages
+      if (!imgs.length) throw new Error('No document pages available to download')
 
-      // Create PDF with letter size dimensions
       const pdf = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'letter' })
-      const pdfW = pdf.internal.pageSize.getWidth()   // 612
-      const pdfH = pdf.internal.pageSize.getHeight()  // 792
+      const pdfW = pdf.internal.pageSize.getWidth()
+      const pdfH = pdf.internal.pageSize.getHeight()
+      imgs.forEach((img, i) => { if (i > 0) pdf.addPage(); if (img) pdf.addImage(img, 'PNG', 0, 0, pdfW, pdfH) })
 
-      // Add each page image to the PDF
-      for (let i = 0; i < pageImages.length; i++) {
-        if (i > 0) pdf.addPage()
-        const imgData = pageImages[i]
-        if (imgData) {
-          pdf.addImage(imgData, 'PNG', 0, 0, pdfW, pdfH)
-        }
-      }
-
-      // Get signature data for field overlays
-      const sigData = (dealData as any)?.signature
-      const c = dealData?.customer || {}
-      const fullName =
-        String(sigData?.full_name ?? '').trim() ||
-        [c.firstname, c.lastname].filter(Boolean).join(' ') ||
-        String(sigData?.email ?? '').trim() ||
-        ''
-      const initials = fullName ? fullName.split(' ').map((n: string) => n[0]).join('').toUpperCase() : 'DS'
-      const signature = String(sigData?.signature_image ?? c.signature ?? '').trim()
-      const signedAtRaw = String(sigData?.signed_at ?? sigData?.updated_at ?? sigData?.created_at ?? '').trim()
-      const signedDate = (() => {
-        try {
-          if (!signedAtRaw) return ''
-          const d = new Date(signedAtRaw)
-          if (Number.isNaN(d.getTime())) return ''
-          return d.toLocaleDateString('en-CA')
-        } catch {
-          return ''
-        }
-      })()
-
-      // Scale factors from preview (816x1056) to PDF (612x792)
-      const xScale = pdfW / PAGE_WIDTH
-      const yScale = pdfH / PAGE_HEIGHT
-
-      // Overlay fields on their respective pages — only for the currently viewed file
-      fields.filter(f => (f.fileIndex ?? 0) === selectedFileIndex).forEach(field => {
-        const pageNum = Math.min(Math.max(field.page || 1, 1), pdf.getNumberOfPages())
-        pdf.setPage(pageNum)
-
-        const x = field.x * xScale
-        const y = field.y * yScale
-        const w = field.width * xScale
-        const h = field.height * yScale
-
-        try {
-          switch (field.type) {
-            case 'signature':
-              if (signature && signature.length > 0) {
-                let src = signature
-                if (!signature.startsWith('data:') && !signature.startsWith('http')) {
-                  src = `data:image/png;base64,${signature}`
-                }
-                pdf.addImage(src, 'PNG', x, y, w, h)
-              }
-              break
-            case 'initial':
-              pdf.setTextColor(29, 78, 216)
-              pdf.setFontSize(14)
-              pdf.setFont('helvetica', 'bold')
-              pdf.text(initials, x + w / 2, y + h / 2, { align: 'center', baseline: 'middle' })
-              pdf.setFont('helvetica', 'normal')
-              break
-            case 'stamp':
-              pdf.setDrawColor(220, 38, 38)
-              pdf.setTextColor(220, 38, 38)
-              pdf.circle(x + w / 2, y + h / 2, Math.max(Math.min(w, h) / 2 - 2, 2), 'S')
-              pdf.circle(x + w / 2, y + h / 2, Math.max(Math.min(w, h) / 2 - 8, 1), 'S')
-              pdf.setFontSize(12)
-              pdf.setFont('helvetica', 'bold')
-              pdf.text('APPROVED', x + w / 2, y + h / 2 - 5, { align: 'center' })
-              pdf.setFontSize(9)
-              pdf.setFont('helvetica', 'normal')
-              pdf.text(new Date().toLocaleDateString('en-CA'), x + w / 2, y + h / 2 + 8, { align: 'center' })
-              break
-            case 'dateSigned':
-              pdf.setTextColor(55, 65, 81)
-              pdf.setFontSize(10)
-              if (signedDate) {
-                pdf.text(signedDate, x + w / 2, y + h / 2, { align: 'center', baseline: 'middle' })
-              }
-              break
-            case 'name':
-              pdf.setTextColor(17, 24, 39)
-              pdf.setFontSize(10)
-              if (fullName) {
-                pdf.text(fullName, x + 5, y + h / 2, { baseline: 'middle' })
-              } else if (field.value) {
-                pdf.text(String(field.value), x + 5, y + h / 2, { baseline: 'middle' })
-              }
-              break
-            case 'company':
-              pdf.setTextColor(55, 65, 81)
-              pdf.setFontSize(10)
-              if (field.value) pdf.text(String(field.value), x + 5, y + h / 2, { baseline: 'middle' })
-              break
-            case 'title':
-              pdf.setTextColor(55, 65, 81)
-              pdf.setFontSize(10)
-              if (field.value) pdf.text(String(field.value), x + 5, y + h / 2, { baseline: 'middle' })
-              break
-            case 'text':
-              pdf.setTextColor(55, 65, 81)
-              pdf.setFontSize(10)
-              if (field.value) pdf.text(String(field.value), x + 5, y + h / 2, { baseline: 'middle' })
-              break
-            case 'checkbox':
-              pdf.setDrawColor(37, 99, 235)
-              pdf.roundedRect(x + w / 2 - 7.5, y + h / 2 - 7.5, 15, 15, 2, 2, 'S')
-              if (String(field.value ?? '').toLowerCase() === 'true' || String(field.value ?? '') === '1' || String(field.value ?? '').toLowerCase() === 'yes') {
-                pdf.setTextColor(37, 99, 235)
-                pdf.setFontSize(12)
-                pdf.text('✓', x + w / 2, y + h / 2 + 1, { align: 'center', baseline: 'middle' })
-              }
-              break
-          }
-        } catch (err) {
-          console.error('Failed to render field in download PDF:', field.id, err)
-        }
-      })
-
-      // Save the PDF
+      overlayFieldsOnPdf(pdf, selectedFileIndex)
       pdf.save(`Document_${dealId}_with_fields.pdf`)
     } catch (e: any) {
       openActionModal(false, 'Download failed', String(e?.message || 'Unknown error'))
@@ -949,13 +1043,27 @@ export default function PrepareDocumentPage() {
   const handleSave = async () => {
     setSaving(true)
     try {
+      // Save master copy (all fields) to primary dealId — used by prepare page on reload
       const res = await fetch('/api/esignature/fields', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ dealId, fields }),
       })
       if (!res.ok) throw new Error('Failed to save fields')
-      openActionModal(true, 'Success', 'Fields saved successfully')
+
+      // Save each sibling recipient's filtered fields to their own row ID
+      // so the signing page for that recipient only receives their assigned fields
+      for (let i = 1; i < recipients.length; i++) {
+        const sibling = recipients[i]
+        const recipientFields = fields.filter(f => (f.recipientIndex ?? 0) === i)
+        await fetch('/api/esignature/fields', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ dealId: sibling.id, fields: recipientFields }),
+        })
+      }
+
+      openActionModal(true, 'Saved', `All fields saved for all ${recipients.length} recipient(s) across all files.`)
     } catch (e: any) {
       openActionModal(false, 'Save failed', String(e?.message || 'Unknown error'))
     } finally {
@@ -981,22 +1089,32 @@ export default function PrepareDocumentPage() {
 
   // Field content renderer
   const renderFieldContent = (field: Field) => {
-    // Check if this is signature table data or deals data
     const sigData = dealData?.signature
     const c = dealData?.customer || {}
-    
-    // Use signature table data if available, otherwise fall back to deals customer data
-    const fullName = sigData?.full_name || [c.firstname, c.lastname].filter(Boolean).join(' ') || ''
+
+    // Pick the recipient matching this field's recipientIndex
+    const fieldRecipientIdx = field.recipientIndex ?? 0
+    const fieldRecipient = recipients[fieldRecipientIdx]
+
+    // Use the field's recipient name if available, otherwise fall back to sigData/customer
+    const fullName =
+      fieldRecipient?.full_name ||
+      (fieldRecipientIdx === 0 ? sigData?.full_name : '') ||
+      [c.firstname, c.lastname].filter(Boolean).join(' ') ||
+      fieldRecipient?.email || ''
     const initials = fullName ? fullName.split(' ').map((n: string) => n[0]).join('').toUpperCase() : 'DS'
-    const signature = sigData?.signature_image || String(c.signature ?? '').trim()
+    // Get signature from the specific recipient's stored signature_image (any recipient index)
+    const rawSig = fieldRecipient?.signature_image ||
+      (fieldRecipientIdx === 0 ? (sigData?.signature_image || String(c.signature ?? '').trim()) : '')
+    const signature = rawSig
+      ? (rawSig.startsWith('data:') || rawSig.startsWith('http') ? rawSig : `data:image/png;base64,${rawSig}`)
+      : ''
     const fieldValue = String(field.value ?? '')
 
     switch (field.type) {
       case 'signature':
-        if (signature && signature.length > 0) {
-          const normalizedSig = normalizeToDataUrl(signature, 'image/png')
-          const src = normalizedSig?.url || ''
-          return <img src={src} alt="Signature" className="w-full h-full object-contain" draggable={false} onError={(e) => { e.currentTarget.style.display = 'none' }} />
+        if (signature) {
+          return <img src={signature} alt="Signature" className="w-full h-full object-contain" draggable={false} onError={(e) => { e.currentTarget.style.display = 'none' }} />
         }
         return <div className="flex items-center justify-center h-full text-xs text-blue-500 font-medium">Signature</div>
       case 'initial':
@@ -1019,29 +1137,9 @@ export default function PrepareDocumentPage() {
       case 'name':
         return <div className="flex items-center px-2 h-full text-xs font-medium text-gray-900">{fullName || 'Name'}</div>
       case 'company':
-        return (
-          <input
-            value={fieldValue}
-            onChange={(e) => handleFieldValueChange(field.id, e.target.value)}
-            onBlur={(e) => handleFieldValueCommit(field.id, e.target.value)}
-            onMouseDown={(e) => e.stopPropagation()}
-            onClick={(e) => e.stopPropagation()}
-            placeholder="Company"
-            className="w-full h-full px-2 text-xs text-gray-700 bg-transparent outline-none placeholder:text-gray-400"
-          />
-        )
+        return <div className="flex items-center px-2 h-full text-xs font-medium text-gray-900">{fieldRecipient?.company || fieldValue || 'Company'}</div>
       case 'title':
-        return (
-          <input
-            value={fieldValue}
-            onChange={(e) => handleFieldValueChange(field.id, e.target.value)}
-            onBlur={(e) => handleFieldValueCommit(field.id, e.target.value)}
-            onMouseDown={(e) => e.stopPropagation()}
-            onClick={(e) => e.stopPropagation()}
-            placeholder="Title"
-            className="w-full h-full px-2 text-xs text-gray-700 bg-transparent outline-none placeholder:text-gray-400"
-          />
-        )
+        return <div className="flex items-center px-2 h-full text-xs font-medium text-gray-900">{fieldRecipient?.title || fieldValue || 'Title'}</div>
       case 'text':
         return (
           <input
@@ -1146,27 +1244,86 @@ export default function PrepareDocumentPage() {
           </div>
         )}
 
-        <button
-          onClick={handleDownload}
-          disabled={downloading}
-          className="px-4 py-1.5 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 disabled:opacity-50 transition-colors shadow-sm flex items-center gap-2"
-        >
-          <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
-          {downloading ? 'Generating...' : 'Download'}
-        </button>
+        <div className="flex items-center gap-1">
+          {/* Send */}
+          <button
+            onClick={handleSend}
+            disabled={sending}
+            title="Send for Signing"
+            className="w-9 h-9 flex items-center justify-center rounded-lg text-slate-500 hover:text-blue-600 hover:bg-blue-50 disabled:opacity-40 transition-colors"
+          >
+            {sending ? (
+              <svg className="w-5 h-5 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2a10 10 0 1 0 10 10"/></svg>
+            ) : (
+              <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
+            )}
+          </button>
 
-        <button
-          onClick={handleSave}
-          disabled={saving}
-          className="px-4 py-1.5 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors shadow-sm"
-        >
-          {saving ? 'Saving...' : 'Save'}
-        </button>
+          {/* Download */}
+          <button
+            onClick={handleDownload}
+            disabled={downloading}
+            title="Download"
+            className="w-9 h-9 flex items-center justify-center rounded-lg text-slate-500 hover:text-green-600 hover:bg-green-50 disabled:opacity-40 transition-colors"
+          >
+            {downloading ? (
+              <svg className="w-5 h-5 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2a10 10 0 1 0 10 10"/></svg>
+            ) : (
+              <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+            )}
+          </button>
+
+          {/* Save */}
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            title="Save"
+            className="w-9 h-9 flex items-center justify-center rounded-lg text-slate-500 hover:text-blue-600 hover:bg-blue-50 disabled:opacity-40 transition-colors"
+          >
+            {saving ? (
+              <svg className="w-5 h-5 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2a10 10 0 1 0 10 10"/></svg>
+            ) : (
+              <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline strokeLinecap="round" strokeLinejoin="round" points="17 21 17 13 7 13 7 21"/><polyline strokeLinecap="round" strokeLinejoin="round" points="7 3 7 8 15 8"/></svg>
+            )}
+          </button>
+        </div>
       </div>
 
       <div className="flex flex-1 overflow-hidden">
         {/* ── Left Sidebar ── */}
         <div className="w-60 bg-white border-r border-gray-200 flex flex-col shrink-0">
+          {/* Recipient Tabs */}
+          {recipients.length > 0 && (
+            <div className="border-b border-gray-100">
+              <div className="px-3 pt-3 pb-1">
+                <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Recipients</h2>
+                <div className="flex flex-col gap-1">
+                  {recipients.map((r, idx) => {
+                    const colors = ['bg-blue-500', 'bg-purple-500', 'bg-green-500', 'bg-orange-500', 'bg-pink-500']
+                    const color = colors[idx % colors.length]
+                    const isActive = activeRecipientIdx === idx
+                    return (
+                      <button
+                        key={r.id}
+                        type="button"
+                        onClick={() => setActiveRecipientIdx(idx)}
+                        className={`flex items-center gap-2 px-2 py-1.5 rounded-lg text-left transition-all text-xs ${
+                          isActive ? 'bg-blue-50 border border-blue-200' : 'hover:bg-gray-50 border border-transparent'
+                        }`}
+                      >
+                        <div className={`w-5 h-5 rounded-full ${color} flex items-center justify-center text-white text-xs font-bold shrink-0`}>
+                          {(r.email || '?').charAt(0).toUpperCase()}
+                        </div>
+                        <span className={`truncate ${isActive ? 'text-blue-700 font-medium' : 'text-gray-600'}`}>
+                          {r.full_name || r.email}
+                        </span>
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            </div>
+          )}
           <div className="px-4 py-3 border-b border-gray-100">
             <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Fields</h2>
           </div>
@@ -1197,7 +1354,7 @@ export default function PrepareDocumentPage() {
             <div
               ref={containerRef}
               className="relative bg-white border border-gray-300 shadow-sm"
-              style={{ width: `${PAGE_WIDTH * scale}px`, minHeight: `${PAGE_HEIGHT * totalPages * scale}px`, transformOrigin: 'top left' }}
+              style={{ width: `${PAGE_WIDTH * scale}px`, minHeight: `${(PAGE_HEIGHT * totalPages + Math.max(0, totalPages - 1) * 12) * scale}px`, transformOrigin: 'top left' }}
             >
               {/* Document display - handles both PDF and images */}
               {pdfPageUrls.length > 0 && (
@@ -1213,7 +1370,7 @@ export default function PrepareDocumentPage() {
                     pageImages.length > 0 ? (
                     pageImages.map((img, idx) => {
                       const pageNo = idx + 1
-                      const isLast = idx === pageImages.length - 1
+                      const totalPgs = pageImages.length
                       return (
                         <div key={pageNo}>
                           <img
@@ -1222,15 +1379,29 @@ export default function PrepareDocumentPage() {
                             className="w-full absolute left-0 pointer-events-none bg-white"
                             style={{ top: `${(pageNo - 1) * PAGE_HEIGHT * scale}px`, height: `${PAGE_HEIGHT * scale}px`, zIndex: 1, backgroundColor: '#fff' }}
                           />
-
-                          {!isLast && (
+                          {/* Page-end indicator — shown after every page */}
+                          <div
+                            className="absolute left-0 w-full pointer-events-none flex flex-col items-center"
+                            style={{ top: `${pageNo * PAGE_HEIGHT * scale - 24 * scale}px`, zIndex: 5 }}
+                          >
                             <div
-                              className="absolute left-0 w-full flex flex-col items-center justify-center pointer-events-none"
-                              style={{ top: `${pageNo * PAGE_HEIGHT * scale}px`, zIndex: 1 }}
+                              className="flex items-center justify-center w-full"
+                              style={{ height: `${24 * scale}px`, background: 'linear-gradient(to top, rgba(200,210,230,0.55) 0%, transparent 100%)' }}
                             >
-                              <div className="text-xs font-semibold text-slate-500 mb-2" style={{ fontSize: `${12 * scale}px` }}>Page {pageNo}</div>
-                              <div className="w-full bg-slate-400" style={{ maxWidth: `${PAGE_WIDTH * scale}px`, height: `${2 * scale}px` }} />
+                              <span
+                                className="px-2 py-0.5 rounded text-slate-500 font-medium bg-white/80 border border-slate-200"
+                                style={{ fontSize: `${10 * scale}px`, lineHeight: 1.4 }}
+                              >
+                                Page {pageNo} / {totalPgs}
+                              </span>
                             </div>
+                          </div>
+                          {/* Gap between pages */}
+                          {pageNo < totalPgs && (
+                            <div
+                              className="absolute left-0 w-full pointer-events-none"
+                              style={{ top: `${pageNo * PAGE_HEIGHT * scale}px`, height: `${12 * scale}px`, background: '#d1d5db', zIndex: 3 }}
+                            />
                           )}
                         </div>
                       )
@@ -1238,7 +1409,7 @@ export default function PrepareDocumentPage() {
                     ) : renderFailed ? (
                       pdfPageUrls.map((pageUrl, idx) => {
                         const pageNo = idx + 1
-                        const isLast = idx === pdfPageUrls.length - 1
+                        const totalPgs = pdfPageUrls.length
                         return (
                           <div key={pageNo}>
                             <iframe
@@ -1248,14 +1419,27 @@ export default function PrepareDocumentPage() {
                               style={{ top: `${(pageNo - 1) * PAGE_HEIGHT * scale}px`, height: `${PAGE_HEIGHT * scale}px`, border: 'none', zIndex: 1, backgroundColor: '#fff', overflow: 'hidden' }}
                               title={`Document Page ${pageNo}`}
                             />
-
-                            {!isLast && (
+                            <div
+                              className="absolute left-0 w-full pointer-events-none flex flex-col items-center"
+                              style={{ top: `${pageNo * PAGE_HEIGHT * scale - 24 * scale}px`, zIndex: 5 }}
+                            >
                               <div
-                                className="absolute left-0 w-full flex items-center justify-center pointer-events-none"
-                                style={{ top: `${pageNo * PAGE_HEIGHT * scale}px`, zIndex: 1 }}
+                                className="flex items-center justify-center w-full"
+                                style={{ height: `${24 * scale}px`, background: 'linear-gradient(to top, rgba(200,210,230,0.55) 0%, transparent 100%)' }}
                               >
-                                <div className="w-full h-px bg-slate-200" style={{ maxWidth: `${PAGE_WIDTH * scale}px` }} />
+                                <span
+                                  className="px-2 py-0.5 rounded text-slate-500 font-medium bg-white/80 border border-slate-200"
+                                  style={{ fontSize: `${10 * scale}px`, lineHeight: 1.4 }}
+                                >
+                                  Page {pageNo} / {totalPgs}
+                                </span>
                               </div>
+                            </div>
+                            {pageNo < totalPgs && (
+                              <div
+                                className="absolute left-0 w-full pointer-events-none"
+                                style={{ top: `${pageNo * PAGE_HEIGHT * scale}px`, height: `${12 * scale}px`, background: '#d1d5db', zIndex: 3 }}
+                              />
                             )}
                           </div>
                         )
@@ -1299,18 +1483,26 @@ export default function PrepareDocumentPage() {
               {fields.filter((f) => (f.fileIndex ?? 0) === selectedFileIndex).map((field) => {
                 const isSelected = selectedFieldId === field.id
                 const isActive = interactionRef.current.fieldId === field.id
+                const fieldRecipient = field.recipientIndex ?? 0
+                const isActiveRecipient = recipients.length === 0 || fieldRecipient === activeRecipientIdx
+                const recipientBorderColors = ['border-blue-400', 'border-purple-400', 'border-green-400', 'border-orange-400', 'border-pink-400']
+                const recipientBgColors = ['bg-blue-50/30', 'bg-purple-50/30', 'bg-green-50/30', 'bg-orange-50/30', 'bg-pink-50/30']
+                const borderColor = recipientBorderColors[fieldRecipient % recipientBorderColors.length]
+                const bgColor = recipientBgColors[fieldRecipient % recipientBgColors.length]
 
                 return (
                   <div
                     key={field.id}
                     data-field-id={field.id}
-                    className={`absolute select-none group ${isActive ? '' : 'transition-shadow duration-150'}`}
+                    className={`absolute select-none group ${isActive ? '' : 'transition-all duration-150'}`}
                     style={{
                       transform: `translate3d(${field.x * scale}px, ${(((field.page || 1) - 1) * PAGE_HEIGHT + field.y) * scale}px, 0)`,
                       width: `${field.width * scale}px`,
                       height: `${field.height * scale}px`,
-                      zIndex: isActive ? 50 : isSelected ? 20 : 10,
+                      zIndex: isActive ? 50 : isSelected ? 20 : isActiveRecipient ? 10 : 5,
                       willChange: isActive ? 'transform, width, height' : 'auto',
+                      opacity: isActiveRecipient ? 1 : 0.35,
+                      pointerEvents: isActiveRecipient ? 'auto' : 'none',
                     }}
                   >
                     {/* Field body */}
@@ -1323,7 +1515,7 @@ export default function PrepareDocumentPage() {
                       className={`w-full h-full cursor-grab active:cursor-grabbing rounded-[3px] border-[1.5px] overflow-hidden ${
                         isSelected
                           ? 'border-blue-500 shadow-[0_0_0_1px_rgba(59,130,246,0.3)] bg-blue-50/20'
-                          : 'border-gray-300 hover:border-blue-400 bg-white/60 hover:bg-blue-50/10'
+                          : `${borderColor} ${bgColor}`
                       }`}
                       style={{ zIndex: 10 }}
                     >
@@ -1400,6 +1592,63 @@ export default function PrepareDocumentPage() {
           </div>
         </div>
       )}
+
+      {downloadModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setDownloadModal(false)} />
+          <div className="relative w-full max-w-lg rounded-xl border border-slate-200 bg-white shadow-2xl p-6">
+            <div className="flex items-center justify-between mb-4">
+              <div className="text-lg font-bold text-gray-800">Download Files</div>
+              <button
+                type="button"
+                onClick={() => setDownloadModal(false)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M18 6 6 18M6 6l12 12"/>
+                </svg>
+              </button>
+            </div>
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-slate-200">
+                  <th className="text-left py-2 font-semibold text-slate-600">#</th>
+                  <th className="text-left py-2 font-semibold text-slate-600">File Name</th>
+                  <th className="text-right py-2 font-semibold text-slate-600">Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {uploadedFiles.map((file, idx) => (
+                  <tr key={idx} className="border-b border-slate-100 last:border-0">
+                    <td className="py-3 text-slate-500">{idx + 1}</td>
+                    <td className="py-3 text-slate-800 truncate max-w-[260px]">{file.file_name || `Document ${idx + 1}`}</td>
+                    <td className="py-3 text-right">
+                      <button
+                        type="button"
+                        disabled={downloadingFileIdx === idx}
+                        onClick={() => handleDownloadFile(idx)}
+                        className="inline-flex items-center gap-1.5 h-8 px-4 rounded-full bg-blue-600 text-white text-xs font-semibold hover:bg-blue-700 disabled:opacity-50"
+                      >
+                        {downloadingFileIdx === idx ? (
+                          <svg className="w-3.5 h-3.5 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <path d="M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0"/>
+                          </svg>
+                        ) : (
+                          <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/>
+                          </svg>
+                        )}
+                        Download
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
     </div>
   )
 }
