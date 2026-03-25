@@ -119,6 +119,8 @@ export default function SettingsUsersPage() {
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [passwordError, setPasswordError] = useState<string | null>(null)
+  const [passwordFieldError, setPasswordFieldError] = useState<string | null>(null)
+  const [confirmFieldError, setConfirmFieldError] = useState<string | null>(null)
   const [savingNewUser, setSavingNewUser] = useState(false)
   const [openedFromLimitModal, setOpenedFromLimitModal] = useState(false)
 
@@ -138,6 +140,8 @@ export default function SettingsUsersPage() {
     setPassword('')
     setConfirmPassword('')
     setPasswordError(null)
+    setPasswordFieldError(null)
+    setConfirmFieldError(null)
     setSavingNewUser(false)
     setOpenedFromLimitModal(false)
   }
@@ -646,6 +650,8 @@ export default function SettingsUsersPage() {
     setPassword((r.password as any) || '')
     setConfirmPassword((r.password as any) || '')
     setPasswordError(null)
+    setPasswordFieldError(null)
+    setConfirmFieldError(null)
     setPermissions({
       access_all_deals: Boolean(r.access_all_deals),
       access_all_leads_customers: Boolean(r.access_all_leads_customers),
@@ -1061,16 +1067,34 @@ export default function SettingsUsersPage() {
                       type="password"
                       value={password}
                       onChange={(e) => {
-                        setPassword(e.target.value)
+                        const val = e.target.value
+                        setPassword(val)
                         setPasswordError(null)
+                        if (val && val.length < 6) {
+                          setPasswordFieldError('Password must be at least 6 characters.')
+                        } else {
+                          setPasswordFieldError(null)
+                        }
+                        // re-check confirm match
+                        if (confirmPassword && val !== confirmPassword) {
+                          setConfirmFieldError('Passwords do not match.')
+                        } else {
+                          setConfirmFieldError(null)
+                        }
                       }}
                       className="h-8 flex-1 px-2 text-xs outline-none"
                     />
                   </div>
-                  {passwordError ? <div className="mt-1 text-[11px] text-red-600">{passwordError}</div> : null}
+                  {passwordFieldError && (
+                    <div className="mt-1 flex items-center gap-1 text-[11px] text-red-600">
+                      <svg className="w-3 h-3 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
+                      {passwordFieldError}
+                    </div>
+                  )}
+                  {passwordError && !passwordFieldError ? <div className="mt-1 text-[11px] text-red-600">{passwordError}</div> : null}
 
                   <div className="mt-3 text-[11px] text-slate-600">Confirm Password</div>
-                  <div className="mt-1 flex items-center border border-slate-200/60">
+                  <div className={`mt-1 flex items-center border ${confirmFieldError ? 'border-red-400' : confirmPassword && !confirmFieldError && password === confirmPassword ? 'border-green-400' : 'border-slate-200/60'}`}>
                     <div className="w-9 h-8 flex items-center justify-center text-slate-400 border-r border-slate-200/60 bg-slate-50">
                       <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
                         <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M12 11V7a4 4 0 10-8 0v4" />
@@ -1081,12 +1105,33 @@ export default function SettingsUsersPage() {
                       type="password"
                       value={confirmPassword}
                       onChange={(e) => {
-                        setConfirmPassword(e.target.value)
+                        const val = e.target.value
+                        setConfirmPassword(val)
                         setPasswordError(null)
+                        if (val && password && val !== password) {
+                          setConfirmFieldError('Passwords do not match.')
+                        } else {
+                          setConfirmFieldError(null)
+                        }
                       }}
                       className="h-8 flex-1 px-2 text-xs outline-none"
                     />
+                    {confirmPassword && !confirmFieldError && password === confirmPassword && (
+                      <svg className="w-4 h-4 text-green-500 mr-2 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7"/></svg>
+                    )}
                   </div>
+                  {confirmFieldError && (
+                    <div className="mt-1 flex items-center gap-1 text-[11px] text-red-600">
+                      <svg className="w-3 h-3 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
+                      {confirmFieldError}
+                    </div>
+                  )}
+                  {confirmPassword && !confirmFieldError && password === confirmPassword && (
+                    <div className="mt-1 flex items-center gap-1 text-[11px] text-green-600">
+                      <svg className="w-3 h-3 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7"/></svg>
+                      Passwords match.
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -1228,34 +1273,30 @@ export default function SettingsUsersPage() {
               return (
                 <div key={r.id} className="grid grid-cols-[56px_1fr_1fr_1fr] border-b border-slate-200/60 hover:bg-slate-50">
                   <div className="h-9 flex items-center justify-center gap-3">
-                    {isCurrentUserRow ? (
-                      <div className="h-6 w-6" />
-                    ) : (
-                      <>
-                        <button
-                          type="button"
-                          className="h-6 w-6 flex items-center justify-center text-slate-400 hover:text-slate-700"
-                          title="Edit"
-                          onClick={() => openEdit(r)}
-                        >
-                          <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                            <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M12 20h9" />
-                            <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4 12.5-12.5z" />
-                          </svg>
-                        </button>
-                        <button
-                          type="button"
-                          className="h-6 w-6 flex items-center justify-center text-red-600 hover:text-red-700"
-                          title="Delete"
-                          onClick={() => void handleDelete(r.id, r.email)}
-                        >
-                          <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                            <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M3 6h18" />
-                            <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M8 6V4h8v2" />
-                            <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M19 6l-1 14H6L5 6" />
-                          </svg>
-                        </button>
-                      </>
+                    <button
+                      type="button"
+                      className="h-6 w-6 flex items-center justify-center text-slate-400 hover:text-slate-700"
+                      title="Edit"
+                      onClick={() => openEdit(r)}
+                    >
+                      <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                        <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M12 20h9" />
+                        <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4 12.5-12.5z" />
+                      </svg>
+                    </button>
+                    {!isCurrentUserRow && (
+                      <button
+                        type="button"
+                        className="h-6 w-6 flex items-center justify-center text-red-600 hover:text-red-700"
+                        title="Delete"
+                        onClick={() => void handleDelete(r.id, r.email)}
+                      >
+                        <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                          <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M3 6h18" />
+                          <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M8 6V4h8v2" />
+                          <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M19 6l-1 14H6L5 6" />
+                        </svg>
+                      </button>
                     )}
                   </div>
                   <div className="h-9 flex items-center px-3 text-xs text-slate-700">{name}</div>
