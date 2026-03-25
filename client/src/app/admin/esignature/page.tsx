@@ -28,6 +28,20 @@ type Document = {
 
 type EsignFieldType = 'signature' | 'initial' | 'stamp' | 'dateSigned' | 'name' | 'company' | 'title' | 'text' | 'checkbox'
 type EsignField = { id: string; type: EsignFieldType; x: number; y: number; width: number; height: number; page: number; value?: string }
+type UploadRecipient = { email: string; name: string; company: string; title: string }
+type SignatureDocumentFile = {
+  file_name: string
+  file_type: string
+  file_b64?: string
+  file_url?: string
+}
+
+const createEmptyUploadRecipient = (): UploadRecipient => ({
+  email: '',
+  name: '',
+  company: '',
+  title: '',
+})
 
 export default function ESignaturePage() {
   const router = useRouter()
@@ -48,18 +62,18 @@ export default function ESignaturePage() {
   const [sendResultMessage, setSendResultMessage] = useState('')
   const [recipientModalDoc, setRecipientModalDoc] = useState<Document | null>(null)
   const [downloadFilesCtx, setDownloadFilesCtx] = useState<{
-    files: Array<{ file_name: string; file_type: string; file_b64: string }>
+    files: SignatureDocumentFile[]
     sigData: any
     fields: EsignField[]
   } | null>(null)
   const [downloadingFileIdx, setDownloadingFileIdx] = useState<number | null>(null)
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [isSuccessModalOpen, setIsSuccessModalOpen] = useState(false)
+  const [uploadResultOk, setUploadResultOk] = useState(true)
+  const [uploadResultMessage, setUploadResultMessage] = useState('')
   const [uploadFiles, setUploadFiles] = useState<File[]>([])
-  const [uploadEmailInputs, setUploadEmailInputs] = useState<string[]>([''])
-  const [uploadName, setUploadName] = useState('')
-  const [uploadCompany, setUploadCompany] = useState('')
-  const [uploadTitle, setUploadTitle] = useState('')
+  const [uploadRecipients, setUploadRecipients] = useState<UploadRecipient[]>([createEmptyUploadRecipient()])
+  const [activeUploadRecipientIdx, setActiveUploadRecipientIdx] = useState(0)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const esignModalResolverRef = useRef<((value: boolean) => void) | null>(null)
   const [esignModalOpen, setEsignModalOpen] = useState(false)
@@ -181,15 +195,14 @@ export default function ESignaturePage() {
   const handleCloseModal = () => {
     setIsModalOpen(false)
     setUploadFiles([])
-    setUploadEmailInputs([''])
-    setUploadName('')
-    setUploadCompany('')
-    setUploadTitle('')
+    setUploadRecipients([createEmptyUploadRecipient()])
+    setActiveUploadRecipientIdx(0)
     if (fileInputRef.current) fileInputRef.current.value = ''
   }
 
   const handleCloseSuccessModal = () => {
     setIsSuccessModalOpen(false)
+    setUploadResultMessage('')
   }
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -197,31 +210,52 @@ export default function ESignaturePage() {
     setUploadFiles(files)
   }
 
-  const parseUploadEmails = (values: string[]) => {
+  const parseUploadRecipients = (values: UploadRecipient[]) => {
     const seen = new Set<string>()
     return values
-      .map((email) => email.trim().toLowerCase())
-      .filter((email) => {
-        if (!email) return false
-        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return false
-        if (seen.has(email)) return false
-        seen.add(email)
+      .map((recipient) => ({
+        email: recipient.email.trim().toLowerCase(),
+        name: recipient.name.trim(),
+        company: recipient.company.trim(),
+        title: recipient.title.trim(),
+      }))
+      .filter((recipient) => {
+        if (!recipient.email) return false
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipient.email)) return false
+        if (seen.has(recipient.email)) return false
+        seen.add(recipient.email)
         return true
       })
   }
 
-  const handleUploadEmailChange = (index: number, value: string) => {
-    setUploadEmailInputs((prev) => prev.map((item, i) => (i === index ? value : item)))
+  const handleUploadRecipientChange = (index: number, field: keyof UploadRecipient, value: string) => {
+    setUploadRecipients((prev) => prev.map((item, i) => (i === index ? { ...item, [field]: value } : item)))
   }
 
-  const handleAddUploadEmail = () => {
-    setUploadEmailInputs((prev) => [...prev, ''])
+  const handleAddUploadRecipient = () => {
+    setUploadRecipients((prev) => {
+      const next = [...prev, createEmptyUploadRecipient()]
+      setActiveUploadRecipientIdx(next.length - 1)
+      return next
+    })
   }
 
-  const handleRemoveUploadEmail = (index: number) => {
-    setUploadEmailInputs((prev) => {
-      if (prev.length === 1) return ['']
-      return prev.filter((_, i) => i !== index)
+  const activeUploadRecipient = uploadRecipients[activeUploadRecipientIdx] ?? uploadRecipients[0]
+
+  const handleRemoveUploadRecipient = (index: number) => {
+    setUploadRecipients((prev) => {
+      if (prev.length === 1) {
+        setActiveUploadRecipientIdx(0)
+        return [createEmptyUploadRecipient()]
+      }
+
+      const next = prev.filter((_, i) => i !== index)
+      setActiveUploadRecipientIdx((curr) => {
+        if (curr > index) return curr - 1
+        if (curr === index) return Math.max(0, curr - 1)
+        return curr
+      })
+      return next
     })
   }
 
@@ -236,18 +270,22 @@ export default function ESignaturePage() {
 
   const handleModalSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    console.log('[ESignature Upload] Submit clicked')
+    console.log('[ESignature Upload] Files:', uploadFiles.length)
+    console.log('[ESignature Upload] Recipients:', uploadRecipients)
     if (uploadFiles.length === 0) {
       alert('Please select at least one file to upload')
       return
     }
-    const recipients = parseUploadEmails(uploadEmailInputs)
+    const parsedRecipients = parseUploadRecipients(uploadRecipients)
+    const recipients = parsedRecipients.map((recipient) => recipient.email)
     if (recipients.length === 0) {
       alert('Please enter at least one valid recipient email')
       return
     }
     setUploading(true)
     try {
-      const { userId, email: userEmail } = await resolveUser()
+      const { userId } = await resolveUser()
       if (!userId) {
         alert('Please log in again to upload (missing user ID).')
         return
@@ -264,29 +302,45 @@ export default function ESignaturePage() {
 
       const payload = {
         files: filesPayload,
-        emails: recipients,
-        name: uploadName,
-        company: uploadCompany,
-        title: uploadTitle,
+        recipient_details: parsedRecipients,
         user_id: userIdForPayload,
-        user_email: userEmail,
       }
 
-      const res = await fetch('https://primary-production-6722.up.railway.app/webhook/file', {
+      console.log('[ESignature Upload] Sending to API:', JSON.stringify(payload).substring(0, 500))
+
+      const res = await fetch('/api/esignature/signatures', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       })
-      if (!res.ok) throw new Error('Upload failed')
 
-      const responseText = await res.text()
-      if (responseText.trim() !== 'Done') {
-        throw new Error('Unexpected response from server')
+      console.log('[ESignature Upload] API response status:', res.status)
+      const uploadJson = await res.json().catch(() => null)
+      console.log('[ESignature Upload] API response:', uploadJson)
+
+      if (!res.ok) {
+        throw new Error(String(uploadJson?.error || uploadJson?.message || 'Upload failed'))
       }
 
-      const successCount = filesPayload.length * recipients.length
+      const responseText = String(uploadJson?.webhookResponse ?? uploadJson?.message ?? '').trim()
+      const done = Boolean(uploadJson?.done) || /\bdone\b/i.test(responseText)
+      const successCount = Number(uploadJson?.count ?? recipients.length)
 
-      if (successCount > 0) {
+      handleCloseModal()
+
+      if (done) {
+        setUploadResultOk(true)
+        setUploadResultMessage('Saved successfully (Done).')
+        setIsSuccessModalOpen(true)
+
+        const queryParam = `user_id=${encodeURIComponent(userIdForPayload)}`
+        const docsRes = await fetch(`/api/esignature/signatures?${queryParam}`, { cache: 'no-store' })
+        if (docsRes.ok) {
+          const json = await docsRes.json()
+          if (json.documents) setDocuments(json.documents)
+        }
+
+        void (async () => {
         try {
           const raw = typeof window !== 'undefined' ? window.localStorage.getItem('edc_admin_session') : null
           const parsed = raw ? JSON.parse(raw) : null
@@ -304,18 +358,17 @@ export default function ESignaturePage() {
         } catch (err) {
           console.error('Failed to deduct credit:', err)
         }
-
-        handleCloseModal()
+        })()
+      } else {
+        setUploadResultOk(false)
+        setUploadResultMessage(`Webhook did not return "Done".\n\nStatus: ${uploadJson?.webhookStatus || 'unknown'}\nResponse: ${responseText || '(empty)'}\nURL: ${uploadJson?.webhookUrl || 'n/a'}`)
         setIsSuccessModalOpen(true)
-        const queryParam = `user_id=${encodeURIComponent(userIdForPayload)}`
-        const docsRes = await fetch(`/api/esignature/signatures?${queryParam}`, { cache: 'no-store' })
-        if (docsRes.ok) {
-          const json = await docsRes.json()
-          if (json.documents) setDocuments(json.documents)
-        }
       }
     } catch (err: any) {
-      alert(`Upload failed: ${err?.message || 'Unknown error'}`)
+      handleCloseModal()
+      setUploadResultOk(false)
+      setUploadResultMessage(err?.message || 'Unknown error')
+      setIsSuccessModalOpen(true)
     } finally {
       setUploading(false)
     }
@@ -566,19 +619,28 @@ export default function ESignaturePage() {
 
   // Core PDF renderer for a single file entry
   const performFileDownload = async (
-    fileEntry: { file_name: string; file_type: string; file_b64: string },
+    fileEntry: SignatureDocumentFile,
     sigData: any,
     fields: EsignField[],
     fileIndex = 0
   ) => {
     const pdfjsLib = await loadPdfJs()
-    const b64Raw = fileEntry.file_b64
-    let pdfSrc = b64Raw
-    if (!b64Raw.startsWith('data:') && !b64Raw.startsWith('http')) {
-      const mt = fileEntry.file_type || 'application/pdf'
-      pdfSrc = `data:${mt};base64,${b64Raw}`
+
+    let b64 = String(fileEntry.file_b64 || '').trim()
+    if (!b64 && fileEntry.file_url) {
+      const fileRes = await fetch(fileEntry.file_url, { cache: 'no-store' })
+      if (!fileRes.ok) throw new Error(`Unable to fetch file: ${fileEntry.file_name || 'document'}`)
+      b64 = arrayBufferToBase64(await fileRes.arrayBuffer())
     }
-    const b64 = pdfSrc.includes(',') ? pdfSrc.split(',')[1] : pdfSrc
+
+    if (!b64) {
+      throw new Error(`Missing file content for ${fileEntry.file_name || 'document'}`)
+    }
+
+    if (b64.startsWith('data:')) {
+      b64 = b64.includes(',') ? b64.split(',')[1] : ''
+    }
+
     const PAGE_WIDTH = 816
     const PAGE_HEIGHT = 1056
     const PDF_RENDER_QUALITY = 4
@@ -676,11 +738,11 @@ export default function ESignaturePage() {
 
       // Parse document_file: may be JSON array, JSON object, or plain base64
       const rawDoc = String(sigData.document_file || '').trim()
-      let fileList: Array<{ file_name: string; file_type: string; file_b64: string }> = []
+      let fileList: SignatureDocumentFile[] = []
       if (rawDoc.startsWith('[')) {
         try { const p = JSON.parse(rawDoc); if (Array.isArray(p) && p.length > 0) fileList = p } catch {}
       } else if (rawDoc.startsWith('{')) {
-        try { const p = JSON.parse(rawDoc); if (p?.file_b64) fileList = [p] } catch {}
+        try { const p = JSON.parse(rawDoc); if (p?.file_b64 || p?.file_url) fileList = [p] } catch {}
       }
       if (fileList.length === 0) {
         fileList = [{ file_name: doc.title || 'document.pdf', file_type: 'application/pdf', file_b64: rawDoc }]
@@ -1113,7 +1175,7 @@ export default function ESignaturePage() {
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={handleCloseModal} />
-          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden">
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-hidden">
             {/* Header */}
             <div className="bg-gradient-to-r from-blue-600 to-blue-500 px-6 py-4">
               <div className="flex items-center justify-between">
@@ -1134,7 +1196,7 @@ export default function ESignaturePage() {
             </div>
 
             {/* Form */}
-            <form onSubmit={handleModalSubmit} className="p-6 space-y-5">
+            <form onSubmit={handleModalSubmit} className="p-6 space-y-5 max-h-[calc(90vh-96px)] overflow-y-auto">
               {/* File Upload */}
               <div>
                 <label className="block text-sm font-semibold text-slate-700 mb-2">Document File</label>
@@ -1178,23 +1240,56 @@ export default function ESignaturePage() {
                 ) : null}
               </div>
 
-              {/* Email */}
+              {/* Recipients */}
               <div>
                 <div className="flex items-center justify-between gap-3 mb-2">
-                  <label className="block text-sm font-semibold text-slate-700">Email Address(es)</label>
+                  <label className="block text-sm font-semibold text-slate-700">Recipients</label>
                   <button
                     type="button"
-                    onClick={handleAddUploadEmail}
+                    onClick={handleAddUploadRecipient}
                     className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-blue-200 text-blue-600 text-xs font-semibold hover:bg-blue-50 transition-colors"
                   >
                     <span className="text-sm leading-none">+</span>
-                    Add email
+                    Add recipient
                   </button>
                 </div>
-                <div className="space-y-3">
-                  {uploadEmailInputs.map((emailValue, index) => (
-                    <div key={`upload-email-${index}`} className="flex items-start gap-2">
-                      <div className="relative flex-1">
+                <div className="flex items-center gap-2 overflow-x-auto pb-2 mb-3">
+                  {uploadRecipients.map((_, index) => {
+                    const isActive = index === activeUploadRecipientIdx
+                    return (
+                      <button
+                        key={`recipient-tab-${index}`}
+                        type="button"
+                        onClick={() => setActiveUploadRecipientIdx(index)}
+                        className={`whitespace-nowrap px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${
+                          isActive
+                            ? 'bg-blue-600 text-white border-blue-600'
+                            : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                        }`}
+                      >
+                        Recipient {index + 1}
+                      </button>
+                    )
+                  })}
+                </div>
+
+                {activeUploadRecipient ? (
+                  <div className="rounded-xl border border-slate-200 p-3 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Recipient {activeUploadRecipientIdx + 1}</div>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveUploadRecipient(activeUploadRecipientIdx)}
+                        disabled={uploadRecipients.length === 1}
+                        className="h-8 px-2 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors text-xs"
+                      >
+                        Remove
+                      </button>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-semibold text-slate-700 mb-2">Email Address</label>
+                      <div className="relative">
                         <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
                           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 12a4 4 0 10-8 0 4 4 0 008 0zm0 0v1.5a2.5 2.5 0 005 0V12a9 9 0 10-9 9m4.5-1.206a8.959 8.959 0 01-4.5 1.207" />
@@ -1202,83 +1297,72 @@ export default function ESignaturePage() {
                         </div>
                         <input
                           type="email"
-                          value={emailValue}
-                          onChange={(e) => handleUploadEmailChange(index, e.target.value)}
-                          placeholder={`recipient${index + 1}@example.com`}
+                          value={activeUploadRecipient.email}
+                          onChange={(e) => handleUploadRecipientChange(activeUploadRecipientIdx, 'email', e.target.value)}
+                          placeholder={`recipient${activeUploadRecipientIdx + 1}@example.com`}
                           className="w-full pl-10 pr-4 py-3 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
-                          required={index === 0}
+                          required
                         />
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveUploadEmail(index)}
-                        disabled={uploadEmailInputs.length === 1}
-                        className="h-[50px] px-3 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                        aria-label={`Remove email ${index + 1}`}
-                      >
-                        -
-                      </button>
                     </div>
-                  ))}
-                </div>
-              </div>
 
-              {/* Name & Company Row */}
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-semibold text-slate-700 mb-2">Full Name</label>
-                  <div className="relative">
-                    <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                      </svg>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-semibold text-slate-700 mb-2">Full Name</label>
+                        <div className="relative">
+                          <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                            </svg>
+                          </div>
+                          <input
+                            type="text"
+                            value={activeUploadRecipient.name}
+                            onChange={(e) => handleUploadRecipientChange(activeUploadRecipientIdx, 'name', e.target.value)}
+                            placeholder="John Doe"
+                            className="w-full pl-10 pr-4 py-3 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                            required
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-semibold text-slate-700 mb-2">Company</label>
+                        <div className="relative">
+                          <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                            </svg>
+                          </div>
+                          <input
+                            type="text"
+                            value={activeUploadRecipient.company}
+                            onChange={(e) => handleUploadRecipientChange(activeUploadRecipientIdx, 'company', e.target.value)}
+                            placeholder="Company Name"
+                            className="w-full pl-10 pr-4 py-3 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                          />
+                        </div>
+                      </div>
                     </div>
-                    <input
-                      type="text"
-                      value={uploadName}
-                      onChange={(e) => setUploadName(e.target.value)}
-                      placeholder="John Doe"
-                      className="w-full pl-10 pr-4 py-3 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
-                      required
-                    />
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-sm font-semibold text-slate-700 mb-2">Company</label>
-                  <div className="relative">
-                    <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
-                      </svg>
-                    </div>
-                    <input
-                      type="text"
-                      value={uploadCompany}
-                      onChange={(e) => setUploadCompany(e.target.value)}
-                      placeholder="Company Name"
-                      className="w-full pl-10 pr-4 py-3 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
-                    />
-                  </div>
-                </div>
-              </div>
 
-              {/* Title */}
-              <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-2">Title / Position</label>
-                <div className="relative">
-                  <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                    </svg>
+                    <div>
+                      <label className="block text-sm font-semibold text-slate-700 mb-2">Title / Position</label>
+                      <div className="relative">
+                        <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
+                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                          </svg>
+                        </div>
+                        <input
+                          type="text"
+                          value={activeUploadRecipient.title}
+                          onChange={(e) => handleUploadRecipientChange(activeUploadRecipientIdx, 'title', e.target.value)}
+                          placeholder="e.g. Sales Manager"
+                          className="w-full pl-10 pr-4 py-3 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                        />
+                      </div>
+                    </div>
                   </div>
-                  <input
-                    type="text"
-                    value={uploadTitle}
-                    onChange={(e) => setUploadTitle(e.target.value)}
-                    placeholder="e.g. Sales Manager"
-                    className="w-full pl-10 pr-4 py-3 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
-                  />
-                </div>
+                ) : null}
               </div>
 
               {/* Actions */}
@@ -1454,21 +1538,29 @@ export default function ESignaturePage() {
         </div>
       )}
 
-      {/* Success Modal - shows when upload is Done */}
+      {/* Upload Result Modal */}
       {isSuccessModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
           <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6 text-center">
-            <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-              <svg className="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-              </svg>
+            <div className={`w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 ${uploadResultOk ? 'bg-green-100' : 'bg-red-100'}`}>
+              {uploadResultOk ? (
+                <svg className="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+              ) : (
+                <svg className="w-8 h-8 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              )}
             </div>
-            <h3 className="text-lg font-bold text-slate-900 mb-2">Already Save</h3>
-            <p className="text-sm text-slate-500 mb-6">Your document has been uploaded and saved successfully.</p>
+            <h3 className={`text-lg font-bold mb-2 ${uploadResultOk ? 'text-slate-900' : 'text-red-700'}`}>
+              {uploadResultOk ? 'Successfully Saved' : 'Unsuccessful Save'}
+            </h3>
+            <p className="text-sm text-slate-500 mb-6">{uploadResultMessage || (uploadResultOk ? 'Done' : 'Webhook did not return Done.')}</p>
             <button
               type="button"
               onClick={handleCloseSuccessModal}
-              className="w-full px-4 py-3 bg-gradient-to-r from-green-600 to-green-500 text-white font-medium rounded-xl shadow-lg shadow-green-500/25 hover:shadow-green-500/40 hover:scale-[1.02] transition-all"
+              className={`w-full px-4 py-3 text-white font-medium rounded-xl transition-all ${uploadResultOk ? 'bg-gradient-to-r from-green-600 to-green-500 shadow-lg shadow-green-500/25 hover:shadow-green-500/40 hover:scale-[1.02]' : 'bg-gradient-to-r from-red-600 to-red-500 shadow-lg shadow-red-500/25 hover:shadow-red-500/40 hover:scale-[1.02]'}`}
             >
               OK
             </button>

@@ -3,9 +3,34 @@ import { NextResponse } from 'next/server'
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
 export const fetchCache = 'force-no-store'
+export const runtime = 'nodejs'
 
 const baseUrl = (process.env.NEXT_PUBLIC_SUPABASE_URL || '').replace(/\/+$/, '')
 const apiKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+
+type SignatureUploadFile = {
+  file_name: string
+  file_type: string
+  file_b64: string
+}
+
+type SignatureRecipientInput = {
+  email: string
+  name?: string
+  company?: string
+  title?: string
+}
+const ESIGN_UPLOAD_WEBHOOK_URL = 'https://primary-production-6722.up.railway.app/webhook/file'
+
+const webhookLooksUnregistered = (text: string) => /not\s+registered|requested\s+webhook/i.test(text)
+
+const getWebhookCandidates = (url: string): string[] => {
+  const list = [url]
+  if (url.includes('/webhook/')) {
+    list.push(url.replace('/webhook/', '/webhook-test/'))
+  }
+  return Array.from(new Set(list))
+}
 
 export async function GET(request: Request) {
   try {
@@ -207,5 +232,124 @@ export async function GET(request: Request) {
   } catch (err: any) {
     console.error('[API /esignature/signatures] Error:', err)
     return NextResponse.json({ error: err?.message || 'Failed to fetch signature documents' }, { status: 500 })
+  }
+}
+
+export async function POST(request: Request) {
+  console.log('[API /esignature/signatures POST] Received upload request')
+  try {
+    const body = await request.json().catch(() => null)
+    console.log('[API /esignature/signatures POST] Body received:', body ? 'yes' : 'no')
+    const files = Array.isArray(body?.files) ? (body.files as SignatureUploadFile[]) : []
+    const rawRecipients = Array.isArray(body?.recipient_details)
+      ? (body.recipient_details as SignatureRecipientInput[])
+      : []
+    const userId = String(body?.user_id ?? '').trim()
+
+    if (files.length === 0) {
+      return NextResponse.json({ error: 'At least one file is required' }, { status: 400 })
+    }
+
+    const normalizedFiles = files
+      .map((file) => ({
+        file_name: String(file?.file_name ?? '').trim(),
+        file_type: String(file?.file_type ?? '').trim() || 'application/pdf',
+        file_b64: String(file?.file_b64 ?? '').trim().replace(/^data:[^;]+;base64,/, ''),
+      }))
+      .filter((file) => file.file_b64)
+
+    if (normalizedFiles.length === 0) {
+      return NextResponse.json({ error: 'Uploaded files are invalid' }, { status: 400 })
+    }
+
+    const seenEmails = new Set<string>()
+    const recipients = rawRecipients
+      .map((recipient) => ({
+        email: String(recipient?.email ?? '').trim().toLowerCase(),
+        name: String(recipient?.name ?? '').trim(),
+        company: String(recipient?.company ?? '').trim(),
+        title: String(recipient?.title ?? '').trim(),
+      }))
+      .filter((recipient) => {
+        if (!recipient.email) return false
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipient.email)) return false
+        if (seenEmails.has(recipient.email)) return false
+        seenEmails.add(recipient.email)
+        return true
+      })
+
+    if (recipients.length === 0) {
+      return NextResponse.json({ error: 'At least one valid recipient is required' }, { status: 400 })
+    }
+
+    console.log('[API /esignature/signatures POST] Sending to webhook:', ESIGN_UPLOAD_WEBHOOK_URL)
+    console.log('[API /esignature/signatures POST] Files count:', normalizedFiles.length)
+    console.log('[API /esignature/signatures POST] Recipients:', recipients.map(r => r.email))
+
+    const webhookPayload = {
+      files: normalizedFiles,
+      recipients: recipients.map((recipient) => recipient.email),
+      recipient_details: recipients,
+      user_id: userId || null,
+    }
+
+    const candidates = getWebhookCandidates(ESIGN_UPLOAD_WEBHOOK_URL)
+    let lastStatus = 0
+    let lastResponse = ''
+    let usedWebhookUrl = candidates[0]
+
+    for (let i = 0; i < candidates.length; i += 1) {
+      const webhookUrl = candidates[i]
+      usedWebhookUrl = webhookUrl
+
+      const webhookRes = await fetch(webhookUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(webhookPayload),
+        cache: 'no-store',
+      })
+
+      const webhookText = await webhookRes.text().catch(() => '')
+      const done = /\bdone\b/i.test(webhookText)
+      lastStatus = webhookRes.status
+      lastResponse = webhookText
+
+      console.log('[API /esignature/signatures POST] Webhook response status:', webhookRes.status)
+      console.log('[API /esignature/signatures POST] Webhook response text:', webhookText.substring(0, 200))
+
+      if (webhookRes.ok) {
+        return NextResponse.json({
+          success: done,
+          done,
+          count: recipients.length,
+          message: done ? 'Done' : 'Webhook response did not contain Done',
+          webhookStatus: webhookRes.status,
+          webhookResponse: webhookText,
+          webhookUrl,
+        })
+      }
+
+      const canRetryWithTestWebhook = i < candidates.length - 1 && webhookLooksUnregistered(webhookText)
+      if (!canRetryWithTestWebhook) {
+        break
+      }
+    }
+
+    return NextResponse.json(
+      {
+        success: false,
+        done: false,
+        message: lastResponse || `Webhook error (${lastStatus || 502})`,
+        webhookStatus: lastStatus || 502,
+        webhookResponse: lastResponse,
+        webhookUrl: usedWebhookUrl,
+      },
+      { status: 502 }
+    )
+  } catch (err: any) {
+    console.error('[API /esignature/signatures POST] Error:', err)
+    return NextResponse.json({ error: err?.message || 'Failed to send upload to webhook' }, { status: 500 })
   }
 }
