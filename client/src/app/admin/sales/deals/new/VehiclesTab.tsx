@@ -84,6 +84,23 @@ export default function VehiclesTab({
     return ''
   })
 
+  // Sync accurate stock_number from edc_vehicles when a saved vehicle (selected_id) is loaded
+  useEffect(() => {
+    const vehicleId = selected?.id
+    if (!vehicleId) return
+    supabase
+      .from('edc_vehicles')
+      .select('stock_number')
+      .eq('id', vehicleId)
+      .limit(1)
+      .then(({ data }) => {
+        const liveStock = data?.[0]?.stock_number ?? null
+        if (liveStock && liveStock !== selected.stock_number) {
+          setSelected(prev => prev ? { ...prev, stock_number: liveStock } : prev)
+        }
+      })
+  }, [selected?.id])
+
   // Track if prefill has been applied to prevent re-applying
   const prefillApplied = useRef(false)
   

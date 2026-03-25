@@ -38,6 +38,26 @@ export async function GET(request: Request) {
       queryAll('edc_deals_delivery'),
     ])
 
+    // Collect unique vehicle IDs from deal vehicle rows to fetch accurate stock_number from edc_vehicles
+    const vehicleIds = [...new Set(
+      vehicles.map((v: any) => v.selected_id).filter(Boolean)
+    )]
+    let inventoryStockMap: Record<string, string> = {}
+    if (vehicleIds.length > 0) {
+      try {
+        const invRes = await fetch(
+          `${baseUrl}/rest/v1/edc_vehicles?id=in.(${vehicleIds.map(encodeURIComponent).join(',')})&select=id,stock_number`,
+          { headers: { 'apikey': apiKey, 'Authorization': `Bearer ${apiKey}` }, cache: 'no-store' }
+        )
+        if (invRes.ok) {
+          const invRows: any[] = await invRes.json()
+          for (const r of invRows) {
+            if (r.id && r.stock_number) inventoryStockMap[String(r.id)] = String(r.stock_number)
+          }
+        }
+      } catch {}
+    }
+
     // Index secondary tables by dealid for fast lookup
     const vehiclesByDeal: Record<string, any[]> = {}
     for (const v of vehicles) {
@@ -74,7 +94,8 @@ export async function GET(request: Request) {
       let vehicleLabel = ''
       if (vList.length > 0) {
         const v = vList[0]
-        const stockNum = v.selected_stock_number ?? ''
+        // Prefer live stock_number from edc_vehicles, fall back to saved selected_stock_number
+        const stockNum = (v.selected_id && inventoryStockMap[String(v.selected_id)]) || v.selected_stock_number || ''
         const yr = v.selected_year ?? v.year ?? ''
         const mk = v.selected_make ?? v.make ?? ''
         const md = v.selected_model ?? v.model ?? ''
