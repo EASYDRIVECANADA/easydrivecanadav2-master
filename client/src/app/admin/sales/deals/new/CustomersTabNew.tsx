@@ -249,6 +249,8 @@ function IconInput({
 
   const isDateType = type === 'date'
 
+  const [isFocused, setIsFocused] = useState(false)
+
 
 
   const handleDateClick = () => {
@@ -307,21 +309,19 @@ function IconInput({
 
               onChange={(e) => onChange(e.target.value)}
 
-              onClick={() => {
+              onFocus={() => setIsFocused(true)}
 
-                try { dateInputRef.current?.showPicker() } catch {}
+              onBlur={() => setIsFocused(false)}
 
-              }}
-
-              className={`w-full h-10 px-3 text-sm bg-white outline-none ${!value ? 'text-transparent' : 'text-gray-900'}`}
+              className={`w-full h-10 px-3 text-sm bg-white outline-none ${(!value && !isFocused) ? 'text-transparent' : 'text-gray-900'}`}
 
               style={{ colorScheme: 'light' }}
 
             />
 
-            {!value && (
+            {!value && !isFocused && (
 
-              <div 
+              <div
 
                 className="absolute inset-0 flex items-center px-3 text-sm text-gray-400 bg-white pointer-events-none"
 
@@ -657,6 +657,13 @@ export default function CustomersTabNew({
 
   const addressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
+  // If the Google Maps script was already loaded before this component mounted, set the flag immediately
+  useEffect(() => {
+    if ((window as any).google?.maps?.places) {
+      setGoogleMapsLoaded(true)
+    }
+  }, [])
+
 
 
   const handleAddressSearch = (value: string) => {
@@ -673,17 +680,11 @@ export default function CustomersTabNew({
 
     }
 
-    
-
-    if (!googleMapsLoaded || !(window as any).google?.maps?.places) {
-
-      console.log('Google Maps not loaded yet, googleMapsLoaded:', googleMapsLoaded)
+    if (!(window as any).google?.maps?.places) {
 
       return
 
     }
-
-
 
     addressTimerRef.current = setTimeout(() => {
 
@@ -693,19 +694,9 @@ export default function CustomersTabNew({
 
         service.getPlacePredictions(
 
-          {
-
-            input: value,
-
-            componentRestrictions: { country: 'ca' },
-
-            types: ['address']
-
-          },
+          { input: value, componentRestrictions: { country: 'ca' }, types: ['address'] },
 
           (predictions: any, status: any) => {
-
-            console.log('Places API response:', status, predictions)
 
             if (status === 'OK' && predictions) {
 
@@ -747,75 +738,65 @@ export default function CustomersTabNew({
 
     setAddressSuggestions([])
 
+    if (!(window as any).google?.maps?.places) return
 
+    try {
 
-    if (!googleMapsLoaded) return
+      const service = new (window as any).google.maps.places.PlacesService(document.createElement('div'))
 
+      service.getDetails(
 
+        { placeId: item.place_id, fields: ['address_components'] },
 
-    const service = new (window as any).google.maps.places.PlacesService(document.createElement('div'))
+        (place: any, status: any) => {
 
-    service.getDetails(
+          if (status === 'OK' && place) {
 
-      { placeId: item.place_id, fields: ['address_components'] },
+            const components = place.address_components || []
 
-      (place: any, status: any) => {
+            let streetNumber = '', route = '', city = '', province = '', postalCode = ''
 
-        if (status === 'OK' && place) {
+            components.forEach((c: any) => {
 
-          const components = place.address_components || []
+              if (c.types.includes('street_number')) streetNumber = c.long_name
 
-          let streetNumber = ''
+              if (c.types.includes('route')) route = c.long_name
 
-          let route = ''
+              if (c.types.includes('locality')) city = c.long_name
 
-          let city = ''
+              if (c.types.includes('administrative_area_level_1')) province = c.short_name
 
-          let province = ''
+              if (c.types.includes('postal_code')) postalCode = c.long_name
 
-          let postalCode = ''
+            })
 
+            const streetAddress = [streetNumber, route].filter(Boolean).join(' ')
 
+            setForm((p) => ({
 
-          components.forEach((c: any) => {
+              ...p,
 
-            if (c.types.includes('street_number')) streetNumber = c.long_name
+              streetAddress: streetAddress || p.streetAddress,
 
-            if (c.types.includes('route')) route = c.long_name
+              city: city || p.city,
 
-            if (c.types.includes('locality')) city = c.long_name
+              province: province || p.province,
 
-            if (c.types.includes('administrative_area_level_1')) province = c.short_name
+              postalCode: postalCode || p.postalCode,
 
-            if (c.types.includes('postal_code')) postalCode = c.long_name
+            }))
 
-          })
-
-
-
-          const streetAddress = [streetNumber, route].filter(Boolean).join(' ')
-
-
-
-          setForm((p) => ({
-
-            ...p,
-
-            streetAddress: streetAddress || p.streetAddress,
-
-            city: city || p.city,
-
-            province: province || p.province,
-
-            postalCode: postalCode || p.postalCode
-
-          }))
+          }
 
         }
 
-      }
+      )
 
-    )
+    } catch (e) {
+
+      console.error('Error fetching place details:', e)
+
+    }
 
   }
 
