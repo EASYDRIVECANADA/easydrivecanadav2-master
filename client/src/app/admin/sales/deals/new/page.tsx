@@ -59,7 +59,8 @@ function SalesNewDealPageContent() {
   const [prefill, setPrefill] = useState<any>(null)
   const [vehiclePrefill, setVehiclePrefill] = useState<any>(null)
   const [vehiclePrefillLoading, setVehiclePrefillLoading] = useState(false)
-  const [prefillLoading, setPrefillLoading] = useState(false)
+  // Start as true in edit mode so CustomersTabNew only mounts after data is loaded
+  const [prefillLoading, setPrefillLoading] = useState(() => Boolean(editDealId))
   const [dealHasSignature, setDealHasSignature] = useState(false)
 
   // Print dropdown & Documents Preview modal
@@ -212,9 +213,9 @@ function SalesNewDealPageContent() {
       const data = await res.json()
       if (data.error) throw new Error(data.error)
       setPrefill(data)
-      setDealHasSignature(Boolean(data?.customer?.signature))
-      // Set top-level fields from customer data
-      const c = data.customer
+      setDealHasSignature(Boolean(data?.customers?.[0]?.signature || data?.customer?.signature))
+      // Set top-level fields from first customer
+      const c = data.customers?.[0] ?? data.customer
       if (c) {
         if (c.dealdate) setDealDate(c.dealdate)
         if (c.dealtype) setDealType(c.dealtype === 'Finance' ? 'Finance' : 'Cash')
@@ -832,13 +833,14 @@ function SalesNewDealPageContent() {
             <>
               <div style={{ display: activeTab === 'customers' ? 'block' : 'none' }}>
                 <CustomersTabNew
+                  key={editDealId ? `edit-${editDealId}-${prefill?.customers?.[0]?.id ?? prefill?.customer?.id ?? '0'}` : 'new'}
                   hideAddButton={!isRetail}
                   dealId={dealId}
                   dealDate={dealDate}
                   dealType={dealType}
                   dealMode={isRetail ? 'RTL' : 'WHL'}
                   onSaved={() => unlockTab('vehicles')}
-                  initialData={prefill?.customer ?? null}
+                  initialData={prefill?.customers?.length ? prefill.customers : (prefill?.customer ? [prefill.customer] : null)}
                 />
               </div>
               <div style={{ display: activeTab === 'vehicles' ? 'block' : 'none' }}>

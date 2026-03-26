@@ -425,7 +425,41 @@ function IconSelect({
 
 }
 
-
+function mapRowToForm(c: any): DealCustomerForm {
+  return {
+    ...getDefaultForm(),
+    visibility: c.visibility || 'Private',
+    firstName: c.firstname || '',
+    middleName: c.middlename || '',
+    lastName: c.lastname || '',
+    legalName: c.legalname || '',
+    displayName: c.displayname || '',
+    taxNumber: c.taxnumber || '',
+    yearEnd: c.yearend || '',
+    rin: c.rin || '',
+    contactFirstName: c.contactfirstname || '',
+    contactLastName: c.contactlastname || '',
+    driversLicense: c.driverslicense || '',
+    expDate: c.expdate || '',
+    dateOfBirth: c.dateofbirth || '',
+    streetAddress: c.streetaddress || '',
+    suiteApt: c.suiteapt || '',
+    city: c.city || '',
+    province: c.province || 'ON',
+    postalCode: c.postalcode || '',
+    country: c.country || 'CA',
+    phone: c.phone || '',
+    fax: c.fax || '',
+    mobile: c.mobile || '',
+    email: c.email || '',
+    insuranceCompany: c.insurancecompany || '',
+    insuranceAgent: c.insuranceagent || '',
+    insurancePhone: c.insurancephone || '',
+    policyNumber: c.policynumber || '',
+    policyExpiry: c.policyexpiry || '',
+    notes: c.notes || '',
+  }
+}
 
 export default function CustomersTabNew({
 
@@ -515,85 +549,22 @@ export default function CustomersTabNew({
 
   const [showSavedModal, setShowSavedModal] = useState(false)
 
-  const [hasBeenSaved, setHasBeenSaved] = useState(() => Boolean(initialData?.id))
+  const initialCustomers: any[] = Array.isArray(initialData)
+    ? initialData
+    : initialData
+    ? [initialData]
+    : []
 
-  const [forms, setForms] = useState<DealCustomerForm[]>(() => {
+  const [hasBeenSaved, setHasBeenSaved] = useState(() => initialCustomers.length > 0)
 
-    if (initialData) {
+  // Track the saved DB row ID for each customer form (null = not yet inserted)
+  const [formIds, setFormIds] = useState<(number | null)[]>(() =>
+    initialCustomers.length > 0 ? initialCustomers.map((c) => c.id ?? null) : [null]
+  )
 
-      const c = initialData
-
-      return [{
-
-        ...getDefaultForm(),
-
-        visibility: c.visibility || 'Private',
-
-        firstName: c.firstname || '',
-
-        middleName: c.middlename || '',
-
-        lastName: c.lastname || '',
-
-        legalName: c.legalname || '',
-
-        displayName: c.displayname || '',
-
-        taxNumber: c.taxnumber || '',
-
-        yearEnd: c.yearend || '',
-
-        rin: c.rin || '',
-
-        contactFirstName: c.contactfirstname || '',
-
-        contactLastName: c.contactlastname || '',
-
-        driversLicense: c.driverslicense || '',
-
-        expDate: c.expdate || '',
-
-        dateOfBirth: c.dateofbirth || '',
-
-        streetAddress: c.streetaddress || '',
-
-        suiteApt: c.suiteapt || '',
-
-        city: c.city || '',
-
-        province: c.province || 'ON',
-
-        postalCode: c.postalcode || '',
-
-        country: c.country || 'CA',
-
-        phone: c.phone || '',
-
-        fax: c.fax || '',
-
-        mobile: c.mobile || '',
-
-        email: c.email || '',
-
-        insuranceCompany: c.insurancecompany || '',
-
-        insuranceAgent: c.insuranceagent || '',
-
-        insurancePhone: c.insurancephone || '',
-
-        policyNumber: c.policynumber || '',
-
-        policyExpiry: c.policyexpiry || '',
-
-        notes: c.notes || '',
-
-      }]
-
-    }
-
-    return [getDefaultForm()]
-
-  })
+  const [forms, setForms] = useState<DealCustomerForm[]>(() =>
+    initialCustomers.length > 0 ? initialCustomers.map(mapRowToForm) : [getDefaultForm()]
+  )
 
   const [activeCustomer, setActiveCustomer] = useState(0)
 
@@ -635,7 +606,18 @@ export default function CustomersTabNew({
 
   const [idType, setIdType] = useState<'DL' | 'RIN'>('DL')
 
-
+  // Sync forms when initialData loads asynchronously (prefill arrives after first render)
+  useEffect(() => {
+    if (!initialData) return
+    const customers: any[] = Array.isArray(initialData) ? initialData : [initialData]
+    if (customers.length === 0) return
+    setForms(customers.map(mapRowToForm))
+    setFormIds(customers.map((c: any) => c.id ?? null))
+    setHasBeenSaved(true)
+    const t = (customers[0]?.id_type ?? '').toUpperCase()
+    if (t === 'RIN') setIdType('RIN')
+    else setIdType('DL')
+  }, [initialData])
 
   const [prospectQuery, setProspectQuery] = useState('')
 
@@ -806,6 +788,8 @@ export default function CustomersTabNew({
 
     setForms((prev) => [...prev, getDefaultForm()])
 
+    setFormIds((prev) => [...prev, null])
+
     setActiveCustomer((prev) => prev + 1)
 
   }
@@ -839,6 +823,8 @@ export default function CustomersTabNew({
     if (activeCustomer === 0) return
 
     setForms((prev) => prev.filter((_, idx) => idx !== activeCustomer))
+
+    setFormIds((prev) => prev.filter((_, idx) => idx !== activeCustomer))
 
     setActiveCustomer((prev) => (prev <= 1 ? 0 : prev - 1))
 
@@ -1242,177 +1228,139 @@ export default function CustomersTabNew({
 
     try {
 
-      const toNulls = (obj: Record<string, unknown>) => {
-
-        const out: Record<string, unknown> = {}
-
-        for (const [k, v] of Object.entries(obj)) {
-
-          if (v === '') out[k] = null
-
-          else out[k] = v
-
-        }
-
-        return out
-
-      }
-
-
-
-      const normalizedCustomer: Record<string, unknown> = {
-
-        ...form,
-
-        idType,
-
-        driversLicense: idType === 'DL' ? form.driversLicense : '',
-
-        rin: idType === 'RIN' ? form.rin : '',
-
-      }
-
-
-
-      const merged: Record<string, unknown> = {
-
-        ...normalizedCustomer,
-
-        id: initialData?.id ?? null,
-
-        dealId: dealId ?? '',
-
-        dealDate: dealDate ?? '',
-
-        dealType: dealType ?? '',
-
-        dealMode: dealMode ?? '',
-
-        customerMode: ind ? 'IND' : 'CMP',
-
-      }
-
       const user_id = await getWebhookUserId().catch(() => null)
-      const payload = toNulls({
-        ...merged,
+
+      const newFormIds = [...formIds]
+
+      const buildRowData = (f: DealCustomerForm): Record<string, unknown> => ({
+
+        deal_id: dealId ?? null,
+
+        visibility: f.visibility || null,
+
+        firstname: f.firstName || null,
+
+        middlename: f.middleName || null,
+
+        lastname: f.lastName || null,
+
+        legalname: f.legalName || null,
+
+        displayname: f.displayName || null,
+
+        taxnumber: f.taxNumber || null,
+
+        yearend: f.yearEnd || null,
+
+        rin: idType === 'RIN' ? (f.rin || null) : null,
+
+        contactfirstname: f.contactFirstName || null,
+
+        contactlastname: f.contactLastName || null,
+
+        driverslicense: idType === 'DL' ? (f.driversLicense || null) : null,
+
+        expdate: f.expDate || null,
+
+        dateofbirth: f.dateOfBirth || null,
+
+        streetaddress: f.streetAddress || null,
+
+        suiteapt: f.suiteApt || null,
+
+        city: f.city || null,
+
+        province: f.province || null,
+
+        postalcode: f.postalCode || null,
+
+        country: f.country || null,
+
+        phone: f.phone || null,
+
+        fax: f.fax || null,
+
+        mobile: f.mobile || null,
+
+        email: f.email || null,
+
+        insurancecompany: f.insuranceCompany || null,
+
+        insuranceagent: f.insuranceAgent || null,
+
+        insurancephone: f.insurancePhone || null,
+
+        policynumber: f.policyNumber || null,
+
+        policyexpiry: f.policyExpiry || null,
+
+        notes: f.notes || null,
+
+        dealdate: dealDate || null,
+
+        dealtype: dealType || null,
+
+        dealmode: dealMode || null,
+
+        customertype: ind ? 'IND' : 'CMP',
+
         user_id: user_id || null,
+
       })
 
+      for (let i = 0; i < forms.length; i++) {
 
+        const rowData = buildRowData(forms[i])
 
-      if (initialData?.id) {
+        const existingId = newFormIds[i] ?? null
 
-        // Editing mode — update existing row in Supabase
+        if (existingId) {
 
-        const updateData: Record<string, unknown> = {
+          // Update existing row
+          const res = await fetch('/api/deals/update', {
 
-          visibility: payload.visibility ?? null,
+            method: 'POST',
 
-          firstname: payload.firstName ?? null,
+            headers: { 'Content-Type': 'application/json' },
 
-          middlename: payload.middleName ?? null,
+            body: JSON.stringify({ table: 'edc_deals_customers', id: existingId, data: rowData }),
 
-          lastname: payload.lastName ?? null,
+          })
 
-          legalname: payload.legalName ?? null,
+          const json = await res.json()
 
-          displayname: payload.displayName ?? null,
+          if (!res.ok || json.error) throw new Error(json.error || `Update failed for customer ${i + 1} (${res.status})`)
 
-          taxnumber: payload.taxNumber ?? null,
+        } else {
 
-          yearend: payload.yearEnd ?? null,
+          // Insert new row
+          const res = await fetch('/api/deals/insert', {
 
-          rin: payload.rin ?? null,
+            method: 'POST',
 
-          contactfirstname: payload.contactFirstName ?? null,
+            headers: { 'Content-Type': 'application/json' },
 
-          contactlastname: payload.contactLastName ?? null,
+            body: JSON.stringify({ table: 'edc_deals_customers', data: rowData }),
 
-          driverslicense: payload.driversLicense ?? null,
+          })
 
-          expdate: payload.expDate ?? null,
+          const json = await res.json()
 
-          dateofbirth: payload.dateOfBirth ?? null,
+          if (!res.ok || json.error) throw new Error(json.error || `Insert failed for customer ${i + 1} (${res.status})`)
 
-          streetaddress: payload.streetAddress ?? null,
+          // Store the returned row ID so subsequent saves update instead of insert
+          const savedId = json.rows?.[0]?.id ?? null
 
-          suiteapt: payload.suiteApt ?? null,
-
-          city: payload.city ?? null,
-
-          province: payload.province ?? null,
-
-          postalcode: payload.postalCode ?? null,
-
-          country: payload.country ?? null,
-
-          phone: payload.phone ?? null,
-
-          fax: payload.fax ?? null,
-
-          mobile: payload.mobile ?? null,
-
-          email: payload.email ?? null,
-
-          insurancecompany: payload.insuranceCompany ?? null,
-
-          insuranceagent: payload.insuranceAgent ?? null,
-
-          insurancephone: payload.insurancePhone ?? null,
-
-          policynumber: payload.policyNumber ?? null,
-
-          policyexpiry: payload.policyExpiry ?? null,
-
-          notes: payload.notes ?? null,
-
-          dealdate: payload.dealDate ?? null,
-
-          dealtype: payload.dealType ?? null,
-
-          dealmode: payload.dealMode ?? null,
-
-          customertype: payload.customerMode ?? null,
+          newFormIds[i] = savedId
 
         }
 
-        const res = await fetch('/api/deals/update', {
-
-          method: 'POST',
-
-          headers: { 'Content-Type': 'application/json' },
-
-          body: JSON.stringify({ table: 'edc_deals_customers', id: initialData.id, data: updateData }),
-
-        })
-
-        const json = await res.json()
-
-        if (!res.ok || json.error) throw new Error(json.error || `Update failed (${res.status})`)
-
-      } else {
-
-        // New deal — create via webhook
-
-        const res = await fetch('/api/proxy/customers', {
-
-          method: 'POST',
-
-          headers: { 'Content-Type': 'application/json' },
-
-          body: JSON.stringify(payload),
-
-        })
-
-        const text = await res.text()
-
-        if (!res.ok) throw new Error(text || `Webhook error (${res.status})`)
-
       }
 
-
+      setFormIds(newFormIds)
 
       setHasBeenSaved(true)
+
       setShowSavedModal(true)
 
       window.setTimeout(() => {

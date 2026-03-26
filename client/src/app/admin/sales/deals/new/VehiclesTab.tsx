@@ -251,6 +251,12 @@ export default function VehiclesTab({
     return []
   })
   const [openSavedDisclosureIdx, setOpenSavedDisclosureIdx] = useState<number | null>(null)
+  const [vehicleRowIds, setVehicleRowIds] = useState<(string | null)[]>(() => {
+    if (Array.isArray(initialData) && initialData.length > 0) {
+      return initialData.map((v: any) => v.id ?? null)
+    }
+    return []
+  })
   const [showSavedModal, setShowSavedModal] = useState(false)
   const [showSaveErrorModal, setShowSaveErrorModal] = useState(false)
   const [saveErrorModalMessage, setSaveErrorModalMessage] = useState<string | null>(null)
@@ -924,11 +930,6 @@ export default function VehiclesTab({
         return v
       }
 
-      const toNullArray = (v: any) => {
-        if (!Array.isArray(v)) return null
-        return v
-      }
-
       const makeSelectedVehiclePayload = (svRaw: any) => {
         const sv = svRaw ?? null
         if (!sv) return null
@@ -957,181 +958,102 @@ export default function VehiclesTab({
         }
       }
 
-      const trades = (Array.isArray(savedTrades) ? savedTrades : []).map((t) => {
-        const svSnap = manualSelectedCleared ? null : (t.selectedVehicle ?? makeSelectedVehicleSnapshot() ?? null)
-        const selectedVehicle = makeSelectedVehiclePayload(svSnap)
+      const trades = (Array.isArray(savedTrades) ? savedTrades : [])
 
-        const disclosures = toNullArray(t.disclosures)
-        const disclosuresNumbers = Array.isArray(t.disclosures)
-          ? t.disclosures
-              .map((v: any, idx: number) => (v === true ? idx : null))
-              .filter((n: number | null) => n != null)
-          : null
+      const mainSelectedVehicle = makeSelectedVehiclePayload(manualSelectedCleared ? null : selected)
 
+      const buildRow = (t: any | null) => {
+        const sv = t ? makeSelectedVehiclePayload(manualSelectedCleared ? null : (t.selectedVehicle ?? makeSelectedVehicleSnapshot() ?? null)) : mainSelectedVehicle
+        const base: Record<string, any> = {
+          deal_id: dealId || null,
+          user_id: user_id || null,
+          selected_id: sv?.id ?? null,
+          selected_year: sv?.year ?? null,
+          selected_make: sv?.make ?? null,
+          selected_model: sv?.model ?? null,
+          selected_trim: sv?.trim ?? null,
+          selected_vin: sv?.vin ?? null,
+          selected_exterior_color: sv?.exteriorColor ?? null,
+          selected_interior_color: sv?.interiorColor ?? null,
+          selected_odometer: sv?.odometer ?? null,
+          selected_odometer_unit: sv?.odometerUnit ?? null,
+          selected_status: sv?.status ?? null,
+          selected_stock_number: sv?.stockNumber ?? null,
+        }
+        if (!t) return base
         return {
+          ...base,
           vin: toNull(t.vin),
           year: toNull(t.year),
           make: toNull(t.make),
           model: toNull(t.model),
-          odometer: toNull(t.odometer),
-          odometerUnit: toNull(t.odometerUnit) ?? 'kms',
           trim: toNull(t.trim),
           colour: toNull(t.colour),
-          disclosures: disclosures,
-          disclosuresNumbers: disclosuresNumbers,
-          disclosuresNotes: toNull(t.disclosuresNotes),
-          brandType: toNull(t.brandType),
-          disclosuresEditor: toNull(t.disclosuresEditor),
-          disclosuresSearch: toNull(t.disclosuresSearch),
-          disclosuresDetailOpen: t.disclosuresDetailOpen ?? null,
-          isCompany: t.isCompany ?? null,
-          ownerName: toNull(t.ownerName),
-          ownerCompany: toNull(t.ownerCompany),
-          ownerStreet: toNull(t.ownerStreet),
-          ownerSuite: toNull(t.ownerSuite),
-          ownerCity: toNull(t.ownerCity),
-          ownerProvince: toNull(t.ownerProvince),
-          ownerPostal: toNull(t.ownerPostal),
-          ownerCountry: toNull(t.ownerCountry),
-          ownerPhone: toNull(t.ownerPhone),
-          ownerMobile: toNull(t.ownerMobile),
-          ownerEmail: toNull(t.ownerEmail),
-          isRin: t.isRin ?? null,
-          ownerDl: toNull(t.ownerDl),
-          ownerPlate: toNull(t.ownerPlate),
-          tradeValue: toNull(t.tradeValue),
-          actualCashValue: toNull(t.actualCashValue),
-          lienAmount: toNull(t.lienAmount),
-          tradeEquity: toNull(t.tradeEquity),
-          ownerRin: toNull(t.rin),
-          selectedVehicle,
-          selected_id: selectedVehicle?.id ?? null,
-          selected_year: selectedVehicle?.year ?? null,
-          selected_make: selectedVehicle?.make ?? null,
-          selected_model: selectedVehicle?.model ?? null,
-          selected_trim: selectedVehicle?.trim ?? null,
-          selected_vin: selectedVehicle?.vin ?? null,
-          selected_exterior_color: selectedVehicle?.exteriorColor ?? null,
-          selected_interior_color: selectedVehicle?.interiorColor ?? null,
-          selected_odometer: selectedVehicle?.odometer ?? null,
-          selected_odometer_unit: selectedVehicle?.odometerUnit ?? null,
-          selected_status: selectedVehicle?.status ?? null,
-          selected_stock_number: selectedVehicle?.stockNumber ?? null,
-          created_at: selectedVehicle?.createdAt ?? null,
-          updated_at: selectedVehicle?.updatedAt ?? null,
+          odometer: toNull(t.odometer),
+          odometer_unit: toNull(t.odometerUnit) ?? 'kms',
+          disclosures: Array.isArray(t.disclosures) ? t.disclosures : null,
+          disclosures_notes: toNull(t.disclosuresNotes),
+          disclosures_editor: toNull(t.disclosuresEditor),
+          disclosures_search: toNull(t.disclosuresSearch),
+          disclosures_detail_open: t.disclosuresDetailOpen ?? null,
+          brand_type: toNull(t.brandType),
+          is_company: t.isCompany ?? null,
+          owner_name: toNull(t.ownerName),
+          owner_company: toNull(t.ownerCompany),
+          owner_street: toNull(t.ownerStreet),
+          owner_suite: toNull(t.ownerSuite),
+          owner_city: toNull(t.ownerCity),
+          owner_province: toNull(t.ownerProvince),
+          owner_postal: toNull(t.ownerPostal),
+          owner_country: toNull(t.ownerCountry),
+          owner_phone: toNull(t.ownerPhone),
+          owner_mobile: toNull(t.ownerMobile),
+          owner_email: toNull(t.ownerEmail),
+          is_rin: t.isRin ?? null,
+          owner_dl: t.isRin ? null : toNull(t.ownerDl),
+          rin: t.isRin ? toNull(t.ownerDl) : null,
+          owner_plate: toNull(t.ownerPlate),
+          trade_value: toNull(t.tradeValue),
+          actual_cash_value: toNull(t.actualCashValue),
+          lien_amount: toNull(t.lienAmount),
+          trade_equity: toNull(t.tradeEquity),
         }
-      })
-
-      const webhookUrl = 'https://primary-production-6722.up.railway.app/webhook/vehicles-deals'
-      const executionMode = process.env.NODE_ENV === 'development' ? 'development' : 'production'
-
-      const mainSelectedVehicle = makeSelectedVehiclePayload(selected)
-
-      const envelopes = trades.length > 0 ? trades.map((t) => {
-        const { selectedVehicle, ...rest } = t as any
-        return {
-          headers: {},
-          params: {},
-          query: {},
-          body: {
-            user_id: user_id || null,
-            id: dealId || null,
-            dealId: dealId || null,
-            category: 'vehicles-deals',
-            dealMode: dealMode ?? null,
-            dealType: dealType ?? null,
-            formMode,
-            ...rest,
-            selectedVehicle: selectedVehicle ?? null,
-          },
-          webhookUrl,
-          executionMode,
-        }
-      }) : [{
-        headers: {},
-        params: {},
-        query: {},
-        body: {
-          user_id: user_id || null,
-          id: dealId || null,
-          dealId: dealId || null,
-          category: 'vehicles-deals',
-          dealMode: dealMode ?? null,
-          dealType: dealType ?? null,
-          formMode,
-          vin: null,
-          year: null,
-          make: null,
-          model: null,
-          odometer: null,
-          odometerUnit: null,
-          trim: null,
-          colour: null,
-          disclosures: null,
-          disclosuresNumbers: null,
-          disclosuresNotes: null,
-          brandType: null,
-          disclosuresEditor: null,
-          disclosuresSearch: null,
-          disclosuresDetailOpen: null,
-          isCompany: null,
-          ownerName: null,
-          ownerCompany: null,
-          ownerStreet: null,
-          ownerSuite: null,
-          ownerCity: null,
-          ownerProvince: null,
-          ownerPostal: null,
-          ownerCountry: null,
-          ownerPhone: null,
-          ownerMobile: null,
-          ownerEmail: null,
-          isRin: null,
-          ownerDl: null,
-          ownerPlate: null,
-          tradeValue: null,
-          actualCashValue: null,
-          lienAmount: null,
-          tradeEquity: null,
-          ownerRin: null,
-          selectedVehicle: mainSelectedVehicle ?? null,
-          selected_id: mainSelectedVehicle?.id ?? null,
-          selected_year: mainSelectedVehicle?.year ?? null,
-          selected_make: mainSelectedVehicle?.make ?? null,
-          selected_model: mainSelectedVehicle?.model ?? null,
-          selected_trim: mainSelectedVehicle?.trim ?? null,
-          selected_vin: mainSelectedVehicle?.vin ?? null,
-          selected_exterior_color: mainSelectedVehicle?.exteriorColor ?? null,
-          selected_interior_color: mainSelectedVehicle?.interiorColor ?? null,
-          selected_odometer: mainSelectedVehicle?.odometer ?? null,
-          selected_odometer_unit: mainSelectedVehicle?.odometerUnit ?? null,
-          selected_status: mainSelectedVehicle?.status ?? null,
-          selected_stock_number: mainSelectedVehicle?.stockNumber ?? null,
-          created_at: mainSelectedVehicle?.createdAt ?? null,
-          updated_at: mainSelectedVehicle?.updatedAt ?? null,
-        },
-        webhookUrl,
-        executionMode,
-      }]
-
-      const res = await fetch('/api/vehicles-deals', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(envelopes),
-      })
-
-      const text = await res.text().catch(() => '')
-      let json: any = null
-      try {
-        json = text ? JSON.parse(text) : null
-      } catch {
-        json = null
       }
 
-      if (!res.ok || (json && json.error)) {
-        throw new Error((json && (json.error || json.message)) || text || `Save failed (${res.status})`)
-      }
+      const rowsToSave = trades.length > 0 ? trades.map((t) => buildRow(t)) : [buildRow(null)]
 
+      const currentIds = [...vehicleRowIds]
+      while (currentIds.length < rowsToSave.length) currentIds.push(null)
+
+      const savedIds = await Promise.all(rowsToSave.map(async (rowData, i) => {
+        const existingId = currentIds[i] ?? null
+        if (existingId) {
+          const res = await fetch('/api/deals/update', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ table: 'edc_deals_vehicles', id: existingId, data: rowData }),
+          })
+          if (!res.ok) {
+            const err = await res.json().catch(() => ({}))
+            throw new Error(err.error || `Update failed (${res.status})`)
+          }
+          return existingId
+        } else {
+          const res = await fetch('/api/deals/insert', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ table: 'edc_deals_vehicles', data: rowData }),
+          })
+          if (!res.ok) {
+            const err = await res.json().catch(() => ({}))
+            throw new Error(err.error || `Insert failed (${res.status})`)
+          }
+          const json = await res.json()
+          return (json.rows?.[0]?.id as string) ?? null
+        }
+      }))
+
+      setVehicleRowIds(savedIds)
       setHasBeenSaved(true)
 
       try {

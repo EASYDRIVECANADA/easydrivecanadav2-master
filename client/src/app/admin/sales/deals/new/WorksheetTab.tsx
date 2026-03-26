@@ -53,6 +53,7 @@ export default function WorksheetTab({
   const [worksheetSaveError, setWorksheetSaveError] = useState<string | null>(null)
   const [showSavedModal, setShowSavedModal] = useState(false)
   const [hasBeenSaved, setHasBeenSaved] = useState(() => Boolean(d?.id))
+  const [worksheetRowId, setWorksheetRowId] = useState<string | null>(() => d?.id ?? null)
   const [purchasePrice, setPurchasePrice] = useState(d.purchase_price ?? '0')
   const [discount, setDiscount] = useState(d.discount ?? '0')
   const [taxCode, setTaxCode] = useState<string>(d.tax_code ?? 'HST')
@@ -339,7 +340,8 @@ export default function WorksheetTab({
       insurances.length === 0 &&
       payments.length === 0
 
-    if (!pristine) return
+    // Always apply when we have a saved row (editing); only apply when pristine for new prefill
+    if (!pristine && !initialData?.id) return
 
     const nd = initialData || {}
     setPurchasePrice(nd.purchase_price ?? '0')
@@ -370,6 +372,8 @@ export default function WorksheetTab({
     setWarranties(Array.isArray(nd.warranties) ? nd.warranties.map((w: any) => ({ id: w.id || `war_${Date.now()}`, name: w.name || '', desc: w.desc || '', amount: Number(w.amount) || 0 })) : [])
     setInsurances(Array.isArray(nd.insurances) ? nd.insurances.map((i: any) => ({ id: i.id || `ins_${Date.now()}`, name: i.name || '', desc: i.desc || '', amount: Number(i.amount) || 0 })) : [])
 
+    if (nd.id) setWorksheetRowId(nd.id)
+    setHasBeenSaved(Boolean(nd.id))
     appliedInitialKeyRef.current = key
   }, [
     initialData,
@@ -983,23 +987,69 @@ export default function WorksheetTab({
       setWorksheetSaveError(null)
       setWorksheetSaving(true)
 
-      // Send complete payload to webhook - n8n will handle database operations
-      const res = await fetch('/api/worksheet', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      })
-
-      const text = await res.text().catch(() => '')
-      let json: any = null
-      try {
-        json = text ? JSON.parse(text) : null
-      } catch {
-        json = null
+      const rowData: Record<string, any> = {
+        deal_id: norm(dealId),
+        user_id: norm(userId),
+        deal_type: norm(dealType),
+        deal_date: norm(dealDate),
+        deal_mode: norm(dealMode),
+        purchase_price: norm(purchasePrice),
+        discount: norm(discount),
+        subtotal: norm(String(subtotal ?? 0)),
+        trade_value: norm(tradeValue),
+        actual_cash_value: norm(actualCashValue),
+        net_difference: norm(String(netDifference ?? 0)),
+        tax_code: norm(taxCode),
+        tax_rate: norm(String((taxRate ?? 0) / 100)),
+        tax_override: taxOverride,
+        tax_manual: norm(taxManual),
+        total_tax: norm(String(totalTax ?? 0)),
+        lien_payout: norm(lienPayout),
+        trade_equity: norm(String(tradeEquity ?? 0)),
+        license_fee: norm(licenseFee),
+        new_plates: newPlates,
+        renewal_only: renewalOnly,
+        total_balance_due: norm(String(totalBalanceDue ?? 0)),
+        financed_amount: norm(String(financedAmount ?? 0)),
+        finance_override: financeOverride,
+        finance_rate: norm(financeRate),
+        finance_term_months: norm(financeTermMonths),
+        payment_type: norm(paymentType),
+        finance_interest: norm(String(financeCalc.interest ?? 0)),
+        payment: norm(String(financeCalc.payment ?? 0)),
+        first_payment_date: norm(firstPaymentDate),
+        lien_holder: norm(lienHolder),
+        finance_rate_type: norm(financeRateType),
+        finance_commission: norm(financeCommission),
+        fees: payload.fees,
+        accessories: payload.accessories,
+        warranties: payload.warranties,
+        insurances: payload.insurances,
+        payments: payload.payments,
       }
 
-      if (!res.ok || (json && json.error)) {
-        throw new Error((json && (json.error || json.message)) || text || `Save failed (${res.status})`)
+      let res: Response
+      if (worksheetRowId) {
+        res = await fetch('/api/deals/update', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ table: 'edc_deals_worksheet', id: worksheetRowId, data: rowData }),
+        })
+      } else {
+        res = await fetch('/api/deals/insert', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ table: 'edc_deals_worksheet', data: rowData }),
+        })
+      }
+
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok || json.error) {
+        throw new Error(json.error || `Save failed (${res.status})`)
+      }
+
+      if (!worksheetRowId && json.rows?.[0]?.id) {
+        setWorksheetRowId(json.rows[0].id)
       }
 
       setHasBeenSaved(true)

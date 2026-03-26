@@ -25,16 +25,24 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
     const dealId = params.id
     if (!dealId) return NextResponse.json({ error: 'Missing deal id' }, { status: 400 })
 
-    const eq = `id=eq.${dealId}`
-    const [customers, vehicles, worksheet, disclosures, delivery] = await Promise.all([
-      query('edc_deals_customers', `${eq}&limit=1`),
-      query('edc_deals_vehicles', eq),
-      query('edc_deals_worksheet', `${eq}&limit=1`),
-      query('edc_deals_disclosures', `${eq}&limit=1`),
-      query('edc_deals_delivery', `${eq}&limit=1`),
+    const dealFilter = `deal_id=eq.${encodeURIComponent(dealId)}`
+
+    // Load all tables by deal_id
+    let customers: any[] = []
+    try {
+      const byDealId = await query('edc_deals_customers', `${dealFilter}&order=id.asc`)
+      if (Array.isArray(byDealId) && byDealId.length > 0) customers = byDealId
+    } catch { /* ignore */ }
+
+    const [vehicles, worksheet, disclosures, delivery] = await Promise.all([
+      query('edc_deals_vehicles', `${dealFilter}&order=created_at.asc`).catch(() => []),
+      query('edc_deals_worksheet', `${dealFilter}&limit=1`).catch(() => []),
+      query('edc_deals_disclosures', `${dealFilter}&limit=1`).catch(() => []),
+      query('edc_deals_delivery', `${dealFilter}&limit=1`).catch(() => []),
     ])
 
     return NextResponse.json({
+      customers: customers || [],
       customer: customers?.[0] || null,
       vehicles: vehicles || [],
       worksheet: worksheet?.[0] || null,

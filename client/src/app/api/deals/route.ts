@@ -85,9 +85,23 @@ export async function GET(request: Request) {
       if (did) deliveryByDeal[did] = d
     }
 
-    // Build the combined deals list from customers as the primary source
-    const deals = customers.map((c: any) => {
+    // Group customers by deal_id — one deal entry per unique deal_id
+    const customersByDeal: Record<string, any[]> = {}
+    for (const c of customers) {
       const did = getDealId(c)
+      if (!did) continue
+      if (!customersByDeal[did]) customersByDeal[did] = []
+      customersByDeal[did].push(c)
+    }
+
+    // Sort each group so the row with the smallest id is the primary customer
+    for (const group of Object.values(customersByDeal)) {
+      group.sort((a: any, b: any) => (a.id ?? 0) - (b.id ?? 0))
+    }
+
+    // Build the combined deals list — one entry per unique deal_id
+    const deals = Object.entries(customersByDeal).map(([did, group]) => {
+      const c = group[0] // primary customer
       const vList = vehiclesByDeal[did] || []
 
       // Build vehicle label from the first vehicle's selected_* fields or trade fields
@@ -130,6 +144,13 @@ export async function GET(request: Request) {
         disclosures: disclosureByDeal[did] || null,
         delivery,
       }
+    })
+
+    // Sort deals by most recently created (based on primary customer's created_at)
+    deals.sort((a, b) => {
+      const ta = a.customer?.created_at ?? ''
+      const tb = b.customer?.created_at ?? ''
+      return tb < ta ? -1 : tb > ta ? 1 : 0
     })
 
     return NextResponse.json({ deals }, {
