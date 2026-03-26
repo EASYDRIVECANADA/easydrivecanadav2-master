@@ -23,6 +23,27 @@ function getDealId(row: any): string {
   return String(row.dealid ?? row.dealId ?? row.deal_id ?? row.id ?? '')
 }
 
+function toTimestamp(value: any): number {
+  if (!value) return Number.POSITIVE_INFINITY
+  const time = Date.parse(String(value))
+  return Number.isFinite(time) ? time : Number.POSITIVE_INFINITY
+}
+
+function compareIdsAsc(a: any, b: any): number {
+  const aNum = Number(a)
+  const bNum = Number(b)
+  const aNumValid = Number.isFinite(aNum)
+  const bNumValid = Number.isFinite(bNum)
+  if (aNumValid && bNumValid) return aNum - bNum
+  return String(a ?? '').localeCompare(String(b ?? ''), undefined, { numeric: true, sensitivity: 'base' })
+}
+
+function getCustomerDisplayName(customer: any): string {
+  const first = customer?.firstname ?? customer?.first_name ?? ''
+  const last = customer?.lastname ?? customer?.last_name ?? ''
+  return [first, last].filter(Boolean).join(' ').trim() || customer?.displayname || customer?.display_name || customer?.legalname || customer?.legal_name || ''
+}
+
 export async function GET(request: Request) {
   try {
     const url = new URL(request.url)
@@ -39,14 +60,14 @@ export async function GET(request: Request) {
     ])
 
     // Collect unique vehicle IDs from deal vehicle rows to fetch accurate stock_number from edc_vehicles
-    const vehicleIds = [...new Set(
+    const vehicleIds = Array.from(new Set(
       vehicles.map((v: any) => v.selected_id).filter(Boolean)
-    )]
+    ))
     let inventoryStockMap: Record<string, string> = {}
     if (vehicleIds.length > 0) {
       try {
         const invRes = await fetch(
-          `${baseUrl}/rest/v1/edc_vehicles?id=in.(${vehicleIds.map(encodeURIComponent).join(',')})&select=id,stock_number`,
+          `${baseUrl}/rest/v1/edc_vehicles?id=in.(${vehicleIds.map((id) => encodeURIComponent(String(id))).join(',')})&select=id,stock_number`,
           { headers: { 'apikey': apiKey, 'Authorization': `Bearer ${apiKey}` }, cache: 'no-store' }
         )
         if (invRes.ok) {
@@ -94,9 +115,13 @@ export async function GET(request: Request) {
       customersByDeal[did].push(c)
     }
 
-    // Sort each group so the row with the smallest id is the primary customer
+    // Sort each group so the oldest customer stays primary, and new customers stay secondary
     for (const group of Object.values(customersByDeal)) {
-      group.sort((a: any, b: any) => (a.id ?? 0) - (b.id ?? 0))
+      group.sort((a: any, b: any) => {
+        const createdDiff = toTimestamp(a?.created_at) - toTimestamp(b?.created_at)
+        if (createdDiff !== 0) return createdDiff
+        return compareIdsAsc(a?.id, b?.id)
+      })
     }
 
     // Build the combined deals list — one entry per unique deal_id
@@ -133,7 +158,7 @@ export async function GET(request: Request) {
       return {
         dealId: did,
         customer: c,
-        primaryCustomer: [c.firstname, c.lastname].filter(Boolean).join(' ') || c.displayname || c.legalname || '',
+        primaryCustomer: getCustomerDisplayName(c),
         vehicle: vehicleLabel,
         type: c.dealtype || '',
         state,

@@ -277,7 +277,6 @@ export default function VehiclesTab({
     return false
   })
   const [lastSaveWasUpdate, setLastSaveWasUpdate] = useState(false)
-  const formMode: 'create' | 'edit' = hasBeenSaved ? 'edit' : 'create'
   const [manualSelectedCleared, setManualSelectedCleared] = useState(false)
   const inlineEditorRef = useRef<HTMLDivElement | null>(null)
   const execInline = (cmd: string, value?: string) => {
@@ -2005,9 +2004,6 @@ export default function VehiclesTab({
           >
             {savingTrades ? (hasBeenSaved ? 'Updating…' : 'Saving…') : hasBeenSaved ? 'Update' : 'Save'}
           </button>
-          <div className={formMode === 'edit' ? 'h-10 px-3 rounded border border-amber-200 bg-amber-50 text-amber-800 text-xs font-semibold flex items-center' : 'h-10 px-3 rounded border border-emerald-200 bg-emerald-50 text-emerald-800 text-xs font-semibold flex items-center'}>
-            {formMode === 'edit' ? 'Edit' : 'Create'}
-          </div>
         </div>
       </div>
 

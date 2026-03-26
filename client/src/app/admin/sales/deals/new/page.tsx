@@ -26,9 +26,7 @@ function SalesNewDealPageContent() {
   const [initialVehicleId] = useState(vehicleId)
   const [activeTab, setActiveTab] = useState<DealTab>('customers')
   const [unlockedTabs, setUnlockedTabs] = useState<Set<DealTab>>(() =>
-    editDealId
-      ? new Set<DealTab>(['customers', 'vehicles', 'worksheet', 'disclosures', 'delivery'])
-      : new Set<DealTab>(['customers'])
+    new Set<DealTab>(['customers', 'vehicles', 'worksheet', 'disclosures', 'delivery'])
   )
   const unlockTab = (tab: DealTab) => {
     setUnlockedTabs(prev => new Set(Array.from(prev).concat(tab)))

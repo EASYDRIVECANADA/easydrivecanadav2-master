@@ -461,6 +461,29 @@ function mapRowToForm(c: any): DealCustomerForm {
   }
 }
 
+function toTimestamp(value: any): number {
+  if (!value) return Number.POSITIVE_INFINITY
+  const time = Date.parse(String(value))
+  return Number.isFinite(time) ? time : Number.POSITIVE_INFINITY
+}
+
+function compareIdsAsc(a: any, b: any): number {
+  const aNum = Number(a)
+  const bNum = Number(b)
+  const aNumValid = Number.isFinite(aNum)
+  const bNumValid = Number.isFinite(bNum)
+  if (aNumValid && bNumValid) return aNum - bNum
+  return String(a ?? '').localeCompare(String(b ?? ''), undefined, { numeric: true, sensitivity: 'base' })
+}
+
+function sortDealCustomers(rows: any[]): any[] {
+  return [...rows].sort((a: any, b: any) => {
+    const createdDiff = toTimestamp(a?.created_at) - toTimestamp(b?.created_at)
+    if (createdDiff !== 0) return createdDiff
+    return compareIdsAsc(a?.id, b?.id)
+  })
+}
+
 export default function CustomersTabNew({
 
   hideAddButton = false,
@@ -549,11 +572,12 @@ export default function CustomersTabNew({
 
   const [showSavedModal, setShowSavedModal] = useState(false)
 
-  const initialCustomers: any[] = Array.isArray(initialData)
+  const initialCustomersRaw: any[] = Array.isArray(initialData)
     ? initialData
     : initialData
     ? [initialData]
     : []
+  const initialCustomers: any[] = sortDealCustomers(initialCustomersRaw)
 
   const [hasBeenSaved, setHasBeenSaved] = useState(() => initialCustomers.length > 0)
 
@@ -609,10 +633,12 @@ export default function CustomersTabNew({
   // Sync forms when initialData loads asynchronously (prefill arrives after first render)
   useEffect(() => {
     if (!initialData) return
-    const customers: any[] = Array.isArray(initialData) ? initialData : [initialData]
+    const customersRaw: any[] = Array.isArray(initialData) ? initialData : [initialData]
+    const customers = sortDealCustomers(customersRaw)
     if (customers.length === 0) return
     setForms(customers.map(mapRowToForm))
     setFormIds(customers.map((c: any) => c.id ?? null))
+    setActiveCustomer((prev) => (prev < customers.length ? prev : 0))
     setHasBeenSaved(true)
     const t = (customers[0]?.id_type ?? '').toUpperCase()
     if (t === 'RIN') setIdType('RIN')
@@ -1461,7 +1487,9 @@ export default function CustomersTabNew({
 
           >
 
-            {getCustomerTabLabel(forms[idx] ?? getDefaultForm())}
+            {idx === 0
+              ? `Primary: ${getCustomerTabLabel(forms[idx] ?? getDefaultForm())}`
+              : getCustomerTabLabel(forms[idx] ?? getDefaultForm())}
 
           </button>
 
