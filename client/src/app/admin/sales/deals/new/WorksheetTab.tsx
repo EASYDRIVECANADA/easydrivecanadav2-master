@@ -310,38 +310,68 @@ export default function WorksheetTab({
     setInsDetailsOpen(true)
   }
 
+  // Fetch vehicle price directly when purchase price is 0
+  useEffect(() => {
+    const fetchVehiclePrice = async () => {
+      if (!dealId) return
+      
+      // Only fetch if purchase price is currently 0
+      const currentPrice = parseMoney(purchasePrice)
+      if (currentPrice > 0) return
+      
+      try {
+        // Fetch deal to get vehicle ID
+        const dealRes = await fetch(`/api/deals/${encodeURIComponent(dealId)}`)
+        if (!dealRes.ok) return
+        const dealData = await dealRes.json()
+        
+        const vehicleData = dealData?.vehicles?.[0]
+        const vehicleId = vehicleData?.selected_id || vehicleData?.id
+        if (!vehicleId) return
+        
+        // Fetch vehicle details
+        const vehRes = await fetch(`/api/vehicles/${encodeURIComponent(vehicleId)}`, { cache: 'no-store' })
+        if (!vehRes.ok) return
+        const vehData = await vehRes.json()
+        
+        const vehicle = vehData?.vehicle
+        if (!vehicle) return
+        
+        // Try to get price from various fields
+        const priceFields = [
+          vehicle.saleprice,
+          vehicle.sale_price,
+          vehicle.salePrice,
+          vehicle.price,
+          vehicle.listPrice,
+          vehicle.list_price,
+        ]
+        
+        for (const p of priceFields) {
+          const num = parseMoney(String(p || ''))
+          if (num > 0) {
+            console.log('[WorksheetTab] Setting purchase price from vehicle:', num)
+            setPurchasePrice(String(num))
+            return
+          }
+        }
+      } catch (e) {
+        console.error('[WorksheetTab] Error fetching vehicle price:', e)
+      }
+    }
+    
+    fetchVehiclePrice()
+  }, [dealId, purchasePrice])
+
   useEffect(() => {
     if (!initialData) return
 
-    const key = initialData?.id ? `id:${String(initialData.id)}` : `prefill:${String(dealId || '')}`
+    // Include purchase_price in key so we re-apply when vehicle price is loaded
+    const priceKey = initialData?.purchase_price ?? '0'
+    const key = initialData?.id ? `id:${String(initialData.id)}` : `prefill:${String(dealId || '')}_price:${priceKey}`
     if (appliedInitialKeyRef.current === key) return
 
-    const toNumLoose = (v: any) => {
-      if (v === null || v === undefined) return 0
-      const s = String(v).trim()
-      if (!s) return 0
-      const cleaned = s.replace(/[^0-9.-]/g, '')
-      const n = parseFloat(cleaned)
-      return Number.isNaN(n) ? 0 : n
-    }
-    const isZero = (v: any) => toNumLoose(v) === 0
-
-    const pristine =
-      isZero(purchasePrice) &&
-      isZero(discount) &&
-      isZero(tradeValue) &&
-      isZero(actualCashValue) &&
-      isZero(lienPayout) &&
-      isZero(taxManual) &&
-      !taxOverride &&
-      fees.length === 0 &&
-      accessories.length === 0 &&
-      warranties.length === 0 &&
-      insurances.length === 0 &&
-      payments.length === 0
-
-    // Always apply when we have a saved row (editing); only apply when pristine for new prefill
-    if (!pristine && !initialData?.id) return
+    console.log('[WorksheetTab] Applying initialData:', initialData)
 
     const nd = initialData || {}
     setPurchasePrice(nd.purchase_price ?? '0')
@@ -366,31 +396,16 @@ export default function WorksheetTab({
     setFinanceRateType(nd.finance_rate_type || 'VAR')
     setFinanceCommission(nd.finance_commission ?? '')
 
-    setFees(Array.isArray(nd.fees) ? nd.fees.map((f: any) => ({ id: f.id || `fee_${Date.now()}`, name: f.name || '', desc: f.desc || '', amount: Number(f.amount) || 0 })) : [])
+    setFees(Array.isArray(nd.fees) ? nd.fees.map((f: any) => ({ id: f.id || `fee_${Date.now()}`, name: f.name || '', desc: f.desc || '', amount: Number(f.amount) || 0, cost: Number(f.cost) || 0, taxSelected: normalizeFeeTaxSelection(f.taxSelected || { [DEFAULT_FEE_TAX_LABEL]: true }), taxOverride: f.taxOverride || false, taxValues: f.taxValues || {} })) : [])
     setPayments(Array.isArray(nd.payments) ? nd.payments.map((p: any) => ({ id: p.id || `pay_${Date.now()}`, amount: Number(p.amount) || 0, type: p.type || 'Cash', desc: p.desc || '', category: p.category || 'Deposit' })) : [])
-    setAccessories(Array.isArray(nd.accessories) ? nd.accessories.map((a: any) => ({ id: a.id || `acc_${Date.now()}`, name: a.name || '', desc: a.desc || '', price: Number(a.price) || 0 })) : [])
-    setWarranties(Array.isArray(nd.warranties) ? nd.warranties.map((w: any) => ({ id: w.id || `war_${Date.now()}`, name: w.name || '', desc: w.desc || '', amount: Number(w.amount) || 0 })) : [])
-    setInsurances(Array.isArray(nd.insurances) ? nd.insurances.map((i: any) => ({ id: i.id || `ins_${Date.now()}`, name: i.name || '', desc: i.desc || '', amount: Number(i.amount) || 0 })) : [])
+    setAccessories(Array.isArray(nd.accessories) ? nd.accessories.map((a: any) => ({ id: a.id || `acc_${Date.now()}`, name: a.name || '', desc: a.desc || '', price: Number(a.price) || 0, cost: Number(a.cost) || 0, vehicleType: a.vehicleType || a.vehicle_type || '', taxSelected: a.taxSelected || { 'HST 13 %': true }, taxOverride: a.taxOverride || false, taxValues: a.taxValues || {} })) : [])
+    setWarranties(Array.isArray(nd.warranties) ? nd.warranties.map((w: any) => ({ id: w.id || `war_${Date.now()}`, name: w.name || '', desc: w.desc || '', amount: Number(w.amount) || 0, cost: Number(w.cost) || 0, duration: w.duration || '', distance: w.distance || '', isDealerGuaranty: w.isDealerGuaranty === true || w.is_dealer_guaranty === true, taxSelected: w.taxSelected || { 'HST 13 %': true }, taxOverride: w.taxOverride || false, taxValues: w.taxValues || {} })) : [])
+    setInsurances(Array.isArray(nd.insurances) ? nd.insurances.map((i: any) => ({ id: i.id || `ins_${Date.now()}`, name: i.name || '', desc: i.desc || '', amount: Number(i.amount) || 0, cost: Number(i.cost) || 0, deductible: String(i.deductible ?? i.insurance_deductible ?? '0'), duration: String(i.duration ?? i.insurance_duration ?? ''), type: String(i.type ?? i.insurance_type ?? ''), taxSelected: i.taxSelected || { 'HST 13 %': true }, taxOverride: i.taxOverride || false, taxValues: i.taxValues || {} })) : [])
 
     if (nd.id) setWorksheetRowId(nd.id)
     setHasBeenSaved(Boolean(nd.id))
     appliedInitialKeyRef.current = key
-  }, [
-    initialData,
-    dealId,
-    purchasePrice,
-    discount,
-    tradeValue,
-    actualCashValue,
-    lienPayout,
-    taxManual,
-    taxOverride,
-    fees.length,
-    accessories.length,
-    warranties.length,
-    insurances.length,
-    payments.length,
-  ])
+  }, [initialData, dealId])
 
   type WorksheetCardKey = 'fees' | 'accessories' | 'warranties' | 'insurances' | 'payments'
   const [cardsOrder, setCardsOrder] = useState<WorksheetCardKey[]>(['fees', 'accessories', 'warranties', 'insurances', 'payments'])
@@ -1054,10 +1069,6 @@ export default function WorksheetTab({
 
       setHasBeenSaved(true)
       setShowSavedModal(true)
-      window.setTimeout(() => {
-        setShowSavedModal(false)
-        onSaved?.()
-      }, 900)
     } catch (err) {
       const msg = (err as any)?.message || 'Failed to submit worksheet'
       setWorksheetSaveError(msg)
@@ -1871,7 +1882,7 @@ export default function WorksheetTab({
                 }}
                 className="h-9 px-4 rounded bg-[#118df0] text-white text-sm font-semibold hover:bg-[#0d6ebd]"
               >
-                Continue
+                OK
               </button>
             </div>
           </div>

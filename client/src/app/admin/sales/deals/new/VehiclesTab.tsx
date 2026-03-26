@@ -1072,10 +1072,6 @@ export default function VehiclesTab({
       }
       console.log('[Save Trades] All trades saved: Done')
       setShowSavedModal(true)
-      window.setTimeout(() => {
-        setShowSavedModal(false)
-        onSaved?.()
-      }, 900)
       setOpenSavedDisclosureIdx(null)
     } catch (e: any) {
       console.error('[Save Trades] Error:', e)
@@ -1336,7 +1332,7 @@ export default function VehiclesTab({
                 }}
                 className="h-9 px-4 rounded bg-[#118df0] text-white text-sm font-semibold hover:bg-[#0d6ebd]"
               >
-                Continue
+                OK
               </button>
             </div>
           </div>

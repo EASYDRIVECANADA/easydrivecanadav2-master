@@ -14,7 +14,7 @@ const TABLES = [
 ]
 
 async function deleteFromTable(table: string, dealId: string): Promise<{ table: string; ok: boolean; count: number }> {
-  const res = await fetch(`${baseUrl}/rest/v1/${table}?id=eq.${dealId}`, {
+  const res = await fetch(`${baseUrl}/rest/v1/${table}?deal_id=eq.${encodeURIComponent(dealId)}`, {
     method: 'DELETE',
     headers: {
       'Content-Type': 'application/json',

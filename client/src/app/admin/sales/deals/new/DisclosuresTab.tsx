@@ -46,7 +46,7 @@ export default function DisclosuresTab({
     }
   }
 
-  const getWebhookUserId = async () => {
+  const getCurrentUserId = async () => {
     const dbUserId = await getLoggedInAdminDbUserId()
     try {
       const {
@@ -62,6 +62,7 @@ export default function DisclosuresTab({
   const editorRef = useRef<HTMLDivElement | null>(null)
   const colorRef = useRef<HTMLInputElement | null>(null)
   const [hasBeenSaved, setHasBeenSaved] = useState(() => Boolean(initialData?.id))
+  const [disclosuresRowId, setDisclosuresRowId] = useState<string | null>(() => initialData?.id ?? null)
 
   const [html, setHtml] = useState(initialData?.disclosures_html ?? '')
   const [conditions, setConditions] = useState(initialData?.conditions ?? '')
@@ -99,9 +100,13 @@ export default function DisclosuresTab({
   }
 
   useEffect(() => {
-    if (initialData?.disclosures_html && editorRef.current) {
-      editorRef.current.innerHTML = initialData.disclosures_html
+    if (editorRef.current) {
+      editorRef.current.innerHTML = initialData?.disclosures_html ?? ''
     }
+    setHtml(initialData?.disclosures_html ?? '')
+    setConditions(initialData?.conditions ?? '')
+    setHasBeenSaved(Boolean(initialData?.id))
+    setDisclosuresRowId(initialData?.id ?? null)
   }, [initialData])
 
   useEffect(() => {
@@ -135,32 +140,49 @@ export default function DisclosuresTab({
     runCmd('justifyLeft')
   }
 
+  const toNull = (v: any) => {
+    if (v === undefined || v === null) return null
+    const s = String(v).trim()
+    return s.length ? s : null
+  }
+
   const handleSave = async () => {
     try {
       setSaveError(null)
       setShowSaveErrorModal(false)
       setSaving(true)
 
-      const userId = await getWebhookUserId().catch(() => null)
+      if (!dealId) throw new Error('Missing deal ID')
 
-      const payload = {
-        category: 'deals-disclosures',
-        id: initialData?.id ?? dealId ?? null,
-        dealId: dealId ?? null,
-        dealMode: dealMode ?? null,
-        dealType: dealType ?? null,
-        formMode: formMode ?? null,
-        userId: userId || null,
-        disclosures_html: html || null,
-        conditions: conditions || null,
+      const userId = await getCurrentUserId().catch(() => null)
+      const rowData = {
+        deal_id: String(dealId),
+        user_id: userId || null,
+        disclosures_html: toNull(html),
+        conditions: toNull(conditions),
+        updated_at: new Date().toISOString(),
       }
 
-      // Send complete payload to webhook - n8n will handle database operations
-      const res = await fetch('/api/deals-disclosures', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      })
+      let res: Response
+      if (disclosuresRowId) {
+        res = await fetch('/api/deals/update', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ table: 'edc_deals_disclosures', id: disclosuresRowId, data: rowData }),
+        })
+      } else {
+        res = await fetch('/api/deals/insert', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            table: 'edc_deals_disclosures',
+            data: {
+              ...rowData,
+              created_at: new Date().toISOString(),
+            },
+          }),
+        })
+      }
 
       const text = await res.text().catch(() => '')
       let json: any = null
@@ -174,12 +196,13 @@ export default function DisclosuresTab({
         throw new Error((json && (json.error || json.message)) || text || `Save failed (${res.status})`)
       }
 
+      if (!disclosuresRowId) {
+        const insertedId = json?.rows?.[0]?.id
+        if (insertedId) setDisclosuresRowId(String(insertedId))
+      }
+
       setHasBeenSaved(true)
       setShowSavedModal(true)
-      window.setTimeout(() => {
-        setShowSavedModal(false)
-        onSaved?.()
-      }, 900)
     } catch (e: any) {
       const msg = e?.message || 'Failed to save disclosures'
       setSaveError(msg)
@@ -206,7 +229,7 @@ export default function DisclosuresTab({
                 }}
                 className="h-9 px-4 rounded bg-[#118df0] text-white text-sm font-semibold hover:bg-[#0d6ebd]"
               >
-                Continue
+                OK
               </button>
             </div>
           </div>

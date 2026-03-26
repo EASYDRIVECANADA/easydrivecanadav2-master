@@ -11,6 +11,7 @@ export interface DisclosureFormData {
   vin: string
   odometer: string
   disclosuresText: string
+  conditionsText?: string
 }
 
 function fmt(v: string | number | null | undefined): string {
@@ -105,6 +106,21 @@ export function renderDisclosureFormPdf(
   const discLines = doc.splitTextToSize(discText || '', CW)
   doc.text(discLines.length ? discLines : [''], ML, y)
   y += Math.max(1, discLines.length) * 12 + 18
+
+  // Conditions
+  const condText = stripHtmlToText(data.conditionsText || '')
+  if (condText) {
+    doc.setFontSize(10)
+    doc.setFont('helvetica', 'normal')
+    doc.setTextColor(DARK)
+    doc.text('Conditions', ML, y)
+    y += 16
+
+    doc.setFontSize(8.5)
+    const condLines = doc.splitTextToSize(condText, CW)
+    doc.text(condLines.length ? condLines : [''], ML, y)
+    y += Math.max(1, condLines.length) * 12 + 18
+  }
 
   // Warranty & Insurance
   doc.setFontSize(10)

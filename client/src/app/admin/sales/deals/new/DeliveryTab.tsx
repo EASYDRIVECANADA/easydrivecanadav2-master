@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
-import { useRouter } from 'next/navigation'
 
 export default function DeliveryTab({
   dealMode = 'RTL',
@@ -16,7 +15,6 @@ export default function DeliveryTab({
   initialData?: any
 }) {
   const dd = initialData || {}
-  const router = useRouter()
   const [deliveryDate, setDeliveryDate] = useState(dd.delivery_date ?? '')
   const [deliveryTime, setDeliveryTime] = useState(dd.delivery_time ?? '')
   const [exportedOutsideOntario, setExportedOutsideOntario] = useState(dd.export_outside_ontario === true)
@@ -42,6 +40,30 @@ export default function DeliveryTab({
   const [showSaveErrorModal, setShowSaveErrorModal] = useState(false)
   const [saveErrorModalMessage, setSaveErrorModalMessage] = useState<string>('Unsuccessful save')
   const [hasBeenSaved, setHasBeenSaved] = useState(() => Boolean(dd?.id))
+  const [deliveryRowId, setDeliveryRowId] = useState<string | null>(() => dd?.id ?? null)
+
+  useEffect(() => {
+    const nd = initialData || {}
+    setDeliveryDate(nd.delivery_date ?? '')
+    setDeliveryTime(nd.delivery_time ?? '')
+    setExportedOutsideOntario(nd.export_outside_ontario === true || nd.export_outside_ontario === 'true')
+    setExportedPartyType((nd.exported_party_type as 'Dealer' | 'Non-Dealer') || 'Non-Dealer')
+    setDeliveryDetails(nd.delivery_details ?? '')
+    setOtherNotes(nd.other_notes ?? '')
+    setApprovedBy(nd.approved_by ?? '')
+    setSalesperson(nd.salesperson ?? '')
+    setTasks(
+      Array.isArray(nd.tasks)
+        ? nd.tasks.map((t: any) => ({
+            name: t.name ?? null,
+            description: t.description ?? null,
+            dueBy: t.dueBy ?? t.due_by ?? null,
+          }))
+        : []
+    )
+    setHasBeenSaved(Boolean(nd?.id))
+    setDeliveryRowId(nd?.id ?? null)
+  }, [initialData])
 
   useEffect(() => {
     const loadNames = async () => {
@@ -112,7 +134,7 @@ export default function DeliveryTab({
     }
   }
 
-  const getWebhookUserId = async () => {
+  const getCurrentUserId = async () => {
     const dbUserId = await getLoggedInAdminDbUserId()
     try {
       const {
@@ -173,38 +195,72 @@ export default function DeliveryTab({
       setShowSaveErrorModal(false)
       setSaving(true)
 
-      const user_id = await getWebhookUserId().catch(() => null)
+      if (!dealId) throw new Error('Missing deal ID')
 
-      const payload = {
-        category: 'delivery',
-        formMode: formMode ?? null,
+      const user_id = await getCurrentUserId().catch(() => null)
+      const normalizedTasks = Array.isArray(tasks)
+        ? tasks.map((t) => ({
+            name: toNull(t?.name),
+            description: toNull(t?.description),
+            due_by: toNull(t?.dueBy),
+          }))
+        : []
+
+      const rowData = {
+        deal_id: String(dealId),
         user_id: user_id || null,
-        id: toNull(dd?.id ?? null),
-        dealId: toNull(dealId),
-        dealMode: toNull(dealMode),
-        deliveryDate: toNull(deliveryDate),
-        deliveryTime: toNull(deliveryTime),
-        exportedOutsideOntario: exportedOutsideOntario ?? false,
-        exportedPartyType: exportedOutsideOntario ? toNull(exportedPartyType) : null,
-        deliveryDetails: toNull(deliveryDetails),
-        otherNotes: toNull(otherNotes),
-        approvedBy: toNull(approvedBy),
+        deal_mode: toNull(dealMode),
+        delivery_date: toNull(deliveryDate),
+        delivery_time: toNull(deliveryTime),
+        export_outside_ontario: exportedOutsideOntario,
+        exported_party_type: exportedOutsideOntario ? toNull(exportedPartyType) : null,
+        delivery_details: toNull(deliveryDetails),
+        other_notes: toNull(otherNotes),
+        approved_by: toNull(approvedBy),
         salesperson: toNull(salesperson),
-        newTaskDraft: {
-          name: toNull(taskName),
-          description: toNull(taskDescription),
-          dueBy: toNull(taskDueBy),
-        },
-        tasks: Array.isArray(tasks) ? tasks : [],
+        new_task_draft: Boolean(toNull(taskName) || toNull(taskDescription) || toNull(taskDueBy)),
+        draft_name: toNull(taskName),
+        draft_description: toNull(taskDescription),
+        draft_due_by: toNull(taskDueBy),
+        tasks: normalizedTasks,
+        updated_at: new Date().toISOString(),
       }
 
-      const res = await fetch('/api/delivery', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      })
+      let res: Response
+      if (deliveryRowId) {
+        res = await fetch('/api/deals/update', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ table: 'edc_deals_delivery', id: deliveryRowId, data: rowData }),
+        })
+      } else {
+        res = await fetch('/api/deals/insert', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            table: 'edc_deals_delivery',
+            data: {
+              ...rowData,
+              created_at: new Date().toISOString(),
+            },
+          }),
+        })
+      }
       const raw = await res.text().catch(() => '')
-      if (!res.ok) throw new Error(raw || `Save failed (${res.status})`)
+      let json: any = null
+      try {
+        json = raw ? JSON.parse(raw) : null
+      } catch {
+        json = null
+      }
+      if (!res.ok || (json && json.error)) {
+        throw new Error((json && (json.error || json.message)) || raw || `Save failed (${res.status})`)
+      }
+
+      if (!deliveryRowId) {
+        const insertedId = json?.rows?.[0]?.id
+        if (insertedId) setDeliveryRowId(String(insertedId))
+      }
 
       setHasBeenSaved(true)
       setShowSuccessModal(true)
@@ -486,27 +542,11 @@ export default function DeliveryTab({
 
       {showSuccessModal ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div
-            className="absolute inset-0 bg-black/40"
-            onClick={() => {
-              setShowSuccessModal(false)
-              router.push('/admin/sales/deals')
-            }}
-          />
+          <div className="absolute inset-0 bg-black/40" />
           <div className="relative w-full max-w-md rounded-xl bg-white shadow-xl border border-gray-200">
             <div className="px-5 py-4 border-b border-gray-200 flex items-center justify-between">
               <div className="text-sm font-semibold text-gray-900">Success</div>
-              <button
-                type="button"
-                className="text-gray-500 hover:text-gray-700"
-                onClick={() => {
-                  setShowSuccessModal(false)
-                  router.push('/admin/sales/deals')
-                }}
-                aria-label="Close"
-              >
-                ×
-              </button>
+              <div className="w-4" aria-hidden="true" />
             </div>
             <div className="px-5 py-5">
               <div className="text-sm text-gray-700">Deal created successfully.</div>
@@ -516,7 +556,6 @@ export default function DeliveryTab({
                   className="h-9 px-4 rounded bg-[#118df0] text-white text-sm font-semibold hover:bg-[#0d6ebd]"
                   onClick={() => {
                     setShowSuccessModal(false)
-                    router.push('/admin/sales/deals')
                   }}
                 >
                   OK

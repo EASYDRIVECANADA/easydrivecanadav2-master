@@ -32,7 +32,6 @@ function SalesNewDealPageContent() {
   )
   const unlockTab = (tab: DealTab) => {
     setUnlockedTabs(prev => new Set(Array.from(prev).concat(tab)))
-    setActiveTab(tab)
   }
   const [dealId] = useState(() => {
     // If editing, reuse the existing dealId from the URL
@@ -62,6 +61,7 @@ function SalesNewDealPageContent() {
   // Start as true in edit mode so CustomersTabNew only mounts after data is loaded
   const [prefillLoading, setPrefillLoading] = useState(() => Boolean(editDealId))
   const [dealHasSignature, setDealHasSignature] = useState(false)
+  const [selectedVehicleData, setSelectedVehicleData] = useState<any>(null)
 
   // Print dropdown & Documents Preview modal
   const [showPrintMenu, setShowPrintMenu] = useState(false)
@@ -251,6 +251,56 @@ function SalesNewDealPageContent() {
   useEffect(() => {
     fetchVehiclePrefill()
   }, [fetchVehiclePrefill])
+
+  // Fetch selected vehicle data when deal has vehicles
+  useEffect(() => {
+    const fetchSelectedVehicle = async () => {
+      if (!dealId) return
+      
+      try {
+        console.log('[page.tsx] Fetching deal data for dealId:', dealId)
+        const res = await fetch(`/api/deals/${encodeURIComponent(dealId)}`)
+        if (!res.ok) {
+          console.log('[page.tsx] Deal fetch failed:', res.status)
+          return
+        }
+        const data = await res.json()
+        console.log('[page.tsx] Deal data received:', { vehicles: data?.vehicles })
+        
+        const vehicleData = data?.vehicles?.[0]
+        const vehicleId = vehicleData?.selected_id || vehicleData?.id
+        console.log('[page.tsx] Vehicle ID from deal:', vehicleId, 'vehicleData:', vehicleData)
+        
+        if (!vehicleId) {
+          console.log('[page.tsx] No vehicle ID found in deal')
+          return
+        }
+        
+        // Fetch full vehicle details from edc_vehicles
+        console.log('[page.tsx] Fetching vehicle details for ID:', vehicleId)
+        const vRes = await fetch(`/api/vehicles/${encodeURIComponent(vehicleId)}`, { cache: 'no-store' })
+        if (!vRes.ok) {
+          console.log('[page.tsx] Vehicle fetch failed:', vRes.status)
+          return
+        }
+        const vData = await vRes.json()
+        
+        if (vData?.vehicle) {
+          console.log('[page.tsx] Vehicle data received:', {
+            id: vData.vehicle.id,
+            saleprice: vData.vehicle.saleprice,
+            price: vData.vehicle.price,
+            stock_number: vData.vehicle.stock_number
+          })
+          setSelectedVehicleData(vData.vehicle)
+        }
+      } catch (e) {
+        console.error('[Selected Vehicle Fetch] Error:', e)
+      }
+    }
+    
+    fetchSelectedVehicle()
+  }, [dealId, activeTab])
 
   // Clear URL params immediately to prevent navigation issues
   useEffect(() => {
@@ -442,6 +492,7 @@ function SalesNewDealPageContent() {
           vin: billData.vin,
           odometer: billData.odometer,
           disclosuresText: billData.commentsHtml,
+          conditionsText: disc?.conditions ?? '',
         }, { pageNumber: currentPage, totalPages })
         currentPage += 1
       }
@@ -869,6 +920,7 @@ function SalesNewDealPageContent() {
               </div>
               <div style={{ display: activeTab === 'worksheet' ? 'block' : 'none' }}>
                 <WorksheetTab
+                  key={`worksheet-${dealId}-${selectedVehicleData?.id || 'no-vehicle'}`}
                   dealId={dealId}
                   dealMode={isRetail ? 'RTL' : 'WHL'}
                   dealType={dealType}
@@ -876,9 +928,22 @@ function SalesNewDealPageContent() {
                   formMode={formMode}
                   onSaved={() => unlockTab('disclosures')}
                   autoSaved={false}
-                  initialData={prefill?.worksheet ?? (
-                    initialVehicleId && vehiclePrefill?.vehicle ? {
-                      purchase_price: String(getVehicleSellPrice(vehiclePrefill.vehicle)),
+                  initialData={(() => {
+                    // Get vehicle price from available sources
+                    const vehicleSource = selectedVehicleData || vehiclePrefill?.vehicle
+                    const vehiclePrice = vehicleSource ? getVehicleSellPrice(vehicleSource) : 0
+                    
+                    // Check if worksheet has a valid purchase price
+                    const worksheetPrice = toMoneyNumber(prefill?.worksheet?.purchase_price)
+                    
+                    // Use vehicle price if worksheet price is 0 or not set
+                    const finalPurchasePrice = worksheetPrice > 0 ? worksheetPrice : vehiclePrice
+                    
+                    const worksheetData = prefill?.worksheet ? {
+                      ...prefill.worksheet,
+                      purchase_price: String(finalPurchasePrice),
+                    } : vehicleSource ? {
+                      purchase_price: String(vehiclePrice),
                       discount: '0',
                       tax_code: 'HST',
                       license_fee: vehiclePrefill?.purchase?.license_fee ?? '',
@@ -886,7 +951,16 @@ function SalesNewDealPageContent() {
                       actual_cash_value: '0',
                       lien_payout: '0',
                     } : null
-                  )}
+                    
+                    console.log('[page.tsx] WorksheetTab initialData:', {
+                      vehiclePrice,
+                      worksheetPrice,
+                      finalPurchasePrice,
+                      selectedVehicleData,
+                      finalData: worksheetData
+                    })
+                    return worksheetData
+                  })()}
                 />
               </div>
               <div style={{ display: activeTab === 'disclosures' ? 'block' : 'none' }}>

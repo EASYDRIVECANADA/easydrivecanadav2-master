@@ -1363,14 +1363,6 @@ export default function CustomersTabNew({
 
       setShowSavedModal(true)
 
-      window.setTimeout(() => {
-
-        setShowSavedModal(false)
-
-        onSaved?.()
-
-      }, 900)
-
     } finally {
 
       setSaving(false)
@@ -1433,7 +1425,7 @@ export default function CustomersTabNew({
 
               >
 
-                Continue
+                OK
 
               </button>
 

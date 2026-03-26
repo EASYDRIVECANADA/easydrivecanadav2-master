@@ -10,7 +10,10 @@
   },
   "dependencies": {
     "@prisma/client": "^7.1.0",
+    "@supabase/supabase-js": "^2.100.1",
     "all": "^0.0.0",
+    "framer-motion": "^12.38.0",
+    "jspdf": "^4.2.1",
     "next": "14.2.33",
     "prisma": "^7.1.0",
     "react": "^18",
