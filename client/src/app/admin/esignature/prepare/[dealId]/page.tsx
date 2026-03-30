@@ -179,6 +179,7 @@ export default function PrepareDocumentPage() {
   const [draggedSidebarType, setDraggedSidebarType] = useState<FieldType | null>(null)
   const [, forceRender] = useState(0)
   const [totalPages, setTotalPages] = useState(DEFAULT_TOTAL_PAGES)
+  const totalPagesRef = useRef(DEFAULT_TOTAL_PAGES)
   const [docMime, setDocMime] = useState<string | null>(null)
   const [pageImages, setPageImages] = useState<string[]>([])
   const [renderFailed, setRenderFailed] = useState(false)
@@ -240,6 +241,7 @@ export default function PrepareDocumentPage() {
     origH: number
   }>({ type: 'none', fieldId: '', el: null, offsetX: 0, offsetY: 0, dir: '', startMouseX: 0, startMouseY: 0, origX: 0, origY: 0, origW: 0, origH: 0 })
 
+  totalPagesRef.current = totalPages
   const fieldsRef = useRef<Field[]>([])
   fieldsRef.current = fields
   const selectedRef = useRef<string | null>(null)
@@ -268,7 +270,7 @@ export default function PrepareDocumentPage() {
         let snapX: number | undefined
         let snapY: number | undefined
         if (field) {
-          const maxY = PAGE_HEIGHT * totalPages - field.height
+          const maxY = PAGE_HEIGHT * totalPagesRef.current - field.height
           newY = Math.min(newY, Math.max(maxY, 0))
           for (const o of others) {
             const oDocY = getDocY(o)
@@ -330,7 +332,7 @@ export default function PrepareDocumentPage() {
           const next = prev.map(f => {
             if (f.id !== ir.fieldId) return f
             const rawPage = Math.floor(ir.origY / PAGE_HEIGHT) + 1
-            const page = Math.min(Math.max(rawPage, 1), totalPages)
+            const page = Math.min(Math.max(rawPage, 1), totalPagesRef.current)
             const y = ir.origY - (page - 1) * PAGE_HEIGHT
             return { ...f, x: ir.origX, y: Math.max(0, y), page }
           })
@@ -347,7 +349,7 @@ export default function PrepareDocumentPage() {
           const next = prev.map(f => {
             if (f.id !== ir.fieldId) return f
             const rawPage = Math.floor(fy / PAGE_HEIGHT) + 1
-            const page = Math.min(Math.max(rawPage, 1), totalPages)
+            const page = Math.min(Math.max(rawPage, 1), totalPagesRef.current)
             const y = fy - (page - 1) * PAGE_HEIGHT
             return { ...f, x: fx, y: Math.max(0, y), page, width: fw, height: fh }
           })
@@ -769,7 +771,7 @@ export default function PrepareDocumentPage() {
     const scale = zoom / 100
     const x = (e.clientX - rect.left) / scale
     const docY = (e.clientY - rect.top) / scale
-    const page = Math.min(Math.max(Math.floor(docY / PAGE_HEIGHT) + 1, 1), totalPages)
+    const page = Math.min(Math.max(Math.floor(docY / PAGE_HEIGHT) + 1, 1), totalPagesRef.current)
     const y = docY - (page - 1) * PAGE_HEIGHT
     const cfg = FIELD_TYPES.find(f => f.type === draggedSidebarType)!
     const newField: Field = { id: `f-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, type: draggedSidebarType, x, y, width: cfg.defaultW, height: cfg.defaultH, page, fileIndex: selectedFileIndex, recipientIndex: activeRecipientIdx }
