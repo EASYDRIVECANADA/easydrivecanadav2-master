@@ -68,7 +68,7 @@ export default function MarketplacePage() {
   })
 
   const openCarfaxModal = async (vehicleId: string) => {
-    setCarfaxModal({ open: true, loading: true, files: [] })
+    setCarfaxModal({ open: true, loading: true, files: [], activeIndex: 0 })
     try {
       const { data, error } = await supabase.storage
         .from('Carfax')

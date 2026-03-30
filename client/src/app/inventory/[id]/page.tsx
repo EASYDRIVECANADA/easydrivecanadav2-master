@@ -36,6 +36,7 @@ interface Vehicle {
   province: string
   inventoryType?: string
   vehicleId?: string
+  category?: string
 }
 
 export default function VehicleDetailPage() {
@@ -46,8 +47,7 @@ export default function VehicleDetailPage() {
   const [selectedImage, setSelectedImage] = useState(0)
   const [showInquiryForm, setShowInquiryForm] = useState(false)
   const [showTestDriveModal, setShowTestDriveModal] = useState(false)
-  const [showDisclosureModal, setShowDisclosureModal] = useState(false)
-  const [showPremiereDisclosureModal, setShowPremiereDisclosureModal] = useState(false)
+  const [disclosureModal, setDisclosureModal] = useState<'premier' | 'private' | 'fleet' | 'dealership' | null>(null)
   const [carfaxModal, setCarfaxModal] = useState<{
     open: boolean
     loading: boolean
@@ -314,6 +314,19 @@ export default function VehicleDetailPage() {
         province: String(anyData.province || ''),
         inventoryType: String(anyData.inventory_type ?? anyData.inventoryType ?? ''),
         vehicleId: String(anyData.vehicleId || anyData.vehicle_id || anyData.id || ''),
+        category: (() => {
+          const c = String(anyData.categories || anyData.category || '').trim().toLowerCase()
+          if (c === 'premiere' || c === 'premier') return 'premier'
+          if (c === 'fleet') return 'fleet'
+          if (c === 'private') return 'private'
+          if (c === 'dealership') return 'dealership'
+          const inv = String(anyData.inventory_type || '').trim().toLowerCase()
+          if (inv === 'premiere' || inv === 'premier') return 'premier'
+          if (inv === 'fleet') return 'fleet'
+          if (inv === 'private') return 'private'
+          if (inv === 'dealership') return 'dealership'
+          return 'premier' // default
+        })(),
       }
 
       setVehicle(mapped)
@@ -782,40 +795,34 @@ export default function VehicleDetailPage() {
                   View CARFAX Report
                 </button>
 
-                {/* Fleet Disclosure Button */}
-                {vehicle.inventoryType === 'FLEET' && (
-                  <button
-                    onClick={() => setShowDisclosureModal(true)}
-                    className="w-full flex items-center justify-center gap-2 bg-amber-50 hover:bg-amber-100 border border-amber-300 text-amber-800 font-semibold px-4 py-3 rounded-xl transition-colors"
-                  >
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                    </svg>
-                    View Important Disclosure
-                  </button>
-                )}
+                {/* View Important Disclosure — category-aware */}
+                <button
+                  onClick={() => {
+                    const cat = String(vehicle.category || 'premier').toLowerCase()
+                    if (cat === 'fleet') setDisclosureModal('fleet')
+                    else if (cat === 'private') setDisclosureModal('private')
+                    else if (cat === 'dealership') setDisclosureModal('dealership')
+                    else setDisclosureModal('premier')
+                  }}
+                  className="w-full flex items-center justify-center gap-2 bg-amber-50 hover:bg-amber-100 border border-amber-300 text-amber-800 font-semibold px-4 py-3 rounded-xl transition-colors"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                  </svg>
+                  View Important Disclosure
+                </button>
 
-                {vehicle.inventoryType !== 'FLEET' && (
-                  <>
-                    <button
-                      onClick={() => setShowPremiereDisclosureModal(true)}
-                      className="w-full flex items-center justify-center gap-2 bg-purple-50 hover:bg-purple-100 border border-purple-300 text-purple-800 font-semibold px-4 py-3 rounded-xl transition-colors"
-                    >
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
-                      </svg>
-                      View Important Disclosure
-                    </button>
-                    <button
-                      onClick={() => setShowTestDriveModal(true)}
-                      className="btn-primary w-full flex items-center justify-center"
-                    >
-                      <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                      </svg>
-                      Schedule Test Drive
-                    </button>
-                  </>
+                {/* Schedule Test Drive — only for non-fleet */}
+                {String(vehicle.category || '').toLowerCase() !== 'fleet' && (
+                  <button
+                    onClick={() => setShowTestDriveModal(true)}
+                    className="btn-primary w-full flex items-center justify-center"
+                  >
+                    <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
+                    Schedule Test Drive
+                  </button>
                 )}
 
                 <button
@@ -978,224 +985,271 @@ export default function VehicleDetailPage() {
         </div>
       )}
 
-      {/* Fleet Disclosure Modal */}
-      {showDisclosureModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-y-auto">
-          {/* Backdrop */}
-          <div 
-            className="fixed inset-0 bg-black/50 backdrop-blur-sm"
-            onClick={() => setShowDisclosureModal(false)}
-          ></div>
-          
-          {/* Modal */}
-          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-2xl my-8 flex flex-col max-h-[90vh]">
-            {/* Header */}
-            <div className="flex items-center justify-between px-6 py-4 border-b border-amber-200 bg-amber-50 rounded-t-2xl flex-shrink-0">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-amber-100 rounded-full flex items-center justify-center">
-                  <svg className="w-5 h-5 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                  </svg>
-                </div>
-                <div>
-                  <h2 className="text-lg font-bold text-amber-800">IMPORTANT DISCLOSURE</h2>
-                  <p className="text-sm text-amber-700">Please Read Carefully</p>
-                </div>
-              </div>
-              <button
-                onClick={() => setShowDisclosureModal(false)}
-                className="p-2 hover:bg-amber-100 rounded-xl transition-colors"
-              >
-                <svg className="w-6 h-6 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-            
-            {/* Content */}
-            <div className="overflow-y-auto flex-1 p-6">
-              <p className="text-gray-700 mb-6">
-                This vehicle is offered by EasyDrive Canada (EDC) as an <strong className="text-amber-700">EDC Fleet Select</strong> vehicle.
-              </p>
-              
-              <div className="space-y-5 text-sm">
-                <div>
-                  <h4 className="font-semibold text-gray-900 mb-2 flex items-center gap-2">
-                    <span className="w-6 h-6 bg-amber-100 rounded-full flex items-center justify-center text-amber-700 text-xs font-bold">1</span>
-                    Fleet Disclosure
-                  </h4>
-                  <ul className="list-disc list-inside space-y-1 text-gray-600 ml-8">
-                    <li>This vehicle was previously registered as a fleet vehicle.</li>
-                  </ul>
-                </div>
-                
-                <div>
-                  <h4 className="font-semibold text-gray-900 mb-2 flex items-center gap-2">
-                    <span className="w-6 h-6 bg-amber-100 rounded-full flex items-center justify-center text-amber-700 text-xs font-bold">2</span>
-                    Purchase Process – EDC Fleet Select
-                  </h4>
-                  <ul className="list-disc list-inside space-y-1 text-gray-600 ml-8">
-                    <li>No test drives are available.</li>
-                    <li>No appointments or viewings are available.</li>
-                    <li>This vehicle is offered under a streamlined, wholesale-style purchase option, reflected in its pricing.</li>
-                  </ul>
-                </div>
-                
-                <div>
-                  <h4 className="font-semibold text-gray-900 mb-2 flex items-center gap-2">
-                    <span className="w-6 h-6 bg-amber-100 rounded-full flex items-center justify-center text-amber-700 text-xs font-bold">3</span>
-                    Safety & Reconditioning
-                  </h4>
-                  <ul className="list-disc list-inside space-y-1 text-gray-600 ml-8">
-                    <li>Safety and reconditioning are not included in the listed price.</li>
-                    <li>Safety and reconditioning may be added through EasyDrive Canada starting at <strong>$999</strong>, which includes the Ontario Safety Standards Certificate.</li>
-                    <li>If safety is purchased, the vehicle will be delivered with a valid Ontario Safety Standards Certificate.</li>
-                    <li>Where permitted by law, the vehicle may also be purchased without safety.</li>
-                  </ul>
-                </div>
-                
-                <div>
-                  <h4 className="font-semibold text-gray-900 mb-2 flex items-center gap-2">
-                    <span className="w-6 h-6 bg-amber-100 rounded-full flex items-center justify-center text-amber-700 text-xs font-bold">4</span>
-                    Fees & Licensing
-                  </h4>
-                  <ul className="list-disc list-inside space-y-1 text-gray-600 ml-8">
-                    <li>All transactions are subject to the mandatory OMVIC fee of <strong>$22 + HST</strong> per transaction, shown separately on the Bill of Sale.</li>
-                    <li>A licensing fee of <strong>$59</strong> applies to every transaction and will be shown separately on the Bill of Sale.</li>
-                  </ul>
-                </div>
-                
-                <div>
-                  <h4 className="font-semibold text-gray-900 mb-2 flex items-center gap-2">
-                    <span className="w-6 h-6 bg-amber-100 rounded-full flex items-center justify-center text-amber-700 text-xs font-bold">5</span>
-                    CARFAX Disclosure
-                  </h4>
-                  <ul className="list-disc list-inside space-y-1 text-gray-600 ml-8">
-                    <li>A CARFAX report will be provided to the client prior to completion of the sale.</li>
-                  </ul>
-                </div>
-                
-                <div className="pt-4 mt-4 border-t border-gray-200">
-                  <p className="text-gray-500 italic text-xs">No other promises, representations, or guarantees have been made, written or verbal, other than what is disclosed above and on the Bill of Sale.</p>
-                </div>
-              </div>
-            </div>
-            
-            {/* Footer */}
-            <div className="px-6 py-4 border-t border-gray-200 flex-shrink-0">
-              <button
-                onClick={() => setShowDisclosureModal(false)}
-                className="w-full bg-amber-500 hover:bg-amber-600 text-white font-semibold py-3 rounded-xl transition-colors"
-              >
-                I Understand
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Unified Disclosure Modal — 4 categories */}
+      {disclosureModal && (() => {
+        const cfg = {
+          premier:     { accent: 'purple', label: 'EDC Premier',     badge: 'bg-purple-100 text-purple-700',  header: 'border-purple-200 bg-purple-50', title: 'text-purple-800', sub: 'text-purple-700', hover: 'hover:bg-purple-100', icon: 'text-purple-600', btn: 'bg-purple-500 hover:bg-purple-600' },
+          private:     { accent: 'blue',   label: 'EDC Private',     badge: 'bg-blue-100 text-blue-700',      header: 'border-blue-200 bg-blue-50',     title: 'text-blue-800',   sub: 'text-blue-700',   hover: 'hover:bg-blue-100',   icon: 'text-blue-600',   btn: 'bg-blue-500 hover:bg-blue-600' },
+          fleet:       { accent: 'amber',  label: 'EDC Fleet Select', badge: 'bg-amber-100 text-amber-700',  header: 'border-amber-200 bg-amber-50',   title: 'text-amber-800',  sub: 'text-amber-700',  hover: 'hover:bg-amber-100',  icon: 'text-amber-600',  btn: 'bg-amber-500 hover:bg-amber-600' },
+          dealership:  { accent: 'gray',   label: 'EDC Dealership',  badge: 'bg-gray-100 text-gray-700',      header: 'border-gray-200 bg-gray-50',     title: 'text-gray-800',   sub: 'text-gray-600',   hover: 'hover:bg-gray-100',   icon: 'text-gray-600',   btn: 'bg-gray-700 hover:bg-gray-800' },
+        }[disclosureModal]
 
-      {/* Premiere Disclosure Modal */}
-      {showPremiereDisclosureModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-y-auto">
-          {/* Backdrop */}
-          <div 
-            className="fixed inset-0 bg-black/50 backdrop-blur-sm"
-            onClick={() => setShowPremiereDisclosureModal(false)}
-          ></div>
-          
-          {/* Modal */}
-          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-2xl my-8 flex flex-col max-h-[90vh]">
-            {/* Header */}
-            <div className="flex items-center justify-between px-6 py-4 border-b border-purple-200 bg-purple-50 rounded-t-2xl flex-shrink-0">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-purple-100 rounded-full flex items-center justify-center">
-                  <svg className="w-5 h-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-y-auto">
+            <div className="fixed inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setDisclosureModal(null)} />
+            <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-2xl my-8 flex flex-col max-h-[90vh]">
+              {/* Header */}
+              <div className={`flex items-center justify-between px-6 py-4 border-b ${cfg.header} rounded-t-2xl flex-shrink-0`}>
+                <div className="flex items-center gap-3">
+                  <div className={`w-10 h-10 ${cfg.badge} rounded-full flex items-center justify-center`}>
+                    <svg className={`w-5 h-5 ${cfg.icon}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                    </svg>
+                  </div>
+                  <div>
+                    <h2 className={`text-lg font-bold ${cfg.title}`}>IMPORTANT DISCLOSURE</h2>
+                    <p className={`text-sm ${cfg.sub}`}>Please Read Carefully</p>
+                  </div>
+                </div>
+                <button onClick={() => setDisclosureModal(null)} className={`p-2 ${cfg.hover} rounded-xl transition-colors`}>
+                  <svg className={`w-6 h-6 ${cfg.icon}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                   </svg>
-                </div>
-                <div>
-                  <h2 className="text-lg font-bold text-purple-800">IMPORTANT DISCLOSURE</h2>
-                  <p className="text-sm text-purple-700">Please Read Carefully</p>
+                </button>
+              </div>
+
+              {/* Content */}
+              <div className="overflow-y-auto flex-1 p-6">
+                <p className="text-gray-700 mb-6">
+                  This vehicle is offered by EasyDrive Canada (EDC) as an <strong className={cfg.title}>{cfg.label}</strong> vehicle.
+                </p>
+
+                <div className="space-y-5 text-sm">
+
+                  {/* PREMIER */}
+                  {disclosureModal === 'premier' && <>
+                    <div>
+                      <h4 className="font-semibold text-gray-900 mb-2 flex items-center gap-2">
+                        <span className={`w-6 h-6 ${cfg.badge} rounded-full flex items-center justify-center text-xs font-bold`}>1</span>
+                        Vehicle Status – EDC Premier
+                      </h4>
+                      <ul className="list-disc list-inside space-y-1 text-gray-600 ml-8">
+                        <li>This vehicle is owned and stocked by EasyDrive Canada.</li>
+                        <li>Viewing and test drives are available by appointment.</li>
+                      </ul>
+                    </div>
+                    <div>
+                      <h4 className="font-semibold text-gray-900 mb-2 flex items-center gap-2">
+                        <span className={`w-6 h-6 ${cfg.badge} rounded-full flex items-center justify-center text-xs font-bold`}>2</span>
+                        Safety & Reconditioning
+                      </h4>
+                      <ul className="list-disc list-inside space-y-1 text-gray-600 ml-8">
+                        <li>This vehicle will be sold with a valid Ontario Safety Standards Certificate prior to delivery.</li>
+                        <li>Any required safety or reconditioning work has been completed or will be completed before delivery.</li>
+                      </ul>
+                    </div>
+                    <div>
+                      <h4 className="font-semibold text-gray-900 mb-2 flex items-center gap-2">
+                        <span className={`w-6 h-6 ${cfg.badge} rounded-full flex items-center justify-center text-xs font-bold`}>3</span>
+                        Fees & Licensing (Mandatory)
+                      </h4>
+                      <ul className="list-disc list-inside space-y-1 text-gray-600 ml-8">
+                        <li>All transactions are subject to the mandatory OMVIC fee of <strong>$22 + HST</strong> per transaction, shown separately on the Bill of Sale.</li>
+                        <li>A licensing fee of <strong>$59</strong> applies to every transaction and will be shown separately on the Bill of Sale.</li>
+                      </ul>
+                    </div>
+                    <div>
+                      <h4 className="font-semibold text-gray-900 mb-2 flex items-center gap-2">
+                        <span className={`w-6 h-6 ${cfg.badge} rounded-full flex items-center justify-center text-xs font-bold`}>4</span>
+                        CARFAX Disclosure
+                      </h4>
+                      <ul className="list-disc list-inside space-y-1 text-gray-600 ml-8">
+                        <li>A CARFAX report will be provided to the client prior to completion of the sale.</li>
+                      </ul>
+                    </div>
+                  </>}
+
+                  {/* PRIVATE */}
+                  {disclosureModal === 'private' && <>
+                    <div>
+                      <h4 className="font-semibold text-gray-900 mb-2 flex items-center gap-2">
+                        <span className={`w-6 h-6 ${cfg.badge} rounded-full flex items-center justify-center text-xs font-bold`}>1</span>
+                        Private Sale Disclosure
+                      </h4>
+                      <ul className="list-disc list-inside space-y-1 text-gray-600 ml-8">
+                        <li>This vehicle is listed as a private sale facilitated through EasyDrive Canada.</li>
+                        <li>The vehicle is sold as-is unless otherwise stated in writing.</li>
+                      </ul>
+                    </div>
+                    <div>
+                      <h4 className="font-semibold text-gray-900 mb-2 flex items-center gap-2">
+                        <span className={`w-6 h-6 ${cfg.badge} rounded-full flex items-center justify-center text-xs font-bold`}>2</span>
+                        Inspection & Test Drive
+                      </h4>
+                      <ul className="list-disc list-inside space-y-1 text-gray-600 ml-8">
+                        <li>Viewing and test drives may be available subject to seller availability.</li>
+                        <li>Buyers are encouraged to arrange an independent pre-purchase inspection.</li>
+                      </ul>
+                    </div>
+                    <div>
+                      <h4 className="font-semibold text-gray-900 mb-2 flex items-center gap-2">
+                        <span className={`w-6 h-6 ${cfg.badge} rounded-full flex items-center justify-center text-xs font-bold`}>3</span>
+                        Safety & Reconditioning
+                      </h4>
+                      <ul className="list-disc list-inside space-y-1 text-gray-600 ml-8">
+                        <li>Safety certification is not included in the listed price unless explicitly noted.</li>
+                        <li>Safety may be added through EasyDrive Canada starting at <strong>$999</strong>, which includes the Ontario Safety Standards Certificate.</li>
+                        <li>Where permitted by law, the vehicle may also be purchased without safety.</li>
+                      </ul>
+                    </div>
+                    <div>
+                      <h4 className="font-semibold text-gray-900 mb-2 flex items-center gap-2">
+                        <span className={`w-6 h-6 ${cfg.badge} rounded-full flex items-center justify-center text-xs font-bold`}>4</span>
+                        Fees & Licensing (Mandatory)
+                      </h4>
+                      <ul className="list-disc list-inside space-y-1 text-gray-600 ml-8">
+                        <li>All transactions are subject to the mandatory OMVIC fee of <strong>$22 + HST</strong> per transaction, shown separately on the Bill of Sale.</li>
+                        <li>A licensing fee of <strong>$59</strong> applies to every transaction and will be shown separately on the Bill of Sale.</li>
+                      </ul>
+                    </div>
+                    <div>
+                      <h4 className="font-semibold text-gray-900 mb-2 flex items-center gap-2">
+                        <span className={`w-6 h-6 ${cfg.badge} rounded-full flex items-center justify-center text-xs font-bold`}>5</span>
+                        CARFAX Disclosure
+                      </h4>
+                      <ul className="list-disc list-inside space-y-1 text-gray-600 ml-8">
+                        <li>A CARFAX report will be provided to the client prior to completion of the sale.</li>
+                      </ul>
+                    </div>
+                  </>}
+
+                  {/* FLEET */}
+                  {disclosureModal === 'fleet' && <>
+                    <div>
+                      <h4 className="font-semibold text-gray-900 mb-2 flex items-center gap-2">
+                        <span className={`w-6 h-6 ${cfg.badge} rounded-full flex items-center justify-center text-xs font-bold`}>1</span>
+                        Fleet Disclosure
+                      </h4>
+                      <ul className="list-disc list-inside space-y-1 text-gray-600 ml-8">
+                        <li>This vehicle was previously registered as a fleet vehicle.</li>
+                      </ul>
+                    </div>
+                    <div>
+                      <h4 className="font-semibold text-gray-900 mb-2 flex items-center gap-2">
+                        <span className={`w-6 h-6 ${cfg.badge} rounded-full flex items-center justify-center text-xs font-bold`}>2</span>
+                        Purchase Process – EDC Fleet Select
+                      </h4>
+                      <ul className="list-disc list-inside space-y-1 text-gray-600 ml-8">
+                        <li>No test drives are available.</li>
+                        <li>No appointments or viewings are available.</li>
+                        <li>This vehicle is offered under a streamlined, wholesale-style purchase option, reflected in its pricing.</li>
+                      </ul>
+                    </div>
+                    <div>
+                      <h4 className="font-semibold text-gray-900 mb-2 flex items-center gap-2">
+                        <span className={`w-6 h-6 ${cfg.badge} rounded-full flex items-center justify-center text-xs font-bold`}>3</span>
+                        Safety & Reconditioning
+                      </h4>
+                      <ul className="list-disc list-inside space-y-1 text-gray-600 ml-8">
+                        <li>Safety and reconditioning are not included in the listed price.</li>
+                        <li>Safety and reconditioning may be added through EasyDrive Canada starting at <strong>$999</strong>, which includes the Ontario Safety Standards Certificate.</li>
+                        <li>If safety is purchased, the vehicle will be delivered with a valid Ontario Safety Standards Certificate.</li>
+                        <li>Where permitted by law, the vehicle may also be purchased without safety.</li>
+                      </ul>
+                    </div>
+                    <div>
+                      <h4 className="font-semibold text-gray-900 mb-2 flex items-center gap-2">
+                        <span className={`w-6 h-6 ${cfg.badge} rounded-full flex items-center justify-center text-xs font-bold`}>4</span>
+                        Fees & Licensing
+                      </h4>
+                      <ul className="list-disc list-inside space-y-1 text-gray-600 ml-8">
+                        <li>All transactions are subject to the mandatory OMVIC fee of <strong>$22 + HST</strong> per transaction, shown separately on the Bill of Sale.</li>
+                        <li>A licensing fee of <strong>$59</strong> applies to every transaction and will be shown separately on the Bill of Sale.</li>
+                      </ul>
+                    </div>
+                    <div>
+                      <h4 className="font-semibold text-gray-900 mb-2 flex items-center gap-2">
+                        <span className={`w-6 h-6 ${cfg.badge} rounded-full flex items-center justify-center text-xs font-bold`}>5</span>
+                        CARFAX Disclosure
+                      </h4>
+                      <ul className="list-disc list-inside space-y-1 text-gray-600 ml-8">
+                        <li>A CARFAX report will be provided to the client prior to completion of the sale.</li>
+                      </ul>
+                    </div>
+                  </>}
+
+                  {/* DEALERSHIP */}
+                  {disclosureModal === 'dealership' && <>
+                    <div>
+                      <h4 className="font-semibold text-gray-900 mb-2 flex items-center gap-2">
+                        <span className={`w-6 h-6 ${cfg.badge} rounded-full flex items-center justify-center text-xs font-bold`}>1</span>
+                        Dealership Disclosure
+                      </h4>
+                      <ul className="list-disc list-inside space-y-1 text-gray-600 ml-8">
+                        <li>This vehicle is listed through an authorized dealership partner of EasyDrive Canada.</li>
+                        <li>All representations about this vehicle are made by the dealership.</li>
+                      </ul>
+                    </div>
+                    <div>
+                      <h4 className="font-semibold text-gray-900 mb-2 flex items-center gap-2">
+                        <span className={`w-6 h-6 ${cfg.badge} rounded-full flex items-center justify-center text-xs font-bold`}>2</span>
+                        Viewing & Test Drive
+                      </h4>
+                      <ul className="list-disc list-inside space-y-1 text-gray-600 ml-8">
+                        <li>Viewing and test drives are available through the dealership by appointment.</li>
+                        <li>Contact the dealership directly to arrange a viewing.</li>
+                      </ul>
+                    </div>
+                    <div>
+                      <h4 className="font-semibold text-gray-900 mb-2 flex items-center gap-2">
+                        <span className={`w-6 h-6 ${cfg.badge} rounded-full flex items-center justify-center text-xs font-bold`}>3</span>
+                        Safety & Reconditioning
+                      </h4>
+                      <ul className="list-disc list-inside space-y-1 text-gray-600 ml-8">
+                        <li>Safety certification status is determined by the dealership — please confirm prior to purchase.</li>
+                        <li>Any reconditioning or warranty details are provided by the dealership.</li>
+                      </ul>
+                    </div>
+                    <div>
+                      <h4 className="font-semibold text-gray-900 mb-2 flex items-center gap-2">
+                        <span className={`w-6 h-6 ${cfg.badge} rounded-full flex items-center justify-center text-xs font-bold`}>4</span>
+                        Fees & Licensing (Mandatory)
+                      </h4>
+                      <ul className="list-disc list-inside space-y-1 text-gray-600 ml-8">
+                        <li>All transactions are subject to the mandatory OMVIC fee of <strong>$22 + HST</strong> per transaction, shown separately on the Bill of Sale.</li>
+                        <li>A licensing fee of <strong>$59</strong> applies to every transaction and will be shown separately on the Bill of Sale.</li>
+                      </ul>
+                    </div>
+                    <div>
+                      <h4 className="font-semibold text-gray-900 mb-2 flex items-center gap-2">
+                        <span className={`w-6 h-6 ${cfg.badge} rounded-full flex items-center justify-center text-xs font-bold`}>5</span>
+                        CARFAX Disclosure
+                      </h4>
+                      <ul className="list-disc list-inside space-y-1 text-gray-600 ml-8">
+                        <li>A CARFAX report will be provided to the client prior to completion of the sale.</li>
+                      </ul>
+                    </div>
+                  </>}
+
+                  <div className="pt-4 mt-4 border-t border-gray-200">
+                    <p className="text-gray-500 italic text-xs">No other promises, representations, or guarantees have been made, written or verbal, other than what is disclosed above and on the Bill of Sale.</p>
+                  </div>
                 </div>
               </div>
-              <button
-                onClick={() => setShowPremiereDisclosureModal(false)}
-                className="p-2 hover:bg-purple-100 rounded-xl transition-colors"
-              >
-                <svg className="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-            
-            {/* Content */}
-            <div className="overflow-y-auto flex-1 p-6">
-              <p className="text-gray-700 mb-6">
-                This vehicle is offered by EasyDrive Canada (EDC) as an <strong className="text-purple-700">EDC Premier</strong> vehicle.
-              </p>
-              
-              <div className="space-y-5 text-sm">
-                <div>
-                  <h4 className="font-semibold text-gray-900 mb-2 flex items-center gap-2">
-                    <span className="w-6 h-6 bg-purple-100 rounded-full flex items-center justify-center text-purple-700 text-xs font-bold">1</span>
-                    Vehicle Status – EDC Premier
-                  </h4>
-                  <ul className="list-disc list-inside space-y-1 text-gray-600 ml-8">
-                    <li>This vehicle is owned and stocked by EasyDrive Canada.</li>
-                    <li>Viewing and test drives are available by appointment.</li>
-                  </ul>
-                </div>
-                
-                <div>
-                  <h4 className="font-semibold text-gray-900 mb-2 flex items-center gap-2">
-                    <span className="w-6 h-6 bg-purple-100 rounded-full flex items-center justify-center text-purple-700 text-xs font-bold">2</span>
-                    Safety & Reconditioning
-                  </h4>
-                  <ul className="list-disc list-inside space-y-1 text-gray-600 ml-8">
-                    <li>This vehicle will be sold with a valid Ontario Safety Standards Certificate prior to delivery.</li>
-                    <li>Any required safety or reconditioning work has been completed or will be completed before delivery.</li>
-                  </ul>
-                </div>
-                
-                <div>
-                  <h4 className="font-semibold text-gray-900 mb-2 flex items-center gap-2">
-                    <span className="w-6 h-6 bg-purple-100 rounded-full flex items-center justify-center text-purple-700 text-xs font-bold">3</span>
-                    Fees & Licensing (Mandatory)
-                  </h4>
-                  <ul className="list-disc list-inside space-y-1 text-gray-600 ml-8">
-                    <li>All transactions are subject to the mandatory OMVIC fee of <strong>$22 + HST</strong> per transaction, shown separately on the Bill of Sale.</li>
-                    <li>A licensing fee of <strong>$59</strong> applies to every transaction and will be shown separately on the Bill of Sale.</li>
-                  </ul>
-                </div>
-                
-                <div>
-                  <h4 className="font-semibold text-gray-900 mb-2 flex items-center gap-2">
-                    <span className="w-6 h-6 bg-purple-100 rounded-full flex items-center justify-center text-purple-700 text-xs font-bold">4</span>
-                    CARFAX Disclosure
-                  </h4>
-                  <ul className="list-disc list-inside space-y-1 text-gray-600 ml-8">
-                    <li>A CARFAX report will be provided to the client prior to completion of the sale.</li>
-                  </ul>
-                </div>
-                
-                <div className="pt-4 mt-4 border-t border-gray-200">
-                  <p className="text-gray-500 italic text-xs">No other promises, representations, or guarantees have been made, written or verbal, other than what is disclosed above and on the Bill of Sale.</p>
-                </div>
+
+              {/* Footer */}
+              <div className="px-6 py-4 border-t border-gray-200 flex-shrink-0">
+                <button
+                  onClick={() => setDisclosureModal(null)}
+                  className={`w-full ${cfg.btn} text-white font-semibold py-3 rounded-xl transition-colors`}
+                >
+                  I Understand
+                </button>
               </div>
-            </div>
-            
-            {/* Footer */}
-            <div className="px-6 py-4 border-t border-gray-200 flex-shrink-0">
-              <button
-                onClick={() => setShowPremiereDisclosureModal(false)}
-                className="w-full bg-purple-500 hover:bg-purple-600 text-white font-semibold py-3 rounded-xl transition-colors"
-              >
-                I Understand
-              </button>
             </div>
           </div>
-        </div>
-      )}
+        )
+      })()}
 
       {/* CARFAX Report Modal */}
       {carfaxModal.open && (
