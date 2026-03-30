@@ -1032,7 +1032,7 @@ export default function AdminInventoryPage() {
   const performDelete = async (vehicle: Vehicle) => {
     setDeleting(vehicle.id)
     try {
-      // Delete related records by vehicleId
+      // Delete related DB records
       const { error: costsError } = await supabase
         .from('edc_costs')
         .delete()
@@ -1051,12 +1051,45 @@ export default function AdminInventoryPage() {
         .eq('VehicleId', vehicle.id)
       if (purchaseError) console.error('Error deleting purchase:', purchaseError)
 
+      const { error: warrantyError } = await supabase
+        .from('edc_warranty')
+        .delete()
+        .eq('id', vehicle.id)
+      if (warrantyError) console.error('Error deleting warranty:', warrantyError)
+
+      // Delete vehicle-photos storage files
+      try {
+        const { data: photoFiles } = await supabase.storage
+          .from('vehicle-photos')
+          .list(String(vehicle.id))
+        if (Array.isArray(photoFiles) && photoFiles.length > 0) {
+          const photoPaths = photoFiles.map((f) => `${vehicle.id}/${f.name}`)
+          await supabase.storage.from('vehicle-photos').remove(photoPaths)
+        }
+      } catch (e) {
+        console.error('Error deleting vehicle photos from storage:', e)
+      }
+
+      // Delete Carfax storage files (folder named by vehicleId column value)
+      const carfaxFolderId = String(vehicle.raw?.vehicleId || vehicle.raw?.vehicle_id || vehicle.id)
+      try {
+        const { data: carfaxFiles } = await supabase.storage
+          .from('Carfax')
+          .list(carfaxFolderId)
+        if (Array.isArray(carfaxFiles) && carfaxFiles.length > 0) {
+          const carfaxPaths = carfaxFiles.map((f) => `${carfaxFolderId}/${f.name}`)
+          await supabase.storage.from('Carfax').remove(carfaxPaths)
+        }
+      } catch (e) {
+        console.error('Error deleting Carfax files from storage:', e)
+      }
+
       // Delete the vehicle itself
       const { error: vehicleError } = await supabase
         .from('edc_vehicles')
         .delete()
         .eq('id', vehicle.id)
-      
+
       if (vehicleError) throw vehicleError
 
       // Update UI state
@@ -1068,7 +1101,7 @@ export default function AdminInventoryPage() {
         return next
       })
       if (drawerVehicle?.id === vehicle.id) closeDrawer()
-      
+
       alert('Vehicle deleted successfully!')
     } catch (error) {
       console.error('Error deleting vehicle:', error)

@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(grep -r .from.*edc_ /c/Users/AKT/Desktop/EZ drive/easydrivecanadav2-master/client/src/app/admin/inventory --include=*.tsx --include=*.ts)"
+    ]
+  }
+}

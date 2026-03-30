@@ -35,6 +35,7 @@ interface Vehicle {
   city: string
   province: string
   inventoryType?: string
+  vehicleId?: string
 }
 
 export default function VehicleDetailPage() {
@@ -47,6 +48,12 @@ export default function VehicleDetailPage() {
   const [showTestDriveModal, setShowTestDriveModal] = useState(false)
   const [showDisclosureModal, setShowDisclosureModal] = useState(false)
   const [showPremiereDisclosureModal, setShowPremiereDisclosureModal] = useState(false)
+  const [carfaxModal, setCarfaxModal] = useState<{
+    open: boolean
+    loading: boolean
+    files: { name: string; path: string; publicUrl: string }[]
+    activeIndex: number
+  }>({ open: false, loading: false, files: [], activeIndex: 0 })
   const [inquiryForm, setInquiryForm] = useState({
     name: '',
     email: '',
@@ -63,6 +70,32 @@ export default function VehicleDetailPage() {
   const [onHoldByOther, setOnHoldByOther] = useState(false)
 
   const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'
+
+  const openCarfaxModal = async (vehicleId: string) => {
+    setCarfaxModal({ open: true, loading: true, files: [], activeIndex: 0 })
+    try {
+      const { data, error } = await supabase.storage
+        .from('Carfax')
+        .list(vehicleId, { limit: 100, sortBy: { column: 'name', order: 'asc' } })
+
+      if (error || !Array.isArray(data) || data.length === 0) {
+        setCarfaxModal({ open: true, loading: false, files: [], activeIndex: 0 })
+        return
+      }
+
+      const files = data
+        .filter((f) => !!f?.name && !String(f.name).endsWith('/'))
+        .map((f) => {
+          const path = `${vehicleId}/${f.name}`
+          const { data: urlData } = supabase.storage.from('Carfax').getPublicUrl(path)
+          return { name: f.name, path, publicUrl: urlData.publicUrl }
+        })
+
+      setCarfaxModal({ open: true, loading: false, files, activeIndex: 0 })
+    } catch {
+      setCarfaxModal({ open: true, loading: false, files: [], activeIndex: 0 })
+    }
+  }
 
   const [bucketImageCache] = useState(() => new Map<string, string[]>())
 
@@ -280,6 +313,7 @@ export default function VehicleDetailPage() {
         city: String(anyData.city || ''),
         province: String(anyData.province || ''),
         inventoryType: String(anyData.inventory_type ?? anyData.inventoryType ?? ''),
+        vehicleId: String(anyData.vehicleId || anyData.vehicle_id || anyData.id || ''),
       }
 
       setVehicle(mapped)
@@ -736,6 +770,18 @@ export default function VehicleDetailPage() {
                   </button>
                 )}
 
+                {/* View CARFAX Report */}
+                <button
+                  type="button"
+                  onClick={() => openCarfaxModal(vehicle.vehicleId || vehicle.id)}
+                  className="w-full flex items-center justify-center gap-2 bg-red-50 hover:bg-red-100 border border-red-300 text-red-700 font-semibold px-4 py-3 rounded-xl transition-colors"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                  View CARFAX Report
+                </button>
+
                 {/* Fleet Disclosure Button */}
                 {vehicle.inventoryType === 'FLEET' && (
                   <button
@@ -1146,6 +1192,87 @@ export default function VehicleDetailPage() {
               >
                 I Understand
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* CARFAX Report Modal */}
+      {carfaxModal.open && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60">
+          <div className="w-full max-w-4xl bg-white rounded-2xl shadow-xl flex flex-col" style={{ height: '90vh' }}>
+            {/* Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 flex-shrink-0">
+              <h3 className="text-base font-semibold text-gray-900">CARFAX Report</h3>
+              <div className="flex items-center gap-3">
+                {carfaxModal.files.length > 1 && (
+                  <div className="flex gap-1">
+                    {carfaxModal.files.map((f, i) => (
+                      <button
+                        key={f.path}
+                        type="button"
+                        onClick={() => setCarfaxModal(prev => ({ ...prev, activeIndex: i }))}
+                        className={`px-3 py-1 text-xs rounded-full border transition-colors ${
+                          carfaxModal.activeIndex === i
+                            ? 'bg-red-600 text-white border-red-600'
+                            : 'text-gray-600 border-gray-300 hover:border-red-400'
+                        }`}
+                      >
+                        File {i + 1}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {carfaxModal.files.length > 0 && (
+                  <a
+                    href={carfaxModal.files[carfaxModal.activeIndex]?.publicUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-1 text-xs text-blue-600 hover:underline"
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                    </svg>
+                    Open in new tab
+                  </a>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setCarfaxModal({ open: false, loading: false, files: [], activeIndex: 0 })}
+                  className="text-gray-400 hover:text-gray-600 ml-1"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            {/* Body */}
+            <div className="flex-1 min-h-0">
+              {carfaxModal.loading ? (
+                <div className="flex items-center justify-center h-full gap-2 text-gray-400">
+                  <svg className="w-6 h-6 animate-spin" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                  </svg>
+                  <span className="text-sm">Loading report…</span>
+                </div>
+              ) : carfaxModal.files.length === 0 ? (
+                <div className="flex flex-col items-center justify-center h-full">
+                  <svg className="w-14 h-14 text-gray-200 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                  <p className="text-sm font-semibold text-gray-500">No CARFAX Report Uploaded</p>
+                  <p className="text-xs text-gray-400 mt-1">No report has been uploaded for this vehicle yet.</p>
+                </div>
+              ) : (
+                <iframe
+                  src={carfaxModal.files[carfaxModal.activeIndex]?.publicUrl}
+                  className="w-full h-full rounded-b-2xl"
+                  title="CARFAX Report"
+                />
+              )}
             </div>
           </div>
         </div>

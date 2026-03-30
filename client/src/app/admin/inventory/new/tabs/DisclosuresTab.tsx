@@ -12,7 +12,6 @@ interface Disclosure {
 interface DisclosuresTabProps {
   vehicleId: string
   userId?: string | null
-  vehicleData?: any
   onError?: (message: string) => void
   hideSaveButton?: boolean
 }
@@ -51,7 +50,7 @@ const toPlainText = (raw: string) => {
 
 const NOTES_DISCLOSURE_ID = '__custom_note__'
 
-const DisclosuresTab = forwardRef<DisclosuresTabHandle, DisclosuresTabProps>(function DisclosuresTab({ vehicleId, userId, vehicleData, onError, hideSaveButton }, ref) {
+const DisclosuresTab = forwardRef<DisclosuresTabHandle, DisclosuresTabProps>(function DisclosuresTab({ vehicleId, userId, onError, hideSaveButton }, ref) {
   const [brandType, setBrandType] = useState<'N/A' | 'None' | 'Rebuilt' | 'Salvage' | 'Irreparable'>('N/A')
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedDisclosures, setSelectedDisclosures] = useState<Disclosure[]>([])
@@ -290,9 +289,6 @@ const DisclosuresTab = forwardRef<DisclosuresTabHandle, DisclosuresTabProps>(fun
         { id: NOTES_DISCLOSURE_ID, title: 'Notes', content: customNote || '' },
       ]
 
-      const stockNumberRaw = vehicleData && typeof vehicleData === 'object' ? (vehicleData as any).stockNumber : undefined
-      const stockNumber = typeof stockNumberRaw === 'string' ? (stockNumberRaw.trim() || null) : stockNumberRaw ?? null
-
       const idStr = String(vehicleId || '').trim()
       if (!idStr) {
         onError?.('Missing vehicle ID. Please save Vehicle Details first to generate the vehicle and try again.')
@@ -315,7 +311,6 @@ const DisclosuresTab = forwardRef<DisclosuresTabHandle, DisclosuresTabProps>(fun
         const { error: updateError } = await supabase
           .from('edc_disclosures')
           .update({
-            stock_number: stockNumber || null,
             brandtype: brandType,
             disclosures_title: disclosuresTitle,
             disclosures_body: disclosuresBody,
@@ -330,7 +325,6 @@ const DisclosuresTab = forwardRef<DisclosuresTabHandle, DisclosuresTabProps>(fun
           .from('edc_disclosures')
           .insert({
             vehicleId: idStr,
-            stock_number: stockNumber || null,
             brandtype: brandType,
             disclosures_title: disclosuresTitle,
             disclosures_body: disclosuresBody,

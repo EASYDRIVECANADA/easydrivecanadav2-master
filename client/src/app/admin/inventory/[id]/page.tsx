@@ -13,6 +13,7 @@ import {
   ShieldCheck,
   ImageIcon,
   FolderOpen,
+  FileSearch,
 } from 'lucide-react'
 
 // Tab Components
@@ -23,6 +24,7 @@ import PurchaseTab from './tabs/PurchaseTab'
 import CostsTab from './tabs/CostsTab'
 import WarrantyTab from './tabs/WarrantyTab'
 import FilesTab from './tabs/FilesTab'
+import CarfaxTab from './tabs/CarfaxTab'
 
 interface Vehicle {
   id: string
@@ -81,7 +83,7 @@ interface VehicleFormData extends Omit<Partial<Vehicle>, 'features'> {
   features?: string | string[]
 }
 
-type TabType = 'details' | 'images' | 'disclosures' | 'purchase' | 'costs' | 'warranty' | 'files'
+type TabType = 'details' | 'images' | 'disclosures' | 'purchase' | 'costs' | 'warranty' | 'files' | 'carfax'
 
 type TabIcon = ComponentType<{ className?: string }>
 
@@ -93,6 +95,7 @@ const TABS: { id: TabType; label: string; icon: TabIcon }[] = [
   { id: 'warranty', label: 'Warranty', icon: ShieldCheck },
   { id: 'images', label: 'Images', icon: ImageIcon },
   { id: 'files', label: 'Files', icon: FolderOpen },
+  { id: 'carfax', label: 'CARFAX', icon: FileSearch },
 ]
 
 export default function AdminEditVehiclePage() {
@@ -104,6 +107,7 @@ export default function AdminEditVehiclePage() {
   const [formData, setFormData] = useState<VehicleFormData>({})
   const [images, setImages] = useState<string[]>([])
   const [activeTab, setActiveTab] = useState<TabType>('details')
+  const [carfaxFolderId, setCarfaxFolderId] = useState<string>('')
   const [saveModalOpen, setSaveModalOpen] = useState(false)
   const [saveModalTitle, setSaveModalTitle] = useState('')
   const [saveModalMessage, setSaveModalMessage] = useState('')
@@ -122,7 +126,7 @@ export default function AdminEditVehiclePage() {
   // Pick active tab from URL query param (?tab=disclosures, images, etc.)
   useEffect(() => {
     const tab = (searchParams?.get('tab') || '').toLowerCase()
-    const validTabs: TabType[] = ['details', 'images', 'disclosures', 'purchase', 'costs', 'warranty', 'files']
+    const validTabs: TabType[] = ['details', 'images', 'disclosures', 'purchase', 'costs', 'warranty', 'files', 'carfax']
     if (validTabs.includes(tab as TabType)) {
       setActiveTab(tab as TabType)
     }
@@ -192,6 +196,9 @@ export default function AdminEditVehiclePage() {
         certified: data.certified || false,
         verified: data.verified || false,
       })
+
+      // Use the vehicleId column (added by user) as the Carfax folder name, fall back to the row id
+      setCarfaxFolderId(String(data.vehicleId || data.vehicle_id || data.id || ''))
 
       const loadBucketImages = async (vehicleId: string): Promise<string[]> => {
         const id = String(vehicleId || '').trim()
@@ -498,6 +505,10 @@ export default function AdminEditVehiclePage() {
 
         {activeTab === 'files' && (
           <FilesTab vehicleId={String(params.id)} />
+        )}
+
+        {activeTab === 'carfax' && (
+          <CarfaxTab vehicleId={carfaxFolderId || String(params.id)} />
         )}
       </div>
     </div>

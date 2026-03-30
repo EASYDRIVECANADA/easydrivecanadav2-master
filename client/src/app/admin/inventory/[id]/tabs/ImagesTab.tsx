@@ -573,7 +573,7 @@ export default function ImagesTab({ vehicleId, images, onImagesUpdate }: ImagesT
               disabled={uploading}
               className="bg-[#118df0] text-white px-5 py-2 rounded-lg font-semibold hover:bg-[#0d6ebd] transition-colors disabled:opacity-50"
             >
-              {uploading ? 'Uploading...' : 'Upload Images'}
+              {uploading ? 'Uploading...' : 'Save'}
             </button>
           </div>
 
