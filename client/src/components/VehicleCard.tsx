@@ -105,12 +105,6 @@ export default function VehicleCard({ vehicle, hideFooter, onClick }: VehicleCar
           )}
           <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
 
-          {categoryBadge ? (
-            <div className="absolute top-4 left-4 z-10">
-              <img src={categoryBadge.src} alt={categoryBadge.label} className="h-20 w-auto max-w-none" />
-            </div>
-          ) : null}
-          
           <div className="absolute top-4 right-4 price-tag">
             {formatPrice(vehicle.price)}
           </div>
@@ -118,9 +112,14 @@ export default function VehicleCard({ vehicle, hideFooter, onClick }: VehicleCar
 
         {/* Details */}
         <div className="p-5">
-          <h3 className="text-lg font-bold text-gray-900 mb-2 group-hover:text-[#118df0] transition-colors">
-            {vehicle.year} {vehicle.make} {vehicle.model} {vehicle.series}
-          </h3>
+          <div className="flex items-start justify-between gap-2 mb-2">
+            <h3 className="text-lg font-bold text-gray-900 group-hover:text-[#118df0] transition-colors leading-snug">
+              {vehicle.year} {vehicle.make} {vehicle.model} {vehicle.series}
+            </h3>
+            {categoryBadge ? (
+              <img src={categoryBadge.src} alt={categoryBadge.label} className="h-12 w-auto flex-shrink-0" />
+            ) : null}
+          </div>
           
           <div className="flex flex-wrap gap-2 mt-3">
             <span className="inline-flex items-center text-sm text-gray-500 bg-gray-100/80 px-3 py-1.5 rounded-lg">

@@ -54,6 +54,7 @@ export default function VehicleDetailPage() {
     files: { name: string; path: string; publicUrl: string }[]
     activeIndex: number
   }>({ open: false, loading: false, files: [], activeIndex: 0 })
+  const [carfaxAvailable, setCarfaxAvailable] = useState<boolean | null>(null)
   const [inquiryForm, setInquiryForm] = useState({
     name: '',
     email: '',
@@ -336,6 +337,22 @@ export default function VehicleDetailPage() {
       setLoading(false)
     }
   }
+
+  useEffect(() => {
+    if (!vehicle) {
+      setCarfaxAvailable(null)
+      return
+    }
+    const lookupId = vehicle.vehicleId || vehicle.id
+    supabase.storage
+      .from('Carfax')
+      .list(lookupId, { limit: 1 })
+      .then(({ data }) => {
+        const hasFiles = Array.isArray(data) && data.some((f) => !!f?.name && !String(f.name).endsWith('/'))
+        setCarfaxAvailable(hasFiles)
+      })
+      .catch(() => setCarfaxAvailable(false))
+  }, [vehicle])
 
   const formatPrice = (price: number) => {
     return new Intl.NumberFormat('en-CA', {
@@ -907,12 +924,14 @@ export default function VehicleDetailPage() {
 
               {/* Trust Badges */}
               <div className="mt-6 pt-6 border-t border-gray-200/60">
-                <div className="flex items-center gap-2 text-sm text-gray-600 mb-3">
-                  <svg className="w-5 h-5 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
-                  </svg>
-                  CARFAX Report Available
-                </div>
+                {carfaxAvailable && (
+                  <div className="flex items-center gap-2 text-sm text-gray-600 mb-3">
+                    <svg className="w-5 h-5 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                    </svg>
+                    CARFAX Report Available
+                  </div>
+                )}
                 <div className="flex items-center gap-2 text-sm text-gray-600 mb-3">
                   <svg className="w-5 h-5 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />

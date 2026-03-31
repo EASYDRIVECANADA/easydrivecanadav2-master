@@ -44,6 +44,9 @@ export default function MarketplacePage() {
     activeIndex: number
   }>({ open: false, loading: false, files: [], activeIndex: 0 })
 
+  const [carfaxAvailable, setCarfaxAvailable] = useState<boolean | null>(null)
+  const [disclosureModal, setDisclosureModal] = useState<'premier' | 'private' | 'fleet' | 'dealership' | null>(null)
+
   const [bucketImageCache] = useState(() => new Map<string, string[]>())
 
   const [make, setMake] = useState('')
@@ -92,6 +95,21 @@ export default function MarketplacePage() {
       setCarfaxModal({ open: true, loading: false, files: [], activeIndex: 0 })
     }
   }
+
+  useEffect(() => {
+    if (!selected) {
+      setCarfaxAvailable(null)
+      return
+    }
+    supabase.storage
+      .from('Carfax')
+      .list(selected.id, { limit: 1 })
+      .then(({ data }) => {
+        const hasFiles = Array.isArray(data) && data.some((f) => !!f?.name && !String(f.name).endsWith('/'))
+        setCarfaxAvailable(hasFiles)
+      })
+      .catch(() => setCarfaxAvailable(false))
+  }, [selected])
 
   const toImageSrc = (value: string) => {
     const v = String(value || '').trim()
@@ -636,85 +654,76 @@ export default function MarketplacePage() {
                 }}
               />
               <div
-                className="relative z-10 w-full max-w-6xl bg-white rounded-2xl shadow-premium overflow-hidden grid grid-cols-1 lg:grid-cols-3 h-[85vh] max-h-[85vh]"
+                className="relative z-10 w-full max-w-7xl bg-white rounded-2xl shadow-premium overflow-hidden flex flex-col lg:flex-row max-h-[95vh]"
                 onMouseDown={(e) => e.stopPropagation()}
               >
-                <div className="lg:col-span-2 p-6">
-                  <div className="w-full h-80 md:h-[28rem] bg-slate-50 rounded-xl overflow-hidden flex items-center justify-center relative">
+                {/* LEFT — image + thumbnails + specs */}
+                <div className="flex-1 min-w-0 overflow-y-auto p-6 flex flex-col gap-4">
+                  {/* Main image */}
+                  <div className="w-full h-80 md:h-[32rem] bg-slate-50 rounded-2xl overflow-hidden flex items-center justify-center relative">
                     {selected.images?.length ? (
                       <>
                         <img
                           src={toImageSrc(selected.images[selectedImageIndex] || selected.images[0] || '')}
                           alt={`${selected.year} ${selected.make} ${selected.model}`}
-                          className="w-full h-full object-contain bg-slate-50"
+                          className="w-full h-full object-cover"
                         />
-                        {selected.images.length > 1 ? (
+                        {selected.images.length > 1 && (
                           <>
                             <button
                               type="button"
                               className="absolute left-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-white/80 hover:bg-white flex items-center justify-center shadow"
-                              onClick={() =>
-                                setSelectedImageIndex((i) =>
-                                  (i - 1 + selected.images.length) % selected.images.length
-                                )
-                              }
+                              onClick={() => setSelectedImageIndex((i) => (i - 1 + selected.images.length) % selected.images.length)}
                               aria-label="Previous image"
                             >
-                              <svg className="w-5 h-5 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                              </svg>
+                              <svg className="w-5 h-5 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
                             </button>
                             <button
                               type="button"
                               className="absolute right-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-white/80 hover:bg-white flex items-center justify-center shadow"
-                              onClick={() =>
-                                setSelectedImageIndex((i) => (i + 1) % selected.images.length)
-                              }
+                              onClick={() => setSelectedImageIndex((i) => (i + 1) % selected.images.length)}
                               aria-label="Next image"
                             >
-                              <svg className="w-5 h-5 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                              </svg>
+                              <svg className="w-5 h-5 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
                             </button>
                             <div className="absolute bottom-3 right-3 bg-black/60 text-white text-xs px-2 py-1 rounded-full">
                               {Math.min(selectedImageIndex, selected.images.length - 1) + 1}/{selected.images.length}
                             </div>
                           </>
-                        ) : null}
+                        )}
                       </>
                     ) : (
-                      <div className="text-xs text-slate-400">No image</div>
+                      <div className="text-sm text-slate-400">No image</div>
                     )}
                   </div>
-                  <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-3">
-                    <div className="bg-slate-50 rounded-xl p-4 text-center">
-                      <div className="text-xs text-slate-500">Mileage</div>
-                      <div className="text-lg font-semibold text-slate-800">{selected.mileage.toLocaleString()} km</div>
-                    </div>
-                    <div className="bg-slate-50 rounded-xl p-4 text-center">
-                      <div className="text-xs text-slate-500">Year</div>
-                      <div className="text-lg font-semibold text-slate-800">{selected.year}</div>
-                    </div>
-                    <div className="bg-slate-50 rounded-xl p-4 text-center">
-                      <div className="text-xs text-slate-500">Fuel</div>
-                      <div className="text-lg font-semibold text-slate-800">{selected.fuelType || '—'}</div>
-                    </div>
-                  </div>
-                  <div className="mt-5 bg-slate-50 rounded-2xl border border-slate-100 p-5">
-                    <div className="flex items-center gap-3 mb-4">
-                      <div className="w-1 h-6 rounded-full bg-navy-900"></div>
-                      <div className="text-base font-semibold text-slate-800">Vehicle Specifications</div>
-                    </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                      <Spec label="Make" value={selected.make} icon="tag" />
-                      <Spec label="Model" value={selected.model} icon="tag" />
+                  {/* Thumbnail strip */}
+                  {selected.images?.length > 1 && (
+                    <div className="flex gap-2 overflow-x-auto pb-1">
+                      {selected.images.map((img, i) => (
+                        <button
+                          key={i}
+                          type="button"
+                          onClick={() => setSelectedImageIndex(i)}
+                          className={`flex-shrink-0 w-16 h-12 rounded-lg overflow-hidden border-2 transition-colors ${i === selectedImageIndex ? 'border-[#1EA7FF]' : 'border-transparent hover:border-slate-300'}`}
+                        >
+                          <img src={toImageSrc(img)} alt={`Photo ${i + 1}`} className="w-full h-full object-cover" />
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Specs */}
+                  <div className="bg-slate-50 rounded-2xl border border-slate-100 p-5">
+                    <div className="flex items-center gap-2 mb-4">
+                      <div className="w-1 h-5 rounded-full bg-[#1EA7FF]"></div>
+                      <div className="text-sm font-semibold text-slate-800">Vehicle Specifications</div>
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                      <Spec label="Make" value={selected.make || '—'} icon="tag" />
+                      <Spec label="Model" value={selected.model || '—'} icon="tag" />
                       <Spec label="Year" value={selected.year ? String(selected.year) : '—'} icon="calendar" />
-                      <Spec
-                        label="Odometer"
-                        value={`${Number((selected.odometer ?? selected.mileage) || 0).toLocaleString()} ${String(selected.odometerUnit || '').trim().toLowerCase() === 'miles' ? 'mi' : 'km'}`}
-                        icon="bolt"
-                      />
+                      <Spec label="Odometer" value={`${Number((selected.odometer ?? selected.mileage) || 0).toLocaleString()} ${String(selected.odometerUnit || '').trim().toLowerCase() === 'miles' ? 'mi' : 'km'}`} icon="bolt" />
                       <Spec label="Transmission" value={selected.transmission || '—'} icon="arrows" />
                       <Spec label="Fuel Type" value={selected.fuelType || '—'} icon="drop" />
                       <Spec label="Engine" value={selected.engine || '—'} icon="engine" />
@@ -726,83 +735,74 @@ export default function MarketplacePage() {
                     </div>
                   </div>
                 </div>
-                <div className="p-6 border-t lg:border-t-0 lg:border-l border-slate-100 flex flex-col gap-3 min-h-0 overflow-y-auto">
-                  <div className="text-xl font-semibold text-slate-900">{selected.year} {selected.make} {selected.model}</div>
-                  <div>
-                    <span className="inline-flex items-center rounded-full bg-[#1EA7FF] text-white px-5 py-2 text-lg font-bold">
-                      ${selected.price.toLocaleString()}
-                    </span>
-                  </div>
 
-                  {/* Action Buttons */}
-                  <div className="flex flex-col gap-2 mt-2">
+                {/* RIGHT — title, price, actions, badges */}
+                <div className="w-full lg:w-80 flex-shrink-0 p-6 border-t lg:border-t-0 lg:border-l border-slate-100 flex flex-col gap-3 overflow-y-auto">
+                  <div className="text-xl font-bold text-slate-900">{selected.year} {selected.make} {selected.model}</div>
+                  <span className="inline-flex items-center rounded-full bg-[#1EA7FF] text-white px-5 py-2 text-lg font-bold self-start">
+                    ${selected.price.toLocaleString()}
+                  </span>
+
+                  <div className="flex flex-col gap-2 mt-1">
                     <button
                       type="button"
                       onClick={() => openCarfaxModal(selected.id)}
                       className="w-full py-3 px-4 rounded-xl border border-[#B22222] text-[#B22222] bg-red-50 hover:bg-red-100 text-sm font-medium transition-colors flex items-center justify-center gap-2"
                     >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-2a4 4 0 014-4h4M3 7h6m-6 4h6m-6 4h6M17 3l4 4-4 4" />
-                      </svg>
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-2a4 4 0 014-4h4M3 7h6m-6 4h6m-6 4h6M17 3l4 4-4 4" /></svg>
                       View CARFAX Report
                     </button>
                     <button
                       type="button"
+                      onClick={() => {
+                        const raw = String(selected?.categories || '').toLowerCase()
+                        const type = raw.includes('private') ? 'private' : raw.includes('fleet') ? 'fleet' : raw.includes('dealer') ? 'dealership' : 'premier'
+                        setDisclosureModal(type)
+                      }}
                       className="w-full py-3 px-4 rounded-xl border border-yellow-400 text-yellow-700 bg-yellow-50 hover:bg-yellow-100 text-sm font-medium transition-colors flex items-center justify-center gap-2"
                     >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
-                      </svg>
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" /></svg>
                       View Important Disclosure
                     </button>
                     <button
                       type="button"
                       className="w-full py-3 px-4 rounded-xl border border-slate-300 text-slate-700 bg-white hover:bg-slate-50 text-sm font-medium transition-colors flex items-center justify-center gap-2"
                     >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-                      </svg>
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" /></svg>
                       Ask a Question
                     </button>
-                    <div className="flex items-center justify-center gap-2 py-2 text-sm text-slate-600">
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
-                      </svg>
+                    <div className="flex items-center justify-center gap-2 py-1 text-sm text-slate-600">
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" /></svg>
                       Call Us (613) 777-2395
                     </div>
                   </div>
 
-                  {/* Trust Badges */}
-                  <div className="flex flex-col gap-2 mt-1">
-                    {[
-                      'CARFAX Report Available',
-                      'Safety Inspected',
-                      'Financing Available',
-                    ].map((badge) => (
+                  <div className="pt-3 border-t border-slate-100 flex flex-col gap-2">
+                    {carfaxAvailable && (
+                      <div className="flex items-center gap-2 text-sm text-green-700">
+                        <svg className="w-5 h-5 text-green-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" /></svg>
+                        CARFAX Report Available
+                      </div>
+                    )}
+                    {['Safety Inspected', 'Financing Available'].map((badge) => (
                       <div key={badge} className="flex items-center gap-2 text-sm text-green-700">
-                        <svg className="w-5 h-5 text-green-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
-                        </svg>
+                        <svg className="w-5 h-5 text-green-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" /></svg>
                         {badge}
                       </div>
                     ))}
                   </div>
 
-                  {selected.adDescription && selected.adDescription.trim() !== '' ? (
-                    <div className="flex-1 min-h-0 mt-1">
-                      <div className="text-sm font-semibold text-slate-800 mb-2">Description</div>
-                      <div className="text-sm text-slate-600 bg-slate-50 rounded-xl p-3 overflow-auto whitespace-pre-wrap max-h-32">
-                        {selected.adDescription}
-                      </div>
+                  {selected.adDescription && selected.adDescription.trim() !== '' && (
+                    <div className="mt-1">
+                      <div className="text-sm font-semibold text-slate-800 mb-1">Description</div>
+                      <div className="text-sm text-slate-600 bg-slate-50 rounded-xl p-3 whitespace-pre-wrap max-h-28 overflow-auto">{selected.adDescription}</div>
                     </div>
-                  ) : null}
+                  )}
+
                   <button
                     type="button"
-                    className="edc-btn-ghost mt-auto text-sm"
-                    onClick={() => {
-                      setSelected(null)
-                      setSelectedImageIndex(0)
-                    }}
+                    className="mt-auto w-full py-2.5 px-4 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 text-sm font-medium transition-colors"
+                    onClick={() => { setSelected(null); setSelectedImageIndex(0) }}
                   >
                     Close
                   </button>
@@ -810,6 +810,79 @@ export default function MarketplacePage() {
               </div>
             </div>
           ) : null}
+
+        {/* Disclosure Modal */}
+        {disclosureModal && (() => {
+          const cfg = {
+            premier:    { label: 'EDC Premier',     badge: 'bg-purple-100 text-purple-700', header: 'border-purple-200 bg-purple-50', title: 'text-purple-800', sub: 'text-purple-700', hover: 'hover:bg-purple-100', icon: 'text-purple-600', btn: 'bg-purple-500 hover:bg-purple-600' },
+            private:    { label: 'EDC Private',     badge: 'bg-blue-100 text-blue-700',     header: 'border-blue-200 bg-blue-50',     title: 'text-blue-800',   sub: 'text-blue-700',   hover: 'hover:bg-blue-100',   icon: 'text-blue-600',   btn: 'bg-blue-500 hover:bg-blue-600' },
+            fleet:      { label: 'EDC Fleet Select', badge: 'bg-amber-100 text-amber-700', header: 'border-amber-200 bg-amber-50',   title: 'text-amber-800',  sub: 'text-amber-700',  hover: 'hover:bg-amber-100',  icon: 'text-amber-600',  btn: 'bg-amber-500 hover:bg-amber-600' },
+            dealership: { label: 'EDC Dealership',  badge: 'bg-gray-100 text-gray-700',     header: 'border-gray-200 bg-gray-50',     title: 'text-gray-800',   sub: 'text-gray-600',   hover: 'hover:bg-gray-100',   icon: 'text-gray-600',   btn: 'bg-gray-700 hover:bg-gray-800' },
+          }[disclosureModal]
+          return (
+            <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 overflow-y-auto">
+              <div className="fixed inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setDisclosureModal(null)} />
+              <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-2xl my-8 flex flex-col max-h-[90vh]">
+                <div className={`flex items-center justify-between px-6 py-4 border-b ${cfg.header} rounded-t-2xl flex-shrink-0`}>
+                  <div className="flex items-center gap-3">
+                    <div className={`w-10 h-10 ${cfg.badge} rounded-full flex items-center justify-center`}>
+                      <svg className={`w-5 h-5 ${cfg.icon}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                      </svg>
+                    </div>
+                    <div>
+                      <h2 className={`text-lg font-bold ${cfg.title}`}>IMPORTANT DISCLOSURE</h2>
+                      <p className={`text-sm ${cfg.sub}`}>Please Read Carefully</p>
+                    </div>
+                  </div>
+                  <button onClick={() => setDisclosureModal(null)} className={`p-2 ${cfg.hover} rounded-xl transition-colors`}>
+                    <svg className={`w-6 h-6 ${cfg.icon}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+                <div className="overflow-y-auto flex-1 p-6">
+                  <p className="text-gray-700 mb-6">This vehicle is offered by EasyDrive Canada (EDC) as an <strong className={cfg.title}>{cfg.label}</strong> vehicle.</p>
+                  <div className="space-y-5 text-sm">
+                    {disclosureModal === 'premier' && <>
+                      <div><h4 className="font-semibold text-gray-900 mb-2 flex items-center gap-2"><span className={`w-6 h-6 ${cfg.badge} rounded-full flex items-center justify-center text-xs font-bold`}>1</span>Vehicle Status – EDC Premier</h4><ul className="list-disc list-inside space-y-1 text-gray-600 ml-8"><li>This vehicle is owned and stocked by EasyDrive Canada.</li><li>Viewing and test drives are available by appointment.</li></ul></div>
+                      <div><h4 className="font-semibold text-gray-900 mb-2 flex items-center gap-2"><span className={`w-6 h-6 ${cfg.badge} rounded-full flex items-center justify-center text-xs font-bold`}>2</span>Safety & Reconditioning</h4><ul className="list-disc list-inside space-y-1 text-gray-600 ml-8"><li>This vehicle will be sold with a valid Ontario Safety Standards Certificate prior to delivery.</li><li>Any required safety or reconditioning work has been completed or will be completed before delivery.</li></ul></div>
+                      <div><h4 className="font-semibold text-gray-900 mb-2 flex items-center gap-2"><span className={`w-6 h-6 ${cfg.badge} rounded-full flex items-center justify-center text-xs font-bold`}>3</span>Fees & Licensing (Mandatory)</h4><ul className="list-disc list-inside space-y-1 text-gray-600 ml-8"><li>All transactions are subject to the mandatory OMVIC fee of <strong>$22 + HST</strong> per transaction, shown separately on the Bill of Sale.</li><li>A licensing fee of <strong>$59</strong> applies to every transaction and will be shown separately on the Bill of Sale.</li></ul></div>
+                      <div><h4 className="font-semibold text-gray-900 mb-2 flex items-center gap-2"><span className={`w-6 h-6 ${cfg.badge} rounded-full flex items-center justify-center text-xs font-bold`}>4</span>CARFAX Disclosure</h4><ul className="list-disc list-inside space-y-1 text-gray-600 ml-8"><li>A CARFAX report will be provided to the client prior to completion of the sale.</li></ul></div>
+                    </>}
+                    {disclosureModal === 'private' && <>
+                      <div><h4 className="font-semibold text-gray-900 mb-2 flex items-center gap-2"><span className={`w-6 h-6 ${cfg.badge} rounded-full flex items-center justify-center text-xs font-bold`}>1</span>Private Sale Disclosure</h4><ul className="list-disc list-inside space-y-1 text-gray-600 ml-8"><li>This vehicle is listed as a private sale facilitated through EasyDrive Canada.</li><li>The vehicle is sold as-is unless otherwise stated in writing.</li></ul></div>
+                      <div><h4 className="font-semibold text-gray-900 mb-2 flex items-center gap-2"><span className={`w-6 h-6 ${cfg.badge} rounded-full flex items-center justify-center text-xs font-bold`}>2</span>Inspection & Test Drive</h4><ul className="list-disc list-inside space-y-1 text-gray-600 ml-8"><li>Viewing and test drives may be available subject to seller availability.</li><li>Buyers are encouraged to arrange an independent pre-purchase inspection.</li></ul></div>
+                      <div><h4 className="font-semibold text-gray-900 mb-2 flex items-center gap-2"><span className={`w-6 h-6 ${cfg.badge} rounded-full flex items-center justify-center text-xs font-bold`}>3</span>Safety & Reconditioning</h4><ul className="list-disc list-inside space-y-1 text-gray-600 ml-8"><li>Safety certification is not included in the listed price unless explicitly noted.</li><li>Safety may be added through EasyDrive Canada starting at <strong>$999</strong>, which includes the Ontario Safety Standards Certificate.</li><li>Where permitted by law, the vehicle may also be purchased without safety.</li></ul></div>
+                      <div><h4 className="font-semibold text-gray-900 mb-2 flex items-center gap-2"><span className={`w-6 h-6 ${cfg.badge} rounded-full flex items-center justify-center text-xs font-bold`}>4</span>Fees & Licensing (Mandatory)</h4><ul className="list-disc list-inside space-y-1 text-gray-600 ml-8"><li>All transactions are subject to the mandatory OMVIC fee of <strong>$22 + HST</strong> per transaction, shown separately on the Bill of Sale.</li><li>A licensing fee of <strong>$59</strong> applies to every transaction and will be shown separately on the Bill of Sale.</li></ul></div>
+                      <div><h4 className="font-semibold text-gray-900 mb-2 flex items-center gap-2"><span className={`w-6 h-6 ${cfg.badge} rounded-full flex items-center justify-center text-xs font-bold`}>5</span>CARFAX Disclosure</h4><ul className="list-disc list-inside space-y-1 text-gray-600 ml-8"><li>A CARFAX report will be provided to the client prior to completion of the sale.</li></ul></div>
+                    </>}
+                    {disclosureModal === 'fleet' && <>
+                      <div><h4 className="font-semibold text-gray-900 mb-2 flex items-center gap-2"><span className={`w-6 h-6 ${cfg.badge} rounded-full flex items-center justify-center text-xs font-bold`}>1</span>Fleet Disclosure</h4><ul className="list-disc list-inside space-y-1 text-gray-600 ml-8"><li>This vehicle was previously registered as a fleet vehicle.</li></ul></div>
+                      <div><h4 className="font-semibold text-gray-900 mb-2 flex items-center gap-2"><span className={`w-6 h-6 ${cfg.badge} rounded-full flex items-center justify-center text-xs font-bold`}>2</span>Purchase Process – EDC Fleet Select</h4><ul className="list-disc list-inside space-y-1 text-gray-600 ml-8"><li>No test drives are available.</li><li>No appointments or viewings are available.</li><li>This vehicle is offered under a streamlined, wholesale-style purchase option, reflected in its pricing.</li></ul></div>
+                      <div><h4 className="font-semibold text-gray-900 mb-2 flex items-center gap-2"><span className={`w-6 h-6 ${cfg.badge} rounded-full flex items-center justify-center text-xs font-bold`}>3</span>Safety & Reconditioning</h4><ul className="list-disc list-inside space-y-1 text-gray-600 ml-8"><li>Safety and reconditioning are not included in the listed price.</li><li>Safety and reconditioning may be added through EasyDrive Canada starting at <strong>$999</strong>.</li><li>Where permitted by law, the vehicle may also be purchased without safety.</li></ul></div>
+                      <div><h4 className="font-semibold text-gray-900 mb-2 flex items-center gap-2"><span className={`w-6 h-6 ${cfg.badge} rounded-full flex items-center justify-center text-xs font-bold`}>4</span>Fees & Licensing</h4><ul className="list-disc list-inside space-y-1 text-gray-600 ml-8"><li>All transactions are subject to the mandatory OMVIC fee of <strong>$22 + HST</strong> per transaction.</li><li>A licensing fee of <strong>$59</strong> applies to every transaction.</li></ul></div>
+                      <div><h4 className="font-semibold text-gray-900 mb-2 flex items-center gap-2"><span className={`w-6 h-6 ${cfg.badge} rounded-full flex items-center justify-center text-xs font-bold`}>5</span>CARFAX Disclosure</h4><ul className="list-disc list-inside space-y-1 text-gray-600 ml-8"><li>A CARFAX report will be provided to the client prior to completion of the sale.</li></ul></div>
+                    </>}
+                    {disclosureModal === 'dealership' && <>
+                      <div><h4 className="font-semibold text-gray-900 mb-2 flex items-center gap-2"><span className={`w-6 h-6 ${cfg.badge} rounded-full flex items-center justify-center text-xs font-bold`}>1</span>Dealership Disclosure</h4><ul className="list-disc list-inside space-y-1 text-gray-600 ml-8"><li>This vehicle is listed through an authorized dealership partner of EasyDrive Canada.</li><li>All representations about this vehicle are made by the dealership.</li></ul></div>
+                      <div><h4 className="font-semibold text-gray-900 mb-2 flex items-center gap-2"><span className={`w-6 h-6 ${cfg.badge} rounded-full flex items-center justify-center text-xs font-bold`}>2</span>Viewing & Test Drive</h4><ul className="list-disc list-inside space-y-1 text-gray-600 ml-8"><li>Viewing and test drives are available through the dealership by appointment.</li></ul></div>
+                      <div><h4 className="font-semibold text-gray-900 mb-2 flex items-center gap-2"><span className={`w-6 h-6 ${cfg.badge} rounded-full flex items-center justify-center text-xs font-bold`}>3</span>Safety & Reconditioning</h4><ul className="list-disc list-inside space-y-1 text-gray-600 ml-8"><li>Safety certification status is determined by the dealership — please confirm prior to purchase.</li></ul></div>
+                      <div><h4 className="font-semibold text-gray-900 mb-2 flex items-center gap-2"><span className={`w-6 h-6 ${cfg.badge} rounded-full flex items-center justify-center text-xs font-bold`}>4</span>Fees & Licensing (Mandatory)</h4><ul className="list-disc list-inside space-y-1 text-gray-600 ml-8"><li>All transactions are subject to the mandatory OMVIC fee of <strong>$22 + HST</strong> per transaction.</li><li>A licensing fee of <strong>$59</strong> applies to every transaction.</li></ul></div>
+                      <div><h4 className="font-semibold text-gray-900 mb-2 flex items-center gap-2"><span className={`w-6 h-6 ${cfg.badge} rounded-full flex items-center justify-center text-xs font-bold`}>5</span>CARFAX Disclosure</h4><ul className="list-disc list-inside space-y-1 text-gray-600 ml-8"><li>A CARFAX report will be provided to the client prior to completion of the sale.</li></ul></div>
+                    </>}
+                    <div className="pt-4 mt-4 border-t border-gray-200">
+                      <p className="text-gray-500 italic text-xs">No other promises, representations, or guarantees have been made, written or verbal, other than what is disclosed above and on the Bill of Sale.</p>
+                    </div>
+                  </div>
+                </div>
+                <div className="px-6 py-4 border-t border-gray-200 flex-shrink-0">
+                  <button onClick={() => setDisclosureModal(null)} className={`w-full ${cfg.btn} text-white font-semibold py-3 rounded-xl transition-colors`}>I Understand</button>
+                </div>
+              </div>
+            </div>
+          )
+        })()}
 
         {/* CARFAX Viewer Modal */}
         {carfaxModal.open && (

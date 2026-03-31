@@ -197,7 +197,7 @@ body {
   }
 
   .price-tag {
-    @apply bg-navy-900 text-white px-4 py-1.5 rounded-full text-sm font-bold shadow-lg;
+    @apply bg-[#1EA7FF] text-white px-4 py-1.5 rounded-full text-sm font-bold shadow-lg;
   }
 
   .icon-container {

@@ -758,44 +758,12 @@ export default function InventoryPage() {
                         {(() => {
                           const rec = getVehicleHoldRecord(vehicle.id)
                           const isOnHold = rec?.status === 'ON_HOLD'
-
-                          const raw = String((vehicle as any)?.categories ?? '').trim()
-                          const hasCategory = !!raw
-                          if (!isOnHold && !hasCategory) return null
-
-                          let catLabel = raw
-                          let catSrc = ''
-                          if (hasCategory) {
-                            const v = raw.toLowerCase()
-                            if (v.includes('private')) {
-                              catLabel = 'Private'
-                              catSrc = '/images/Private.png'
-                            } else if (v.includes('dealer')) {
-                              catLabel = 'Dealership'
-                              catSrc = '/images/Delearship.png'
-                            } else if (v.includes('premier') || v.includes('premiere')) {
-                              catLabel = 'Premier'
-                              catSrc = '/images/Premier.png'
-                            } else if (v.includes('fleet')) {
-                              catLabel = 'Fleet Cars'
-                              catSrc = '/images/Fleet%20Cars.png'
-                            }
-                          }
-
+                          if (!isOnHold) return null
                           return (
-                            <div className="absolute top-4 left-4 z-10 flex flex-col gap-2">
-                              {isOnHold ? (
-                                <span className="inline-flex items-center rounded-full bg-amber-500/90 px-3 py-1 text-xs font-semibold text-white shadow">
-                                  On Hold
-                                </span>
-                              ) : null}
-                              {hasCategory ? (
-                                catSrc ? (
-                                  <img src={catSrc} alt={catLabel} className="h-14 w-auto max-w-none" />
-                                ) : (
-                                  <span className="text-xs font-semibold text-white">{catLabel}</span>
-                                )
-                              ) : null}
+                            <div className="absolute top-4 left-4 z-10">
+                              <span className="inline-flex items-center rounded-full bg-amber-500/90 px-3 py-1 text-xs font-semibold text-white shadow">
+                                On Hold
+                              </span>
                             </div>
                           )
                         })()}
@@ -828,9 +796,24 @@ export default function InventoryPage() {
                         </div>
                       </div>
                       <div className="p-5 flex flex-col flex-1">
-                        <h3 className="text-lg font-bold text-gray-900 group-hover:text-[#118df0] transition-colors line-clamp-2 leading-snug">
-                          {vehicle.year} {vehicle.make} {vehicle.model} {vehicle.series}
-                        </h3>
+                        <div className="flex items-start justify-between gap-2 mb-0">
+                          <h3 className="text-lg font-bold text-gray-900 group-hover:text-[#118df0] transition-colors line-clamp-2 leading-snug">
+                            {vehicle.year} {vehicle.make} {vehicle.model} {vehicle.series}
+                          </h3>
+                          {(() => {
+                            const raw = String((vehicle as any)?.categories ?? '').trim()
+                            if (!raw) return null
+                            const v = raw.toLowerCase()
+                            let catSrc = ''
+                            let catLabel = raw
+                            if (v.includes('private')) { catSrc = '/images/Private.png'; catLabel = 'Private' }
+                            else if (v.includes('dealer')) { catSrc = '/images/Delearship.png'; catLabel = 'Dealership' }
+                            else if (v.includes('premier') || v.includes('premiere')) { catSrc = '/images/Premier.png'; catLabel = 'Premier' }
+                            else if (v.includes('fleet')) { catSrc = '/images/Fleet%20Cars.png'; catLabel = 'Fleet Cars' }
+                            if (!catSrc) return null
+                            return <img src={catSrc} alt={catLabel} className="h-12 w-auto flex-shrink-0" />
+                          })()}
+                        </div>
                         {formatLocation(vehicle.city, vehicle.province) && (
                           <p className="text-sm text-gray-500 mt-1 flex items-center gap-1">
                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

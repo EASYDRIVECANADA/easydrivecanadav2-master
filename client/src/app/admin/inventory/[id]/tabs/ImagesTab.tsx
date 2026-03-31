@@ -138,11 +138,30 @@ export default function ImagesTab({ vehicleId, images, onImagesUpdate }: ImagesT
     }
   }, [pendingImages])
 
-  const addFilesToPending = (files: FileList | null) => {
+  const isHeic = (f: File) => {
+    const name = f.name.toLowerCase()
+    return name.endsWith('.heic') || name.endsWith('.heif') || f.type === 'image/heic' || f.type === 'image/heif'
+  }
+
+  const convertHeicToJpeg = async (f: File): Promise<File> => {
+    try {
+      const heic2any = (await import('heic2any')).default
+      const blob = await heic2any({ blob: f, toType: 'image/jpeg', quality: 0.92 }) as Blob
+      const jpegName = f.name.replace(/\.(heic|heif)$/i, '.jpg')
+      return new File([blob], jpegName, { type: 'image/jpeg' })
+    } catch {
+      return f
+    }
+  }
+
+  const addFilesToPending = async (files: FileList | null) => {
     if (!files || files.length === 0) return
     const next: PendingImage[] = []
     for (let i = 0; i < files.length; i++) {
-      const f = files[i]
+      let f = files[i]
+      if (isHeic(f)) {
+        f = await convertHeicToJpeg(f)
+      }
       next.push({
         id: `${Date.now()}_${i}_${Math.random().toString(16).slice(2)}`,
         file: f,
@@ -229,7 +248,7 @@ export default function ImagesTab({ vehicleId, images, onImagesUpdate }: ImagesT
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault()
     setDragOver(false)
-    addFilesToPending(e.dataTransfer.files)
+    void addFilesToPending(e.dataTransfer.files)
   }
 
   const handleDragOver = (e: React.DragEvent) => {
@@ -528,13 +547,15 @@ export default function ImagesTab({ vehicleId, images, onImagesUpdate }: ImagesT
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
         </svg>
         <p className="text-gray-600 mb-2">Drag and drop images here, or click to select</p>
+        <p className="text-xs text-gray-400 mb-2">Supports JPG, PNG, WEBP, HEIC (iPhone)</p>
         <input
           type="file"
           multiple
-          accept="image/*"
+          accept="image/*,.heic,.heif"
           onChange={(e) => {
-            addFilesToPending(e.target.files)
+            const files = e.target.files
             e.currentTarget.value = ''
+            void addFilesToPending(files)
           }}
           className="hidden"
           id="image-upload"
