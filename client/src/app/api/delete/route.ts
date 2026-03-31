@@ -1,10 +1,14 @@
 import { NextResponse } from 'next/server'
+import { requireAdminSession } from '@/lib/apiAuth'
 
 export const runtime = 'nodejs'
 
 const WEBHOOK_URL = 'https://primary-production-6722.up.railway.app/webhook/delete'
 
 export async function POST(request: Request) {
+  const authError = await requireAdminSession(request)
+  if (authError) return authError
+
   try {
     const body = await request.json().catch(() => ({}))
 

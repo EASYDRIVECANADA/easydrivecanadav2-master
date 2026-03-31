@@ -24,8 +24,6 @@ function ResetPasswordContent() {
     }
   }, [searchParams])
 
-  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
@@ -49,7 +47,7 @@ function ResetPasswordContent() {
     setLoading(true)
 
     try {
-      const res = await fetch(`${API_URL}/api/auth/reset-password`, {
+      const res = await fetch('/api/reset-password', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ token, password }),

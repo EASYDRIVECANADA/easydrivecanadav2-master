@@ -14,14 +14,12 @@ export default function ContactPage() {
   const [submitting, setSubmitting] = useState(false)
   const [submitted, setSubmitted] = useState(false)
 
-  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setSubmitting(true)
 
     try {
-      const res = await fetch(`${API_URL}/api/leads`, {
+      const res = await fetch('/api/leads', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

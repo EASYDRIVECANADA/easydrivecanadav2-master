@@ -3,7 +3,12 @@
     "allow": [
       "Bash(grep -r .from.*edc_ /c/Users/AKT/Desktop/EZ drive/easydrivecanadav2-master/client/src/app/admin/inventory --include=*.tsx --include=*.ts)",
       "Bash(rm -rf .next/types/app/inventory)",
-      "Bash(npx tsc:*)"
+      "Bash(npx tsc:*)",
+      "Bash(for f:*)",
+      "Bash(do echo:*)",
+      "Read(//c/Users/AKT/Desktop/EZ drive/easydrivecanadav2-master/**)",
+      "Bash(done)",
+      "WebFetch(domain:easydrivecanada.com)"
     ]
   }
 }

@@ -25,8 +25,6 @@ export default function FinancingPage() {
   const [submitted, setSubmitted] = useState(false)
   const [error, setError] = useState('')
 
-  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'
-
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value, type } = e.target
     
@@ -58,7 +56,7 @@ export default function FinancingPage() {
     setError('')
 
     try {
-      const res = await fetch(`${API_URL}/api/leads`, {
+      const res = await fetch('/api/leads', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

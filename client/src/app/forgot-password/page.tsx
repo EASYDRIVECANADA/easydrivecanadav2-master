@@ -10,15 +10,13 @@ export default function ForgotPasswordPage() {
   const [error, setError] = useState('')
   // const router = useRouter(); // Uncomment if needed for navigation
 
-  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
     setLoading(true)
 
     try {
-      const res = await fetch(`${API_URL}/api/auth/forgot-password`, {
+      const res = await fetch('/api/forgot-password', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email }),

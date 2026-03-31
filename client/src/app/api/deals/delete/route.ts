@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { requireAdminSession } from '@/lib/apiAuth'
 
 export const dynamic = 'force-dynamic'
 
@@ -36,6 +37,9 @@ async function deleteFromTable(table: string, dealId: string): Promise<{ table: 
 }
 
 export async function POST(req: Request) {
+  const authError = await requireAdminSession(req)
+  if (authError) return authError
+
   try {
     const body = await req.json().catch(() => ({}))
     const dealId = body?.dealId

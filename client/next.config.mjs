@@ -3,15 +3,14 @@ const nextConfig = {
   images: {
     remotePatterns: [
       {
-        protocol: 'http',
-        hostname: 'localhost',
-        port: '5000',
-        pathname: '/uploads/**',
+        protocol: 'https',
+        hostname: 'cnmqbbqgnbwvhbpwbyqn.supabase.co',
+        pathname: '/storage/v1/object/public/**',
       },
       {
         protocol: 'https',
-        hostname: 'api.easydrivecanada.com',
-        pathname: '/uploads/**',
+        hostname: '*.supabase.co',
+        pathname: '/storage/v1/object/public/**',
       },
     ],
   },
