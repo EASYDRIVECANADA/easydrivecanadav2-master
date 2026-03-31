@@ -1,6 +1,9 @@
 import type { Metadata } from 'next'
 import VehicleDetail from './VehicleDetail'
 
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
+
 const SUPABASE_URL = (process.env.NEXT_PUBLIC_SUPABASE_URL || '').replace(/\/+$/, '')
 const SUPABASE_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
 const SITE_URL = (process.env.NEXT_PUBLIC_SITE_URL || 'https://easydrivecanada.com').replace(/\/+$/, '')

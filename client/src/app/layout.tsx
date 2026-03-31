@@ -11,6 +11,7 @@ const jakarta = Plus_Jakarta_Sans({
 })
 
 export const metadata: Metadata = {
+  metadataBase: new URL('https://easydrivecanada.com'),
   title: 'Easy Drive Canada - Quality Used Cars | 100% Online Car Buying',
   description: 'Buy quality pre-owned vehicles 100% online. 150+ point inspection, transparent pricing, and home delivery across Ontario.',
   keywords: 'used cars Canada, pre-owned vehicles, online car buying, car dealership Ontario, quality used cars',
