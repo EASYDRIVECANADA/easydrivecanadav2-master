@@ -23,7 +23,7 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
 
     // 1. Fetch vehicle row
     const vehRes = await fetch(
-      `${SUPABASE_URL}/rest/v1/edc_vehicles?id=eq.${encodeURIComponent(id)}&select=make,model,series,year,price,mileage,odometer,transmission,exterior_color,ad_description,vehicle_id`,
+      `${SUPABASE_URL}/rest/v1/edc_vehicles?id=eq.${encodeURIComponent(id)}&select=make,model,series,year,price,mileage,odometer,transmission,exterior_color,ad_description,vehicleId`,
       {
         headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
         cache: 'no-store',
@@ -60,40 +60,44 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
       : autoDesc + '. Available at EasyDrive Canada.'
 
     // 3. Fetch first photo from storage bucket
-    const vehicleId = String(v.vehicle_id || id)
+    // Images are uploaded under the DB primary key (id from URL), not vehicle_id
     let imageUrl = `${SITE_URL}/og-default.jpg`
 
-    try {
-      const bucketRes = await fetch(
-        `${SUPABASE_URL}/storage/v1/object/list/vehicle-photos`,
-        {
-          method: 'POST',
-          headers: {
-            apikey: SUPABASE_KEY,
-            Authorization: `Bearer ${SUPABASE_KEY}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            prefix: `${vehicleId}/`,
-            limit: 1,
-            sortBy: { column: 'name', order: 'asc' },
-          }),
-          cache: 'no-store',
-        }
-      )
-      if (bucketRes.ok) {
-        const files = await bucketRes.json()
+    const tryBucketPrefix = async (prefix: string): Promise<string | null> => {
+      try {
+        const res = await fetch(
+          `${SUPABASE_URL}/storage/v1/object/list/vehicle-photos`,
+          {
+            method: 'POST',
+            headers: {
+              apikey: SUPABASE_KEY,
+              Authorization: `Bearer ${SUPABASE_KEY}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              prefix: `${prefix}/`,
+              limit: 1,
+              sortBy: { column: 'name', order: 'asc' },
+            }),
+            cache: 'no-store',
+          }
+        )
+        if (!res.ok) return null
+        const files = await res.json()
         const firstName: string | undefined =
           Array.isArray(files) && files[0]?.name && !String(files[0].name).endsWith('/')
             ? String(files[0].name)
             : undefined
         if (firstName) {
-          imageUrl = `${SUPABASE_URL}/storage/v1/object/public/vehicle-photos/${vehicleId}/${encodeURIComponent(firstName)}`
+          return `${SUPABASE_URL}/storage/v1/object/public/vehicle-photos/${prefix}/${encodeURIComponent(firstName)}`
         }
-      }
-    } catch {
-      // keep default
+      } catch { /* ignore */ }
+      return null
     }
+
+    // Try DB id first (how images are uploaded), then vehicle_id as fallback
+    const found = await tryBucketPrefix(id) || (v.vehicleId ? await tryBucketPrefix(String(v.vehicleId)) : null)
+    if (found) imageUrl = found
 
     const pageUrl = `${SITE_URL}/inventory/${id}`
     const t = esc(fullTitle)
