@@ -170,6 +170,8 @@ export default function PrepareDocumentPage() {
   const [downloadModal, setDownloadModal] = useState(false)
   const [downloadingFileIdx, setDownloadingFileIdx] = useState<number | null>(null)
   const [sending, setSending] = useState(false)
+  const [sendModalOpen, setSendModalOpen] = useState(false)
+  const [sendingTo, setSendingTo] = useState<string | null>(null)
   const [addRecipientModal, setAddRecipientModal] = useState(false)
   const [addRecipientForm, setAddRecipientForm] = useState({ email: '', full_name: '', company: '', title: '' })
   const [addingRecipient, setAddingRecipient] = useState(false)
@@ -976,9 +978,11 @@ export default function PrepareDocumentPage() {
     }
   }
 
-  const handleSend = async () => {
+  // recipientId = specific recipient id to send to, null = send to all
+  const executeSend = async (recipientId: string | null) => {
     if (sending) return
     setSending(true)
+    setSendingTo(recipientId ?? 'all')
     try {
       const sigRes = await fetch(`/api/esignature/signature/${encodeURIComponent(dealId)}`, { cache: 'no-store' })
       if (!sigRes.ok) throw new Error('Failed to load signature record')
@@ -999,8 +1003,14 @@ export default function PrepareDocumentPage() {
         ...((sigData.siblings as any[]) || []).map((s: any) => ({ id: s.id, email: s.email, full_name: s.full_name })),
       ]
 
+      const targets = recipientId
+        ? allRecipients.filter(r => r.id === recipientId)
+        : allRecipients
+
+      if (targets.length === 0) throw new Error('Recipient not found')
+
       const errors: string[] = []
-      for (const recip of allRecipients) {
+      for (const recip of targets) {
         const link = `https://easydrivecanada.com/admin/sales/deals/signature?${encodeURIComponent(recip.id)}`
         const res = await fetch('https://primary-production-6722.up.railway.app/webhook/request', {
           method: 'POST',
@@ -1011,11 +1021,13 @@ export default function PrepareDocumentPage() {
       }
 
       if (errors.length > 0) throw new Error(`Failed for: ${errors.join(', ')}`)
-      openActionModal(true, 'Sent', `Signature request sent to ${allRecipients.length} recipient(s).`)
+      setSendModalOpen(false)
+      openActionModal(true, 'Sent', `Signature request sent to ${targets.length} recipient(s).`)
     } catch (err: any) {
       openActionModal(false, 'Send Failed', err?.message || 'Unknown error')
     } finally {
       setSending(false)
+      setSendingTo(null)
     }
   }
 
@@ -1284,7 +1296,7 @@ export default function PrepareDocumentPage() {
         <div className="flex items-center gap-1">
           {/* Send */}
           <button
-            onClick={handleSend}
+            onClick={() => setSendModalOpen(true)}
             disabled={sending}
             title="Send for Signing"
             className="w-9 h-9 flex items-center justify-center rounded-lg text-slate-500 hover:text-blue-600 hover:bg-blue-50 disabled:opacity-40 transition-colors"
@@ -1339,22 +1351,37 @@ export default function PrepareDocumentPage() {
                     const colors = ['bg-blue-500', 'bg-purple-500', 'bg-green-500', 'bg-orange-500', 'bg-pink-500']
                     const color = colors[idx % colors.length]
                     const isActive = activeRecipientIdx === idx
+                    const isSendingThis = sending && sendingTo === r.id
                     return (
-                      <button
-                        key={r.id}
-                        type="button"
-                        onClick={() => setActiveRecipientIdx(idx)}
-                        className={`flex items-center gap-2 px-2 py-1.5 rounded-lg text-left transition-all text-xs ${
-                          isActive ? 'bg-blue-50 border border-blue-200' : 'hover:bg-gray-50 border border-transparent'
-                        }`}
-                      >
-                        <div className={`w-5 h-5 rounded-full ${color} flex items-center justify-center text-white text-xs font-bold shrink-0`}>
-                          {(r.email || '?').charAt(0).toUpperCase()}
-                        </div>
-                        <span className={`truncate ${isActive ? 'text-blue-700 font-medium' : 'text-gray-600'}`}>
-                          {r.full_name || r.email}
-                        </span>
-                      </button>
+                      <div key={r.id} className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => setActiveRecipientIdx(idx)}
+                          className={`flex-1 flex items-center gap-2 px-2 py-1.5 rounded-lg text-left transition-all text-xs ${
+                            isActive ? 'bg-blue-50 border border-blue-200' : 'hover:bg-gray-50 border border-transparent'
+                          }`}
+                        >
+                          <div className={`w-5 h-5 rounded-full ${color} flex items-center justify-center text-white text-xs font-bold shrink-0`}>
+                            {(r.email || '?').charAt(0).toUpperCase()}
+                          </div>
+                          <span className={`truncate ${isActive ? 'text-blue-700 font-medium' : 'text-gray-600'}`}>
+                            {r.full_name || r.email}
+                          </span>
+                        </button>
+                        <button
+                          type="button"
+                          title={`Send to ${r.full_name || r.email}`}
+                          disabled={sending}
+                          onClick={() => executeSend(r.id)}
+                          className="w-6 h-6 flex items-center justify-center rounded-md text-slate-400 hover:text-blue-600 hover:bg-blue-50 disabled:opacity-40 transition-colors shrink-0"
+                        >
+                          {isSendingThis ? (
+                            <svg className="w-3.5 h-3.5 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2a10 10 0 1 0 10 10"/></svg>
+                          ) : (
+                            <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
+                          )}
+                        </button>
+                      </div>
                     )
                   })}
                   <button
@@ -1617,6 +1644,104 @@ export default function PrepareDocumentPage() {
           </div>
         </div>
       </div>
+
+      {/* Send Modal */}
+      {sendModalOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/40" onClick={() => { if (!sending) setSendModalOpen(false) }} />
+          <div className="relative w-full max-w-sm rounded-2xl bg-white shadow-2xl border border-slate-200 overflow-hidden">
+            {/* Header */}
+            <div className="px-6 pt-5 pb-4 border-b border-slate-100 flex items-center justify-between">
+              <div>
+                <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-0.5">E-Signature</div>
+                <div className="text-base font-bold text-slate-800">Send for Signing</div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSendModalOpen(false)}
+                disabled={sending}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors disabled:opacity-40"
+              >
+                <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6 6 18M6 6l12 12"/></svg>
+              </button>
+            </div>
+
+            {/* Recipient list */}
+            <div className="px-6 py-4 space-y-2">
+              <p className="text-xs text-slate-500 mb-3">Send signature requests individually or all at once.</p>
+              {recipients.length === 0 ? (
+                <p className="text-sm text-slate-400 text-center py-4">No recipients added yet.</p>
+              ) : (
+                recipients.map((r, idx) => {
+                  const colors = ['bg-blue-500', 'bg-purple-500', 'bg-green-500', 'bg-orange-500', 'bg-pink-500']
+                  const color = colors[idx % colors.length]
+                  const isSendingThis = sending && sendingTo === r.id
+                  return (
+                    <div key={r.id} className="flex items-center gap-3 p-2.5 rounded-xl border border-slate-100 bg-slate-50">
+                      <div className={`w-8 h-8 rounded-full ${color} flex items-center justify-center text-white text-sm font-bold shrink-0`}>
+                        {(r.email || '?').charAt(0).toUpperCase()}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-medium text-slate-800 truncate">{r.full_name || r.email}</div>
+                        {r.full_name && <div className="text-xs text-slate-400 truncate">{r.email}</div>}
+                      </div>
+                      <button
+                        type="button"
+                        disabled={sending}
+                        onClick={() => executeSend(r.id)}
+                        className="h-8 px-3 rounded-lg bg-blue-600 text-white text-xs font-semibold hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5 shrink-0 transition-colors"
+                      >
+                        {isSendingThis ? (
+                          <svg className="w-3.5 h-3.5 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2a10 10 0 1 0 10 10"/></svg>
+                        ) : (
+                          <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
+                        )}
+                        Send
+                      </button>
+                    </div>
+                  )
+                })
+              )}
+            </div>
+
+            {/* Footer — Send All */}
+            {recipients.length > 1 && (
+              <div className="px-6 pb-5 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  disabled={sending}
+                  onClick={() => executeSend(null)}
+                  className="w-full h-10 rounded-xl bg-slate-900 text-white text-sm font-semibold hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 transition-colors"
+                >
+                  {sending && sendingTo === 'all' ? (
+                    <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2a10 10 0 1 0 10 10"/></svg>
+                  ) : (
+                    <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
+                  )}
+                  Send to All ({recipients.length})
+                </button>
+              </div>
+            )}
+            {recipients.length === 1 && (
+              <div className="px-6 pb-5 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  disabled={sending}
+                  onClick={() => executeSend(null)}
+                  className="w-full h-10 rounded-xl bg-slate-900 text-white text-sm font-semibold hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 transition-colors"
+                >
+                  {sending && sendingTo === 'all' ? (
+                    <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2a10 10 0 1 0 10 10"/></svg>
+                  ) : (
+                    <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
+                  )}
+                  Send Request
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {actionModalOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
