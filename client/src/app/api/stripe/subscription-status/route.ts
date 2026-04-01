@@ -21,10 +21,12 @@ export async function POST(req: Request) {
     const mediumPrice = String(process.env.STRIPE_PRICE_ID_MEDIUM_DEALERSHIP || '').trim()
     const largePrice = String(process.env.STRIPE_PRICE_ID_LARGE_DEALERSHIP || '').trim()
 
-    const { email } = (await req.json().catch(() => ({}))) as { email?: string }
+    const { email, userId } = (await req.json().catch(() => ({}))) as { email?: string; userId?: string }
     const normalizedEmail = String(email || '').trim().toLowerCase()
-    if (!normalizedEmail) {
-      return NextResponse.json({ error: 'Missing email' }, { status: 400 })
+    const normalizedUserId = String(userId || '').trim()
+
+    if (!normalizedEmail && !normalizedUserId) {
+      return NextResponse.json({ error: 'Missing email or userId' }, { status: 400 })
     }
 
     const stripe = new Stripe(secretKey)
@@ -32,8 +34,44 @@ export async function POST(req: Request) {
     const supabaseUrl = String(process.env.NEXT_PUBLIC_SUPABASE_URL || '').replace(/\/+$/, '')
     const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 
-    const customers = await stripe.customers.list({ email: normalizedEmail, limit: 1 })
-    const customer = customers.data?.[0]
+    // Build a set of all emails to try — start with the provided email
+    const emailsToTry = new Set<string>()
+    if (normalizedEmail) emailsToTry.add(normalizedEmail)
+
+    // If userId provided, look up ALL emails for that user_id from DB
+    if (normalizedUserId && supabaseUrl && supabaseKey) {
+      try {
+        const res = await fetch(
+          `${supabaseUrl}/rest/v1/users?select=email&user_id=eq.${encodeURIComponent(normalizedUserId)}`,
+          { headers: { apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` } }
+        )
+        if (res.ok) {
+          const rows: any[] = await res.json().catch(() => [])
+          for (const row of rows) {
+            const e = String(row?.email || '').trim().toLowerCase()
+            if (e) emailsToTry.add(e)
+          }
+        }
+      } catch { /* non-fatal */ }
+    }
+
+    // Find the first Stripe customer that has an active subscription
+    let customer: Stripe.Customer | null = null
+    for (const tryEmail of Array.from(emailsToTry)) {
+      const customers = await stripe.customers.list({ email: tryEmail, limit: 1 })
+      const found = customers.data?.[0]
+      if (found?.id) {
+        // Check if this customer has any active/trialing subscription
+        const check = await stripe.subscriptions.list({ customer: found.id, status: 'active', limit: 1 })
+        if (check.data.length > 0) {
+          customer = found
+          break
+        }
+        // Keep as fallback even without active sub
+        if (!customer) customer = found
+      }
+    }
+
     if (!customer?.id) {
       const empty: Record<Plan, PlanStatus> = {
         starter: { active: false, validUntilIso: null },

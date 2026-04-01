@@ -58,6 +58,7 @@ function BillingPage() {
     medium: { active: false, validUntilIso: null },
     large: { active: false, validUntilIso: null },
   })
+  const [isOwner, setIsOwner] = useState<boolean | null>(null)
 
   const products = useMemo(
     () => [
@@ -216,10 +217,11 @@ function BillingPage() {
 
     const fetchSubscriptionStatus = async () => {
       try {
+        const { userId: sessionUserId } = readSession()
         const res = await fetch('/api/stripe/subscription-status', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email }),
+          body: JSON.stringify({ email, userId: sessionUserId }),
         })
         const json = await res.json().catch(() => null)
         const plans = (json?.plans || {}) as any
@@ -271,13 +273,32 @@ function BillingPage() {
     void (async () => {
       const ownerEmail = await resolveOwnerEmail()
       if (!ownerEmail) return
-      
+
+      // Check if logged-in user is the Owner
+      const { email: sessionEmail } = readSession()
+      if (sessionEmail) {
+        try {
+          const { data: userRow } = await supabase
+            .from('users')
+            .select('title')
+            .ilike('email', sessionEmail)
+            .limit(1)
+            .maybeSingle()
+          const title = String((userRow as any)?.title || '').trim().toLowerCase()
+          setIsOwner(title === 'owner')
+        } catch {
+          setIsOwner(false)
+        }
+      } else {
+        setIsOwner(false)
+      }
+
       // Use owner email for subscription/payment methods (shared at account level)
       email = ownerEmail
       void fetchSubscriptionStatus()
       void fetchTransactions()
       void fetchPaymentMethods()
-      
+
       // Use logged-in user's own email for balance (personal to each user)
       const userEmail = readSession().email
       if (userEmail) {
@@ -492,9 +513,9 @@ function BillingPage() {
   }
 
   const formatValidUntil = (iso: string | null) => {
-    if (!iso) return 'Active'
+    if (!iso) return null
     const d = new Date(iso)
-    if (Number.isNaN(d.getTime())) return 'Active'
+    if (Number.isNaN(d.getTime())) return null
     return `Valid until ${d.toLocaleDateString('en-CA', { year: 'numeric', month: 'short', day: 'numeric' })}`
   }
 
@@ -910,14 +931,20 @@ function BillingPage() {
                                 <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
                                 <span className="text-xs font-semibold text-green-700">Active Plan</span>
                               </div>
-                              <div className="mt-2 text-xs text-slate-500">
-                                {formatValidUntil(planStatus[plan.key as PlanKey]?.validUntilIso || null)}
-                              </div>
+                              {formatValidUntil(planStatus[plan.key as PlanKey]?.validUntilIso || null) && (
+                                <div className="mt-2 text-xs text-slate-500">
+                                  {formatValidUntil(planStatus[plan.key as PlanKey]?.validUntilIso || null)}
+                                </div>
+                              )}
+                            </div>
+                          ) : isOwner === false ? (
+                            <div className="w-full py-3 px-4 bg-slate-100 rounded-full border border-slate-200 text-center">
+                              <span className="text-xs text-slate-500 font-medium">Only the Owner can manage subscriptions</span>
                             </div>
                           ) : (
                             <button
                               type="button"
-                              disabled={!!buying}
+                              disabled={!!buying || isOwner === null}
                               onClick={() => startCheckout(plan.key)}
                               className="w-full py-3 px-6 bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-700 hover:to-blue-600 text-white font-semibold rounded-full shadow-lg shadow-blue-500/40 hover:shadow-blue-500/60 transition-all duration-300 hover:-translate-y-1 hover:scale-105 disabled:opacity-60 disabled:cursor-not-allowed disabled:hover:translate-y-0 disabled:hover:scale-100"
                             >
