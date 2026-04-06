@@ -1852,8 +1852,10 @@ export default function PrepareDocumentPage() {
             <span className="text-[9px] font-medium leading-tight text-center">View Pages</span>
           </button>
 
-          {/* Process History */}
+          {/* Audit trail */}
           <button
+            type="button"
+            title="Audit trail"
             onClick={() => {
               const sigData = dealData?.signature
               if (!sigData) return
@@ -1865,7 +1867,7 @@ export default function PrepareDocumentPage() {
             <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <circle cx="12" cy="12" r="10"/><polyline strokeLinecap="round" strokeLinejoin="round" points="12 6 12 12 16 14"/>
             </svg>
-            <span className="text-[9px] font-medium leading-tight text-center">History</span>
+            <span className="text-[8px] font-medium leading-tight text-center">Audit trail</span>
           </button>
 
           {/* Send */}
@@ -1949,7 +1951,7 @@ export default function PrepareDocumentPage() {
         </div>
       </div>
 
-      {/* ── Process History Full Page ── */}
+      {/* ── Audit trail full page ── */}
       {historyModalOpen && (() => {
         const sigData = dealData?.signature
         if (!sigData) return null
