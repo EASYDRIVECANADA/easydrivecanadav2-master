@@ -6,6 +6,20 @@ import { supabase } from '@/lib/supabaseClient'
 
 const DEFAULT_FEE_TAX_LABEL = 'Default Tax 0 %'
 
+// Normalize old-format tax keys (e.g. 'HST 13 %') to standard preset format ('HST 13.00 %')
+// This prevents doubling when both old and new format keys are present
+function normalizeItemTaxKeys(taxSelected: Record<string, boolean> | undefined): Record<string, boolean> {
+  if (!taxSelected) return {}
+  const result: Record<string, boolean> = {}
+  for (const [key, val] of Object.entries(taxSelected)) {
+    if (!val) continue
+    // Convert legacy labels like 'HST 13 %' to normalized format once.
+    const normalized = key.replace(/(\d+(?:\.\d+)?) %$/, (_, n) => `${parseFloat(n).toFixed(2)} %`)
+    result[normalized] = true
+  }
+  return result
+}
+
 function normalizeFeeTaxSelection(selected?: Record<string, boolean>): Record<string, boolean> {
   const next: Record<string, boolean> = { ...(selected || {}) }
   const hasSelectedNonDefault = Object.entries(next).some(([k, v]) => k !== DEFAULT_FEE_TAX_LABEL && !!v)
@@ -26,6 +40,18 @@ function feeTaxSummaryLabel(selected?: Record<string, boolean>): string {
   const normalized = normalizeFeeTaxSelection(selected)
   const selectedNonDefault = Object.keys(normalized).filter((k) => k !== DEFAULT_FEE_TAX_LABEL && normalized[k])
   return selectedNonDefault.length > 0 ? selectedNonDefault.join(', ') : DEFAULT_FEE_TAX_LABEL
+}
+
+function normalizeCardTaxSelection(selected?: Record<string, boolean>): Record<string, boolean> {
+  const next = normalizeItemTaxKeys(selected)
+  return Object.values(next).some(Boolean) ? next : { [DEFAULT_FEE_TAX_LABEL]: true }
+}
+
+function formatTaxRatePercent(rate: number): string {
+  if (!Number.isFinite(rate) || rate < 0) return '0'
+  // Keep user-configured precision (e.g. 9.975) without forcing 2 decimals.
+  const normalized = Math.round(rate * 1_000_000) / 1_000_000
+  return String(normalized)
 }
 
 export default function WorksheetTab({
@@ -141,7 +167,7 @@ export default function WorksheetTab({
         price: Number(a.price) || 0,
         cost: Number(a.cost) || 0,
         vehicleType: a.vehicleType || a.vehicle_type || '',
-        taxSelected: a.taxSelected || { 'HST 13 %': true },
+        taxSelected: normalizeItemTaxKeys(a.taxSelected) || {},
         taxOverride: a.taxOverride || false,
         taxValues: a.taxValues || {},
       }))
@@ -154,7 +180,7 @@ export default function WorksheetTab({
   const [accDetailsForId, setAccDetailsForId] = useState<string | null>(null)
   const [accVehicleType, setAccVehicleType] = useState('')
   const [accTaxMenuOpen, setAccTaxMenuOpen] = useState(false)
-  const [accTaxSelected, setAccTaxSelected] = useState<Record<string, boolean>>({ 'HST 13 %': true })
+  const [accTaxSelected, setAccTaxSelected] = useState<Record<string, boolean>>({ [DEFAULT_FEE_TAX_LABEL]: true })
   const [accTaxOverride, setAccTaxOverride] = useState(false)
   const [accShowTaxDetails, setAccShowTaxDetails] = useState(false)
   const [accTaxValues, setAccTaxValues] = useState<Record<string, string>>({})
@@ -173,7 +199,7 @@ export default function WorksheetTab({
         duration: w.duration || '',
         distance: w.distance || '',
         isDealerGuaranty: w.isDealerGuaranty === true || w.is_dealer_guaranty === true,
-        taxSelected: w.taxSelected || { 'HST 13 %': true },
+        taxSelected: normalizeItemTaxKeys(w.taxSelected) || {},
         taxOverride: w.taxOverride || false,
         taxValues: w.taxValues || {},
       }))
@@ -189,7 +215,7 @@ export default function WorksheetTab({
   const [warDistance, setWarDistance] = useState('')
   const [warDealerGuaranty, setWarDealerGuaranty] = useState(false)
   const [warTaxMenuOpen, setWarTaxMenuOpen] = useState(false)
-  const [warTaxSelected, setWarTaxSelected] = useState<Record<string, boolean>>({ 'HST 13 %': true })
+  const [warTaxSelected, setWarTaxSelected] = useState<Record<string, boolean>>({ [DEFAULT_FEE_TAX_LABEL]: true })
   const [warTaxOverride, setWarTaxOverride] = useState(false)
   const [warShowTaxDetails, setWarShowTaxDetails] = useState(false)
   const [warTaxValues, setWarTaxValues] = useState<Record<string, string>>({})
@@ -208,7 +234,7 @@ export default function WorksheetTab({
         deductible: String(i.deductible ?? i.insurance_deductible ?? '0'),
         duration: String(i.duration ?? i.insurance_duration ?? ''),
         type: String(i.type ?? i.insurance_type ?? ''),
-        taxSelected: i.taxSelected || { 'HST 13 %': true },
+        taxSelected: normalizeItemTaxKeys(i.taxSelected) || {},
         taxOverride: i.taxOverride || false,
         taxValues: i.taxValues || {},
       }))
@@ -228,7 +254,7 @@ export default function WorksheetTab({
   const [insDuration, setInsDuration] = useState('')
   const [insType, setInsType] = useState('')
   const [insTaxMenuOpen, setInsTaxMenuOpen] = useState(false)
-  const [insTaxSelected, setInsTaxSelected] = useState<Record<string, boolean>>({ 'HST 13 %': true })
+  const [insTaxSelected, setInsTaxSelected] = useState<Record<string, boolean>>({ [DEFAULT_FEE_TAX_LABEL]: true })
   const [insTaxOverride, setInsTaxOverride] = useState(false)
   const [insShowTaxDetails, setInsShowTaxDetails] = useState(false)
   const [insTaxValues, setInsTaxValues] = useState<Record<string, string>>({})
@@ -257,7 +283,11 @@ export default function WorksheetTab({
     closeAllDetails()
     const item = fees.find((x) => x.id === id)
     if (item) {
-      setFeeTaxSelected(normalizeFeeTaxSelection(item.taxSelected || { [DEFAULT_FEE_TAX_LABEL]: true }))
+      // Auto-fill cost with amount if cost is 0 or not set
+      if (!(item as any).cost) {
+        setFees((prev) => prev.map((x) => x.id === id ? { ...x, cost: x.amount } : x))
+      }
+      setFeeTaxSelected(normalizeFeeTaxSelection(normalizeItemTaxKeys(item.taxSelected) || { [DEFAULT_FEE_TAX_LABEL]: true }))
       setFeeTaxOverride(item.taxOverride || false)
       setFeeTaxValues(item.taxValues || {})
     }
@@ -270,7 +300,12 @@ export default function WorksheetTab({
     const item = accessories.find((x) => x.id === id)
     setAccVehicleType(String((item as any)?.vehicleType ?? ''))
     if (item) {
-      setAccTaxSelected(item.taxSelected || { 'HST 13 %': true })
+      // Auto-fill cost with price if cost is 0 or not set
+      if (!(item as any).cost) {
+        setAccessories((prev) => prev.map((x) => x.id === id ? { ...x, cost: x.price } : x))
+      }
+      // Normalize old-format keys to prevent doubling (e.g. 'HST 13 %' → 'HST 13.00 %')
+      setAccTaxSelected(normalizeCardTaxSelection(item.taxSelected))
       setAccTaxOverride(item.taxOverride || false)
       setAccTaxValues(item.taxValues || {})
     }
@@ -281,12 +316,15 @@ export default function WorksheetTab({
   const openWarDetails = (id: string) => {
     closeAllDetails()
     const item = warranties.find((x) => x.id === id)
-    setWarCost(String(Number((item as any)?.cost ?? 0) || 0))
+    // Auto-fill cost with amount if cost is 0 or not set
+    const warAmt = Number(item?.amount ?? 0)
+    setWarCost(String(Number((item as any)?.cost ?? 0) || warAmt || 0))
     setWarDuration(String((item as any)?.duration ?? ''))
     setWarDistance(String((item as any)?.distance ?? ''))
     setWarDealerGuaranty(Boolean((item as any)?.isDealerGuaranty ?? false))
     if (item) {
-      setWarTaxSelected(item.taxSelected || { 'HST 13 %': true })
+      // Normalize old-format keys to prevent doubling
+      setWarTaxSelected(normalizeCardTaxSelection(item.taxSelected))
       setWarTaxOverride(item.taxOverride || false)
       setWarTaxValues(item.taxValues || {})
     }
@@ -297,12 +335,15 @@ export default function WorksheetTab({
   const openInsDetails = (id: string) => {
     closeAllDetails()
     const item = insurances.find((x) => x.id === id)
-    setInsCost(String(Number((item as any)?.cost ?? 0) || 0))
+    // Auto-fill cost with amount if cost is 0 or not set
+    const insAmt = Number(item?.amount ?? 0)
+    setInsCost(String(Number((item as any)?.cost ?? 0) || insAmt || 0))
     setInsDeductible(String((item as any)?.deductible ?? '0'))
     setInsDuration(String((item as any)?.duration ?? ''))
     setInsType(String((item as any)?.type ?? ''))
     if (item) {
-      setInsTaxSelected(item.taxSelected || { 'HST 13 %': true })
+      // Normalize old-format keys to prevent doubling
+      setInsTaxSelected(normalizeCardTaxSelection(item.taxSelected))
       setInsTaxOverride(item.taxOverride || false)
       setInsTaxValues(item.taxValues || {})
     }
@@ -398,9 +439,9 @@ export default function WorksheetTab({
 
     setFees(Array.isArray(nd.fees) ? nd.fees.map((f: any) => ({ id: f.id || `fee_${Date.now()}`, name: f.name || '', desc: f.desc || '', amount: Number(f.amount) || 0, cost: Number(f.cost) || 0, taxSelected: normalizeFeeTaxSelection(f.taxSelected || { [DEFAULT_FEE_TAX_LABEL]: true }), taxOverride: f.taxOverride || false, taxValues: f.taxValues || {} })) : [])
     setPayments(Array.isArray(nd.payments) ? nd.payments.map((p: any) => ({ id: p.id || `pay_${Date.now()}`, amount: Number(p.amount) || 0, type: p.type || 'Cash', desc: p.desc || '', category: p.category || 'Deposit' })) : [])
-    setAccessories(Array.isArray(nd.accessories) ? nd.accessories.map((a: any) => ({ id: a.id || `acc_${Date.now()}`, name: a.name || '', desc: a.desc || '', price: Number(a.price) || 0, cost: Number(a.cost) || 0, vehicleType: a.vehicleType || a.vehicle_type || '', taxSelected: a.taxSelected || { 'HST 13 %': true }, taxOverride: a.taxOverride || false, taxValues: a.taxValues || {} })) : [])
-    setWarranties(Array.isArray(nd.warranties) ? nd.warranties.map((w: any) => ({ id: w.id || `war_${Date.now()}`, name: w.name || '', desc: w.desc || '', amount: Number(w.amount) || 0, cost: Number(w.cost) || 0, duration: w.duration || '', distance: w.distance || '', isDealerGuaranty: w.isDealerGuaranty === true || w.is_dealer_guaranty === true, taxSelected: w.taxSelected || { 'HST 13 %': true }, taxOverride: w.taxOverride || false, taxValues: w.taxValues || {} })) : [])
-    setInsurances(Array.isArray(nd.insurances) ? nd.insurances.map((i: any) => ({ id: i.id || `ins_${Date.now()}`, name: i.name || '', desc: i.desc || '', amount: Number(i.amount) || 0, cost: Number(i.cost) || 0, deductible: String(i.deductible ?? i.insurance_deductible ?? '0'), duration: String(i.duration ?? i.insurance_duration ?? ''), type: String(i.type ?? i.insurance_type ?? ''), taxSelected: i.taxSelected || { 'HST 13 %': true }, taxOverride: i.taxOverride || false, taxValues: i.taxValues || {} })) : [])
+    setAccessories(Array.isArray(nd.accessories) ? nd.accessories.map((a: any) => ({ id: a.id || `acc_${Date.now()}`, name: a.name || '', desc: a.desc || '', price: Number(a.price) || 0, cost: Number(a.cost) || 0, vehicleType: a.vehicleType || a.vehicle_type || '', taxSelected: normalizeCardTaxSelection(a.taxSelected), taxOverride: a.taxOverride || false, taxValues: a.taxValues || {} })) : [])
+    setWarranties(Array.isArray(nd.warranties) ? nd.warranties.map((w: any) => ({ id: w.id || `war_${Date.now()}`, name: w.name || '', desc: w.desc || '', amount: Number(w.amount) || 0, cost: Number(w.cost) || 0, duration: w.duration || '', distance: w.distance || '', isDealerGuaranty: w.isDealerGuaranty === true || w.is_dealer_guaranty === true, taxSelected: normalizeCardTaxSelection(w.taxSelected), taxOverride: w.taxOverride || false, taxValues: w.taxValues || {} })) : [])
+    setInsurances(Array.isArray(nd.insurances) ? nd.insurances.map((i: any) => ({ id: i.id || `ins_${Date.now()}`, name: i.name || '', desc: i.desc || '', amount: Number(i.amount) || 0, cost: Number(i.cost) || 0, deductible: String(i.deductible ?? i.insurance_deductible ?? '0'), duration: String(i.duration ?? i.insurance_duration ?? ''), type: String(i.type ?? i.insurance_type ?? ''), taxSelected: normalizeCardTaxSelection(i.taxSelected), taxOverride: i.taxOverride || false, taxValues: i.taxValues || {} })) : [])
 
     if (nd.id) setWorksheetRowId(nd.id)
     setHasBeenSaved(Boolean(nd.id))
@@ -475,7 +516,7 @@ export default function WorksheetTab({
     setAccDetailsForId(null)
     setAccVehicleType('')
     setAccTaxMenuOpen(false)
-    setAccTaxSelected({ 'HST 13 %': true })
+    setAccTaxSelected({ [DEFAULT_FEE_TAX_LABEL]: true })
     setAccTaxOverride(false)
     setAccShowTaxDetails(false)
     setAccTaxValues({})
@@ -491,7 +532,7 @@ export default function WorksheetTab({
     setWarDistance('')
     setWarDealerGuaranty(false)
     setWarTaxMenuOpen(false)
-    setWarTaxSelected({ 'HST 13 %': true })
+    setWarTaxSelected({ [DEFAULT_FEE_TAX_LABEL]: true })
     setWarTaxOverride(false)
     setWarShowTaxDetails(false)
     setWarTaxValues({})
@@ -507,7 +548,7 @@ export default function WorksheetTab({
     setInsDuration('')
     setInsType('')
     setInsTaxMenuOpen(false)
-    setInsTaxSelected({ 'HST 13 %': true })
+    setInsTaxSelected({ [DEFAULT_FEE_TAX_LABEL]: true })
     setInsTaxOverride(false)
     setInsShowTaxDetails(false)
     setInsTaxValues({})
@@ -594,6 +635,11 @@ export default function WorksheetTab({
   const feesTotal = useMemo(() => fees.reduce((s, f) => s + (Number(f.amount) || 0), 0), [fees])
   const feesTaxTotal = useMemo(() => fees.reduce((s, f) => s + computeItemTax(Number(f.amount) || 0, f.taxSelected || {}, f.taxOverride || false, f.taxValues || {}), 0), [fees])
   const paymentsTotal = useMemo(() => payments.reduce((s, p) => s + (Number(p.amount) || 0), 0), [payments])
+  // Amount of each category that has its own tax (to exclude from vehicle HST base)
+  const feesSelfTaxedBase = useMemo(() => fees.reduce((s, f) => { const t = computeItemTax(Number(f.amount)||0, f.taxSelected||{}, f.taxOverride||false, f.taxValues||{}); return t > 0 ? s + (Number(f.amount)||0) : s }, 0), [fees])
+  const accessoriesSelfTaxedBase = useMemo(() => accessories.reduce((s, a) => { const t = computeItemTax(Number(a.price)||0, a.taxSelected||{}, a.taxOverride||false, a.taxValues||{}); return t > 0 ? s + (Number(a.price)||0) : s }, 0), [accessories])
+  const warrantiesSelfTaxedBase = useMemo(() => warranties.reduce((s, w) => { const t = computeItemTax(Number(w.amount)||0, w.taxSelected||{}, w.taxOverride||false, w.taxValues||{}); return t > 0 ? s + (Number(w.amount)||0) : s }, 0), [warranties])
+  const insurancesSelfTaxedBase = useMemo(() => insurances.reduce((s, i) => { const t = computeItemTax(Number(i.amount)||0, i.taxSelected||{}, i.taxOverride||false, i.taxValues||{}); return t > 0 ? s + (Number(i.amount)||0) : s }, 0), [insurances])
   const filteredFees = useMemo(
     () =>
       fees.filter((f) =>
@@ -634,18 +680,24 @@ export default function WorksheetTab({
   const insurancesTaxTotal = useMemo(() => insurances.reduce((s, i) => s + computeItemTax(Number(i.amount) || 0, i.taxSelected || {}, i.taxOverride || false, i.taxValues || {}), 0), [insurances])
   
   const netDifference = useMemo(() => {
-    // Net Difference includes fees in the taxable base (before HST calculation)
+    // Net Difference = vehicle subtotal + all item amounts (for display)
     const baseAmount = subtotal - parseMoney(tradeValue) + feesTotal + accessoriesTotal + warrantiesTotal + insurancesTotal
     return Math.max(0, baseAmount)
   }, [subtotal, tradeValue, feesTotal, accessoriesTotal, warrantiesTotal, insurancesTotal])
 
-  const computedTax = useMemo(() => netDifference * (taxRate / 100), [netDifference, taxRate])
+  const computedTax = useMemo(() => {
+    // Items that have their own tax rate are excluded from vehicle HST base to avoid double-taxing
+    const selfTaxedItemsBase = feesSelfTaxedBase + accessoriesSelfTaxedBase + warrantiesSelfTaxedBase + insurancesSelfTaxedBase
+    const vehicleHSTBase = Math.max(0, netDifference - selfTaxedItemsBase)
+    const vehicleHST = vehicleHSTBase * (taxRate / 100)
+    const itemsTax = feesTaxTotal + accessoriesTaxTotal + warrantiesTaxTotal + insurancesTaxTotal
+    return vehicleHST + itemsTax
+  }, [netDifference, taxRate, feesSelfTaxedBase, accessoriesSelfTaxedBase, warrantiesSelfTaxedBase, insurancesSelfTaxedBase, feesTaxTotal, accessoriesTaxTotal, warrantiesTaxTotal, insurancesTaxTotal])
   const totalTax = taxOverride ? parseMoney(taxManual) : computedTax
 
   const totalBalanceDue = useMemo(() => {
     const licenseAmount = licenseFee && licenseFee.trim() ? parseMoney(licenseFee) : 0
-    // Total = Net Difference (includes fees) + HST + License Fee + Lien - Trade Equity - Payments
-    // Fees are already in netDifference and taxed as part of vehicle HST, so don't add separate item taxes
+    // Total = Net Difference (vehicle + items) + Total Tax (vehicle HST + item taxes) + License + Lien - Trade Equity - Payments
     return netDifference + totalTax + licenseAmount + parseMoney(lienPayout) - tradeEquity - paymentsTotal
   }, [netDifference, totalTax, licenseFee, lienPayout, tradeEquity, paymentsTotal])
 
@@ -1965,9 +2017,9 @@ export default function WorksheetTab({
                   onClick={() => setTaxMenuOpen((v) => !v)}
                   className="h-9 px-3 border border-gray-200 rounded bg-white text-sm"
                 >
-                  {taxCode} {taxRate.toFixed(2)}%
+                  {taxCode} {formatTaxRatePercent(taxRate)}%
                 </button>
-                <div className="text-xs text-gray-600">Rate: {taxRate.toFixed(2)}%</div>
+                <div className="text-xs text-gray-600">Rate: {formatTaxRatePercent(taxRate)}%</div>
               </div>
               {taxMenuOpen ? (
                 <div className="absolute z-10 mt-2 w-44 rounded border border-gray-200 bg-white shadow">
@@ -1985,7 +2037,7 @@ export default function WorksheetTab({
                           setTaxMenuOpen(false)
                         }}
                       />
-                      <span>{opt.name} {Number(opt.rate || 0).toFixed(2)}%</span>
+                      <span>{opt.name} {formatTaxRatePercent(Number(opt.rate || 0))}%</span>
                     </label>
                   ))}
                   <div className="p-2">
@@ -2001,7 +2053,7 @@ export default function WorksheetTab({
               <div>
                 <div className="text-xs text-gray-700 mb-1">Tax Rate</div>
                 <div className="flex items-stretch border border-gray-200 rounded bg-gray-100 overflow-hidden w-60">
-                  <input className="flex-1 h-10 px-3 text-sm outline-none bg-gray-100" value={`${taxRate.toFixed(2)}%`} readOnly />
+                  <input className="flex-1 h-10 px-3 text-sm outline-none bg-gray-100" value={`${formatTaxRatePercent(taxRate)}%`} readOnly />
                 </div>
               </div>
               <label className="flex items-center gap-2 text-xs text-gray-700 mt-5">
@@ -2405,7 +2457,7 @@ export default function WorksheetTab({
 
               <div className="flex items-center justify-between">
                 <div className="text-[#118df0] text-sm font-semibold cursor-pointer relative">
-                  <button type="button" onClick={() => setWarTaxMenuOpen((v) => !v)}>{Object.keys(warTaxSelected).filter((k) => warTaxSelected[k]).join(', ') || 'HST 13 %'} ▾</button>
+                  <button type="button" onClick={() => setWarTaxMenuOpen((v) => !v)}>{feeTaxSummaryLabel(warTaxSelected)} ▾</button>
                   {warTaxMenuOpen ? (
                     <div className="absolute mt-2 w-56 bg-white border border-gray-200 rounded shadow p-2 z-10">
                       {taxPresets.length === 0 ? (
@@ -2535,7 +2587,7 @@ export default function WorksheetTab({
 
               <div className="flex items-center justify-between">
                 <div className="text-[#118df0] text-sm font-semibold cursor-pointer relative">
-                  <button type="button" onClick={() => setInsTaxMenuOpen((v) => !v)}>{Object.keys(insTaxSelected).filter((k) => insTaxSelected[k]).join(', ') || 'HST 13 %'} ▾</button>
+                  <button type="button" onClick={() => setInsTaxMenuOpen((v) => !v)}>{feeTaxSummaryLabel(insTaxSelected)} ▾</button>
                   {insTaxMenuOpen ? (
                     <div className="absolute mt-2 w-56 bg-white border border-gray-200 rounded shadow p-2 z-10">
                       {taxPresets.length === 0 ? (
@@ -2633,7 +2685,7 @@ export default function WorksheetTab({
 
               <div className="flex items-center justify-between">
                 <div className="text-[#118df0] text-sm font-semibold cursor-pointer relative">
-                  <button type="button" onClick={() => setAccTaxMenuOpen((v) => !v)}> {Object.keys(accTaxSelected).filter((k) => accTaxSelected[k]).join(', ') || 'HST 13 %'} ▾</button>
+                  <button type="button" onClick={() => setAccTaxMenuOpen((v) => !v)}> {feeTaxSummaryLabel(accTaxSelected)} ▾</button>
                   {accTaxMenuOpen ? (
                     <div className="absolute mt-2 w-56 bg-white border border-gray-200 rounded shadow p-2 z-10">
                       {taxPresets.length === 0 ? (

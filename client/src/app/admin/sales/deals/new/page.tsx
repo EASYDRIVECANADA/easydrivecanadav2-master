@@ -373,41 +373,55 @@ function SalesNewDealPageContent() {
         return []
       }
 
-      const getOmvicFromFees = (rawFees: any): number => {
-        const fees = parseFeeItems(rawFees)
-        for (const f of fees) {
-          const name = String(f?.fee_name ?? f?.name ?? f?.label ?? '').toLowerCase()
-          if (!name) continue
-          if (name.includes('omvic')) {
-            const amt = Number(f?.fee_amount ?? f?.amount ?? f?.value ?? 0)
-            return Number.isFinite(amt) ? amt : 0
-          }
-        }
-        return 0
-      }
-
       const price = Number(w.purchase_price ?? v.price ?? 0)
-      const omvic = Number(w.omvic_fee ?? getOmvicFromFees(w.fees) ?? 0)
       const discount = Number(w.discount ?? 0)
 
       const sumItems = (raw: any, amtKey: string) => {
         const items = parseFeeItems(raw)
         return items.reduce((s: number, i: any) => s + (Number(i?.[amtKey] ?? 0) || 0), 0)
       }
-      const allFeesTotal = sumItems(w.fees, 'amount')
-      const feesTotal = allFeesTotal - omvic
-      const accessoriesTotal = sumItems(w.accessories, 'price')
-      const warrantiesTotal = sumItems(w.warranties, 'amount')
-      const insurancesTotal = sumItems(w.insurances, 'amount')
+      const sumItemTaxes = (raw: any) => {
+        const items = parseFeeItems(raw)
+        return items.reduce((s: number, i: any) => s + (Number(i?.taxAmount ?? 0) || 0), 0)
+      }
+      const sumSelfTaxedBase = (raw: any, amtKey: string) => {
+        const items = parseFeeItems(raw)
+        return items.reduce((s: number, i: any) => {
+          const taxAmt = Number(i?.taxAmount ?? 0) || 0
+          return taxAmt > 0 ? s + (Number(i?.[amtKey] ?? 0) || 0) : s
+        }, 0)
+      }
+      const getOmvicFeeItem = (rawFees: any): { amount: number; tax: number } => {
+        const fees = parseFeeItems(rawFees)
+        for (const f of fees) {
+          const name = String(f?.fee_name ?? f?.name ?? f?.label ?? '').toLowerCase()
+          if (name.includes('omvic')) {
+            return { amount: Number(f?.fee_amount ?? f?.amount ?? 0) || 0, tax: Number(f?.taxAmount ?? 0) || 0 }
+          }
+        }
+        return { amount: 0, tax: 0 }
+      }
+
+      const omvicItem = getOmvicFeeItem(w.fees)
+      const omvic = omvicItem.amount + omvicItem.tax
+      const allFeeAmounts = sumItems(w.fees, 'amount')
+      const allFeeTaxes = sumItemTaxes(w.fees)
+      const feesTotal = (allFeeAmounts - omvicItem.amount) + (allFeeTaxes - omvicItem.tax)
+      const accessoriesTotal = sumItems(w.accessories, 'price') + sumItemTaxes(w.accessories)
+      const warrantiesTotal = sumItems(w.warranties, 'amount') + sumItemTaxes(w.warranties)
+      const insurancesTotal = sumItems(w.insurances, 'amount') + sumItemTaxes(w.insurances)
       const paymentsTotal = sumItems(w.payments, 'amount')
 
+      const selfTaxedBase = sumSelfTaxedBase(w.fees, 'amount') + sumSelfTaxedBase(w.accessories, 'price') + sumSelfTaxedBase(w.warranties, 'amount') + sumSelfTaxedBase(w.insurances, 'amount')
       const subtotal1 = price - discount + omvic + feesTotal + accessoriesTotal + warrantiesTotal + insurancesTotal
       const tradeValue = Number(w.trade_value ?? 0)
       const lienPayout = Number(w.lien_payout ?? 0)
       const netDiff = subtotal1 - tradeValue + lienPayout
       const taxRate = Number(w.tax_rate ?? 0.13)
-      const hst = netDiff * taxRate
-      const totalTax = hst
+      const vehicleHSTBase = Math.max(0, netDiff - selfTaxedBase)
+      const hst = vehicleHSTBase * taxRate
+      const itemsTax = allFeeTaxes + sumItemTaxes(w.accessories) + sumItemTaxes(w.warranties) + sumItemTaxes(w.insurances)
+      const totalTax = hst + itemsTax
       const licenseFee = w.license_fee && String(w.license_fee).trim() ? Number(w.license_fee) : 0
 
       const subtotal2 = netDiff + totalTax + licenseFee
@@ -578,41 +592,55 @@ function SalesNewDealPageContent() {
         return []
       }
 
-      const getOmvicFromFees = (rawFees: any): number => {
-        const fees = parseFeeItems(rawFees)
-        for (const f of fees) {
-          const name = String(f?.fee_name ?? f?.name ?? f?.label ?? '').toLowerCase()
-          if (!name) continue
-          if (name.includes('omvic')) {
-            const amt = Number(f?.fee_amount ?? f?.amount ?? f?.value ?? 0)
-            return Number.isFinite(amt) ? amt : 0
-          }
-        }
-        return 0
-      }
-
       const price = Number(w.purchase_price ?? v.price ?? 0)
-      const omvic = Number(w.omvic_fee ?? getOmvicFromFees(w.fees) ?? 0)
       const discount = Number(w.discount ?? 0)
 
       const sumItems = (raw: any, amtKey: string) => {
         const items = parseFeeItems(raw)
         return items.reduce((s: number, i: any) => s + (Number(i?.[amtKey] ?? 0) || 0), 0)
       }
-      const allFeesTotal = sumItems(w.fees, 'amount')
-      const feesTotal = allFeesTotal - omvic
-      const accessoriesTotal = sumItems(w.accessories, 'price')
-      const warrantiesTotal = sumItems(w.warranties, 'amount')
-      const insurancesTotal = sumItems(w.insurances, 'amount')
+      const sumItemTaxes = (raw: any) => {
+        const items = parseFeeItems(raw)
+        return items.reduce((s: number, i: any) => s + (Number(i?.taxAmount ?? 0) || 0), 0)
+      }
+      const sumSelfTaxedBase = (raw: any, amtKey: string) => {
+        const items = parseFeeItems(raw)
+        return items.reduce((s: number, i: any) => {
+          const taxAmt = Number(i?.taxAmount ?? 0) || 0
+          return taxAmt > 0 ? s + (Number(i?.[amtKey] ?? 0) || 0) : s
+        }, 0)
+      }
+      const getOmvicFeeItem2 = (rawFees: any): { amount: number; tax: number } => {
+        const fees = parseFeeItems(rawFees)
+        for (const f of fees) {
+          const name = String(f?.fee_name ?? f?.name ?? f?.label ?? '').toLowerCase()
+          if (name.includes('omvic')) {
+            return { amount: Number(f?.fee_amount ?? f?.amount ?? 0) || 0, tax: Number(f?.taxAmount ?? 0) || 0 }
+          }
+        }
+        return { amount: 0, tax: 0 }
+      }
+
+      const omvicItem2 = getOmvicFeeItem2(w.fees)
+      const omvic = omvicItem2.amount + omvicItem2.tax
+      const allFeeAmounts = sumItems(w.fees, 'amount')
+      const allFeeTaxes = sumItemTaxes(w.fees)
+      const feesTotal = (allFeeAmounts - omvicItem2.amount) + (allFeeTaxes - omvicItem2.tax)
+      const accessoriesTotal = sumItems(w.accessories, 'price') + sumItemTaxes(w.accessories)
+      const warrantiesTotal = sumItems(w.warranties, 'amount') + sumItemTaxes(w.warranties)
+      const insurancesTotal = sumItems(w.insurances, 'amount') + sumItemTaxes(w.insurances)
       const paymentsTotal = sumItems(w.payments, 'amount')
 
+      const selfTaxedBase2 = sumSelfTaxedBase(w.fees, 'amount') + sumSelfTaxedBase(w.accessories, 'price') + sumSelfTaxedBase(w.warranties, 'amount') + sumSelfTaxedBase(w.insurances, 'amount')
       const subtotal1 = price - discount + omvic + feesTotal + accessoriesTotal + warrantiesTotal + insurancesTotal
       const tradeValue = Number(w.trade_value ?? 0)
       const lienPayout = Number(w.lien_payout ?? 0)
       const netDiff = subtotal1 - tradeValue + lienPayout
       const taxRate = Number(w.tax_rate ?? 0.13)
-      const hst = netDiff * taxRate
-      const totalTax = hst
+      const vehicleHSTBase2 = Math.max(0, netDiff - selfTaxedBase2)
+      const hst = vehicleHSTBase2 * taxRate
+      const itemsTax2 = allFeeTaxes + sumItemTaxes(w.accessories) + sumItemTaxes(w.warranties) + sumItemTaxes(w.insurances)
+      const totalTax = hst + itemsTax2
       const licenseFee = w.license_fee && String(w.license_fee).trim() ? Number(w.license_fee) : 0
 
       const subtotal2 = netDiff + totalTax + licenseFee
