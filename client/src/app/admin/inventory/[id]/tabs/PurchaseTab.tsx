@@ -1483,7 +1483,7 @@ export default function PurchaseTab({ vehicleId, stockNumber, onError }: Purchas
             disabled={saving}
             className="px-8 py-2 bg-[#118df0] text-white font-medium rounded hover:bg-[#0d6ebd] disabled:opacity-50 transition-colors"
           >
-            {saving ? (hasExistingPurchase ? 'Updating...' : 'Saving...') : (hasExistingPurchase ? 'Update Purchase Info' : 'Save Purchase Info')}
+            {saving ? (hasExistingPurchase ? 'Updating...' : 'Saving...') : (hasExistingPurchase ? 'Update Purchase Info' : 'Update')}
           </button>
         </div>
 

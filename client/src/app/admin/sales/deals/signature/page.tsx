@@ -641,6 +641,24 @@ function DealsSignaturePageInner() {
           const t = await hookRes.text().catch(() => '')
           throw new Error(t || `Webhook failed (${hookRes.status})`)
         }
+
+        // Record "Signed" event in localStorage for process history
+        try {
+          const sigId = sigRecord?.id
+          if (sigId) {
+            const lsKey = `edc_sig_events_${sigId}`
+            const existing = JSON.parse(localStorage.getItem(lsKey) || '[]')
+            existing.push({
+              user_name: sigRecord?.full_name || recipientEmail || 'Recipient',
+              user_email: recipientEmail || '',
+              action: 'Signed',
+              activity: `${sigRecord?.full_name || recipientEmail || 'Recipient'} signed the document`,
+              status: 'Signed',
+              created_at: new Date().toISOString(),
+            })
+            localStorage.setItem(lsKey, JSON.stringify(existing))
+          }
+        } catch { /* non-fatal */ }
       }
 
       setSaveOk(true)

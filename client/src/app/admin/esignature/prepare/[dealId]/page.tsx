@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import jsPDF from 'jspdf'
+import { supabase } from '@/lib/supabaseClient'
 import { renderBillOfSalePdf, type BillOfSaleData } from '../../../sales/deals/new/billOfSalePdf'
 
 declare global {
@@ -158,6 +159,7 @@ export default function PrepareDocumentPage() {
   const searchParams = useSearchParams()
   const dealId = params?.dealId as string
   const containerRef = useRef<HTMLDivElement>(null)
+  const canvasScrollRef = useRef<HTMLDivElement>(null)
 
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -172,6 +174,31 @@ export default function PrepareDocumentPage() {
   const [sending, setSending] = useState(false)
   const [sendModalOpen, setSendModalOpen] = useState(false)
   const [sendingTo, setSendingTo] = useState<string | null>(null)
+  const [historyModalOpen, setHistoryModalOpen] = useState(false)
+  const [viewPagesOpen, setViewPagesOpen] = useState(false)
+  const [historyEvents, setHistoryEvents] = useState<any[]>([])
+  const [loadingHistory, setLoadingHistory] = useState(false)
+  const [loggedInUser, setLoggedInUser] = useState<{ name: string; email: string }>({ name: '', email: '' })
+
+  // ── localStorage event helpers ──
+  const lsKey = (sigId: string) => `edc_sig_events_${sigId}`
+
+  const lsGetEvents = (sigId: string): any[] => {
+    try {
+      const raw = localStorage.getItem(lsKey(sigId))
+      if (!raw) return []
+      const parsed = JSON.parse(raw)
+      return Array.isArray(parsed) ? parsed : []
+    } catch { return [] }
+  }
+
+  const lsAddEvent = (sigId: string, event: { user_name: string; user_email: string; action: string; activity: string; status: string }) => {
+    try {
+      const existing = lsGetEvents(sigId)
+      existing.push({ ...event, created_at: new Date().toISOString() })
+      localStorage.setItem(lsKey(sigId), JSON.stringify(existing))
+    } catch { /* non-fatal */ }
+  }
   const [addRecipientModal, setAddRecipientModal] = useState(false)
   const [addRecipientForm, setAddRecipientForm] = useState({ email: '', full_name: '', company: '', title: '' })
   const [addingRecipient, setAddingRecipient] = useState(false)
@@ -409,6 +436,36 @@ export default function PrepareDocumentPage() {
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [undo, redo, pushHistory])
 
+  // Fetch logged-in user via edc_admin_session (same pattern as account page)
+  useEffect(() => {
+    const fetchUser = async () => {
+      try {
+        // Read user_id / email from the admin session stored in localStorage
+        const raw = window.localStorage.getItem('edc_admin_session')
+        const session = raw ? JSON.parse(raw) as { email?: string; user_id?: string } : null
+        const sessionEmail = String(session?.email ?? '').trim().toLowerCase()
+        const sessionUserId = String(session?.user_id ?? '').trim()
+
+        if (!sessionEmail && !sessionUserId) return
+
+        // Look up name from users table
+        let query = supabase.from('users').select('first_name, last_name, email').limit(1)
+        if (sessionUserId) query = query.eq('user_id', sessionUserId) as typeof query
+        else query = query.eq('email', sessionEmail) as typeof query
+
+        const { data: rows } = await query
+        const row = rows?.[0]
+        if (row) {
+          const name = [row.first_name, row.last_name].filter(Boolean).join(' ') || row.email || sessionEmail
+          setLoggedInUser({ name: String(name), email: row.email || sessionEmail })
+        } else if (sessionEmail) {
+          setLoggedInUser({ name: sessionEmail, email: sessionEmail })
+        }
+      } catch { /* non-fatal */ }
+    }
+    fetchUser()
+  }, [])
+
   // Data loading
   useEffect(() => {
     const loadDocument = async () => {
@@ -451,6 +508,33 @@ export default function PrepareDocumentPage() {
             if (fileList.length > 0) {
               setUploadedFiles(fileList)
               setSelectedFileIndex(0)
+            }
+
+            // Record "Registered" event once on first load
+            const existingEvents = lsGetEvents(sigData.id)
+            if (existingEvents.length === 0) {
+              // Use loggedInUser if already loaded, otherwise resolve now
+              const resolveUser = async () => {
+                if (loggedInUser.email) return loggedInUser
+                try {
+                  const { data } = await supabase.auth.getUser()
+                  const u = data?.user
+                  if (!u) return { name: sigData.full_name || sigData.email || '', email: sigData.email || '' }
+                  const email = u.email || ''
+                  const meta = u.user_metadata || {}
+                  const name = [meta.first_name, meta.last_name].filter(Boolean).join(' ') || meta.full_name || meta.name || email
+                  return { name: String(name), email }
+                } catch { return { name: sigData.full_name || sigData.email || '', email: sigData.email || '' } }
+              }
+              resolveUser().then(user => {
+                lsAddEvent(sigData.id, {
+                  user_name: user.name,
+                  user_email: user.email,
+                  action: 'Registered',
+                  activity: 'The envelope was created',
+                  status: 'Created',
+                })
+              })
             }
 
             // Build recipients list: primary + siblings
@@ -1017,7 +1101,18 @@ export default function PrepareDocumentPage() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ name: recip.full_name || recip.email || '', email: recip.email || '', link, document_url: documentUrl }),
         })
-        if (!res.ok) errors.push(recip.email || recip.id)
+        if (!res.ok) {
+          errors.push(recip.email || recip.id)
+        } else {
+          // Record "Sent Invitations" event in localStorage
+          lsAddEvent(sigData.id, {
+            user_name: loggedInUser.name || sigData.full_name || sigData.email || 'Owner',
+            user_email: loggedInUser.email || sigData.email || '',
+            action: 'Sent Invitations',
+            activity: `Sent a signature request to ${recip.full_name || recip.email || ''} [${recip.email || ''}]`,
+            status: 'Sent',
+          })
+        }
       }
 
       if (errors.length > 0) throw new Error(`Failed for: ${errors.join(', ')}`)
@@ -1293,49 +1388,6 @@ export default function PrepareDocumentPage() {
           </div>
         )}
 
-        <div className="flex items-center gap-1">
-          {/* Send */}
-          <button
-            onClick={() => setSendModalOpen(true)}
-            disabled={sending}
-            title="Send for Signing"
-            className="w-9 h-9 flex items-center justify-center rounded-lg text-slate-500 hover:text-blue-600 hover:bg-blue-50 disabled:opacity-40 transition-colors"
-          >
-            {sending ? (
-              <svg className="w-5 h-5 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2a10 10 0 1 0 10 10"/></svg>
-            ) : (
-              <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
-            )}
-          </button>
-
-          {/* Download */}
-          <button
-            onClick={handleDownload}
-            disabled={downloading}
-            title="Download"
-            className="w-9 h-9 flex items-center justify-center rounded-lg text-slate-500 hover:text-green-600 hover:bg-green-50 disabled:opacity-40 transition-colors"
-          >
-            {downloading ? (
-              <svg className="w-5 h-5 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2a10 10 0 1 0 10 10"/></svg>
-            ) : (
-              <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
-            )}
-          </button>
-
-          {/* Save */}
-          <button
-            onClick={handleSave}
-            disabled={saving}
-            title="Save"
-            className="w-9 h-9 flex items-center justify-center rounded-lg text-slate-500 hover:text-blue-600 hover:bg-blue-50 disabled:opacity-40 transition-colors"
-          >
-            {saving ? (
-              <svg className="w-5 h-5 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2a10 10 0 1 0 10 10"/></svg>
-            ) : (
-              <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline strokeLinecap="round" strokeLinejoin="round" points="17 21 17 13 7 13 7 21"/><polyline strokeLinecap="round" strokeLinejoin="round" points="7 3 7 8 15 8"/></svg>
-            )}
-          </button>
-        </div>
       </div>
 
       <div className="flex flex-1 overflow-hidden">
@@ -1419,6 +1471,7 @@ export default function PrepareDocumentPage() {
 
         {/* ── Center Canvas ── */}
         <div
+          ref={canvasScrollRef}
           className="flex-1 overflow-y-auto overflow-x-hidden bg-[#e8eaed]"
           style={{ backgroundImage: showGrid ? 'radial-gradient(circle, #d1d5db 1px, transparent 1px)' : 'none', backgroundSize: showGrid ? '20px 20px' : 'auto' }}
         >
@@ -1643,9 +1696,323 @@ export default function PrepareDocumentPage() {
             </div>
           </div>
         </div>
+
+        {/* ── View Pages Thumbnail Panel ── */}
+        {viewPagesOpen && (
+          <div className="w-52 bg-white border-l border-gray-200 flex flex-col shrink-0 overflow-hidden">
+            {/* Header */}
+            <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
+              <span className="text-sm font-semibold text-gray-800">Thumbnails</span>
+              <button
+                type="button"
+                onClick={() => setViewPagesOpen(false)}
+                className="p-1 rounded text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
+              >
+                <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6 6 18M6 6l12 12"/></svg>
+              </button>
+            </div>
+            {/* Thumbnails list */}
+            <div className="flex-1 overflow-y-auto py-3 px-3 space-y-3">
+              {Array.from({ length: totalPages }, (_, i) => {
+                const pageNo = i + 1
+                const thumbImg = pageImages[i] || pdfPageUrls[i] || null
+                return (
+                  <button
+                    key={pageNo}
+                    type="button"
+                    onClick={() => {
+                      if (!canvasScrollRef.current) return
+                      const GAP = 12
+                      const targetY = 32 + (pageNo - 1) * (PAGE_HEIGHT * (zoom / 100) + GAP)
+                      canvasScrollRef.current.scrollTo({ top: targetY, behavior: 'smooth' })
+                    }}
+                    className="w-full flex flex-col items-center gap-1.5 group"
+                  >
+                    <div className="w-full border-2 border-transparent group-hover:border-blue-500 rounded overflow-hidden transition-colors shadow-sm bg-white">
+                      {thumbImg ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={thumbImg} alt={`Page ${pageNo}`} className="w-full h-auto object-contain" />
+                      ) : (
+                        <div className="w-full aspect-[816/1056] bg-gray-100 flex items-center justify-center">
+                          <svg className="w-6 h-6 text-gray-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 12h6M9 16h6M9 8h4"/></svg>
+                        </div>
+                      )}
+                    </div>
+                    <span className="text-[11px] text-gray-500 font-medium">{pageNo}</span>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* ── Right Sidebar ── */}
+        <div className="w-16 bg-white border-l border-gray-200 flex flex-col items-center py-4 gap-1 shrink-0">
+          {/* View Pages */}
+          <button
+            onClick={() => setViewPagesOpen(v => !v)}
+            className={`w-12 flex flex-col items-center gap-1 py-2.5 px-1 rounded-xl transition-colors ${viewPagesOpen ? 'text-blue-600 bg-blue-50' : 'text-gray-500 hover:text-blue-600 hover:bg-blue-50'}`}
+          >
+            <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="9" rx="1"/><rect x="3" y="15" width="7" height="6" rx="1"/><rect x="14" y="15" width="7" height="6" rx="1"/>
+            </svg>
+            <span className="text-[9px] font-medium leading-tight text-center">View Pages</span>
+          </button>
+
+          {/* Process History */}
+          <button
+            onClick={() => {
+              const sigData = dealData?.signature
+              if (!sigData) return
+              setHistoryEvents(lsGetEvents(sigData.id))
+              setHistoryModalOpen(true)
+            }}
+            className="w-12 flex flex-col items-center gap-1 py-2.5 px-1 rounded-xl text-gray-500 hover:text-purple-600 hover:bg-purple-50 transition-colors"
+          >
+            <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <circle cx="12" cy="12" r="10"/><polyline strokeLinecap="round" strokeLinejoin="round" points="12 6 12 12 16 14"/>
+            </svg>
+            <span className="text-[9px] font-medium leading-tight text-center">History</span>
+          </button>
+
+          {/* Send */}
+          <button
+            onClick={() => setSendModalOpen(true)}
+            disabled={sending}
+            className="w-12 flex flex-col items-center gap-1 py-2.5 px-1 rounded-xl text-gray-500 hover:text-blue-600 hover:bg-blue-50 disabled:opacity-40 transition-colors"
+          >
+            {sending ? (
+              <svg className="w-5 h-5 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2a10 10 0 1 0 10 10"/></svg>
+            ) : (
+              <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
+            )}
+            <span className="text-[9px] font-medium leading-tight text-center">Send</span>
+          </button>
+
+          {/* Download */}
+          <button
+            onClick={handleDownload}
+            disabled={downloading}
+            className="w-12 flex flex-col items-center gap-1 py-2.5 px-1 rounded-xl text-gray-500 hover:text-green-600 hover:bg-green-50 disabled:opacity-40 transition-colors"
+          >
+            {downloading ? (
+              <svg className="w-5 h-5 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2a10 10 0 1 0 10 10"/></svg>
+            ) : (
+              <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+            )}
+            <span className="text-[9px] font-medium leading-tight text-center">Download</span>
+          </button>
+
+          {/* Save */}
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            className="w-12 flex flex-col items-center gap-1 py-2.5 px-1 rounded-xl text-gray-500 hover:text-blue-600 hover:bg-blue-50 disabled:opacity-40 transition-colors"
+          >
+            {saving ? (
+              <svg className="w-5 h-5 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2a10 10 0 1 0 10 10"/></svg>
+            ) : (
+              <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline strokeLinecap="round" strokeLinejoin="round" points="17 21 17 13 7 13 7 21"/><polyline strokeLinecap="round" strokeLinejoin="round" points="7 3 7 8 15 8"/></svg>
+            )}
+            <span className="text-[9px] font-medium leading-tight text-center">Save</span>
+          </button>
+        </div>
       </div>
 
-      {/* Send Modal */}
+      {/* ── Process History Full Page ── */}
+      {historyModalOpen && (() => {
+        const sigData = dealData?.signature
+        if (!sigData) return null
+
+        const allRecipients: any[] = [sigData, ...((sigData.siblings as any[]) || [])]
+        const isCompleted = (r: any) => !!(r.signed_at || String(r.status || '').toLowerCase() === 'completed')
+        const overallSigned = allRecipients.every(isCompleted)
+
+        const fmt = (iso: string | null) => {
+          if (!iso) return '—'
+          try {
+            const d = new Date(iso)
+            return d.toLocaleString('en-US', { month: 'numeric', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true })
+          } catch { return iso }
+        }
+
+        const docFiles: any[] = (() => {
+          try { const p = JSON.parse(sigData.document_file || '[]'); return Array.isArray(p) ? p : [p] } catch { return [] }
+        })()
+        const docNames = docFiles.map((f: any) => f.file_name || '').filter(Boolean)
+
+        // Use real events from API; fall back to signature record data if none yet
+        type ActivityRow = { time: string; user: string; user_email: string; action: string; activity: string; status: string }
+        let rows: ActivityRow[]
+
+        // Admin-triggered actions always show the current logged-in user
+        const adminActions = new Set(['Registered', 'Sent Invitations'])
+        const displayUser = loggedInUser.name || loggedInUser.email || '—'
+        const displayEmail = loggedInUser.email || ''
+
+        if (historyEvents.length > 0) {
+          rows = historyEvents.map((ev: any) => {
+            const isAdminAction = adminActions.has(ev.action)
+            return {
+              time: fmt(ev.created_at),
+              user: isAdminAction ? displayUser : (ev.user_name || '—'),
+              user_email: isAdminAction ? displayEmail : (ev.user_email || ''),
+              action: ev.action || '',
+              activity: ev.activity || '',
+              status: ev.status || '',
+            }
+          })
+        } else {
+          // Fallback: build from signature record (no events recorded yet)
+          rows = []
+          rows.push({
+            time: fmt(sigData.created_at),
+            user: loggedInUser.name || allRecipients[0]?.full_name || allRecipients[0]?.email || 'Owner',
+            user_email: loggedInUser.email || allRecipients[0]?.email || '',
+            action: 'Registered',
+            activity: 'The envelope was created',
+            status: 'Created',
+          })
+          for (const r of allRecipients) {
+            if (isCompleted(r)) {
+              rows.push({
+                time: fmt(r.signed_at || r.updated_at),
+                user: r.full_name || r.email || '',
+                user_email: r.email || '',
+                action: 'Signed',
+                activity: `${r.full_name || r.email || ''} signed the document`,
+                status: 'Completed',
+              })
+            }
+          }
+        }
+
+        return (
+          <div className="fixed inset-0 z-[200] bg-white overflow-y-auto">
+            {/* Print styles — remove browser URL footer, zero page margins */}
+            <style dangerouslySetInnerHTML={{ __html: `@media print { @page { margin: 0mm; size: auto; } body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } .print-logo { display: flex !important; } .print-content { padding: 14mm 16mm; } }` }} />
+
+            {/* Print-only logo header */}
+            <div className="print-logo hidden items-center gap-3 px-8 pt-6 pb-4 border-b border-gray-200 mb-2">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src="/images/logo.png" alt="EasyDrive Canada" className="h-10 w-auto object-contain" />
+            </div>
+
+            {/* Top bar */}
+            <div className="sticky top-0 z-10 bg-white border-b border-gray-200 px-8 py-3 flex items-center justify-between print:hidden">
+              <button
+                type="button"
+                onClick={() => setHistoryModalOpen(false)}
+                className="flex items-center gap-2 text-sm text-gray-600 hover:text-gray-900 transition-colors"
+              >
+                <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7"/></svg>
+                Back to Document
+              </button>
+              <div className="text-sm font-semibold text-gray-700">Process History</div>
+              <button
+                type="button"
+                onClick={() => window.print()}
+                className="h-8 px-4 rounded border border-gray-300 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+              >
+                Print
+              </button>
+            </div>
+
+            {/* Page content */}
+            <div className="max-w-5xl mx-auto px-8 py-10 print-content">
+
+              {/* Meta grid */}
+              <div className="grid grid-cols-2 gap-x-16 gap-y-5 mb-10 pb-8 border-b border-gray-200">
+                <div>
+                  <div className="text-sm font-semibold text-gray-900 mb-0.5">Subject</div>
+                  <div className="text-sm text-gray-600">Complete with EasyDrive Canada: {docNames[0] || 'Document'}</div>
+                </div>
+                <div>
+                  <div className="text-sm font-semibold text-gray-900 mb-0.5">Documents</div>
+                  <div className="text-sm text-gray-600">{docNames.length > 0 ? docNames.join(', ') : '—'}</div>
+                </div>
+                <div>
+                  <div className="text-sm font-semibold text-gray-900 mb-0.5">Envelope ID</div>
+                  <div className="text-sm text-gray-600 font-mono break-all">{sigData.id}</div>
+                </div>
+                <div>
+                  <div className="text-sm font-semibold text-gray-900 mb-0.5">Recipients</div>
+                  <div className="text-sm text-gray-600">{allRecipients.map(r => r.full_name || r.email).join(', ')}</div>
+                </div>
+                <div>
+                  <div className="text-sm font-semibold text-gray-900 mb-0.5">Sent</div>
+                  <div className="text-sm text-gray-600">{fmt(sigData.created_at)}</div>
+                </div>
+                <div>
+                  <div className="text-sm font-semibold text-gray-900 mb-0.5">Status</div>
+                  <div className={`text-sm font-medium ${overallSigned ? 'text-green-600' : 'text-amber-600'}`}>
+                    {overallSigned ? 'Completed' : 'Pending'}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-sm font-semibold text-gray-900 mb-0.5">Created</div>
+                  <div className="text-sm text-gray-600">{fmt(sigData.created_at)}</div>
+                </div>
+                <div>
+                  <div className="text-sm font-semibold text-gray-900 mb-0.5">Status Date</div>
+                  <div className="text-sm text-gray-600">{fmt(sigData.updated_at || sigData.created_at)}</div>
+                </div>
+                <div>
+                  <div className="text-sm font-semibold text-gray-900 mb-0.5">Location</div>
+                  <div className="text-sm text-gray-600">EasyDrive Canada</div>
+                </div>
+                <div>
+                  <div className="text-sm font-semibold text-gray-900 mb-0.5">Holder</div>
+                  <div className="text-sm text-gray-600">{allRecipients[0]?.full_name || allRecipients[0]?.email || '—'}</div>
+                </div>
+                <div>
+                  <div className="text-sm font-semibold text-gray-900 mb-0.5">Time Zone</div>
+                  <div className="text-sm text-gray-600">(UTC) Coordinated Universal Time</div>
+                </div>
+              </div>
+
+              {/* Activities table */}
+              <div>
+                <h2 className="text-xl font-semibold text-gray-900 mb-5">Activities</h2>
+                {rows.length === 0 ? (
+                  <div className="flex items-center justify-center py-16 text-gray-400 text-sm border border-dashed border-gray-200 rounded-lg">
+                    No activity recorded yet. Send a signature request to start tracking.
+                  </div>
+                ) : (
+                  <div className="w-full border border-gray-200 rounded-lg overflow-hidden">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="bg-gray-50 border-b border-gray-200">
+                          <th className="text-left px-4 py-3 font-semibold text-gray-500 text-xs uppercase tracking-wide w-44">Time</th>
+                          <th className="text-left px-4 py-3 font-semibold text-gray-500 text-xs uppercase tracking-wide w-48">User</th>
+                          <th className="text-left px-4 py-3 font-semibold text-gray-500 text-xs uppercase tracking-wide w-36">Action</th>
+                          <th className="text-left px-4 py-3 font-semibold text-gray-500 text-xs uppercase tracking-wide">Activity</th>
+                          <th className="text-left px-4 py-3 font-semibold text-gray-500 text-xs uppercase tracking-wide w-28">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {rows.map((row, i) => (
+                          <tr key={i} className="border-b border-gray-100 last:border-0 hover:bg-gray-50 transition-colors">
+                            <td className="px-4 py-3 text-gray-600 align-top whitespace-nowrap">{row.time}</td>
+                            <td className="px-4 py-3 align-top">
+                              <div className="text-gray-800 font-medium">{row.user}</div>
+                              {row.user_email && <div className="text-xs text-gray-400 mt-0.5">{row.user_email}</div>}
+                            </td>
+                            <td className="px-4 py-3 text-gray-700 align-top">{row.action}</td>
+                            <td className="px-4 py-3 text-gray-600 align-top">{row.activity}</td>
+                            <td className="px-4 py-3 text-gray-700 align-top">{row.status}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )
+      })()}
+
       {sendModalOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/40" onClick={() => { if (!sending) setSendModalOpen(false) }} />
