@@ -143,24 +143,93 @@ export default function ImagesTab({ vehicleId, images, onImagesUpdate }: ImagesT
     return name.endsWith('.heic') || name.endsWith('.heif') || f.type === 'image/heic' || f.type === 'image/heif'
   }
 
-  const convertHeicToJpeg = async (f: File): Promise<File> => {
-    try {
-      const heic2any = (await import('heic2any')).default
-      const blob = await heic2any({ blob: f, toType: 'image/jpeg', quality: 0.92 }) as Blob
-      const jpegName = f.name.replace(/\.(heic|heif)$/i, '.jpg')
-      return new File([blob], jpegName, { type: 'image/jpeg' })
-    } catch {
-      return f
-    }
+  // Approach 1: canvas (works when browser natively supports HEIC — Safari/Mac)
+  const convertHeicViaCanvas = (f: File): Promise<File> =>
+    new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(f)
+      const img = new Image()
+      img.onload = () => {
+        try {
+          const canvas = document.createElement('canvas')
+          canvas.width = img.naturalWidth
+          canvas.height = img.naturalHeight
+          const ctx = canvas.getContext('2d')
+          if (!ctx) { URL.revokeObjectURL(url); reject(new Error('No canvas context')); return }
+          ctx.drawImage(img, 0, 0)
+          canvas.toBlob(blob => {
+            URL.revokeObjectURL(url)
+            if (!blob) { reject(new Error('Canvas toBlob failed')); return }
+            const name = f.name.replace(/\.(heic|heif)$/i, '.jpg')
+            resolve(new File([blob], name, { type: 'image/jpeg' }))
+          }, 'image/jpeg', 0.92)
+        } catch (e) { URL.revokeObjectURL(url); reject(e) }
+      }
+      img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Browser cannot decode HEIC natively')) }
+      img.src = url
+    })
+
+  // Approach 2: heic2any library (works in Chrome/Windows without native codec)
+  const convertHeicViaLibrary = async (f: File): Promise<File> => {
+    const mod = await import('heic2any')
+    const fn: Function = typeof (mod as any).default === 'function'
+      ? (mod as any).default
+      : typeof mod === 'function'
+        ? mod as unknown as Function
+        : null
+    if (!fn) throw new Error('heic2any not loaded')
+    const result = await fn({ blob: f, toType: 'image/jpeg', quality: 0.92, multiple: false })
+    const blob: Blob = Array.isArray(result) ? result[0] : result
+    const name = f.name.replace(/\.(heic|heif)$/i, '.jpg')
+    return new File([blob], name, { type: 'image/jpeg' })
   }
 
-  const addFilesToPending = async (files: FileList | null) => {
+  // Approach 3: server-side via Sharp (always works, any browser/OS)
+  const convertHeicViaServer = async (f: File): Promise<File> => {
+    const form = new FormData()
+    form.append('file', f)
+    const res = await fetch('/api/convert-heic', { method: 'POST', body: form })
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }))
+      throw new Error(err?.error || 'Server conversion failed')
+    }
+    const blob = await res.blob()
+    const name = f.name.replace(/\.(heic|heif)$/i, '.jpg')
+    return new File([blob], name, { type: 'image/jpeg' })
+  }
+
+  const convertHeicToJpeg = async (f: File): Promise<File> => {
+    // 1. Canvas (native HEIC support — Mac/Safari/iOS)
+    try { return await convertHeicViaCanvas(f) } catch { /* fall through */ }
+    // 2. heic2any library (Windows Chrome with libheif)
+    try { return await convertHeicViaLibrary(f) } catch { /* fall through */ }
+    // 3. Server-side Sharp (guaranteed fallback — works everywhere)
+    return await convertHeicViaServer(f)
+  }
+
+  const parseHeicError = (err: unknown): string => {
+    if (err instanceof Error) return err.message
+    if (err && typeof err === 'object') {
+      const o = err as Record<string, unknown>
+      if (typeof o.message === 'string') return o.message
+      try { return JSON.stringify(o) } catch { /* ignore */ }
+    }
+    return String(err)
+  }
+
+  const addFilesToPending = async (files: FileList | File[] | null) => {
     if (!files || files.length === 0) return
+    const fileArray: File[] = Array.from(files)
     const next: PendingImage[] = []
-    for (let i = 0; i < files.length; i++) {
-      let f = files[i]
+    const conversionErrors: string[] = []
+    for (let i = 0; i < fileArray.length; i++) {
+      let f = fileArray[i]
       if (isHeic(f)) {
-        f = await convertHeicToJpeg(f)
+        try {
+          f = await convertHeicToJpeg(f)
+        } catch (err) {
+          conversionErrors.push(`"${fileArray[i].name}": ${parseHeicError(err)}`)
+          continue
+        }
       }
       next.push({
         id: `${Date.now()}_${i}_${Math.random().toString(16).slice(2)}`,
@@ -168,7 +237,12 @@ export default function ImagesTab({ vehicleId, images, onImagesUpdate }: ImagesT
         previewUrl: URL.createObjectURL(f),
       })
     }
-    setPendingImages(prev => [...prev, ...next])
+    if (conversionErrors.length > 0) {
+      setErrorMsg(`Failed to convert HEIC image(s) — please convert to JPG first:\n${conversionErrors.join('\n')}`)
+    }
+    if (next.length > 0) {
+      setPendingImages(prev => [...prev, ...next])
+    }
   }
 
   const movePending = (id: string, dir: -1 | 1) => {
@@ -553,9 +627,9 @@ export default function ImagesTab({ vehicleId, images, onImagesUpdate }: ImagesT
           multiple
           accept="image/*,.heic,.heif"
           onChange={(e) => {
-            const files = e.target.files
+            const filesArr = e.target.files ? Array.from(e.target.files) : []
             e.currentTarget.value = ''
-            void addFilesToPending(files)
+            if (filesArr.length > 0) void addFilesToPending(filesArr)
           }}
           className="hidden"
           id="image-upload"

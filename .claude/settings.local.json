@@ -8,7 +8,8 @@
       "Bash(do echo:*)",
       "Read(//c/Users/AKT/Desktop/EZ drive/easydrivecanadav2-master/**)",
       "Bash(done)",
-      "WebFetch(domain:easydrivecanada.com)"
+      "WebFetch(domain:easydrivecanada.com)",
+      "Bash(npm install:*)"
     ]
   }
 }
