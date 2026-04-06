@@ -99,6 +99,23 @@ export default function VehicleDetailsTab({ formData, onChange, onFormDataChange
     }
   }, [formData?.vin, lastVinSent])
 
+  // Keep local toggle UI in sync with parent form state after fetch/save refresh.
+  useEffect(() => {
+    setCertified(Boolean(formData.certified))
+    setVerified(Boolean(formData.verified))
+    setDistanceDisclaimer(Boolean(formData.distanceDisclaimer))
+    setFeedToAutotrader(Boolean(formData.feedToAutotrader))
+    setFeedToCarpages(Boolean(formData.feedToCarpages))
+    setFeedToCargurus(Boolean(formData.feedToCargurus))
+  }, [
+    formData.certified,
+    formData.verified,
+    formData.distanceDisclaimer,
+    formData.feedToAutotrader,
+    formData.feedToCarpages,
+    formData.feedToCargurus,
+  ])
+
   // Build a display name from first/last or email local-part
   const displayUserName = (r: { first_name?: string | null; last_name?: string | null; email?: string | null }) => {
     const f = String(r.first_name || '').trim()

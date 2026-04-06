@@ -402,7 +402,6 @@ export default function DealsPage() {
                       onChange={(e) => toggleSelectAll(e.target.checked)}
                     />
                   </th>
-                  <th>ID</th>
                   <th>Primary Customer</th>
                   <th>Vehicle</th>
                   <th>Type</th>
@@ -417,13 +416,13 @@ export default function DealsPage() {
               <tbody>
                 {loading ? (
                   <tr>
-                    <td className="px-6 py-10 text-center text-sm text-slate-400" colSpan={12}>
+                    <td className="px-6 py-10 text-center text-sm text-slate-400" colSpan={11}>
                       Loading deals...
                     </td>
                   </tr>
                 ) : paged.length === 0 ? (
                   <tr>
-                    <td className="px-6 py-10 text-center text-sm text-slate-400" colSpan={12}>
+                    <td className="px-6 py-10 text-center text-sm text-slate-400" colSpan={11}>
                       No results.
                     </td>
                   </tr>
@@ -455,7 +454,6 @@ export default function DealsPage() {
                           onChange={(e) => toggleSelect(r.dealId, e.target.checked)}
                         />
                       </td>
-                      <td className="px-4 py-3 text-sm font-medium text-slate-800 whitespace-nowrap">{r.dealId}</td>
                       <td className="px-4 py-3 text-sm text-slate-600 whitespace-nowrap">{r.primaryCustomer}</td>
                       <td className="px-4 py-3 text-sm text-slate-600 min-w-[360px]">{r.vehicle}</td>
                       <td className="px-4 py-3 text-sm text-slate-600 whitespace-nowrap">{r.type}</td>

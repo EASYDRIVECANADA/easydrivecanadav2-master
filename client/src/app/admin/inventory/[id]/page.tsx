@@ -134,6 +134,13 @@ export default function AdminEditVehiclePage() {
 
   const fetchVehicle = async () => {
     try {
+      const toBool = (v: any): boolean => {
+        if (typeof v === 'boolean') return v
+        if (typeof v === 'number') return v === 1
+        const s = String(v ?? '').trim().toLowerCase()
+        return s === 'true' || s === '1' || s === 'yes' || s === 'y'
+      }
+
       const { data, error } = await supabase
         .from('edc_vehicles')
         .select('*')
@@ -189,12 +196,12 @@ export default function AdminEditVehiclePage() {
         doors: data.doors || '',
         other: data.other || '',
         notes: data.notes || '',
-        distanceDisclaimer: data.distance_disclaimer || false,
-        feedToAutotrader: data.feed_to_autotrader || false,
-        feedToCarpages: data.feed_to_carpages || false,
-        feedToCargurus: data.feed_to_cargurus || false,
-        certified: data.certified || false,
-        verified: data.verified || false,
+        distanceDisclaimer: toBool(data.distance_disclaimer),
+        feedToAutotrader: toBool(data.feed_to_autotrader),
+        feedToCarpages: toBool(data.feed_to_carpages),
+        feedToCargurus: toBool(data.feed_to_cargurus),
+        certified: toBool(data.certified),
+        verified: toBool(data.verified),
       })
 
       // Use the vehicleId column (added by user) as the Carfax folder name, fall back to the row id
