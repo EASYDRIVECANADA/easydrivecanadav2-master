@@ -42,6 +42,19 @@ export default function DealsPage() {
   const [deleteTarget, setDeleteTarget] = useState<DealRow | null>(null)
   const [deleting, setDeleting] = useState(false)
   const [isAdminRole, setIsAdminRole] = useState(false)
+  const [bulkDeleteConfirmOpen, setBulkDeleteConfirmOpen] = useState(false)
+
+  const getAdminHeaders = useCallback((): Record<string, string> => {
+    try {
+      const raw = window.localStorage.getItem('edc_admin_session')
+      if (!raw) return {}
+      const parsed = JSON.parse(raw) as { email?: string; session_token?: string; token?: string; user_id?: string }
+      const email = String(parsed?.email || '').trim()
+      const token = String(parsed?.session_token || parsed?.token || 'no-token').trim()
+      if (!email) return {}
+      return { 'x-admin-email': email, 'x-admin-token': token }
+    } catch { return {} }
+  }, [])
 
   const getLoggedInUserId = useCallback(async (): Promise<string | null> => {
     try {
@@ -202,25 +215,36 @@ export default function DealsPage() {
     if (selectedIds.size === 0) return
     const selected = rows.filter((d) => selectedIds.has(d.dealId))
     if (selected.length === 0) return
+    setBulkDeleteConfirmOpen(true)
+  }
 
-    if (!confirm(`Delete ${selected.length} selected deal(s)?`)) return
-
+  const confirmBulkDelete = async () => {
+    const selected = rows.filter((d) => selectedIds.has(d.dealId))
+    setBulkDeleteConfirmOpen(false)
     try {
       setDeleting(true)
-      const promises = selected.map((d) =>
-        fetch('/api/deals/delete', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ dealId: d.dealId }),
-        })
+      const authHeaders = getAdminHeaders()
+      const results = await Promise.all(
+        selected.map((d) =>
+          fetch('/api/deals/delete', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', ...authHeaders },
+            body: JSON.stringify({ dealId: d.dealId }),
+          }).then(async (res) => {
+            const json = await res.json().catch(() => ({}))
+            if (!res.ok || json.error) throw new Error(json.error || `Delete failed for ${d.dealId}`)
+            return d.dealId
+          })
+        )
       )
-      await Promise.all(promises)
-      setRows((prev) => prev.filter((r) => !selectedIds.has(r.dealId)))
-      if (selectedDeal && selectedIds.has(selectedDeal.dealId)) setSelectedDeal(null)
+      const deletedIds = new Set(results)
+      setRows((prev) => prev.filter((r) => !deletedIds.has(r.dealId)))
+      if (selectedDeal && deletedIds.has(selectedDeal.dealId)) setSelectedDeal(null)
       setSelectedIds(new Set())
     } catch (e: any) {
       console.error('[Bulk Delete] Error:', e)
-      alert(e?.message || 'Failed to delete deals')
+      // Re-fetch to get true state from DB
+      await fetchDeals()
     } finally {
       setDeleting(false)
     }
@@ -232,7 +256,7 @@ export default function DealsPage() {
       setDeleting(true)
       const res = await fetch('/api/deals/delete', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...getAdminHeaders() },
         body: JSON.stringify({ dealId: deleteTarget.dealId }),
       })
       const json = await res.json()
@@ -353,7 +377,7 @@ export default function DealsPage() {
               <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={handleDeleteSelected}
+                  onClick={() => setBulkDeleteConfirmOpen(true)}
                   disabled={deleting}
                   className="edc-btn-danger text-sm"
                 >
@@ -687,6 +711,55 @@ export default function DealsPage() {
           className="fixed inset-0 bg-black/10 z-40 backdrop-blur-[1px]"
           onClick={() => setSelectedDeal(null)}
         />
+      )}
+
+      {/* Bulk Delete Confirm Modal */}
+      {bulkDeleteConfirmOpen && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/40" onClick={() => { if (!deleting) setBulkDeleteConfirmOpen(false) }} />
+          <div className="relative w-full max-w-sm bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">
+            {/* Header */}
+            <div className="px-6 pt-5 pb-4 border-b border-slate-100 flex items-center gap-3">
+              <div className="w-9 h-9 rounded-full bg-red-100 flex items-center justify-center shrink-0">
+                <svg className="w-5 h-5 text-red-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>
+                </svg>
+              </div>
+              <div>
+                <div className="text-base font-bold text-slate-800">Delete {selectedIds.size} Deal{selectedIds.size > 1 ? 's' : ''}</div>
+                <div className="text-xs text-slate-500 mt-0.5">This action cannot be undone</div>
+              </div>
+            </div>
+            {/* Body */}
+            <div className="px-6 py-4 text-sm text-slate-600">
+              Are you sure you want to permanently delete <span className="font-semibold text-slate-800">{selectedIds.size} selected deal{selectedIds.size > 1 ? 's' : ''}</span>? All associated data will be removed.
+            </div>
+            {/* Footer */}
+            <div className="px-6 pb-5 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setBulkDeleteConfirmOpen(false)}
+                disabled={deleting}
+                className="h-9 px-4 rounded-xl border border-slate-200 text-sm font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={confirmBulkDelete}
+                disabled={deleting}
+                className="h-9 px-4 rounded-xl bg-red-600 text-white text-sm font-semibold hover:bg-red-700 disabled:opacity-50 flex items-center gap-2 transition-colors"
+              >
+                {deleting ? (
+                  <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2a10 10 0 1 0 10 10"/></svg>
+                ) : (
+                  <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
+                )}
+                {deleting ? 'Deleting...' : 'Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )

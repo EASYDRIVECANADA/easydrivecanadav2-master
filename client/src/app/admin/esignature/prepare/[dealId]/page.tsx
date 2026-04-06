@@ -1351,21 +1351,6 @@ export default function PrepareDocumentPage() {
         </button>
         <div className="w-px h-6 bg-gray-200 mx-1" />
 
-        {/* Zoom controls */}
-        <button onClick={() => setZoom(z => Math.max(50, z - 10))} className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors" title="Zoom Out">
-          <svg className="w-4 h-4 text-gray-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35M8 11h6"/></svg>
-        </button>
-        <span className="text-xs font-medium text-gray-600 min-w-[40px] text-center">{zoom}%</span>
-        <button onClick={() => setZoom(z => Math.min(200, z + 10))} className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors" title="Zoom In">
-          <svg className="w-4 h-4 text-gray-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35M8 11h6M11 8v6"/></svg>
-        </button>
-        <button onClick={() => setZoom(100)} className="px-2 py-1 text-xs text-gray-500 hover:bg-gray-100 rounded transition-colors">Fit</button>
-        <div className="w-px h-6 bg-gray-200 mx-1" />
-
-        <button onClick={() => setShowGrid(g => !g)} className={`p-1.5 rounded-lg transition-colors ${showGrid ? 'bg-blue-50 text-blue-600' : 'hover:bg-gray-100 text-gray-600'}`} title="Toggle Grid">
-          <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/></svg>
-        </button>
-
         <div className="flex-1" />
 
         {uploadedFiles.length > 1 && (
@@ -1816,6 +1801,43 @@ export default function PrepareDocumentPage() {
             )}
             <span className="text-[9px] font-medium leading-tight text-center">Save</span>
           </button>
+
+          {/* Spacer */}
+          <div className="flex-1" />
+
+          {/* Zoom + Grid controls at bottom */}
+          <div className="flex flex-col items-center gap-1 pb-1">
+            <button
+              onClick={() => setZoom(z => Math.min(200, z + 10))}
+              className="w-9 h-9 flex items-center justify-center rounded-lg text-gray-500 hover:text-gray-800 hover:bg-gray-100 transition-colors"
+              title="Zoom In"
+            >
+              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35M8 11h6M11 8v6"/></svg>
+            </button>
+            <span className="text-[10px] font-semibold text-gray-600">{zoom}%</span>
+            <button
+              onClick={() => setZoom(z => Math.max(50, z - 10))}
+              className="w-9 h-9 flex items-center justify-center rounded-lg text-gray-500 hover:text-gray-800 hover:bg-gray-100 transition-colors"
+              title="Zoom Out"
+            >
+              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35M8 11h6"/></svg>
+            </button>
+            <button
+              onClick={() => setZoom(100)}
+              className="w-9 h-7 flex items-center justify-center rounded-lg text-[10px] font-medium text-gray-500 hover:text-gray-800 hover:bg-gray-100 transition-colors"
+              title="Fit (100%)"
+            >
+              Fit
+            </button>
+            <div className="w-8 h-px bg-gray-200 my-0.5" />
+            <button
+              onClick={() => setShowGrid(g => !g)}
+              className={`w-9 h-9 flex items-center justify-center rounded-lg transition-colors ${showGrid ? 'text-blue-600 bg-blue-50' : 'text-gray-500 hover:text-gray-800 hover:bg-gray-100'}`}
+              title="Toggle Grid"
+            >
+              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/></svg>
+            </button>
+          </div>
         </div>
       </div>
 
