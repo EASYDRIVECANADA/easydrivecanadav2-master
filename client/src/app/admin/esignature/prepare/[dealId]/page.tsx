@@ -1702,7 +1702,7 @@ export default function PrepareDocumentPage() {
           <div className="w-52 bg-white border-l border-gray-200 flex flex-col shrink-0 overflow-hidden">
             {/* Header */}
             <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
-              <span className="text-sm font-semibold text-gray-800">Thumbnails</span>
+              <span className="text-sm font-semibold text-gray-800">Pages</span>
               <button
                 type="button"
                 onClick={() => setViewPagesOpen(false)}

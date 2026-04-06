@@ -789,7 +789,7 @@ function DealsSignaturePageInner() {
             className="flex items-center justify-center h-full text-blue-600 text-xs font-medium cursor-pointer hover:bg-blue-100/90"
             onClick={() => { setCurrentSigningField(field.id); setSignatureModalOpen(true) }}
           >
-            Here need to Sign
+            Signature
           </div>
         )
       case 'initial':
