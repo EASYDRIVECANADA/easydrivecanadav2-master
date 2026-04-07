@@ -18,6 +18,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<AdminSession | null>(null)
   const [userName, setUserName] = useState<string | null>(null)
   const [profileB64, setProfileB64] = useState<string | null>(null)
+  const [accountType, setAccountType] = useState<string | null>(null)
   const [isVerified, setIsVerified] = useState(false)
   const [collapsed, setCollapsed] = useState(false)
   const [accountMenuOpen, setAccountMenuOpen] = useState(false)
@@ -54,6 +55,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
       const s = window.localStorage.getItem('edc_admin_session')
       if (!s) {
         setSession(null)
+        setAccountType(null)
         return
       }
       try {
@@ -66,6 +68,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
         }
       } catch {
         setSession(null)
+        setAccountType(null)
       }
 
       try {
@@ -165,16 +168,20 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
     const email = String(session?.email || '').trim().toLowerCase()
     if (!email) {
       setProfileB64(null)
+      setAccountType(null)
       return
     }
 
     const run = async () => {
       try {
-        const { data } = await supabase.from('users').select('profile').eq('email', email).limit(1).maybeSingle()
+        const { data } = await supabase.from('users').select('profile, account').eq('email', email).limit(1).maybeSingle()
         const raw = String((data as any)?.profile || '').trim()
+        const accountRaw = String((data as any)?.account || '').trim()
         setProfileB64(raw || null)
+        setAccountType(accountRaw || null)
       } catch {
         setProfileB64(null)
+        setAccountType(null)
       }
     }
 
@@ -226,6 +233,10 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
     return (n[0] || 'A').toUpperCase()
   }, [accountFirstName])
 
+  const isAdminAccount = useMemo(() => {
+    return String(accountType || '').trim().toLowerCase() === 'admin'
+  }, [accountType])
+
   useEffect(() => {
     if (!accountMenuOpen) return
 
@@ -249,21 +260,26 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
     }
   }, [accountMenuOpen])
 
-  const navItems = useMemo(
-    () => [
-      { href: '/admin', label: 'Home', icon: 'home' },
+  const navItems = useMemo(() => {
+    const items = [
+      { href: '/admin', label: 'Home', icon: 'home', disabled: false },
       { href: '/admin/leads', label: 'Leads', icon: 'phone', disabled: !isVerified },
       { href: '/admin/costumer', label: 'Customers', icon: 'users', disabled: !isVerified },
       { href: '/admin/vendors', label: 'Vendors', icon: 'briefcase', disabled: !isVerified },
       { href: '/admin/marketplace', label: 'Market Place', icon: 'market', disabled: !isVerified },
       { href: '/admin/inventory', label: 'Inventory', icon: 'car', disabled: !isVerified },
-      { href: '/admin/sales', label: 'Sales', icon: 'dollar' },
+      { href: '/admin/sales', label: 'Sales', icon: 'dollar', disabled: false },
       { href: '/admin/esignature', label: 'E-Signature', icon: 'pen', disabled: !isVerified },
       { href: '/admin/reports', label: 'Reports', icon: 'file', disabled: !isVerified },
       { href: '/admin/billing', label: 'Billing', icon: 'billing', disabled: !isVerified },
-    ],
-    [isVerified]
-  )
+    ]
+
+    if (isAdminAccount) {
+      items.push({ href: '/admin/users', label: 'Directory', icon: 'users', disabled: false })
+    }
+
+    return items
+  }, [isVerified, isAdminAccount])
 
   const salesSubItems = useMemo(
     () => [
