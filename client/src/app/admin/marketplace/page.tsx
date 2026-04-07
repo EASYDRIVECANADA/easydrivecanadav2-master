@@ -46,6 +46,8 @@ export default function MarketplacePage() {
 
   const [carfaxAvailable, setCarfaxAvailable] = useState<boolean | null>(null)
   const [disclosureModal, setDisclosureModal] = useState<'premier' | 'private' | 'fleet' | 'dealership' | null>(null)
+  const [importantDisclosureText, setImportantDisclosureText] = useState<string | null>(null)
+  const [importantDisclosureLoading, setImportantDisclosureLoading] = useState(false)
 
   const [bucketImageCache] = useState(() => new Map<string, string[]>())
 
@@ -110,6 +112,37 @@ export default function MarketplacePage() {
       })
       .catch(() => setCarfaxAvailable(false))
   }, [selected])
+
+  useEffect(() => {
+    const load = async () => {
+      if (!disclosureModal || !selected?.id) {
+        setImportantDisclosureText(null)
+        setImportantDisclosureLoading(false)
+        return
+      }
+      setImportantDisclosureLoading(true)
+      try {
+        const vehicleId = String(selected.id)
+        const { data, error } = await supabase
+          .from('ImportantDisclosures')
+          .select('disclosures')
+          .eq('vehicleId', vehicleId)
+          .maybeSingle()
+
+        if (!error && data && typeof (data as any).disclosures === 'string' && (data as any).disclosures.trim() !== '') {
+          setImportantDisclosureText(String((data as any).disclosures))
+        } else {
+          setImportantDisclosureText(null)
+        }
+      } catch {
+        setImportantDisclosureText(null)
+      } finally {
+        setImportantDisclosureLoading(false)
+      }
+    }
+
+    void load()
+  }, [disclosureModal, selected?.id])
 
   const toImageSrc = (value: string) => {
     const v = String(value || '').trim()
@@ -756,7 +789,13 @@ export default function MarketplacePage() {
                       type="button"
                       onClick={() => {
                         const raw = String(selected?.categories || '').toLowerCase()
-                        const type = raw.includes('private') ? 'private' : raw.includes('fleet') ? 'fleet' : raw.includes('dealer') ? 'dealership' : 'premier'
+                        const type = raw.includes('private')
+                          ? 'private'
+                          : raw.includes('fleet')
+                          ? 'fleet'
+                          : raw.includes('dealer')
+                          ? 'dealership'
+                          : 'premier'
                         setDisclosureModal(type)
                       }}
                       className="w-full py-3 px-4 rounded-xl border border-yellow-400 text-yellow-700 bg-yellow-50 hover:bg-yellow-100 text-sm font-medium transition-colors flex items-center justify-center gap-2"
@@ -842,7 +881,18 @@ export default function MarketplacePage() {
                   </button>
                 </div>
                 <div className="overflow-y-auto flex-1 p-6">
-                  <p className="text-gray-700 mb-6">This vehicle is offered by EasyDrive Canada (EDC) as an <strong className={cfg.title}>{cfg.label}</strong> vehicle.</p>
+                  {importantDisclosureLoading ? (
+                    <div className="text-sm text-gray-500">Loading disclosure…</div>
+                  ) : importantDisclosureText ? (
+                    <div className="space-y-3 text-sm text-gray-700 whitespace-pre-line">
+                      {importantDisclosureText}
+                    </div>
+                  ) : (
+                    <>
+                  <p className="text-gray-700 mb-6">
+                    This vehicle is offered by EasyDrive Canada (EDC) as an{' '}
+                    <strong className={cfg.title}>{cfg.label}</strong> vehicle.
+                  </p>
                   <div className="space-y-5 text-sm">
                     {disclosureModal === 'premier' && <>
                       <div><h4 className="font-semibold text-gray-900 mb-2 flex items-center gap-2"><span className={`w-6 h-6 ${cfg.badge} rounded-full flex items-center justify-center text-xs font-bold`}>1</span>Vehicle Status – EDC Premier</h4><ul className="list-disc list-inside space-y-1 text-gray-600 ml-8"><li>This vehicle is owned and stocked by EasyDrive Canada.</li><li>Viewing and test drives are available by appointment.</li></ul></div>
@@ -872,9 +922,14 @@ export default function MarketplacePage() {
                       <div><h4 className="font-semibold text-gray-900 mb-2 flex items-center gap-2"><span className={`w-6 h-6 ${cfg.badge} rounded-full flex items-center justify-center text-xs font-bold`}>5</span>CARFAX Disclosure</h4><ul className="list-disc list-inside space-y-1 text-gray-600 ml-8"><li>A CARFAX report will be provided to the client prior to completion of the sale.</li></ul></div>
                     </>}
                     <div className="pt-4 mt-4 border-t border-gray-200">
-                      <p className="text-gray-500 italic text-xs">No other promises, representations, or guarantees have been made, written or verbal, other than what is disclosed above and on the Bill of Sale.</p>
+                      <p className="text-gray-500 italic text-xs">
+                        No other promises, representations, or guarantees have been made, written or verbal, other than
+                        what is disclosed above and on the Bill of Sale.
+                      </p>
                     </div>
                   </div>
+                    </>
+                  )}
                 </div>
                 <div className="px-6 py-4 border-t border-gray-200 flex-shrink-0">
                   <button onClick={() => setDisclosureModal(null)} className={`w-full ${cfg.btn} text-white font-semibold py-3 rounded-xl transition-colors`}>I Understand</button>

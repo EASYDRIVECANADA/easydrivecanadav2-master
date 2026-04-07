@@ -20,6 +20,7 @@ import {
 import VehicleDetailsTab from './tabs/VehicleDetailsTab'
 import ImagesTab from './tabs/ImagesTab'
 import DisclosuresTab from './tabs/DisclosuresTab'
+import ImportantDisclosuresTab from './tabs/ImportantDisclosuresTab'
 import PurchaseTab from './tabs/PurchaseTab'
 import CostsTab from './tabs/CostsTab'
 import WarrantyTab from './tabs/WarrantyTab'
@@ -83,13 +84,23 @@ interface VehicleFormData extends Omit<Partial<Vehicle>, 'features'> {
   features?: string | string[]
 }
 
-type TabType = 'details' | 'images' | 'disclosures' | 'purchase' | 'costs' | 'warranty' | 'files' | 'carfax'
+type TabType =
+  | 'details'
+  | 'images'
+  | 'disclosures'
+  | 'importantDisclosures'
+  | 'purchase'
+  | 'costs'
+  | 'warranty'
+  | 'files'
+  | 'carfax'
 
 type TabIcon = ComponentType<{ className?: string }>
 
 const TABS: { id: TabType; label: string; icon: TabIcon }[] = [
   { id: 'details', label: 'Vehicle Details', icon: CarFront },
   { id: 'disclosures', label: 'Disclosures', icon: ClipboardList },
+  { id: 'importantDisclosures', label: 'Important Disclosures', icon: ClipboardList },
   { id: 'purchase', label: 'Purchase', icon: BadgeDollarSign },
   { id: 'costs', label: 'Costs', icon: Receipt },
   { id: 'warranty', label: 'Warranty', icon: ShieldCheck },
@@ -126,7 +137,17 @@ export default function AdminEditVehiclePage() {
   // Pick active tab from URL query param (?tab=disclosures, images, etc.)
   useEffect(() => {
     const tab = (searchParams?.get('tab') || '').toLowerCase()
-    const validTabs: TabType[] = ['details', 'images', 'disclosures', 'purchase', 'costs', 'warranty', 'files', 'carfax']
+    const validTabs: TabType[] = [
+      'details',
+      'images',
+      'disclosures',
+      'importantDisclosures',
+      'purchase',
+      'costs',
+      'warranty',
+      'files',
+      'carfax',
+    ]
     if (validTabs.includes(tab as TabType)) {
       setActiveTab(tab as TabType)
     }
@@ -492,6 +513,10 @@ export default function AdminEditVehiclePage() {
 
         {activeTab === 'disclosures' && (
           <DisclosuresTab vehicleId={String(params.id)} />
+        )}
+
+        {activeTab === 'importantDisclosures' && (
+          <ImportantDisclosuresTab vehicleId={String(params.id)} />
         )}
 
         {activeTab === 'purchase' && (
