@@ -275,7 +275,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
     ]
 
     if (isAdminAccount) {
-      items.push({ href: '/admin/users', label: 'Directory', icon: 'users', disabled: false })
+      items.push({ href: '/admin/directory', label: 'Directory', icon: 'users', disabled: false })
     }
 
     return items
