@@ -50,6 +50,7 @@ export default function AdminAccountPage() {
   const [editFirstName, setEditFirstName] = useState('')
   const [editLastName, setEditLastName] = useState('')
   const [editTitle, setEditTitle] = useState('')
+  const [editRole, setEditRole] = useState('')
   const [editPhone, setEditPhone] = useState('')
   const [editMobile, setEditMobile] = useState('')
   const [editEmail, setEditEmail] = useState('')
@@ -162,6 +163,7 @@ export default function AdminAccountPage() {
       'first_name',
       'last_name',
       'title',
+      'role',
       'email',
       'phone',
       'mobile',
@@ -470,6 +472,7 @@ export default function AdminAccountPage() {
     setEditFirstName(String(row?.first_name ?? '').trim())
     setEditLastName(String(row?.last_name ?? '').trim())
     setEditTitle(String(row?.title ?? '').trim())
+    setEditRole(String(row?.role ?? '').trim())
     setEditPhone(String(row?.phone ?? '').trim())
     setEditMobile(String(row?.mobile ?? '').trim())
     setEditEmail(String(row?.email ?? session?.email ?? '').trim())
@@ -485,6 +488,7 @@ export default function AdminAccountPage() {
       first_name: editFirstName,
       last_name: editLastName,
       title: editTitle,
+      role: editRole,
       phone: editPhone,
       mobile: editMobile,
       email: editEmail,
@@ -561,6 +565,7 @@ export default function AdminAccountPage() {
               first_name: editFirstName,
               last_name: editLastName,
               title: editTitle,
+              role: editRole,
               phone: editPhone,
               mobile: editMobile,
               email: editEmail,
@@ -576,6 +581,7 @@ export default function AdminAccountPage() {
             first_name: editFirstName,
             last_name: editLastName,
             title: editTitle,
+            role: editRole,
             phone: editPhone,
             mobile: editMobile,
             email: editEmail,
@@ -743,6 +749,11 @@ export default function AdminAccountPage() {
     if (!isFromVerification && displayRole === 'STAFF') return `NOT VALIDATED ${displayRole}`
     return displayRole
   }, [displayRole, isFromVerification])
+
+  const canEditRole = useMemo(() => {
+    const accountValue = String((usersRow as any)?.account ?? '').trim().toLowerCase()
+    return accountValue === 'admin'
+  }, [usersRow])
 
   return (
     <div
@@ -1402,7 +1413,7 @@ export default function AdminAccountPage() {
                           .filter(([k]) => visibleUserFields.includes(k))
                           .map(([key, value]) =>
                             key === 'password' ? (
-                              <div key={key} className="contents">
+                              <div key={key}>
                                 <div>
                                   <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Password</label>
                                   <div className="relative">
@@ -1429,18 +1440,28 @@ export default function AdminAccountPage() {
                                     </button>
                                   </div>
                                 </div>
-                                <div className="flex flex-col justify-end">
-                                  <button
-                                    type="button"
-                                    onClick={() => void handleUpdateAccount()}
-                                    disabled={updatingAccount}
-                                    className="h-10 px-6 rounded-lg bg-slate-900 text-white text-sm font-semibold hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                                  >
-                                    {updatingAccount ? 'Updating…' : 'Update'}
-                                  </button>
-                                  {updateAccountSuccess ? <div className="mt-1 text-xs text-emerald-700">{updateAccountSuccess}</div> : null}
-                                  {updateAccountError ? <div className="mt-1 text-xs text-red-600">{updateAccountError}</div> : null}
-                                </div>
+                              </div>
+                            ) : key === 'role' ? (
+                              <div key={key}>
+                                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">
+                                  Role
+                                </label>
+                                <select
+                                  className="edc-input bg-white border border-slate-200 rounded-lg disabled:text-slate-800"
+                                  disabled={!canEditRole}
+                                  value={editRole}
+                                  onChange={(e) => {
+                                    if (!canEditRole) return
+                                    setEditRole(e.target.value)
+                                  }}
+                                >
+                                  <option value="Premier">Premier</option>
+                                  <option value="Private">Private</option>
+                                  <option value="Small dealership">Small Dealer</option>
+                                  <option value="Medium dealership">Medium Dealer</option>
+                                  <option value="large dealership">Large Dealer</option>
+                                  <option value="Fleet">Fleet</option>
+                                </select>
                               </div>
                             ) : (
                               <div key={key}>
@@ -1448,12 +1469,21 @@ export default function AdminAccountPage() {
                                   {String(key).replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())}
                                 </label>
                                 <input
-                                  className="edc-input bg-white border border-slate-200 rounded-lg"
+                                  className={
+                                    key === 'title' || (key === 'role' && !canEditRole)
+                                      ? 'edc-input bg-white border border-slate-200 rounded-lg disabled:text-slate-800'
+                                      : 'edc-input bg-white border border-slate-200 rounded-lg'
+                                  }
+                                  disabled={key === 'title' || (key === 'role' && !canEditRole)}
                                   onChange={(e) => {
                                     const next = e.target.value
                                     if (key === 'first_name') setEditFirstName(next)
                                     else if (key === 'last_name') setEditLastName(next)
-                                    else if (key === 'title') setEditTitle(next)
+                                    else if (key === 'title') return
+                                    else if (key === 'role') {
+                                      if (!canEditRole) return
+                                      setEditRole(next)
+                                    }
                                     else if (key === 'phone') setEditPhone(next)
                                     else if (key === 'mobile') setEditMobile(next)
                                     else if (key === 'email') setEditEmail(next)
@@ -1462,6 +1492,7 @@ export default function AdminAccountPage() {
                                     key === 'first_name' ? editFirstName
                                       : key === 'last_name' ? editLastName
                                       : key === 'title' ? editTitle
+                                      : key === 'role' ? editRole
                                       : key === 'phone' ? editPhone
                                       : key === 'mobile' ? editMobile
                                       : key === 'email' ? editEmail
@@ -1506,6 +1537,18 @@ export default function AdminAccountPage() {
                           </div>
                         </>
                       )}
+                    </div>
+                    <div className="mt-4 flex flex-col items-start">
+                      <button
+                        type="button"
+                        onClick={() => void handleUpdateAccount()}
+                        disabled={updatingAccount}
+                        className="h-10 px-6 rounded-lg bg-slate-900 text-white text-sm font-semibold hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                      >
+                        {updatingAccount ? 'Updating…' : 'Update'}
+                      </button>
+                      {updateAccountSuccess ? <div className="mt-1 text-xs text-emerald-700">{updateAccountSuccess}</div> : null}
+                      {updateAccountError ? <div className="mt-1 text-xs text-red-600">{updateAccountError}</div> : null}
                     </div>
                   </div>
                 </div>
