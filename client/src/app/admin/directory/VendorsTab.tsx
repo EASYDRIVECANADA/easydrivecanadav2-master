@@ -404,7 +404,6 @@ export default function VendorsTab() {
         <table className="w-full table-auto text-sm">
           <thead className="bg-slate-50/80 text-slate-600">
             <tr>
-              <th className="w-10 px-3 py-3 text-left font-semibold"></th>
               <th className="w-40 px-3 py-3 text-left font-semibold">NAME</th>
               <th className="w-40 px-3 py-3 text-left font-semibold">COMPANY</th>
               <th className="w-52 px-3 py-3 text-left font-semibold">EMAIL</th>
@@ -412,29 +411,17 @@ export default function VendorsTab() {
               <th className="w-32 px-3 py-3 text-left font-semibold">MOBILE</th>
               <th className="w-28 px-3 py-3 text-left font-semibold">CITY</th>
               <th className="w-24 px-3 py-3 text-left font-semibold">PROVINCE</th>
-              <th className="w-20 px-3 py-3 text-center font-semibold">ACTIONS</th>
+              <th className="w-28 px-3 py-3 text-center font-semibold">ACTIONS</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {loading ? (
-              <tr><td className="px-4 py-4 text-slate-400 text-center" colSpan={9}>Loading...</td></tr>
+              <tr><td className="px-4 py-4 text-slate-400 text-center" colSpan={8}>Loading...</td></tr>
             ) : paged.length === 0 ? (
-              <tr><td className="px-4 py-4 text-slate-400 text-center" colSpan={9}>No vendors found.</td></tr>
+              <tr><td className="px-4 py-4 text-slate-400 text-center" colSpan={8}>No vendors found.</td></tr>
             ) : (
               paged.map((r) => (
                 <tr key={r.id} className="hover:bg-slate-50/70 transition-colors">
-                  <td className="px-3 py-2">
-                    <button
-                      type="button"
-                      onClick={() => handleEdit(r.id)}
-                      className="text-slate-400 hover:text-[#1EA7FF] transition-colors"
-                      title="Edit"
-                    >
-                      <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 3.5a2.121 2.121 0 113 3L7 19l-4 1 1-4 12.5-12.5z" />
-                      </svg>
-                    </button>
-                  </td>
                   <td className="px-3 py-2 text-slate-900">{r.vendor_name || '-'}</td>
                   <td className="px-3 py-2 text-slate-900">{r.company_name || '-'}</td>
                   <td className="px-3 py-2 text-slate-900">{r.email || '-'}</td>
@@ -443,17 +430,29 @@ export default function VendorsTab() {
                   <td className="px-3 py-2 text-slate-600">{r.city || '-'}</td>
                   <td className="px-3 py-2 text-slate-600">{r.province || '-'}</td>
                   <td className="px-3 py-2 text-center">
-                    <button
-                      type="button"
-                      onClick={() => handleDelete(r.id)}
-                      className="text-red-400 hover:text-red-600 transition-colors"
-                      title="Delete"
-                    >
-                      <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7" />
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M10 11v6m4-6v6" />
-                      </svg>
-                    </button>
+                    <div className="flex items-center justify-center gap-3">
+                      <button
+                        type="button"
+                        onClick={() => handleEdit(r.id)}
+                        className="text-slate-400 hover:text-[#1EA7FF] transition-colors"
+                        title="Edit"
+                      >
+                        <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 3.5a2.121 2.121 0 113 3L7 19l-4 1 1-4 12.5-12.5z" />
+                        </svg>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDelete(r.id)}
+                        className="text-red-400 hover:text-red-600 transition-colors"
+                        title="Delete"
+                      >
+                        <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7" />
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M10 11v6m4-6v6" />
+                        </svg>
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))

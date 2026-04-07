@@ -39,19 +39,43 @@ export default function Header() {
       }
     }
 
+    const syncVerifiedIfNeeded = async (email: string | null) => {
+      if (!email) return
+      const existing = typeof window !== 'undefined' ? window.localStorage.getItem('edc_account_verified') : null
+      if (existing !== null) return
+      try {
+        const { data } = await supabase
+          .from('edc_account_verifications')
+          .select('id')
+          .eq('email', email.trim().toLowerCase())
+          .limit(1)
+        const hasRow = Array.isArray(data) && data.length > 0
+        if (typeof window !== 'undefined') {
+          window.localStorage.setItem('edc_account_verified', hasRow ? 'true' : 'false')
+        }
+        setIsVerified(hasRow)
+      } catch { /* ignore */ }
+    }
+
     const init = async () => {
       const { data } = await supabase.auth.getSession()
-      setUserEmail(data.session?.user?.email || null)
+      const email = data.session?.user?.email || null
+      setUserEmail(email)
       refreshVerified()
       refreshAdminSession()
+      await syncVerifiedIfNeeded(email)
     }
 
     void init()
 
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUserEmail(session?.user?.email || null)
+    const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
+      const email = session?.user?.email || null
+      setUserEmail(email)
       refreshVerified()
       refreshAdminSession()
+      if (event !== 'SIGNED_OUT') {
+        void syncVerifiedIfNeeded(email)
+      }
     })
 
     const onStorage = (e: StorageEvent) => {
@@ -106,12 +130,22 @@ export default function Header() {
   }, [])
 
   const handleSignOut = async () => {
-    await supabase.auth.signOut()
+    // Clear local state immediately so UI updates before redirect
+    setUserEmail(null)
+    setIsVerified(false)
     if (typeof window !== 'undefined') {
       window.localStorage.removeItem('edc_customer_verification')
       window.localStorage.removeItem('edc_account_verified')
+      window.localStorage.removeItem('edc_oauth_flow')
+      // Nuke all Supabase session keys so the OAuth token can't be auto-restored
+      Object.keys(window.localStorage)
+        .filter((k) => k.startsWith('sb-') || k.includes('supabase'))
+        .forEach((k) => window.localStorage.removeItem(k))
     }
-    router.push('/')
+    // Sign out of Supabase
+    await supabase.auth.signOut({ scope: 'local' })
+    // Hard reload to / so no in-memory session state survives
+    window.location.href = '/'
   }
 
   const handleAdminSignOut = () => {
