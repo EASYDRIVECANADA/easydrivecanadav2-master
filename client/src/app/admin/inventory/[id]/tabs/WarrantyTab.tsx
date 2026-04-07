@@ -533,11 +533,11 @@ export default function WarrantyTab({ vehicleId }: WarrantyTabProps) {
       )}
 
       {/* Save Button */}
-      <div className="mt-6">
+      <div className="mt-6 flex justify-end">
         <button
           onClick={handleSave}
           disabled={saving}
-          className="w-full bg-[#118df0] text-white py-3 rounded-lg font-semibold hover:bg-[#0d6ebd] transition-colors disabled:opacity-50"
+          className="h-10 px-6 rounded bg-[#118df0] text-white text-sm font-semibold hover:bg-[#0d6ebd] transition-colors disabled:opacity-50"
         >
           {saving ? 'Saving...' : 'Update'}
         </button>

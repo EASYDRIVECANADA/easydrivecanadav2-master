@@ -1754,7 +1754,7 @@ export default function NewVehiclePage() {
                 onError={(msg) => setError(msg)}
                 hideSaveButton
               />
-              <div className="mt-6">
+              <div className="mt-6 flex justify-end">
                 <button
                   type="button"
                   onClick={async () => {
@@ -1781,7 +1781,7 @@ export default function NewVehiclePage() {
                     }
                   }}
                   disabled={nextPurchaseSaving}
-                  className="w-full bg-[#118df0] text-white py-3 rounded-lg font-semibold hover:bg-[#0d6ebd] transition-colors disabled:opacity-50"
+                  className="h-10 px-6 rounded bg-[#118df0] text-white text-sm font-semibold hover:bg-[#0d6ebd] transition-colors disabled:opacity-50"
                 >
                   {nextPurchaseSaving ? (disclosuresSaved ? 'Updating...' : 'Saving...') : (disclosuresSaved ? 'Edit Disclosures' : 'Save Disclosures')}
                 </button>
@@ -1798,7 +1798,7 @@ export default function NewVehiclePage() {
                 onError={(msg) => setError(msg)}
                 hideSaveButton
               />
-              <div className="mt-6">
+              <div className="mt-6 flex justify-end">
                 <button
                   type="button"
                   onClick={async () => {
@@ -1830,7 +1830,7 @@ export default function NewVehiclePage() {
                     }
                   }}
                   disabled={nextCostsSaving}
-                  className="w-full bg-[#118df0] text-white py-3 rounded-lg font-semibold hover:bg-[#0d6ebd] transition-colors disabled:opacity-50"
+                  className="h-10 px-6 rounded bg-[#118df0] text-white text-sm font-semibold hover:bg-[#0d6ebd] transition-colors disabled:opacity-50"
                 >
                   {nextCostsSaving ? (purchaseSaved ? 'Updating...' : 'Saving...') : (purchaseSaved ? 'Edit Purchase Info' : 'Save Purchase Info')}
                 </button>
@@ -1847,7 +1847,7 @@ export default function NewVehiclePage() {
                 stockNumber={formData.stockNumber || ''}
                 onError={(msg) => setError(msg)}
               />
-              <div className="mt-6">
+              <div className="mt-6 flex justify-end">
                 <button
                   type="button"
                   onClick={async () => {
@@ -1874,7 +1874,7 @@ export default function NewVehiclePage() {
                     }
                   }}
                   disabled={nextWarrantySaving}
-                  className="w-full bg-[#118df0] text-white py-3 rounded-lg font-semibold hover:bg-[#0d6ebd] transition-colors disabled:opacity-50"
+                  className="h-10 px-6 rounded bg-[#118df0] text-white text-sm font-semibold hover:bg-[#0d6ebd] transition-colors disabled:opacity-50"
                 >
                   {nextWarrantySaving ? (costsSaved ? 'Updating...' : 'Saving...') : (costsSaved ? 'Edit Costs' : 'Save Costs')}
                 </button>
