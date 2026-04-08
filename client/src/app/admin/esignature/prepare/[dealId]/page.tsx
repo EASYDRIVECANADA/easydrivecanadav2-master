@@ -167,7 +167,12 @@ export default function PrepareDocumentPage() {
   const [pdfPageUrls, setPdfPageUrls] = useState<string[]>([])
   const [fields, setFields] = useState<Field[]>([])
   const [selectedFieldId, setSelectedFieldId] = useState<string | null>(null)
+  const [darkMode, setDarkMode] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [uploadingFiles, setUploadingFiles] = useState(false)
+  const addFilesInputRef = useRef<HTMLInputElement>(null)
+  const [deleteFileConfirm, setDeleteFileConfirm] = useState<number | null>(null)
+  const [deletingFile, setDeletingFile] = useState(false)
   const [downloading, setDownloading] = useState(false)
   const [downloadModal, setDownloadModal] = useState(false)
   const [downloadingFileIdx, setDownloadingFileIdx] = useState<number | null>(null)
@@ -821,6 +826,12 @@ export default function PrepareDocumentPage() {
 
         console.log('[PDF Render] All pages rendered:', rendered.length)
         setPageImages(rendered.filter(Boolean))
+        // Ensure pdfPageUrls has correct number of entries (remote URL case starts with 1)
+        setPdfPageUrls(prev => {
+          if (prev.length === pages) return prev
+          const base = prev[0] || ''
+          return Array.from({ length: pages }, () => base)
+        })
       } catch (e: any) {
         console.error('[PDF Render] Error:', e?.message || e)
         setRenderFailed(true)
@@ -1301,6 +1312,103 @@ export default function PrepareDocumentPage() {
     }
   }
 
+  const handleAddFiles = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || [])
+    if (files.length === 0) return
+    if (addFilesInputRef.current) addFilesInputRef.current.value = ''
+
+    const MAX_FILE_SIZE = 10 * 1024 * 1024
+    const oversized = files.filter(f => f.size > MAX_FILE_SIZE)
+    if (oversized.length > 0) {
+      openActionModal(false, 'File too large', `"${oversized[0].name}" exceeds the 10MB limit.`)
+      return
+    }
+
+    setUploadingFiles(true)
+    try {
+      const formData = new FormData()
+      files.forEach(f => formData.append('files', f))
+
+      const res = await fetch(`/api/esignature/signature/${dealId}/add-files`, {
+        method: 'POST',
+        body: formData,
+      })
+      const json = await res.json().catch(() => null)
+      if (!res.ok) throw new Error(String(json?.error || 'Upload failed'))
+
+      const allFiles: UploadedFile[] = json.allFiles || []
+      setUploadedFiles(allFiles)
+      setSelectedFileIndex(allFiles.length - 1)
+
+      // Switch view to first newly added file
+      const newFile = allFiles[allFiles.length - 1]
+      if (newFile) {
+        const src = (newFile as any).url || newFile.file_b64 || ''
+        const normalized = normalizeToDataUrl(src, 'application/pdf')
+        if (normalized?.mime === 'application/pdf') {
+          setPdfDataUrl(normalized.url)
+          setDocMime('application/pdf')
+        } else {
+          setPdfDataUrl(normalized?.url || '')
+          setDocMime(normalized?.mime || null)
+        }
+        setPageImages([])
+      }
+
+      openActionModal(true, 'Files added', `${files.length} file(s) added successfully.`)
+    } catch (err: any) {
+      openActionModal(false, 'Upload failed', String(err?.message || 'Unknown error'))
+    } finally {
+      setUploadingFiles(false)
+    }
+  }
+
+  const handleDeleteFile = async (fileIndex: number) => {
+    setDeletingFile(true)
+    try {
+      const res = await fetch(`/api/esignature/signature/${dealId}/remove-file`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fileIndex }),
+      })
+      const json = await res.json().catch(() => null)
+      if (!res.ok) throw new Error(String(json?.error || 'Failed to remove file'))
+
+      const allFiles: UploadedFile[] = json.allFiles || []
+
+      // Remove fields tied to this fileIndex, shift fileIndex for files after it
+      setFields(prev =>
+        prev
+          .filter(f => (f.fileIndex ?? 0) !== fileIndex)
+          .map(f => {
+            const fi = f.fileIndex ?? 0
+            return fi > fileIndex ? { ...f, fileIndex: fi - 1 } : f
+          })
+      )
+
+      setUploadedFiles(allFiles)
+      const nextIndex = Math.min(selectedFileIndex, allFiles.length - 1)
+      setSelectedFileIndex(nextIndex)
+      setDeleteFileConfirm(null)
+
+      // Switch view to the file now at nextIndex
+      if (allFiles[nextIndex]) {
+        const newFile = allFiles[nextIndex]
+        const src = (newFile as any).url || newFile.file_b64 || ''
+        const normalized = normalizeToDataUrl(src, 'application/pdf')
+        if (normalized) {
+          setDocMime(normalized.mime)
+          setPdfDataUrl(normalized.url)
+          setPageImages([])
+        }
+      }
+    } catch (err: any) {
+      openActionModal(false, 'Delete failed', String(err?.message || 'Unknown error'))
+    } finally {
+      setDeletingFile(false)
+    }
+  }
+
   useEffect(() => {
     const shouldAutoDownload = String(searchParams.get('autodownload') || '').trim() === '1'
     if (!shouldAutoDownload) return
@@ -1421,40 +1529,83 @@ export default function PrepareDocumentPage() {
   const scale = zoom / 100
 
   return (
-    <div className="flex flex-col h-screen bg-[#f0f2f5] select-none" tabIndex={0}>
+    <div className={`flex flex-col h-screen select-none transition-colors duration-200 ${darkMode ? 'bg-gray-900' : 'bg-[#f0f2f5]'}`} tabIndex={0}>
       {/* ── Top Toolbar ── */}
-      <div className="h-12 bg-white border-b border-gray-200 flex items-center px-4 gap-2 shrink-0 shadow-sm z-30">
-        <button onClick={() => router.back()} className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors" title="Back">
-          <svg className="w-5 h-5 text-gray-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+      <div className={`h-12 flex items-center px-4 gap-2 shrink-0 shadow-sm z-30 transition-colors duration-200 ${darkMode ? 'bg-gray-800 border-b border-gray-700' : 'bg-white border-b border-gray-200'}`}>
+        <button onClick={() => router.back()} className={`p-1.5 rounded-lg transition-colors ${darkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-100'}`} title="Back">
+          <svg className={`w-5 h-5 ${darkMode ? 'text-gray-300' : 'text-gray-600'}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
         </button>
-        <div className="w-px h-6 bg-gray-200 mx-1" />
+        <div className={`w-px h-6 mx-1 ${darkMode ? 'bg-gray-600' : 'bg-gray-200'}`} />
 
-        <button onClick={undo} className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors" title="Undo (Ctrl+Z)">
-          <svg className="w-4.5 h-4.5 text-gray-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 10h10a5 5 0 0 1 0 10H9"/><path d="M3 10l4-4M3 10l4 4"/></svg>
+        {/* Dark Mode Toggle */}
+        <button
+          onClick={() => setDarkMode(d => !d)}
+          title={darkMode ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+            darkMode
+              ? 'bg-gray-700 text-yellow-400 hover:bg-gray-600'
+              : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+          }`}
+        >
+          {darkMode ? (
+            <>
+              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <circle cx="12" cy="12" r="5"/>
+                <path strokeLinecap="round" d="M12 2v2M12 20v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M2 12h2M20 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
+              </svg>
+              <span>Light</span>
+            </>
+          ) : (
+            <>
+              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path strokeLinecap="round" d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+              </svg>
+              <span>Dark</span>
+            </>
+          )}
         </button>
-        <button onClick={redo} className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors" title="Redo (Ctrl+Y)">
-          <svg className="w-4.5 h-4.5 text-gray-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 10H11a5 5 0 0 0 0 10h4"/><path d="M21 10l-4-4M21 10l-4 4"/></svg>
+        <div className={`w-px h-6 mx-1 ${darkMode ? 'bg-gray-600' : 'bg-gray-200'}`} />
+
+        <button onClick={undo} className={`p-1.5 rounded-lg transition-colors ${darkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-100'}`} title="Undo (Ctrl+Z)">
+          <svg className={`w-4 h-4 ${darkMode ? 'text-gray-300' : 'text-gray-600'}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 10h10a5 5 0 0 1 0 10H9"/><path d="M3 10l4-4M3 10l4 4"/></svg>
         </button>
-        <div className="w-px h-6 bg-gray-200 mx-1" />
+        <button onClick={redo} className={`p-1.5 rounded-lg transition-colors ${darkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-100'}`} title="Redo (Ctrl+Y)">
+          <svg className={`w-4 h-4 ${darkMode ? 'text-gray-300' : 'text-gray-600'}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 10H11a5 5 0 0 0 0 10h4"/><path d="M21 10l-4-4M21 10l-4 4"/></svg>
+        </button>
+        <div className={`w-px h-6 mx-1 ${darkMode ? 'bg-gray-600' : 'bg-gray-200'}`} />
 
         <div className="flex-1" />
 
         {uploadedFiles.length > 1 && (
-          <div className="flex items-center gap-1 mr-2 bg-gray-100 rounded-lg p-1 max-w-[280px] overflow-x-auto">
+          <div className={`flex items-center gap-1 mr-2 rounded-lg p-1 max-w-[340px] overflow-x-auto ${darkMode ? 'bg-gray-700' : 'bg-gray-100'}`}>
             {uploadedFiles.map((file, idx) => (
-              <button
+              <div
                 key={`file-tab-${idx}`}
-                type="button"
-                onClick={() => handleSwitchFile(idx)}
-                title={file.file_name}
-                className={`shrink-0 px-2.5 py-1 rounded-md text-xs font-medium transition-colors truncate max-w-[120px] ${
+                className={`group shrink-0 flex items-center gap-0.5 rounded-md transition-colors ${
                   selectedFileIndex === idx
-                    ? 'bg-white text-blue-600 shadow-sm'
-                    : 'text-gray-500 hover:text-gray-700 hover:bg-gray-200'
+                    ? darkMode ? 'bg-gray-600 shadow-sm' : 'bg-white shadow-sm'
+                    : darkMode ? 'hover:bg-gray-500' : 'hover:bg-gray-200'
                 }`}
               >
-                {file.file_name || `File ${idx + 1}`}
-              </button>
+                <button
+                  type="button"
+                  onClick={() => handleSwitchFile(idx)}
+                  title={file.file_name}
+                  className={`px-2.5 py-1 text-xs font-medium transition-colors truncate max-w-[110px] ${
+                    selectedFileIndex === idx ? 'text-blue-400' : darkMode ? 'text-gray-300 hover:text-gray-100' : 'text-gray-500 hover:text-gray-700'
+                  }`}
+                >
+                  {file.file_name || `File ${idx + 1}`}
+                </button>
+                <button
+                  type="button"
+                  title={`Remove ${file.file_name || `File ${idx + 1}`}`}
+                  onClick={(e) => { e.stopPropagation(); setDeleteFileConfirm(idx) }}
+                  className="opacity-0 group-hover:opacity-100 mr-1 p-0.5 rounded hover:bg-red-100 hover:text-red-500 text-gray-400 transition-all"
+                >
+                  <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M18 6L6 18M6 6l12 12"/></svg>
+                </button>
+              </div>
             ))}
           </div>
         )}
@@ -1463,12 +1614,12 @@ export default function PrepareDocumentPage() {
 
       <div className="flex flex-1 overflow-hidden">
         {/* ── Left Sidebar ── */}
-        <div className="w-60 bg-white border-r border-gray-200 flex flex-col shrink-0">
+        <div className={`w-60 flex flex-col shrink-0 transition-colors duration-200 ${darkMode ? 'bg-gray-800 border-r border-gray-700' : 'bg-white border-r border-gray-200'}`}>
           {/* Recipient Tabs */}
           {recipients.length > 0 && (
-            <div className="border-b border-gray-100">
+            <div className={`border-b ${darkMode ? 'border-gray-700' : 'border-gray-100'}`}>
               <div className="px-3 pt-3 pb-1">
-                <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Recipients</h2>
+                <h2 className={`text-xs font-semibold uppercase tracking-wider mb-2 ${darkMode ? 'text-gray-400' : 'text-gray-400'}`}>Recipients</h2>
                 <div className="flex flex-col gap-1">
                   {recipients.map((r, idx) => {
                     const colors = ['bg-blue-500', 'bg-purple-500', 'bg-green-500', 'bg-orange-500', 'bg-pink-500']
@@ -1481,13 +1632,15 @@ export default function PrepareDocumentPage() {
                           type="button"
                           onClick={() => setActiveRecipientIdx(idx)}
                           className={`flex-1 flex items-center gap-2 px-2 py-1.5 rounded-lg text-left transition-all text-xs ${
-                            isActive ? 'bg-blue-50 border border-blue-200' : 'hover:bg-gray-50 border border-transparent'
+                            isActive
+                              ? darkMode ? 'bg-blue-900/50 border border-blue-600' : 'bg-blue-50 border border-blue-200'
+                              : darkMode ? 'hover:bg-gray-700 border border-transparent' : 'hover:bg-gray-50 border border-transparent'
                           }`}
                         >
                           <div className={`w-5 h-5 rounded-full ${color} flex items-center justify-center text-white text-xs font-bold shrink-0`}>
                             {(r.email || '?').charAt(0).toUpperCase()}
                           </div>
-                          <span className={`truncate ${isActive ? 'text-blue-700 font-medium' : 'text-gray-600'}`}>
+                          <span className={`truncate ${isActive ? darkMode ? 'text-blue-400 font-medium' : 'text-blue-700 font-medium' : darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
                             {r.full_name || r.email}
                           </span>
                         </button>
@@ -1541,8 +1694,8 @@ export default function PrepareDocumentPage() {
               </div>
             </div>
           )}
-          <div className="px-4 py-3 border-b border-gray-100">
-            <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Fields</h2>
+          <div className={`px-4 py-3 border-b ${darkMode ? 'border-gray-700' : 'border-gray-100'}`}>
+            <h2 className={`text-xs font-semibold uppercase tracking-wider ${darkMode ? 'text-gray-400' : 'text-gray-400'}`}>Fields</h2>
           </div>
           <div className="flex-1 overflow-y-auto p-3 space-y-1">
             {FIELD_TYPES.map(({ type, label }) => (
@@ -1551,12 +1704,14 @@ export default function PrepareDocumentPage() {
                 draggable
                 onDragStart={() => setDraggedSidebarType(type)}
                 onDragEnd={() => setDraggedSidebarType(null)}
-                className="group flex items-center gap-3 px-3 py-2.5 rounded-lg cursor-grab active:cursor-grabbing hover:bg-blue-50 border border-transparent hover:border-blue-200 transition-all duration-150"
+                className={`group flex items-center gap-3 px-3 py-2.5 rounded-lg cursor-grab active:cursor-grabbing border border-transparent transition-all duration-150 ${
+                  darkMode ? 'hover:bg-blue-900/40 hover:border-blue-700' : 'hover:bg-blue-50 hover:border-blue-200'
+                }`}
               >
-                <div className="w-8 h-8 rounded-md bg-gray-50 group-hover:bg-blue-100 flex items-center justify-center transition-colors">
+                <div className={`w-8 h-8 rounded-md flex items-center justify-center transition-colors ${darkMode ? 'bg-gray-700 group-hover:bg-blue-900/60' : 'bg-gray-50 group-hover:bg-blue-100'}`}>
                   <FieldIcon type={type} />
                 </div>
-                <span className="text-sm font-medium text-gray-700 group-hover:text-blue-700 transition-colors">{label}</span>
+                <span className={`text-sm font-medium transition-colors ${darkMode ? 'text-gray-300 group-hover:text-blue-400' : 'text-gray-700 group-hover:text-blue-700'}`}>{label}</span>
               </div>
             ))}
           </div>
@@ -1565,8 +1720,8 @@ export default function PrepareDocumentPage() {
         {/* ── Center Canvas ── */}
         <div
           ref={canvasScrollRef}
-          className="flex-1 overflow-y-auto overflow-x-hidden bg-[#e8eaed]"
-          style={{ backgroundImage: showGrid ? 'radial-gradient(circle, #d1d5db 1px, transparent 1px)' : 'none', backgroundSize: showGrid ? '20px 20px' : 'auto' }}
+          className={`flex-1 overflow-y-auto overflow-x-hidden transition-colors duration-200 ${darkMode ? 'bg-gray-950' : 'bg-[#e8eaed]'}`}
+          style={{ backgroundImage: showGrid ? `radial-gradient(circle, ${darkMode ? '#374151' : '#d1d5db'} 1px, transparent 1px)` : 'none', backgroundSize: showGrid ? '20px 20px' : 'auto' }}
         >
           <div className="flex items-start justify-center p-8 min-h-full">
             <div
@@ -1792,23 +1947,24 @@ export default function PrepareDocumentPage() {
 
         {/* ── View Pages Thumbnail Panel ── */}
         {viewPagesOpen && (
-          <div className="w-52 bg-white border-l border-gray-200 flex flex-col shrink-0 overflow-hidden">
+          <div className={`w-52 flex flex-col shrink-0 overflow-hidden transition-colors duration-200 ${darkMode ? 'bg-gray-800 border-l border-gray-700' : 'bg-white border-l border-gray-200'}`}>
             {/* Header */}
-            <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
-              <span className="text-sm font-semibold text-gray-800">Pages</span>
+            <div className={`flex items-center justify-between px-4 py-3 border-b ${darkMode ? 'border-gray-700' : 'border-gray-100'}`}>
+              <span className={`text-sm font-semibold ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>Pages</span>
               <button
                 type="button"
                 onClick={() => setViewPagesOpen(false)}
-                className="p-1 rounded text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
+                className={`p-1 rounded transition-colors ${darkMode ? 'text-gray-400 hover:text-gray-100 hover:bg-gray-700' : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'}`}
               >
                 <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6 6 18M6 6l12 12"/></svg>
               </button>
             </div>
             {/* Thumbnails list */}
             <div className="flex-1 overflow-y-auto py-3 px-3 space-y-3">
-              {Array.from({ length: totalPages }, (_, i) => {
+              {Array.from({ length: Math.max(totalPages, pageImages.length) }, (_, i) => {
                 const pageNo = i + 1
-                const thumbImg = pageImages[i] || pdfPageUrls[i] || null
+                const thumbImg = pageImages[i] || null
+                const isLoading = docMime === 'application/pdf' && pageImages.length === 0 && !renderFailed
                 return (
                   <button
                     key={pageNo}
@@ -1821,17 +1977,21 @@ export default function PrepareDocumentPage() {
                     }}
                     className="w-full flex flex-col items-center gap-1.5 group"
                   >
-                    <div className="w-full border-2 border-transparent group-hover:border-blue-500 rounded overflow-hidden transition-colors shadow-sm bg-white">
+                    <div className={`w-full border-2 border-transparent group-hover:border-blue-500 rounded overflow-hidden transition-colors shadow-sm ${darkMode ? 'bg-gray-700' : 'bg-white'}`}>
                       {thumbImg ? (
                         // eslint-disable-next-line @next/next/no-img-element
                         <img src={thumbImg} alt={`Page ${pageNo}`} className="w-full h-auto object-contain" />
+                      ) : isLoading ? (
+                        <div className={`w-full aspect-[816/1056] flex items-center justify-center ${darkMode ? 'bg-gray-700' : 'bg-gray-100'}`}>
+                          <svg className="w-5 h-5 animate-spin text-blue-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2a10 10 0 1 0 10 10"/></svg>
+                        </div>
                       ) : (
-                        <div className="w-full aspect-[816/1056] bg-gray-100 flex items-center justify-center">
-                          <svg className="w-6 h-6 text-gray-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 12h6M9 16h6M9 8h4"/></svg>
+                        <div className={`w-full aspect-[816/1056] flex items-center justify-center ${darkMode ? 'bg-gray-700' : 'bg-gray-100'}`}>
+                          <svg className={`w-6 h-6 ${darkMode ? 'text-gray-500' : 'text-gray-300'}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 12h6M9 16h6M9 8h4"/></svg>
                         </div>
                       )}
                     </div>
-                    <span className="text-[11px] text-gray-500 font-medium">{pageNo}</span>
+                    <span className={`text-[11px] font-medium ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>{pageNo}</span>
                   </button>
                 )
               })}
@@ -1840,11 +2000,13 @@ export default function PrepareDocumentPage() {
         )}
 
         {/* ── Right Sidebar ── */}
-        <div className="w-16 bg-white border-l border-gray-200 flex flex-col items-center py-4 gap-1 shrink-0">
+        <div className={`w-16 flex flex-col items-center py-4 gap-1 shrink-0 transition-colors duration-200 ${darkMode ? 'bg-gray-800 border-l border-gray-700' : 'bg-white border-l border-gray-200'}`}>
           {/* View Pages */}
           <button
             onClick={() => setViewPagesOpen(v => !v)}
-            className={`w-12 flex flex-col items-center gap-1 py-2.5 px-1 rounded-xl transition-colors ${viewPagesOpen ? 'text-blue-600 bg-blue-50' : 'text-gray-500 hover:text-blue-600 hover:bg-blue-50'}`}
+            className={`w-12 flex flex-col items-center gap-1 py-2.5 px-1 rounded-xl transition-colors ${viewPagesOpen
+              ? darkMode ? 'text-blue-400 bg-blue-900/40' : 'text-blue-600 bg-blue-50'
+              : darkMode ? 'text-gray-400 hover:text-blue-400 hover:bg-blue-900/40' : 'text-gray-500 hover:text-blue-600 hover:bg-blue-50'}`}
           >
             <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="9" rx="1"/><rect x="3" y="15" width="7" height="6" rx="1"/><rect x="14" y="15" width="7" height="6" rx="1"/>
@@ -1862,7 +2024,7 @@ export default function PrepareDocumentPage() {
               setHistoryEvents(lsGetEvents(sigData.id))
               setHistoryModalOpen(true)
             }}
-            className="w-12 flex flex-col items-center gap-1 py-2.5 px-1 rounded-xl text-gray-500 hover:text-purple-600 hover:bg-purple-50 transition-colors"
+            className={`w-12 flex flex-col items-center gap-1 py-2.5 px-1 rounded-xl transition-colors ${darkMode ? 'text-gray-400 hover:text-purple-400 hover:bg-purple-900/40' : 'text-gray-500 hover:text-purple-600 hover:bg-purple-50'}`}
           >
             <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <circle cx="12" cy="12" r="10"/><polyline strokeLinecap="round" strokeLinejoin="round" points="12 6 12 12 16 14"/>
@@ -1874,7 +2036,7 @@ export default function PrepareDocumentPage() {
           <button
             onClick={() => setSendModalOpen(true)}
             disabled={sending}
-            className="w-12 flex flex-col items-center gap-1 py-2.5 px-1 rounded-xl text-gray-500 hover:text-blue-600 hover:bg-blue-50 disabled:opacity-40 transition-colors"
+            className={`w-12 flex flex-col items-center gap-1 py-2.5 px-1 rounded-xl disabled:opacity-40 transition-colors ${darkMode ? 'text-gray-400 hover:text-blue-400 hover:bg-blue-900/40' : 'text-gray-500 hover:text-blue-600 hover:bg-blue-50'}`}
           >
             {sending ? (
               <svg className="w-5 h-5 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2a10 10 0 1 0 10 10"/></svg>
@@ -1888,7 +2050,7 @@ export default function PrepareDocumentPage() {
           <button
             onClick={handleDownload}
             disabled={downloading}
-            className="w-12 flex flex-col items-center gap-1 py-2.5 px-1 rounded-xl text-gray-500 hover:text-green-600 hover:bg-green-50 disabled:opacity-40 transition-colors"
+            className={`w-12 flex flex-col items-center gap-1 py-2.5 px-1 rounded-xl disabled:opacity-40 transition-colors ${darkMode ? 'text-gray-400 hover:text-green-400 hover:bg-green-900/40' : 'text-gray-500 hover:text-green-600 hover:bg-green-50'}`}
           >
             {downloading ? (
               <svg className="w-5 h-5 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2a10 10 0 1 0 10 10"/></svg>
@@ -1902,7 +2064,7 @@ export default function PrepareDocumentPage() {
           <button
             onClick={handleSave}
             disabled={saving}
-            className="w-12 flex flex-col items-center gap-1 py-2.5 px-1 rounded-xl text-gray-500 hover:text-blue-600 hover:bg-blue-50 disabled:opacity-40 transition-colors"
+            className={`w-12 flex flex-col items-center gap-1 py-2.5 px-1 rounded-xl disabled:opacity-40 transition-colors ${darkMode ? 'text-gray-400 hover:text-blue-400 hover:bg-blue-900/40' : 'text-gray-500 hover:text-blue-600 hover:bg-blue-50'}`}
           >
             {saving ? (
               <svg className="w-5 h-5 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2a10 10 0 1 0 10 10"/></svg>
@@ -1912,6 +2074,28 @@ export default function PrepareDocumentPage() {
             <span className="text-[9px] font-medium leading-tight text-center">Save</span>
           </button>
 
+          {/* Upload File */}
+          <input
+            ref={addFilesInputRef}
+            type="file"
+            accept=".pdf,image/*"
+            multiple
+            className="hidden"
+            onChange={handleAddFiles}
+          />
+          <button
+            onClick={() => addFilesInputRef.current?.click()}
+            disabled={uploadingFiles}
+            className={`w-12 flex flex-col items-center gap-1 py-2.5 px-1 rounded-xl disabled:opacity-40 transition-colors ${darkMode ? 'text-gray-400 hover:text-orange-400 hover:bg-orange-900/40' : 'text-gray-500 hover:text-orange-600 hover:bg-orange-50'}`}
+          >
+            {uploadingFiles ? (
+              <svg className="w-5 h-5 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2a10 10 0 1 0 10 10"/></svg>
+            ) : (
+              <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
+            )}
+            <span className="text-[9px] font-medium leading-tight text-center">Upload File</span>
+          </button>
+
           {/* Spacer */}
           <div className="flex-1" />
 
@@ -1919,30 +2103,32 @@ export default function PrepareDocumentPage() {
           <div className="flex flex-col items-center gap-1 pb-1">
             <button
               onClick={() => setZoom(z => Math.min(200, z + 10))}
-              className="w-9 h-9 flex items-center justify-center rounded-lg text-gray-500 hover:text-gray-800 hover:bg-gray-100 transition-colors"
+              className={`w-9 h-9 flex items-center justify-center rounded-lg transition-colors ${darkMode ? 'text-gray-400 hover:text-gray-100 hover:bg-gray-700' : 'text-gray-500 hover:text-gray-800 hover:bg-gray-100'}`}
               title="Zoom In"
             >
               <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35M8 11h6M11 8v6"/></svg>
             </button>
-            <span className="text-[10px] font-semibold text-gray-600">{zoom}%</span>
+            <span className={`text-[10px] font-semibold ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>{zoom}%</span>
             <button
               onClick={() => setZoom(z => Math.max(50, z - 10))}
-              className="w-9 h-9 flex items-center justify-center rounded-lg text-gray-500 hover:text-gray-800 hover:bg-gray-100 transition-colors"
+              className={`w-9 h-9 flex items-center justify-center rounded-lg transition-colors ${darkMode ? 'text-gray-400 hover:text-gray-100 hover:bg-gray-700' : 'text-gray-500 hover:text-gray-800 hover:bg-gray-100'}`}
               title="Zoom Out"
             >
               <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35M8 11h6"/></svg>
             </button>
             <button
               onClick={() => setZoom(100)}
-              className="w-9 h-7 flex items-center justify-center rounded-lg text-[10px] font-medium text-gray-500 hover:text-gray-800 hover:bg-gray-100 transition-colors"
+              className={`w-9 h-7 flex items-center justify-center rounded-lg text-[10px] font-medium transition-colors ${darkMode ? 'text-gray-400 hover:text-gray-100 hover:bg-gray-700' : 'text-gray-500 hover:text-gray-800 hover:bg-gray-100'}`}
               title="Fit (100%)"
             >
               Fit
             </button>
-            <div className="w-8 h-px bg-gray-200 my-0.5" />
+            <div className={`w-8 h-px my-0.5 ${darkMode ? 'bg-gray-600' : 'bg-gray-200'}`} />
             <button
               onClick={() => setShowGrid(g => !g)}
-              className={`w-9 h-9 flex items-center justify-center rounded-lg transition-colors ${showGrid ? 'text-blue-600 bg-blue-50' : 'text-gray-500 hover:text-gray-800 hover:bg-gray-100'}`}
+              className={`w-9 h-9 flex items-center justify-center rounded-lg transition-colors ${showGrid
+                ? darkMode ? 'text-blue-400 bg-blue-900/40' : 'text-blue-600 bg-blue-50'
+                : darkMode ? 'text-gray-400 hover:text-gray-100 hover:bg-gray-700' : 'text-gray-500 hover:text-gray-800 hover:bg-gray-100'}`}
               title="Toggle Grid"
             >
               <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/></svg>
@@ -2325,6 +2511,40 @@ export default function PrepareDocumentPage() {
                 className="h-9 px-6 rounded-full bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700"
               >
                 OK
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {deleteFileConfirm !== null && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/40" onClick={() => { if (!deletingFile) setDeleteFileConfirm(null) }} />
+          <div className="relative w-full max-w-sm rounded-2xl bg-white shadow-2xl border border-slate-200 overflow-hidden">
+            <div className="px-6 pt-5 pb-4 border-b border-slate-100">
+              <div className="text-base font-bold text-slate-800">Remove File</div>
+              <p className="mt-1 text-sm text-slate-500">
+                Remove <span className="font-medium text-slate-700">&quot;{uploadedFiles[deleteFileConfirm]?.file_name || `File ${deleteFileConfirm + 1}`}&quot;</span> from this document?
+                Any signature fields placed on this file will also be removed.
+              </p>
+            </div>
+            <div className="px-6 py-4 flex justify-end gap-2">
+              <button
+                type="button"
+                disabled={deletingFile}
+                onClick={() => setDeleteFileConfirm(null)}
+                className="h-9 px-4 rounded-full border border-slate-200 text-sm text-slate-600 hover:bg-slate-50 disabled:opacity-40"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={deletingFile}
+                onClick={() => handleDeleteFile(deleteFileConfirm)}
+                className="h-9 px-5 rounded-full bg-red-600 text-white text-sm font-semibold hover:bg-red-700 disabled:opacity-40 flex items-center gap-2"
+              >
+                {deletingFile && <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2a10 10 0 1 0 10 10"/></svg>}
+                Remove
               </button>
             </div>
           </div>
