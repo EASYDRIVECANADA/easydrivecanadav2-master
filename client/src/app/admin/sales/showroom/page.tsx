@@ -550,7 +550,7 @@ export default function CustomerShowroomPage() {
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7a2 2 0 012-2h14a2 2 0 012 2v10a2 2 0 01-2 2H5a2 2 0 01-2-2V7z" />
                       </svg>
                     )}
-                    {(() => { const b = getCategoryBadge(r.categories); return b ? <img src={b.src} alt={b.label} className="absolute bottom-1 left-1 h-9 w-auto drop-shadow-md" /> : null })()}
+                    {(() => { const b = getCategoryBadge(r.categories); return b ? <img src={b.src} alt={b.label} className="absolute bottom-1 left-1 h-14 w-auto drop-shadow-md" /> : null })()}
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between gap-2">

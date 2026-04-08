@@ -110,7 +110,7 @@ export default function VehicleCard({ vehicle, hideFooter, onClick }: VehicleCar
           </div>
 
           {categoryBadge ? (
-            <img src={categoryBadge.src} alt={categoryBadge.label} className="absolute bottom-3 left-3 h-12 w-auto drop-shadow-md" />
+            <img src={categoryBadge.src} alt={categoryBadge.label} className="absolute bottom-3 left-3 h-16 w-auto drop-shadow-md" />
           ) : null}
         </div>
 
