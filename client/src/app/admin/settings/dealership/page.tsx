@@ -513,8 +513,8 @@ export default function DealershipDetailsSettingsPage() {
 
       {successModalOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center" role="dialog" aria-modal="true">
-          <div className="edc-overlay absolute inset-0" onMouseDown={() => setSuccessModalOpen(false)} />
-          <div className="edc-modal w-[420px] relative">
+          <div className="fixed inset-0 bg-navy-900/60 backdrop-blur-sm" onMouseDown={() => setSuccessModalOpen(false)} />
+          <div className="edc-modal w-[420px] relative z-10">
             <div className="h-12 px-4 border-b border-slate-100 flex items-center justify-between">
               <div className="text-sm font-semibold text-slate-800">Success</div>
               <button
@@ -543,8 +543,8 @@ export default function DealershipDetailsSettingsPage() {
 
       {updateModalOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center" role="dialog" aria-modal="true">
-          <div className="edc-overlay absolute inset-0" onMouseDown={() => setUpdateModalOpen(false)} />
-          <div className="edc-modal w-[420px] relative">
+          <div className="fixed inset-0 bg-navy-900/60 backdrop-blur-sm" onMouseDown={() => setUpdateModalOpen(false)} />
+          <div className="edc-modal w-[420px] relative z-10">
             <div className="h-12 px-4 border-b border-slate-100 flex items-center justify-between">
               <div className="text-sm font-semibold text-slate-800">Updated</div>
               <button
@@ -872,13 +872,8 @@ export default function DealershipDetailsSettingsPage() {
         </div>
       </div>
 
-      <div className="flex items-center justify-between pt-6">
-        <button type="button" className="h-8 px-3 bg-slate-600 text-white text-xs font-semibold rounded">
-          <span className="inline-flex items-center gap-2">
-            <span className="text-sm leading-none">×</span>
-            Cancel
-          </span>
-        </button>
+      <div className="flex items-center justify-end pt-6">
+
         <button
           type="button"
           onClick={() => void (actionMode === 'save' ? onSave() : onUpdateSupabase())}

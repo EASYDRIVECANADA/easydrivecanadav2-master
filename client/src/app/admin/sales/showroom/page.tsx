@@ -20,6 +20,17 @@ type ShowroomVehicle = {
   vin?: string
   stock?: string
   features?: string[]
+  categories?: string
+}
+
+const getCategoryBadge = (categories?: string) => {
+  const raw = String(categories ?? '').trim().toLowerCase()
+  if (!raw) return null
+  if (raw.includes('private')) return { label: 'Private', src: '/images/Private.png' }
+  if (raw.includes('dealer')) return { label: 'Dealership', src: '/images/Dealership.png' }
+  if (raw.includes('premier') || raw.includes('premiere')) return { label: 'Premier', src: '/images/Premier.png' }
+  if (raw.includes('fleet')) return { label: 'Fleet Cars', src: '/images/Fleet%20Cars.png' }
+  return null
 }
 
 export default function CustomerShowroomPage() {
@@ -213,6 +224,7 @@ export default function CustomerShowroomPage() {
             vin: (v.vin || '').toString().trim() || undefined,
             stock: (v.stock_number ?? v.stockNumber ?? '').toString().trim() || undefined,
             features: feats,
+            categories: (v.categories || v.category || '').toString().trim() || undefined,
           }
         }))
 
@@ -481,7 +493,12 @@ export default function CustomerShowroomPage() {
                         </svg>
                       </button>
                     </td>
-                    <td className="px-6 py-3 text-sm font-medium text-slate-800 whitespace-nowrap">{r.vehicle}</td>
+                    <td className="px-6 py-3 text-sm font-medium text-slate-800 whitespace-nowrap">
+                      <div className="flex items-center gap-2">
+                        {r.vehicle}
+                        {(() => { const b = getCategoryBadge(r.categories); return b ? <img src={b.src} alt={b.label} className="h-6 w-auto flex-shrink-0" /> : null })()}
+                      </div>
+                    </td>
                     <td className="px-6 py-3 text-sm text-slate-600 whitespace-nowrap">{r.drive}</td>
                     <td className="px-6 py-3 text-sm text-slate-600 whitespace-nowrap">{r.transmission}</td>
                     <td className="px-6 py-3 text-sm text-slate-600 whitespace-nowrap">{r.cyl}</td>
@@ -524,7 +541,7 @@ export default function CustomerShowroomPage() {
             {filtered.map((r) => (
               <li key={r.id} className="p-4 hover:bg-slate-50 transition-colors">
                 <div className="flex items-start gap-4">
-                  <div className="w-40 h-28 bg-slate-50 rounded-lg border border-slate-200/60 flex items-center justify-center overflow-hidden">
+                  <div className="relative w-40 h-28 bg-slate-50 rounded-lg border border-slate-200/60 flex items-center justify-center overflow-hidden flex-shrink-0">
                     {Array.isArray(r.images) && r.images.length > 0 ? (
                       <img src={r.images[0]} alt={r.vehicle} className="w-full h-full object-cover" />
                     ) : (
@@ -533,9 +550,10 @@ export default function CustomerShowroomPage() {
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7a2 2 0 012-2h14a2 2 0 012 2v10a2 2 0 01-2 2H5a2 2 0 01-2-2V7z" />
                       </svg>
                     )}
+                    {(() => { const b = getCategoryBadge(r.categories); return b ? <img src={b.src} alt={b.label} className="absolute bottom-1 left-1 h-9 w-auto drop-shadow-md" /> : null })()}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between">
+                    <div className="flex items-center justify-between gap-2">
                       <button type="button" className="text-sm font-semibold text-slate-800 hover:underline truncate text-left" onClick={() => { setSelected(r); setImageIdx(0) }}>{r.vehicle}</button>
                       <div className="text-lg font-bold text-slate-800">${r.price.toLocaleString()}</div>
                     </div>

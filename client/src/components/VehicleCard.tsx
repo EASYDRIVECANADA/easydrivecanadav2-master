@@ -108,6 +108,10 @@ export default function VehicleCard({ vehicle, hideFooter, onClick }: VehicleCar
           <div className="absolute top-4 right-4 price-tag">
             {formatPrice(vehicle.price)}
           </div>
+
+          {categoryBadge ? (
+            <img src={categoryBadge.src} alt={categoryBadge.label} className="absolute bottom-3 left-3 h-12 w-auto drop-shadow-md" />
+          ) : null}
         </div>
 
         {/* Details */}
@@ -116,9 +120,6 @@ export default function VehicleCard({ vehicle, hideFooter, onClick }: VehicleCar
             <h3 className="text-lg font-bold text-gray-900 group-hover:text-[#118df0] transition-colors leading-snug">
               {vehicle.year} {vehicle.make} {vehicle.model} {vehicle.series}
             </h3>
-            {categoryBadge ? (
-              <img src={categoryBadge.src} alt={categoryBadge.label} className="h-12 w-auto flex-shrink-0" />
-            ) : null}
           </div>
           
           <div className="flex flex-wrap gap-2 mt-3">
