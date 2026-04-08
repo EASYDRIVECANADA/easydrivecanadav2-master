@@ -535,32 +535,39 @@ export default function NewVehiclePage() {
     e.preventDefault()
     if (submitting) return
 
-    // Stock# duplicate check before submitting
-    const stockToCheck = String((formData as any)?.stockNumber || '').trim()
-    if (stockToCheck) {
-      const normalizedStock = normalizeStockNumber(stockToCheck)
-      const { data: stockData } = await supabase
-        .from('edc_vehicles')
-        .select('stock_number')
-        .limit(500)
-      const stockTaken = Array.isArray(stockData)
-        && stockData.some((row: any) => normalizeStockNumber(String(row?.stock_number ?? '')) === normalizedStock)
-      if (stockTaken) {
-        setError('Stock # is already taken, please use another number.')
-        return
+    // Only run duplicate checks when inserting a brand new vehicle
+    if (!vehicleSavedToDb) {
+      // Stock# duplicate check
+      const stockToCheck = String((formData as any)?.stockNumber || '').trim()
+      if (stockToCheck) {
+        const normalizedStock = normalizeStockNumber(stockToCheck)
+        const { data: stockData } = await supabase
+          .from('edc_vehicles')
+          .select('stock_number')
+          .limit(500)
+        const stockTaken = Array.isArray(stockData)
+          && stockData.some((row: any) => normalizeStockNumber(String(row?.stock_number ?? '')) === normalizedStock)
+        if (stockTaken) {
+          setSaveModalTitle('Stock # Taken')
+          setSaveModalMessage('Stock # is already taken, please use another number.')
+          setSaveModalOpen(true)
+          return
+        }
       }
-    }
 
-    // VIN duplicate check before submitting
-    const vinToCheck = String((formData as any)?.vin || '').trim()
-    if (vinToCheck.length >= 5) {
-      const { count: vinCount } = await supabase
-        .from('edc_vehicles')
-        .select('id', { count: 'exact', head: true })
-        .eq('vin', vinToCheck)
-      if ((vinCount ?? 0) > 0) {
-        setError('VIN code is already taken. Use another VIN code to proceed.')
-        return
+      // VIN duplicate check
+      const vinToCheck = String((formData as any)?.vin || '').trim()
+      if (vinToCheck.length >= 5) {
+        const { count: vinCount } = await supabase
+          .from('edc_vehicles')
+          .select('id', { count: 'exact', head: true })
+          .eq('vin', vinToCheck)
+        if ((vinCount ?? 0) > 0) {
+          setSaveModalTitle('VIN Already Exists')
+          setSaveModalMessage('A vehicle with this VIN already exists. Please use a different VIN.')
+          setSaveModalOpen(true)
+          return
+        }
       }
     }
 
@@ -698,7 +705,6 @@ export default function NewVehiclePage() {
             feed_to_cargurus: payload.feed_to_cargurus,
             certified: payload.certified,
             verified: payload.verified,
-            categories: payload.categories,
             updated_at: payload.updated_at,
           })
           .eq('id', dbVehicleId)
@@ -772,7 +778,6 @@ export default function NewVehiclePage() {
           feed_to_cargurus: payload.feed_to_cargurus,
           certified: payload.certified,
           verified: payload.verified,
-          categories: payload.categories,
           created_at: payload.created_at,
           updated_at: payload.updated_at,
         })
@@ -854,6 +859,10 @@ export default function NewVehiclePage() {
 
       setVehicleSavedToDb(true)
       setDbVehicleId(rid)
+      // Patch categories from user role (non-fatal if column doesn't exist)
+      if (userRole && rid) {
+        supabase.from('edc_vehicles').update({ categories: userRole.toLowerCase() }).eq('id', rid).then(() => {})
+      }
       // Clear stored ID so next "Add New Vehicle" generates a fresh one
       try { localStorage.removeItem('edc_new_vehicle_id') } catch {}
       setSaveModalTitle('Vehicle Saved')
