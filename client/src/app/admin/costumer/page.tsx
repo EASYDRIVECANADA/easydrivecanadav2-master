@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { useSearchParams } from 'next/navigation'
 
 import CreditAppTab from './CreditAppTab'
 import CustomerInformationTab from './CustomerInformationTab'
@@ -11,6 +12,7 @@ import type { CreditForm, CustomerForm, CustomerRow } from './types'
 import { supabase } from '@/lib/supabaseClient'
 
 export default function AdminCostumerPage() {
+  const searchParams = useSearchParams()
   const [query, setQuery] = useState('')
   const [pageSize, setPageSize] = useState(5)
   const [checked, setChecked] = useState<Record<string, boolean>>({})
@@ -30,6 +32,7 @@ export default function AdminCostumerPage() {
   const [activeTab, setActiveTab] = useState<'customer' | 'credit' | 'history'>('customer')
   const [printDropdownOpen, setPrintDropdownOpen] = useState(false)
   const [creditConsent, setCreditConsent] = useState(false)
+  const [creditAppExists, setCreditAppExists] = useState(false)
 
   // Print system (PDF preview) - similar to admin/sales/deals/new
   const [showDocPreview, setShowDocPreview] = useState(false)
@@ -155,6 +158,14 @@ export default function AdminCostumerPage() {
   const [form, setForm] = useState<CustomerForm>(getDefaultForm)
 
   const [credit, setCredit] = useState<CreditForm>(getDefaultCredit)
+
+  useEffect(() => {
+    if (searchParams?.get('view') === 'list') {
+      setShowCreate(false)
+      setEditingId(null)
+      setIsCreate(false)
+    }
+  }, [searchParams])
 
   useEffect(() => {
     let cancelled = false
@@ -342,6 +353,7 @@ export default function AdminCostumerPage() {
     setActiveTab('customer')
     setEditingId(null)
     setIsCreate(true)
+    setCreditAppExists(false)
     setForm(getDefaultForm())
     setCredit(getDefaultCredit())
     setShowCreate(true)
@@ -424,6 +436,7 @@ export default function AdminCostumerPage() {
         .limit(1)
         .maybeSingle()
 
+      setCreditAppExists(!creditError && !!creditData)
       if (!creditError && creditData) {
         const c: any = creditData
         const creditEmp = toArray(c.employments) as any[] | null
@@ -677,6 +690,7 @@ export default function AdminCostumerPage() {
       }
 
       if (createdId && !editingId) setEditingId(createdId)
+      if (isCreate) setIsCreate(false)
 
       setSaveSuccessMessage('Customer information saved successfully')
       setSaveSuccessOpen(true)
@@ -698,7 +712,7 @@ export default function AdminCostumerPage() {
     setSaveErrorMessage(null)
     setSaving(true)
     try {
-      const operation = isCreate ? 'create' : 'edit'
+      const operation = creditAppExists ? 'edit' : 'create'
       const user_id = await getWebhookUserId().catch(() => null)
       if (!user_id) throw new Error('Missing user')
 
@@ -737,6 +751,7 @@ export default function AdminCostumerPage() {
         throw new Error(creditText || `Credit HTTP ${resCredit.status}`)
       }
 
+      setCreditAppExists(true)
       setSaveSuccessMessage('Credit app saved successfully')
       setSaveSuccessOpen(true)
       setLastSavedTab('credit')
@@ -760,8 +775,8 @@ export default function AdminCostumerPage() {
     <div className="min-h-screen">
       {saveSuccessOpen ? (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center" role="dialog" aria-modal="true">
-          <div className="edc-overlay absolute inset-0" onMouseDown={closeSuccessModal} />
-          <div className="edc-modal relative w-[360px]">
+          <div className="fixed inset-0 bg-navy-900/60 backdrop-blur-sm" onMouseDown={closeSuccessModal} />
+          <div className="edc-modal relative z-10 w-[360px]">
             <div className="h-11 px-4 border-b border-slate-100 flex items-center justify-between">
               <div className="text-sm font-semibold text-slate-800">Success</div>
               <button type="button" className="h-8 w-8 flex items-center justify-center" onClick={closeSuccessModal}>
@@ -780,8 +795,8 @@ export default function AdminCostumerPage() {
 
       {saveErrorOpen ? (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center" role="dialog" aria-modal="true">
-          <div className="edc-overlay absolute inset-0" onMouseDown={() => setSaveErrorOpen(false)} />
-          <div className="edc-modal relative w-[360px]">
+          <div className="fixed inset-0 bg-navy-900/60 backdrop-blur-sm" onMouseDown={() => setSaveErrorOpen(false)} />
+          <div className="edc-modal relative z-10 w-[360px]">
             <div className="h-11 px-4 border-b border-slate-100 flex items-center justify-between">
               <div className="text-sm font-semibold text-danger-600">Error</div>
               <button type="button" className="h-8 w-8 flex items-center justify-center" onClick={() => setSaveErrorOpen(false)}>
@@ -913,7 +928,7 @@ export default function AdminCostumerPage() {
                 disabled={saving}
                 className="edc-btn-primary text-sm disabled:opacity-60"
               >
-                {saving ? 'Saving...' : 'Save'}
+                {saving ? 'Saving...' : editingId && !isCreate ? 'Update' : 'Save'}
               </button>
             </div>
           </div>
@@ -1084,8 +1099,8 @@ export default function AdminCostumerPage() {
       {/* Documents Preview Modal (PDF) */}
       {showDocPreview && pdfDataUri ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="edc-overlay absolute inset-0" onClick={() => setShowDocPreview(false)} />
-          <div className="edc-modal relative w-full max-w-3xl h-[90vh] flex flex-col overflow-hidden">
+          <div className="fixed inset-0 bg-navy-900/60 backdrop-blur-sm" onClick={() => setShowDocPreview(false)} />
+          <div className="edc-modal relative z-10 w-full max-w-3xl h-[90vh] flex flex-col overflow-hidden">
             <div className="h-12 px-4 border-b border-slate-100 flex items-center justify-between">
               <div className="text-sm font-semibold text-slate-800">Credit Consent</div>
               <div className="flex items-center gap-2">

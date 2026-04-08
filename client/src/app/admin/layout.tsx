@@ -264,7 +264,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
     const items = [
       { href: '/admin', label: 'Home', icon: 'home', disabled: false },
       { href: '/admin/leads', label: 'Leads', icon: 'phone', disabled: !isVerified },
-      { href: '/admin/costumer', label: 'Customers', icon: 'users', disabled: !isVerified },
+      { href: '/admin/costumer?view=list', label: 'Customers', icon: 'users', disabled: !isVerified },
       { href: '/admin/vendors', label: 'Vendors', icon: 'briefcase', disabled: !isVerified },
       { href: '/admin/marketplace', label: 'Market Place', icon: 'market', disabled: !isVerified },
       { href: '/admin/inventory', label: 'Inventory', icon: 'car', disabled: !isVerified },
@@ -467,7 +467,8 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
             <nav className={`${collapsed ? 'px-2' : 'px-3'} py-4 flex-1 overflow-y-auto min-h-0`} aria-label="Admin navigation" style={{ scrollbarWidth: 'none' }}>
               <ul className="space-y-1">
                 {navItems.map((item) => {
-                  const active = pathname === item.href || (item.href !== '/admin' && pathname.startsWith(item.href))
+                  const hrefPath = item.href.split('?')[0]
+                  const active = pathname === hrefPath || (hrefPath !== '/admin' && pathname.startsWith(hrefPath))
                   const base =
                     `relative flex items-center ${collapsed ? 'justify-center gap-0 px-2' : 'gap-3 px-3'} py-2.5 rounded-xl text-[13px] font-medium transition-all duration-300 ease-out`
                   const classes = item.disabled
