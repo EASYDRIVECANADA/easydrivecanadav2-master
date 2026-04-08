@@ -6,7 +6,7 @@ export const revalidate = 0
 export const fetchCache = 'force-no-store'
 
 type PurchaseRow = {
-  id: string
+  VehicleId: string
   stock_number: string | null
   purchased_on: string | null
   purchase_price: number | null
@@ -78,7 +78,7 @@ export async function GET(request: Request) {
     }
 
     const purchaseSelect = [
-      'id',
+      'VehicleId',
       'stock_number',
       'purchased_on',
       'purchase_price',
@@ -210,7 +210,7 @@ export async function GET(request: Request) {
         const taxOverride = isOverride ? totalVehicleTax || vehicleTax : 0
 
         return {
-          id: String(p?.id ?? sn ?? Math.random()),
+          id: String(p?.VehicleId ?? sn ?? Math.random()),
           __vehicle_status: String(v?.status ?? ''),
           vehicle: vehicleLabel,
           purchasedFrom: purchasedFrom || 'N/A',

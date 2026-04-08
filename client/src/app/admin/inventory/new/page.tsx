@@ -639,6 +639,7 @@ export default function NewVehiclePage() {
         feed_to_cargurus: Boolean((formData as any).feedToCargurus),
         certified: Boolean((formData as any).certified),
         verified: Boolean((formData as any).verified),
+        categories: userRole ? userRole.toLowerCase() : null,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       }
@@ -697,6 +698,7 @@ export default function NewVehiclePage() {
             feed_to_cargurus: payload.feed_to_cargurus,
             certified: payload.certified,
             verified: payload.verified,
+            categories: payload.categories,
             updated_at: payload.updated_at,
           })
           .eq('id', dbVehicleId)
@@ -770,6 +772,7 @@ export default function NewVehiclePage() {
           feed_to_cargurus: payload.feed_to_cargurus,
           certified: payload.certified,
           verified: payload.verified,
+          categories: payload.categories,
           created_at: payload.created_at,
           updated_at: payload.updated_at,
         })

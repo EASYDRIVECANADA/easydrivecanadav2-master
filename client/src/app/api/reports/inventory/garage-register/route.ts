@@ -6,7 +6,7 @@ export const revalidate = 0
 export const fetchCache = 'force-no-store'
 
 type PurchaseRow = {
-  id: string | null
+  VehicleId: string | null
   stock_number: string | null
   purchased_on: string | null
   vendor_name: string | null
@@ -83,7 +83,7 @@ export async function GET(request: Request) {
     }
 
     const purchaseSelect = [
-      'id',
+      'VehicleId',
       'stock_number',
       'purchased_on',
       'vendor_name',
@@ -223,7 +223,7 @@ export async function GET(request: Request) {
         const soldToAddress = ''
 
         return {
-          id: String(p?.id ?? stock ?? Math.random()),
+          id: String(p?.VehicleId ?? stock ?? Math.random()),
           __vehicle_status: vehicleStatus,
           __purchased_on_iso: normalizeDateIso(p?.purchased_on),
           __sold_date_iso: normalizeDateIso(dateOutRaw),
