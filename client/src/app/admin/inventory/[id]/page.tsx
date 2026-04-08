@@ -14,6 +14,7 @@ import {
   ImageIcon,
   FolderOpen,
   FileSearch,
+  Award,
 } from 'lucide-react'
 
 // Tab Components
@@ -26,6 +27,7 @@ import CostsTab from './tabs/CostsTab'
 import WarrantyTab from './tabs/WarrantyTab'
 import FilesTab from './tabs/FilesTab'
 import CarfaxTab from './tabs/CarfaxTab'
+import CertificateTab from './tabs/CertificateTab'
 
 interface Vehicle {
   id: string
@@ -94,6 +96,7 @@ type TabType =
   | 'warranty'
   | 'files'
   | 'carfax'
+  | 'certificate'
 
 type TabIcon = ComponentType<{ className?: string }>
 
@@ -107,6 +110,7 @@ const TABS: { id: TabType; label: string; icon: TabIcon }[] = [
   { id: 'images', label: 'Images', icon: ImageIcon },
   { id: 'files', label: 'Files', icon: FolderOpen },
   { id: 'carfax', label: 'CARFAX', icon: FileSearch },
+  { id: 'certificate', label: 'Certificate', icon: Award },
 ]
 
 export default function AdminEditVehiclePage() {
@@ -147,6 +151,7 @@ export default function AdminEditVehiclePage() {
       'warranty',
       'files',
       'carfax',
+      'certificate',
     ]
     if (validTabs.includes(tab as TabType)) {
       setActiveTab(tab as TabType)
@@ -541,6 +546,10 @@ export default function AdminEditVehiclePage() {
 
         {activeTab === 'carfax' && (
           <CarfaxTab vehicleId={carfaxFolderId || String(params.id)} />
+        )}
+
+        {activeTab === 'certificate' && (
+          <CertificateTab vehicleId={String(params.id)} />
         )}
       </div>
     </div>
