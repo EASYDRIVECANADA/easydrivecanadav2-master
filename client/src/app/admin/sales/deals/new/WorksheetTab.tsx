@@ -6,15 +6,20 @@ import { supabase } from '@/lib/supabaseClient'
 
 const DEFAULT_FEE_TAX_LABEL = 'Default Tax 0 %'
 
-// Normalize old-format tax keys (e.g. 'HST 13 %') to standard preset format ('HST 13.00 %')
+// Normalize old-format tax keys (e.g. 'HST 13 %', 'HST 13.00 %') to full-precision format ('HST 13 %')
 // This prevents doubling when both old and new format keys are present
 function normalizeItemTaxKeys(taxSelected: Record<string, boolean> | undefined): Record<string, boolean> {
   if (!taxSelected) return {}
   const result: Record<string, boolean> = {}
   for (const [key, val] of Object.entries(taxSelected)) {
     if (!val) continue
-    // Convert legacy labels like 'HST 13 %' to normalized format once.
-    const normalized = key.replace(/(\d+(?:\.\d+)?) %$/, (_, n) => `${parseFloat(n).toFixed(2)} %`)
+    // Strip trailing zeros from decimal so '9.97 %' → '9.975 %' won't match; keep full precision as-is
+    // Re-format the numeric part using the same formatTaxRatePercent logic: remove unnecessary trailing zeros
+    const normalized = key.replace(/(\d+(?:\.\d+)?) %$/, (_, n) => {
+      const num = parseFloat(n)
+      const rounded = Math.round(num * 1_000_000) / 1_000_000
+      return `${rounded} %`
+    })
     result[normalized] = true
   }
   return result
@@ -22,10 +27,11 @@ function normalizeItemTaxKeys(taxSelected: Record<string, boolean> | undefined):
 
 function normalizeFeeTaxSelection(selected?: Record<string, boolean>): Record<string, boolean> {
   const next: Record<string, boolean> = { ...(selected || {}) }
-  const hasSelectedNonDefault = Object.entries(next).some(([k, v]) => k !== DEFAULT_FEE_TAX_LABEL && !!v)
+  const hasSelectedNonDefault = Object.entries(next).some(([k, v]) => !isDefaultTaxKey(k) && !!v)
 
   if (hasSelectedNonDefault) {
-    next[DEFAULT_FEE_TAX_LABEL] = false
+    // Clear ALL default-tax entries when a real tax is selected
+    Object.keys(next).forEach((k) => { if (isDefaultTaxKey(k)) next[k] = false })
   }
 
   const hasAnySelected = Object.values(next).some(Boolean)
@@ -36,10 +42,17 @@ function normalizeFeeTaxSelection(selected?: Record<string, boolean>): Record<st
   return next
 }
 
+function isDefaultTaxKey(k: string): boolean {
+  return k === DEFAULT_FEE_TAX_LABEL || k.toLowerCase().startsWith('default tax')
+}
+
 function feeTaxSummaryLabel(selected?: Record<string, boolean>): string {
   const normalized = normalizeFeeTaxSelection(selected)
-  const selectedNonDefault = Object.keys(normalized).filter((k) => k !== DEFAULT_FEE_TAX_LABEL && normalized[k])
-  return selectedNonDefault.length > 0 ? selectedNonDefault.join(', ') : DEFAULT_FEE_TAX_LABEL
+  const selectedNonDefault = Object.keys(normalized).filter((k) => !isDefaultTaxKey(k) && normalized[k])
+  if (selectedNonDefault.length > 0) return selectedNonDefault.join(', ')
+  // Fall back to showing whatever default-tax key is selected
+  const selectedDefault = Object.keys(normalized).filter((k) => isDefaultTaxKey(k) && normalized[k])
+  return selectedDefault.length > 0 ? selectedDefault[0] : DEFAULT_FEE_TAX_LABEL
 }
 
 function normalizeCardTaxSelection(selected?: Record<string, boolean>): Record<string, boolean> {
@@ -141,13 +154,12 @@ export default function WorksheetTab({
   const [feeTaxValues, setFeeTaxValues] = useState<Record<string, string>>({})
   const feeDetailsFee = useMemo(() => fees.find((x) => x.id === feeDetailsForId) || null, [fees, feeDetailsForId])
   const getFeeTaxRate = (label: string) => {
-    const l = label.toLowerCase()
-    if (l.includes('hst')) return 0.13
-    if (l.includes('rst')) return 0.08
-    if (l.includes('gst')) return 0.05
-    if (l.includes('pst')) return 0.06
-    if (l.includes('qst')) return 0.09975
-    // exempt or default
+    // First try to match the rate directly from the label (e.g. "HST 13 %" → 0.13, "QST 9.975 %" → 0.09975)
+    const match = label.match(/(\d+(?:\.\d+)?)\s*%/)
+    if (match) {
+      const rate = parseFloat(match[1])
+      if (Number.isFinite(rate) && rate > 0) return rate / 100
+    }
     return 0
   }
   const [payments, setPayments] = useState<Array<{ id: string; amount: number; type: string; desc?: string; category: string }>>(() => {
@@ -259,6 +271,31 @@ export default function WorksheetTab({
   const [insShowTaxDetails, setInsShowTaxDetails] = useState(false)
   const [insTaxValues, setInsTaxValues] = useState<Record<string, string>>({})
   const insDetailsItem = useMemo(() => insurances.find((x) => x.id === insDetailsForId) || null, [insurances, insDetailsForId])
+
+  // Reactively sync tax selection to items so Total Balance Due updates immediately
+  useEffect(() => {
+    if (feeDetailsOpen && feeDetailsForId) {
+      setFees((prev) => prev.map((x) => x.id === feeDetailsForId ? { ...x, taxSelected: feeTaxSelected } : x))
+    }
+  }, [feeTaxSelected, feeDetailsOpen, feeDetailsForId])
+
+  useEffect(() => {
+    if (accDetailsOpen && accDetailsForId) {
+      setAccessories((prev) => prev.map((x) => x.id === accDetailsForId ? { ...x, taxSelected: accTaxSelected } : x))
+    }
+  }, [accTaxSelected, accDetailsOpen, accDetailsForId])
+
+  useEffect(() => {
+    if (warDetailsOpen && warDetailsForId) {
+      setWarranties((prev) => prev.map((x) => x.id === warDetailsForId ? { ...x, taxSelected: warTaxSelected } : x))
+    }
+  }, [warTaxSelected, warDetailsOpen, warDetailsForId])
+
+  useEffect(() => {
+    if (insDetailsOpen && insDetailsForId) {
+      setInsurances((prev) => prev.map((x) => x.id === insDetailsForId ? { ...x, taxSelected: insTaxSelected } : x))
+    }
+  }, [insTaxSelected, insDetailsOpen, insDetailsForId])
 
   const closeAllDetails = () => {
     if (feeDetailsOpen && feeDetailsForId) {
@@ -2295,10 +2332,11 @@ export default function WorksheetTab({
                   <div className="w-10 flex items-center justify-center bg-gray-100 text-gray-600 border-r border-gray-200">$</div>
                   <input
                     className="flex-1 h-10 px-3 text-sm outline-none"
-                    value={String((feeDetailsFee as any)?.cost ?? 0)}
+                    value={feeDetailsFee ? String(feeDetailsFee.amount === 0 ? '' : feeDetailsFee.amount) : ''}
+                    placeholder="0"
                     onChange={(e) => {
                       const v = e.target.value.replace(/[^0-9.]/g, '')
-                      setFees((prev) => prev.map((x) => (x.id === feeDetailsForId ? { ...x, cost: Number(v || 0) } : x)))
+                      setFees((prev) => prev.map((x) => (x.id === feeDetailsForId ? { ...x, amount: Number(v) || 0 } : x)))
                     }}
                   />
                 </div>
@@ -2315,7 +2353,7 @@ export default function WorksheetTab({
                         <div className="py-1 text-xs text-gray-500">No tax presets</div>
                       ) : (
                         taxPresets.map((preset) => {
-                          const label = `${preset.name} ${preset.rate.toFixed(2)} %`
+                          const label = `${preset.name} ${formatTaxRatePercent(preset.rate)} %`
                           return (
                             <label key={preset.id} className="flex items-center gap-2 py-1 text-sm">
                               <input
@@ -2464,10 +2502,10 @@ export default function WorksheetTab({
                         <div className="py-1 text-xs text-gray-500">No tax presets</div>
                       ) : (
                         taxPresets.map((preset) => {
-                          const label = `${preset.name} ${preset.rate.toFixed(2)} %`
+                          const label = `${preset.name} ${formatTaxRatePercent(preset.rate)} %`
                           return (
                             <label key={preset.id} className="flex items-center gap-2 py-1 text-sm">
-                              <input type="checkbox" checked={!!warTaxSelected[label]} onChange={(e) => setWarTaxSelected((prev) => ({ ...prev, [label]: e.target.checked }))} />
+                              <input type="checkbox" checked={!!warTaxSelected[label]} onChange={(e) => { const checked = e.target.checked; setWarTaxSelected((prev) => normalizeFeeTaxSelection({ ...prev, [label]: checked })) }} />
                               {label}
                             </label>
                           )
@@ -2594,10 +2632,10 @@ export default function WorksheetTab({
                         <div className="py-1 text-xs text-gray-500">No tax presets</div>
                       ) : (
                         taxPresets.map((preset) => {
-                          const label = `${preset.name} ${preset.rate.toFixed(2)} %`
+                          const label = `${preset.name} ${formatTaxRatePercent(preset.rate)} %`
                           return (
                             <label key={preset.id} className="flex items-center gap-2 py-1 text-sm">
-                              <input type="checkbox" checked={!!insTaxSelected[label]} onChange={(e) => setInsTaxSelected((prev) => ({ ...prev, [label]: e.target.checked }))} />
+                              <input type="checkbox" checked={!!insTaxSelected[label]} onChange={(e) => { const checked = e.target.checked; setInsTaxSelected((prev) => normalizeFeeTaxSelection({ ...prev, [label]: checked })) }} />
                               {label}
                             </label>
                           )
@@ -2692,10 +2730,10 @@ export default function WorksheetTab({
                         <div className="py-1 text-xs text-gray-500">No tax presets</div>
                       ) : (
                         taxPresets.map((preset) => {
-                          const label = `${preset.name} ${preset.rate.toFixed(2)} %`
+                          const label = `${preset.name} ${formatTaxRatePercent(preset.rate)} %`
                           return (
                             <label key={preset.id} className="flex items-center gap-2 py-1 text-sm">
-                              <input type="checkbox" checked={!!accTaxSelected[label]} onChange={(e) => setAccTaxSelected((prev) => ({ ...prev, [label]: e.target.checked }))} />
+                              <input type="checkbox" checked={!!accTaxSelected[label]} onChange={(e) => { const checked = e.target.checked; setAccTaxSelected((prev) => normalizeFeeTaxSelection({ ...prev, [label]: checked })) }} />
                               {label}
                             </label>
                           )
