@@ -61,6 +61,30 @@ export default function InventoryPage() {
     maxYear: '',
   })
 
+  const [quickFilters, setQuickFilters] = useState({
+    sellerTypes: [] as string[],
+    newListings: false,
+    dealOfWeek: false,
+    featured: false,
+    priceUnder: null as number | null,
+  })
+
+  const toggleSellerType = (type: string) => {
+    setQuickFilters(prev => ({
+      ...prev,
+      sellerTypes: prev.sellerTypes.includes(type)
+        ? prev.sellerTypes.filter(t => t !== type)
+        : [...prev.sellerTypes, type]
+    }))
+  }
+
+  const toggleQuickFilter = (key: keyof typeof quickFilters, value?: any) => {
+    setQuickFilters(prev => ({
+      ...prev,
+      [key]: key === 'priceUnder' ? (prev.priceUnder === value ? null : value) : !prev[key]
+    }))
+  }
+
   const [bucketImageCache] = useState(() => new Map<string, string[]>())
 
   const normalizeImages = (raw: any): string[] => {
@@ -307,7 +331,28 @@ export default function InventoryPage() {
       if (filters.maxPrice && vehicle.price > parseInt(filters.maxPrice)) return false
       if (filters.minYear && vehicle.year < parseInt(filters.minYear)) return false
       if (filters.maxYear && vehicle.year > parseInt(filters.maxYear)) return false
-      
+
+      // Quick filters
+      if (quickFilters.sellerTypes.length > 0) {
+        const cat = String((vehicle as any)?.categories || '').toLowerCase()
+        const match = quickFilters.sellerTypes.some(type =>
+          (type === 'private' && cat.includes('private')) ||
+          (type === 'dealer' && (cat.includes('dealer') || cat.includes('dealership'))) ||
+          (type === 'fleet' && cat.includes('fleet')) ||
+          (type === 'premier' && cat.includes('premier'))
+        )
+        if (!match) return false
+      }
+      if (quickFilters.newListings) {
+        const sevenDaysAgo = new Date()
+        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
+        const createdAt = (vehicle as any)?.created_at || (vehicle as any)?.createdAt
+        if (!createdAt || new Date(createdAt) < sevenDaysAgo) return false
+      }
+      if (quickFilters.dealOfWeek && !(vehicle as any)?.deal_of_week) return false
+      if (quickFilters.featured && !(vehicle as any)?.featured) return false
+      if (quickFilters.priceUnder !== null && vehicle.price > quickFilters.priceUnder) return false
+
       return true
     })
 
@@ -346,7 +391,7 @@ export default function InventoryPage() {
     }
 
     return result
-  }, [vehicles, searchQuery, filters, sortBy])
+  }, [vehicles, searchQuery, filters, sortBy, quickFilters])
 
   // Pagination
   const totalPages = Math.ceil(filteredVehicles.length / itemsPerPage)
@@ -372,6 +417,7 @@ export default function InventoryPage() {
       maxYear: '',
     })
     setSearchQuery('')
+    setQuickFilters({ sellerTypes: [], newListings: false, dealOfWeek: false, featured: false, priceUnder: null })
   }
 
   const activeFilterCount =
@@ -620,11 +666,6 @@ export default function InventoryPage() {
       {/* Main Content */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="flex flex-col lg:flex-row gap-8">
-          {/* Desktop Filters Sidebar */}
-          <div className="hidden lg:block lg:w-72 flex-shrink-0">
-            <FilterSidebar />
-          </div>
-
           {/* Vehicle Grid */}
           <div className="flex-1">
             {/* Toolbar */}
@@ -730,6 +771,93 @@ export default function InventoryPage() {
               </div>
             )}
 
+            {/* Quick Filters */}
+            <div className="bg-white rounded-2xl border border-slate-200/60 p-5 mb-6" style={{ boxShadow: '0 1px 3px rgba(0,0,0,.04)' }}>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-sm font-bold text-[#0B1F3A] uppercase tracking-wider">Quick Filters</h3>
+                <button
+                  type="button"
+                  onClick={clearFilters}
+                  className="px-3 py-1.5 text-xs font-medium text-[#118df0] hover:text-white hover:bg-[#118df0] border border-[#118df0] rounded-full transition-all duration-200"
+                >
+                  Clear Filters
+                </button>
+              </div>
+              <div className="space-y-4">
+                <div>
+                  <div className="text-xs font-semibold text-slate-600 mb-2">Seller Type</div>
+                  <div className="flex flex-wrap gap-2">
+                    {[
+                      { key: 'private', label: 'Private Sellers' },
+                      { key: 'dealer', label: 'Dealers' },
+                      { key: 'fleet', label: 'Fleet' },
+                      { key: 'premier', label: 'Premier' },
+                    ].map(({ key, label }) => (
+                      <button
+                        key={key}
+                        type="button"
+                        onClick={() => toggleSellerType(key)}
+                        className={`px-4 py-2 text-sm font-medium rounded-full border transition-all duration-200 whitespace-nowrap ${
+                          quickFilters.sellerTypes.includes(key)
+                            ? 'bg-[#118df0] text-white border-[#118df0] shadow-lg shadow-[#118df0]/30'
+                            : 'bg-white text-slate-700 border-slate-200 hover:border-[#118df0] hover:text-[#118df0]'
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xs font-semibold text-slate-600 mb-2">Special Listings</div>
+                  <div className="flex flex-wrap gap-2">
+                    {[
+                      { key: 'newListings', label: 'New Listings' },
+                      { key: 'dealOfWeek', label: 'Deals of the Week' },
+                      { key: 'featured', label: 'Featured' },
+                    ].map(({ key, label }) => (
+                      <button
+                        key={key}
+                        type="button"
+                        onClick={() => toggleQuickFilter(key as any)}
+                        className={`px-4 py-2 text-sm font-medium rounded-full border transition-all duration-200 whitespace-nowrap ${
+                          (quickFilters as any)[key]
+                            ? 'bg-[#118df0] text-white border-[#118df0] shadow-lg shadow-[#118df0]/30'
+                            : 'bg-white text-slate-700 border-slate-200 hover:border-[#118df0] hover:text-[#118df0]'
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xs font-semibold text-slate-600 mb-2">Cars Under</div>
+                  <div className="flex flex-wrap gap-2">
+                    {[
+                      { value: 25000, label: '$25K' },
+                      { value: 20000, label: '$20K' },
+                      { value: 15000, label: '$15K' },
+                      { value: 10000, label: '$10K' },
+                    ].map(({ value, label }) => (
+                      <button
+                        key={value}
+                        type="button"
+                        onClick={() => toggleQuickFilter('priceUnder', value)}
+                        className={`px-4 py-2 text-sm font-medium rounded-full border transition-all duration-200 whitespace-nowrap ${
+                          quickFilters.priceUnder === value
+                            ? 'bg-[#118df0] text-white border-[#118df0] shadow-lg shadow-[#118df0]/30'
+                            : 'bg-white text-slate-700 border-slate-200 hover:border-[#118df0] hover:text-[#118df0]'
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+
             {/* Vehicle Grid */}
             {loading ? (
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
@@ -785,7 +913,7 @@ export default function InventoryPage() {
                           </div>
                         )}
                         {/* Hover overlay with View Vehicle button */}
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-end justify-center pb-4">
+                        <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center">
                           <span className="inline-flex items-center gap-1.5 text-white text-sm font-semibold bg-white/20 backdrop-blur-sm px-4 py-2 rounded-full border border-white/30">
                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
                             View Vehicle
@@ -794,25 +922,25 @@ export default function InventoryPage() {
                         <div className="absolute top-4 right-4 price-tag">
                           {formatPrice(vehicle.price)}
                         </div>
+                        {(() => {
+                          const raw = String((vehicle as any)?.categories ?? '').trim()
+                          if (!raw) return null
+                          const v = raw.toLowerCase()
+                          let catSrc = ''
+                          let catLabel = raw
+                          if (v.includes('private')) { catSrc = '/images/Private.png'; catLabel = 'Private' }
+                          else if (v.includes('dealer')) { catSrc = '/images/Dealership.png'; catLabel = 'Dealership' }
+                          else if (v.includes('premier') || v.includes('premiere')) { catSrc = '/images/Premier.png'; catLabel = 'Premier' }
+                          else if (v.includes('fleet')) { catSrc = '/images/Fleet%20Cars.png'; catLabel = 'Fleet Cars' }
+                          if (!catSrc) return null
+                          return <img src={catSrc} alt={catLabel} className="absolute bottom-3 left-3 h-20 w-auto drop-shadow-md z-10" />
+                        })()}
                       </div>
                       <div className="p-5 flex flex-col flex-1">
                         <div className="flex items-start justify-between gap-2 mb-0">
                           <h3 className="text-lg font-bold text-gray-900 group-hover:text-[#118df0] transition-colors line-clamp-2 leading-snug">
                             {vehicle.year} {vehicle.make} {vehicle.model} {vehicle.series}
                           </h3>
-                          {(() => {
-                            const raw = String((vehicle as any)?.categories ?? '').trim()
-                            if (!raw) return null
-                            const v = raw.toLowerCase()
-                            let catSrc = ''
-                            let catLabel = raw
-                            if (v.includes('private')) { catSrc = '/images/Private.png'; catLabel = 'Private' }
-                            else if (v.includes('dealer')) { catSrc = '/images/Dealership.png'; catLabel = 'Dealership' }
-                            else if (v.includes('premier') || v.includes('premiere')) { catSrc = '/images/Premier.png'; catLabel = 'Premier' }
-                            else if (v.includes('fleet')) { catSrc = '/images/Fleet%20Cars.png'; catLabel = 'Fleet Cars' }
-                            if (!catSrc) return null
-                            return <img src={catSrc} alt={catLabel} className="h-12 w-auto flex-shrink-0" />
-                          })()}
                         </div>
                         {formatLocation(vehicle.city, vehicle.province) && (
                           <p className="text-sm text-gray-500 mt-1 flex items-center gap-1">

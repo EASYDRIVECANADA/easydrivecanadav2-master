@@ -55,6 +55,56 @@ export default function VehicleDetailPage() {
     activeIndex: number
   }>({ open: false, loading: false, files: [], activeIndex: 0 })
   const [carfaxAvailable, setCarfaxAvailable] = useState<boolean | null>(null)
+
+  const [certModal, setCertModal] = useState<{
+    open: boolean
+    loading: boolean
+    files: { name: string; publicUrl: string }[]
+    activeIndex: number
+  }>({ open: false, loading: false, files: [], activeIndex: 0 })
+
+  const openCertModal = async (vehicleId: string) => {
+    setCertModal({ open: true, loading: true, files: [], activeIndex: 0 })
+    try {
+      // Try both the vehicleId field and the URL param id as fallback
+      const urlId = String(params.id || '')
+      const idsToTry = Array.from(new Set([vehicleId, urlId].filter(Boolean)))
+
+      let rows: any[] = []
+      for (const id of idsToTry) {
+        const { data, error } = await supabase
+          .from('certificate')
+          .select('id, certificate')
+          .eq('vehicleId', id)
+          .order('created_at', { ascending: true })
+
+        console.log('[CertModal] trying vehicleId:', id, 'data:', data, 'error:', error)
+
+        if (!error && Array.isArray(data) && data.length > 0) {
+          rows = data
+          break
+        }
+      }
+
+      if (rows.length === 0) {
+        setCertModal({ open: true, loading: false, files: [], activeIndex: 0 })
+        return
+      }
+
+      const files: { name: string; publicUrl: string }[] = rows.map((row: any) => {
+        try {
+          const meta = JSON.parse(row.certificate)
+          return { name: String(meta?.name || 'certificate'), publicUrl: String(meta?.url || '') }
+        } catch {
+          return { name: row.certificate.split('/').pop() ?? 'certificate', publicUrl: row.certificate }
+        }
+      }).filter((f) => !!f.publicUrl)
+
+      setCertModal({ open: true, loading: false, files, activeIndex: 0 })
+    } catch {
+      setCertModal({ open: true, loading: false, files: [], activeIndex: 0 })
+    }
+  }
   const [inquiryForm, setInquiryForm] = useState({
     name: '',
     email: '',
@@ -812,6 +862,18 @@ export default function VehicleDetailPage() {
                   View CARFAX Report
                 </button>
 
+                {/* View Certificate */}
+                <button
+                  type="button"
+                  onClick={() => openCertModal(vehicle.vehicleId || vehicle.id)}
+                  className="w-full flex items-center justify-center gap-2 bg-blue-50 hover:bg-blue-100 border border-blue-300 text-blue-700 font-semibold px-4 py-3 rounded-xl transition-colors"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" />
+                  </svg>
+                  View Certificate
+                </button>
+
                 {/* View Important Disclosure — category-aware */}
                 <button
                   onClick={() => {
@@ -1259,6 +1321,91 @@ export default function VehicleDetailPage() {
       })()}
 
       {/* CARFAX Report Modal */}
+      {certModal.open && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60">
+          <div className="w-full max-w-4xl bg-white rounded-2xl shadow-xl flex flex-col" style={{ height: '90vh' }}>
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 flex-shrink-0">
+              <h3 className="text-base font-semibold text-gray-900">Certificate</h3>
+              <div className="flex items-center gap-3">
+                {certModal.files.length > 1 && (
+                  <div className="flex gap-1">
+                    {certModal.files.map((f, i) => (
+                      <button
+                        key={f.publicUrl}
+                        type="button"
+                        onClick={() => setCertModal(prev => ({ ...prev, activeIndex: i }))}
+                        className={`px-3 py-1 text-xs rounded-full border transition-colors ${
+                          certModal.activeIndex === i
+                            ? 'bg-blue-600 text-white border-blue-600'
+                            : 'text-gray-600 border-gray-300 hover:border-blue-400'
+                        }`}
+                      >
+                        File {i + 1}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {certModal.files.length > 0 && (
+                  <a
+                    href={certModal.files[certModal.activeIndex]?.publicUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-1 text-xs text-blue-600 hover:underline"
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                    </svg>
+                    Open in new tab
+                  </a>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setCertModal({ open: false, loading: false, files: [], activeIndex: 0 })}
+                  className="text-gray-400 hover:text-gray-600 ml-1"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+            <div className="flex-1 min-h-0">
+              {certModal.loading ? (
+                <div className="flex items-center justify-center h-full gap-2 text-gray-400">
+                  <svg className="w-6 h-6 animate-spin" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                  </svg>
+                  <span className="text-sm">Loading certificate…</span>
+                </div>
+              ) : certModal.files.length === 0 ? (
+                <div className="flex flex-col items-center justify-center h-full">
+                  <svg className="w-14 h-14 text-gray-200 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" />
+                  </svg>
+                  <p className="text-sm font-semibold text-gray-500">No Certificate Uploaded</p>
+                  <p className="text-xs text-gray-400 mt-1">No certificate has been uploaded for this vehicle yet.</p>
+                </div>
+              ) : (() => {
+                const url = certModal.files[certModal.activeIndex]?.publicUrl || ''
+                const name = (certModal.files[certModal.activeIndex]?.name || '').toLowerCase()
+                const isImage = /\.(jpg|jpeg|png|webp|gif|bmp|svg)$/.test(name)
+                if (isImage) {
+                  return (
+                    <div className="flex items-center justify-center h-full bg-gray-50 p-4 rounded-b-2xl">
+                      <img src={url} alt="Certificate" className="max-h-full max-w-full object-contain rounded-lg shadow" />
+                    </div>
+                  )
+                }
+                return (
+                  <iframe src={url} className="w-full h-full rounded-b-2xl" title="Certificate" />
+                )
+              })()}
+            </div>
+          </div>
+        </div>
+      )}
+
       {carfaxModal.open && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60">
           <div className="w-full max-w-4xl bg-white rounded-2xl shadow-xl flex flex-col" style={{ height: '90vh' }}>
