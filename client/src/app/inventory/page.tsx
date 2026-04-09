@@ -807,7 +807,7 @@ export default function InventoryPage() {
                             let catSrc = ''
                             let catLabel = raw
                             if (v.includes('private')) { catSrc = '/images/Private.png'; catLabel = 'Private' }
-                            else if (v.includes('dealer')) { catSrc = '/images/Delearship.png'; catLabel = 'Dealership' }
+                            else if (v.includes('dealer')) { catSrc = '/images/Dealership.png'; catLabel = 'Dealership' }
                             else if (v.includes('premier') || v.includes('premiere')) { catSrc = '/images/Premier.png'; catLabel = 'Premier' }
                             else if (v.includes('fleet')) { catSrc = '/images/Fleet%20Cars.png'; catLabel = 'Fleet Cars' }
                             if (!catSrc) return null
