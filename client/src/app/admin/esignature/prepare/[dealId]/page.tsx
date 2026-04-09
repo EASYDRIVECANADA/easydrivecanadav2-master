@@ -158,6 +158,7 @@ export default function PrepareDocumentPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const dealId = params?.dealId as string
+  const fromWizard = searchParams?.get('fromWizard') === 'true'
   const containerRef = useRef<HTMLDivElement>(null)
   const canvasScrollRef = useRef<HTMLDivElement>(null)
 
@@ -233,6 +234,12 @@ export default function PrepareDocumentPage() {
   const [actionModalTitle, setActionModalTitle] = useState('')
   const [actionModalMessage, setActionModalMessage] = useState('')
 
+  // Unsaved-changes tracking
+  const [isDirty, setIsDirty] = useState(false)
+  // saveBeforeProceed: stores what to do after auto-save ('next' | 'send' | null)
+  const [saveBeforeProceedModal, setSaveBeforeProceedModal] = useState<'next' | 'send' | null>(null)
+  const [saveBeforeSendRecipientId, setSaveBeforeSendRecipientId] = useState<string | null | undefined>(undefined)
+
   const openActionModal = useCallback((ok: boolean, title: string, message: string) => {
     setActionModalOk(ok)
     setActionModalTitle(title)
@@ -249,6 +256,7 @@ export default function PrepareDocumentPage() {
     const idx = historyIdxRef.current
     historyRef.current = [...h.slice(0, idx + 1), JSON.parse(JSON.stringify(newFields))]
     historyIdxRef.current = historyRef.current.length - 1
+    setIsDirty(true)
   }, [])
 
   const undo = useCallback(() => {
@@ -580,6 +588,7 @@ export default function PrepareDocumentPage() {
                 setFields(fieldsData.fields)
                 historyRef.current = [fieldsData.fields]
                 historyIdxRef.current = 0
+                setIsDirty(false)
               }
             }
             
@@ -1281,7 +1290,7 @@ export default function PrepareDocumentPage() {
     }
   }
 
-  const handleSave = async () => {
+  const handleSave = async (silent = false) => {
     setSaving(true)
     try {
       // Save master copy (all fields) to primary dealId — used by prepare page on reload
@@ -1304,11 +1313,43 @@ export default function PrepareDocumentPage() {
         })
       }
 
-      openActionModal(true, 'Saved', `All fields saved for all ${recipients.length} recipient(s) across all files.`)
+      setIsDirty(false)
+      if (!silent) {
+        openActionModal(true, 'Saved', `All fields saved for all ${recipients.length} recipient(s) across all files.`)
+      }
     } catch (e: any) {
       openActionModal(false, 'Save failed', String(e?.message || 'Unknown error'))
+      throw e // re-throw so callers know it failed
     } finally {
       setSaving(false)
+    }
+  }
+
+  // Save then proceed to next step or send
+  const handleSaveAndProceed = async () => {
+    const action = saveBeforeProceedModal
+    const recipId = saveBeforeSendRecipientId
+    setSaveBeforeProceedModal(null)
+    setSaveBeforeSendRecipientId(undefined)
+    try {
+      await handleSave(true)
+      if (action === 'next') {
+        router.push(`/admin/esignature?wizardStep=4&docId=${encodeURIComponent(dealId)}`)
+      } else if (action === 'send') {
+        await executeSend(recipId ?? null)
+      }
+    } catch {
+      // handleSave already showed an error modal; don't proceed
+    }
+  }
+
+  // Intercept send: if dirty, show save-first modal; otherwise send directly
+  const handleSendClick = (recipientId: string | null) => {
+    if (isDirty) {
+      setSaveBeforeSendRecipientId(recipientId)
+      setSaveBeforeProceedModal('send')
+    } else {
+      void executeSend(recipientId)
     }
   }
 
@@ -1530,9 +1571,79 @@ export default function PrepareDocumentPage() {
 
   return (
     <div className={`flex flex-col h-screen select-none transition-colors duration-200 ${darkMode ? 'bg-gray-900' : 'bg-[#f0f2f5]'}`} tabIndex={0}>
+
+      {/* ── Wizard Header (shown when navigated from the upload wizard) ── */}
+      {fromWizard && (
+        <div className="bg-white border-b border-slate-200 shadow-sm flex-shrink-0 z-40">
+          <div className="px-6 py-3 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => router.push('/admin/esignature')}
+                className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-700 transition-colors"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+                Send for Signature
+              </button>
+              <button
+                type="button"
+                onClick={() => router.push(`/admin/esignature?wizardStep=2&docId=${encodeURIComponent(dealId)}`)}
+                className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-700 transition-colors"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                </svg>
+                Back
+              </button>
+            </div>
+            <div className="flex items-center gap-1">
+              {[
+                { n: 1, label: 'Select documents' },
+                { n: 2, label: 'Add recipients' },
+                { n: 3, label: 'Place fields' },
+                { n: 4, label: 'Review and send' },
+              ].map(({ n, label }, i, arr) => (
+                <div key={n} className="flex items-center gap-1">
+                  <div className="flex items-center gap-1.5">
+                    <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold border-2 transition-all ${
+                      n < 3 ? 'bg-blue-600 border-blue-600 text-white' :
+                      n === 3 ? 'bg-blue-600 border-blue-600 text-white' :
+                      'bg-white border-slate-300 text-slate-400'
+                    }`}>
+                      {n < 3 ? (
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                        </svg>
+                      ) : n}
+                    </div>
+                    <span className={`text-xs font-medium hidden lg:block ${n === 3 ? 'text-blue-600' : n < 3 ? 'text-slate-500' : 'text-slate-400'}`}>{label}</span>
+                  </div>
+                  {i < arr.length - 1 && <div className="w-6 h-px bg-slate-300 mx-1" />}
+                </div>
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                if (isDirty) {
+                  setSaveBeforeProceedModal('next')
+                } else {
+                  router.push(`/admin/esignature?wizardStep=4&docId=${encodeURIComponent(dealId)}`)
+                }
+              }}
+              className="px-6 py-2 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 transition-colors"
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* ── Top Toolbar ── */}
       <div className={`h-12 flex items-center px-4 gap-2 shrink-0 shadow-sm z-30 transition-colors duration-200 ${darkMode ? 'bg-gray-800 border-b border-gray-700' : 'bg-white border-b border-gray-200'}`}>
-        <button onClick={() => router.back()} className={`p-1.5 rounded-lg transition-colors ${darkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-100'}`} title="Back">
+        <button onClick={() => router.push('/admin/esignature')} className={`p-1.5 rounded-lg transition-colors ${darkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-100'}`} title="Back">
           <svg className={`w-5 h-5 ${darkMode ? 'text-gray-300' : 'text-gray-600'}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
         </button>
         <div className={`w-px h-6 mx-1 ${darkMode ? 'bg-gray-600' : 'bg-gray-200'}`} />
@@ -1670,7 +1781,7 @@ export default function PrepareDocumentPage() {
                           type="button"
                           title={`Send to ${r.full_name || r.email}`}
                           disabled={sending}
-                          onClick={() => executeSend(r.id)}
+                          onClick={() => handleSendClick(r.id)}
                           className="w-6 h-6 flex items-center justify-center rounded-md text-slate-400 hover:text-blue-600 hover:bg-blue-50 disabled:opacity-40 transition-colors shrink-0"
                         >
                           {isSendingThis ? (
@@ -2373,7 +2484,7 @@ export default function PrepareDocumentPage() {
                       <button
                         type="button"
                         disabled={sending}
-                        onClick={() => executeSend(r.id)}
+                        onClick={() => handleSendClick(r.id)}
                         className="h-8 px-3 rounded-lg bg-blue-600 text-white text-xs font-semibold hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5 shrink-0 transition-colors"
                       >
                         {isSendingThis ? (
@@ -2395,7 +2506,7 @@ export default function PrepareDocumentPage() {
                 <button
                   type="button"
                   disabled={sending}
-                  onClick={() => executeSend(null)}
+                  onClick={() => handleSendClick(null)}
                   className="w-full h-10 rounded-xl bg-slate-900 text-white text-sm font-semibold hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 transition-colors"
                 >
                   {sending && sendingTo === 'all' ? (
@@ -2412,7 +2523,7 @@ export default function PrepareDocumentPage() {
                 <button
                   type="button"
                   disabled={sending}
-                  onClick={() => executeSend(null)}
+                  onClick={() => handleSendClick(null)}
                   className="w-full h-10 rounded-xl bg-slate-900 text-white text-sm font-semibold hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 transition-colors"
                 >
                   {sending && sendingTo === 'all' ? (
@@ -2490,6 +2601,58 @@ export default function PrepareDocumentPage() {
                   </svg>
                 )}
                 Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Save before proceed modal ── */}
+      {saveBeforeProceedModal !== null && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setSaveBeforeProceedModal(null)} />
+          <div className="relative w-full max-w-md rounded-2xl bg-white shadow-2xl border border-slate-200 overflow-hidden">
+            <div className="px-6 pt-5 pb-4 border-b border-slate-100">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center flex-shrink-0">
+                  <svg className="w-5 h-5 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+                  </svg>
+                </div>
+                <div>
+                  <div className="text-base font-bold text-slate-800">Unsaved changes</div>
+                  <p className="mt-0.5 text-sm text-slate-500">
+                    You have unsaved field changes. Save them before{' '}
+                    {saveBeforeProceedModal === 'next' ? 'going to the next step' : 'sending'}?
+                  </p>
+                </div>
+              </div>
+            </div>
+            <div className="px-6 py-4 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setSaveBeforeProceedModal(null)}
+                className="h-9 px-4 rounded-lg border border-slate-200 text-slate-600 text-sm font-medium hover:bg-slate-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={saving}
+                onClick={handleSaveAndProceed}
+                className="h-9 px-5 rounded-lg bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 transition-colors"
+              >
+                {saving ? (
+                  <>
+                    <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2a10 10 0 1 0 10 10"/></svg>
+                    Saving…
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline strokeLinecap="round" strokeLinejoin="round" points="17 21 17 13 7 13 7 21"/><polyline strokeLinecap="round" strokeLinejoin="round" points="7 3 7 8 15 8"/></svg>
+                    Save &amp; {saveBeforeProceedModal === 'next' ? 'Continue' : 'Send'}
+                  </>
+                )}
               </button>
             </div>
           </div>

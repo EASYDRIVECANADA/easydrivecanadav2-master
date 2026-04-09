@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useMemo, useEffect, useRef } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import jsPDF from 'jspdf'
 
 import { renderBillOfSalePdf, type BillOfSaleData } from '../sales/deals/new/billOfSalePdf'
@@ -45,6 +45,7 @@ const createEmptyUploadRecipient = (): UploadRecipient => ({
 
 export default function ESignaturePage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const [view, setView] = useState<'all' | 'sent' | 'completed' | 'drafts'>('all')
   const [searchQuery, setSearchQuery] = useState('')
   const [documents, setDocuments] = useState<Document[]>([])
@@ -71,6 +72,10 @@ export default function ESignaturePage() {
   } | null>(null)
   const [downloadingFileIdx, setDownloadingFileIdx] = useState<number | null>(null)
   const [isModalOpen, setIsModalOpen] = useState(false)
+  const [wizardStep, setWizardStep] = useState<0 | 1 | 2 | 3 | 4>(0) // 0=hidden, 1=select docs, 2=add recipients, 3=place fields, 4=review & send
+  const [wizardDocId, setWizardDocId] = useState<string | null>(null)
+  const [wizardSigData, setWizardSigData] = useState<any>(null)
+  const [wizardSending, setWizardSending] = useState(false)
   const [isSuccessModalOpen, setIsSuccessModalOpen] = useState(false)
   const [uploadResultOk, setUploadResultOk] = useState(true)
   const [uploadResultMessage, setUploadResultMessage] = useState('')
@@ -189,7 +194,7 @@ export default function ESignaturePage() {
       const canProceed = await confirmEsignChargeIfNeeded(senderEmail)
       if (!canProceed) return
 
-      setIsModalOpen(true)
+      setWizardStep(1)
     } catch (err: any) {
       console.error('Error checking credits:', err)
     }
@@ -197,6 +202,8 @@ export default function ESignaturePage() {
 
   const handleCloseModal = () => {
     setIsModalOpen(false)
+    setWizardStep(0)
+    setWizardDocId(null)
     setUploadFiles([])
     setUploadRecipients([createEmptyUploadRecipient()])
     setActiveUploadRecipientIdx(0)
@@ -333,41 +340,47 @@ export default function ESignaturePage() {
 
       const done = Boolean(uploadJson?.success) || Boolean(uploadJson?.done)
       const successCount = Number(uploadJson?.count ?? recipients.length)
-
-      handleCloseModal()
+      // Extract document ID from response (may be id, document_id, documentId, or first item)
+      const docId: string = String(
+        uploadJson?.id ?? uploadJson?.document_id ?? uploadJson?.documentId ??
+        (Array.isArray(uploadJson?.documents) ? uploadJson.documents[0]?.id : '') ?? ''
+      ).trim()
 
       if (done) {
-        setUploadResultOk(true)
-        setUploadResultMessage('Saved successfully (Done).')
-        setIsSuccessModalOpen(true)
-
-        const queryParam = `user_id=${encodeURIComponent(userIdForPayload)}`
-        const docsRes = await fetch(`/api/esignature/signatures?${queryParam}`, { cache: 'no-store' })
-        if (docsRes.ok) {
-          const json = await docsRes.json()
-          if (json.documents) setDocuments(json.documents)
-        }
-
+        // Deduct credits in background
         void (async () => {
-        try {
-          const raw = typeof window !== 'undefined' ? window.localStorage.getItem('edc_admin_session') : null
-          const parsed = raw ? JSON.parse(raw) : null
-          const senderEmail = String(parsed?.email ?? '').trim().toLowerCase()
-
-          if (senderEmail) {
-            for (let i = 0; i < successCount; i += 1) {
-              await fetch('/api/esign/deduct-credit', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ email: senderEmail }),
-              })
+          try {
+            const raw = typeof window !== 'undefined' ? window.localStorage.getItem('edc_admin_session') : null
+            const parsed = raw ? JSON.parse(raw) : null
+            const senderEmail = String(parsed?.email ?? '').trim().toLowerCase()
+            if (senderEmail) {
+              for (let i = 0; i < successCount; i += 1) {
+                await fetch('/api/esign/deduct-credit', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ email: senderEmail }),
+                })
+              }
             }
+          } catch (err) {
+            console.error('Failed to deduct credit:', err)
           }
-        } catch (err) {
-          console.error('Failed to deduct credit:', err)
-        }
         })()
+
+        // Refresh document list in background
+        void fetch(`/api/esignature/signatures?user_id=${encodeURIComponent(userIdForPayload)}`, { cache: 'no-store' })
+          .then(r => r.ok ? r.json() : null)
+          .then(json => { if (json?.documents) setDocuments(json.documents) })
+
+        // Navigate directly to prepare page with wizard header
+        if (docId) {
+          router.push(`/admin/esignature/prepare/${encodeURIComponent(docId)}?fromWizard=true`)
+        } else {
+          setWizardDocId(null)
+          setWizardStep(3)
+        }
       } else {
+        handleCloseModal()
         setUploadResultOk(false)
         setUploadResultMessage(uploadJson?.error || 'Upload failed. Please try again.')
         setIsSuccessModalOpen(true)
@@ -489,6 +502,47 @@ export default function ESignaturePage() {
 
     return { userId: '', email: storedEmail }
   }
+
+  // Restore wizard step from URL params (step 2 or step 4) when returning from prepare page
+  useEffect(() => {
+    const step = searchParams?.get('wizardStep')
+    const docId = searchParams?.get('docId')
+    if (step === '4') {
+      if (docId) setWizardDocId(docId)
+      setWizardStep(4)
+    } else if (step === '2' && docId) {
+      // Returning from step 3 back to step 2: load existing recipients from API
+      setWizardDocId(docId)
+      setWizardStep(2)
+      // Fetch existing recipients so user can edit them
+      fetch(`/api/esignature/signature/${encodeURIComponent(docId)}`, { cache: 'no-store' })
+        .then(r => r.ok ? r.json() : null)
+        .then(data => {
+          if (!data) return
+          const loaded: UploadRecipient[] = [
+            { email: data.email || '', name: data.full_name || '', company: data.company || '', title: data.title || '' },
+            ...((data.siblings as any[]) || []).map((s: any) => ({
+              email: s.email || '', name: s.full_name || '', company: s.company || '', title: s.title || '',
+            })),
+          ]
+          setUploadRecipients(loaded.length > 0 ? loaded : [createEmptyUploadRecipient()])
+          setActiveUploadRecipientIdx(0)
+          // Also restore a dummy file entry so the "Next" on step 2 can proceed
+          // The actual file is already uploaded; we just need docId to navigate to prepare
+        })
+        .catch(() => {})
+    }
+  }, [searchParams])
+
+  // Fetch real sig data when step 4 is active and we have a docId
+  useEffect(() => {
+    if (wizardStep !== 4 || !wizardDocId) return
+    setWizardSigData(null)
+    fetch(`/api/esignature/signature/${encodeURIComponent(wizardDocId)}`, { cache: 'no-store' })
+      .then(r => r.ok ? r.json() : null)
+      .then(data => { if (data) setWizardSigData(data) })
+      .catch(() => {})
+  }, [wizardStep, wizardDocId])
 
   useEffect(() => {
     const fetchDocuments = async () => {
@@ -925,6 +979,356 @@ export default function ESignaturePage() {
     return d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
   }
 
+  // Wizard takes over the full content area (sidebar stays in admin layout)
+  if (wizardStep > 0) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex flex-col">
+        {/* Wizard Header */}
+        <div className="bg-white border-b border-slate-200 shadow-sm flex-shrink-0">
+          <div className="max-w-3xl mx-auto px-6 py-4 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={handleCloseModal}
+                className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-700 transition-colors"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+                Send for Signature
+              </button>
+            </div>
+            {/* Step indicators */}
+            <div className="flex items-center gap-1">
+              {[
+                { n: 1, label: 'Select documents' },
+                { n: 2, label: 'Add recipients' },
+                { n: 3, label: 'Place fields' },
+                { n: 4, label: 'Review and send' },
+              ].map(({ n, label }, i, arr) => (
+                <div key={n} className="flex items-center gap-1">
+                  <div className="flex items-center gap-1.5">
+                    <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold border-2 transition-all ${
+                      wizardStep > n
+                        ? 'bg-blue-600 border-blue-600 text-white'
+                        : wizardStep === n
+                          ? 'bg-blue-600 border-blue-600 text-white'
+                          : 'bg-white border-slate-300 text-slate-400'
+                    }`}>
+                      {wizardStep > n ? (
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                        </svg>
+                      ) : n}
+                    </div>
+                    <span className={`text-xs font-medium hidden lg:block ${wizardStep === n ? 'text-blue-600' : wizardStep > n ? 'text-slate-500' : 'text-slate-400'}`}>{label}</span>
+                  </div>
+                  {i < arr.length - 1 && <div className="w-6 h-px bg-slate-300 mx-1" />}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Step content */}
+        <div className="flex-1 overflow-y-auto">
+          <div className="max-w-3xl mx-auto px-6 py-8">
+
+            {/* ── STEP 1: Select Documents ── */}
+            {wizardStep === 1 && (
+              <div className="space-y-6">
+                <div>
+                  <h2 className="text-2xl font-bold text-slate-900">Select documents to be signed</h2>
+                  <p className="text-sm text-slate-500 mt-1">Upload one or more files. You can reorder them after uploading.</p>
+                </div>
+                <div>
+                  <input ref={fileInputRef} type="file" multiple accept=".pdf,.doc,.docx,.png,.jpg,.jpeg" onChange={handleFileSelect} className="hidden" id="wizard-file-upload" />
+                  <label htmlFor="wizard-file-upload" className="flex flex-col items-center justify-center gap-3 w-full px-6 py-14 border-2 border-dashed border-slate-300 rounded-xl hover:border-blue-400 hover:bg-blue-50/40 transition-all cursor-pointer">
+                    <svg className="w-12 h-12 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 11v6m0 0l-2-2m2 2l2-2" />
+                    </svg>
+                    <span className="text-sm text-slate-500">Drag documents here to upload</span>
+                  </label>
+                  <div className="flex gap-3 mt-3">
+                    <label htmlFor="wizard-file-upload" className="inline-flex items-center gap-2 px-4 py-2 border border-slate-300 rounded-lg text-sm font-medium text-slate-700 hover:bg-slate-50 cursor-pointer transition-colors">
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1M12 4v10m0 0l-4-4m4 4l4-4" /></svg>
+                      Upload
+                    </label>
+                  </div>
+                </div>
+                {uploadFiles.length > 0 && (
+                  <div>
+                    <p className="text-sm font-semibold text-slate-700 mb-1">Selected documents</p>
+                    <p className="text-xs text-slate-400 mb-3">Drag documents to reorder them</p>
+                    <div className="border border-slate-200 rounded-xl overflow-hidden bg-white divide-y divide-slate-100">
+                      {uploadFiles.map((file, index) => (
+                        <div key={`${file.name}-${file.size}-${file.lastModified}`} className="flex items-center gap-3 px-4 py-3 hover:bg-slate-50 transition-colors">
+                          <svg className="w-5 h-5 flex-shrink-0 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" /></svg>
+                          <span className="flex-1 text-sm text-slate-700 truncate">{file.name}</span>
+                          <button type="button" onClick={() => handleRemoveFile(index)} className="p-1.5 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors">
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                <div className="flex justify-end pt-4 border-t border-slate-200">
+                  <button type="button" onClick={() => setWizardStep(2)} disabled={uploadFiles.length === 0} className="px-8 py-2.5 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+                    Next
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* ── STEP 2: Add Recipients ── */}
+            {wizardStep === 2 && (
+              <div className="space-y-6">
+                <div>
+                  <h2 className="text-2xl font-bold text-slate-900">Add signers</h2>
+                  <p className="text-sm text-slate-500 mt-1">Enter recipient details. All signers will receive the document.</p>
+                </div>
+                <div className="space-y-4">
+                  {uploadRecipients.map((recipient, index) => (
+                    <div key={index} className="bg-white rounded-xl border border-slate-200 p-5 space-y-4">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold uppercase tracking-widest text-slate-400">Recipient {index + 1}</span>
+                        <button type="button" onClick={() => handleRemoveUploadRecipient(index)} disabled={uploadRecipients.length === 1} className="text-xs text-slate-400 hover:text-red-500 disabled:opacity-30 disabled:cursor-not-allowed transition-colors">Remove</button>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-1.5">Email Address</label>
+                        <div className="relative">
+                          <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 12a4 4 0 10-8 0 4 4 0 008 0zm0 0v1.5a2.5 2.5 0 005 0V12a9 9 0 10-9 9m4.5-1.206a8.959 8.959 0 01-4.5 1.207" /></svg></div>
+                          <input type="email" value={recipient.email} onChange={(e) => handleUploadRecipientChange(index, 'email', e.target.value)} placeholder={`recipient${index + 1}@example.com`} className="w-full pl-9 pr-4 py-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all" />
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium text-slate-700 mb-1.5">Full Name</label>
+                          <div className="relative">
+                            <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg></div>
+                            <input type="text" value={recipient.name} onChange={(e) => handleUploadRecipientChange(index, 'name', e.target.value)} placeholder="John Doe" className="w-full pl-9 pr-4 py-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all" />
+                          </div>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-slate-700 mb-1.5">Company</label>
+                          <div className="relative">
+                            <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" /></svg></div>
+                            <input type="text" value={recipient.company} onChange={(e) => handleUploadRecipientChange(index, 'company', e.target.value)} placeholder="Company Name" className="w-full pl-9 pr-4 py-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all" />
+                          </div>
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-1.5">Title / Position</label>
+                        <div className="relative">
+                          <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg></div>
+                          <input type="text" value={recipient.title} onChange={(e) => handleUploadRecipientChange(index, 'title', e.target.value)} placeholder="e.g. Sales Manager" className="w-full pl-9 pr-4 py-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all" />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                  <button type="button" onClick={handleAddUploadRecipient} className="inline-flex items-center gap-2 px-4 py-2.5 border border-slate-300 rounded-lg text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors">
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+                    Add another signer
+                  </button>
+                </div>
+                <div className="flex items-center justify-between pt-4 border-t border-slate-200">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (wizardDocId) {
+                        // Came from step 3 back — return to prepare page
+                        router.push(`/admin/esignature/prepare/${encodeURIComponent(wizardDocId)}?fromWizard=true`)
+                      } else {
+                        setWizardStep(1)
+                      }
+                    }}
+                    className="px-6 py-2.5 border border-slate-300 text-slate-700 text-sm font-medium rounded-lg hover:bg-slate-50 transition-colors"
+                  >
+                    Back
+                  </button>
+                  <button
+                    type="button"
+                    disabled={uploading}
+                    onClick={async () => {
+                      if (wizardDocId) {
+                        // Doc already uploaded — just navigate to step 3 (prepare page)
+                        router.push(`/admin/esignature/prepare/${encodeURIComponent(wizardDocId)}?fromWizard=true`)
+                      } else {
+                        const fakeEvent = { preventDefault: () => {} } as React.FormEvent
+                        await handleModalSubmit(fakeEvent)
+                      }
+                    }}
+                    className="px-8 py-2.5 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+                  >
+                    {uploading ? (<><svg className="animate-spin h-4 w-4" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" /></svg>Uploading...</>) : 'Next'}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Step 3 handled by /admin/esignature/prepare/[docId]?fromWizard=true */}
+
+            {/* ── STEP 4: Review and Send ── */}
+            {wizardStep === 4 && (() => {
+              // Build recipient list from real sig data if available, fallback to form data
+              const realRecipients: { id: string; name: string; email: string }[] = wizardSigData
+                ? [
+                    { id: wizardSigData.id, name: wizardSigData.full_name || wizardSigData.email || '', email: wizardSigData.email || '' },
+                    ...((wizardSigData.siblings as any[]) || []).map((s: any) => ({ id: s.id, name: s.full_name || s.email || '', email: s.email || '' })),
+                  ]
+                : uploadRecipients.filter(r => r.email).map((r, i) => ({ id: String(i), name: r.name, email: r.email }))
+
+              // Build document list from real sig data if available, fallback to uploaded files
+              const realDocs: string[] = wizardSigData?.document_file
+                ? (() => {
+                    try {
+                      const parsed = JSON.parse(wizardSigData.document_file)
+                      const arr = Array.isArray(parsed) ? parsed : [parsed]
+                      return arr.map((d: any) => d?.file_name || d?.name || 'Document').filter(Boolean)
+                    } catch { return [wizardSigData.document_file] }
+                  })()
+                : uploadFiles.map(f => f.name)
+
+              const handleSendForSignature = async () => {
+                if (wizardSending || !wizardDocId) return
+                setWizardSending(true)
+                try {
+                  const sigRes = await fetch(`/api/esignature/signature/${encodeURIComponent(wizardDocId)}`, { cache: 'no-store' })
+                  if (!sigRes.ok) throw new Error('Failed to load signature record')
+                  const sigData = await sigRes.json()
+                  if (!sigData?.document_file) throw new Error('No document file found')
+
+                  const getDocumentUrl = (raw: string) => {
+                    try {
+                      const parsed = JSON.parse(raw)
+                      const first = Array.isArray(parsed) ? parsed[0] : parsed
+                      return first?.url || first?.file_url || first?.file_b64 || ''
+                    } catch { return raw }
+                  }
+                  const documentUrl = getDocumentUrl(sigData.document_file)
+
+                  const allRecipients = [
+                    { id: sigData.id, email: sigData.email, full_name: sigData.full_name },
+                    ...((sigData.siblings as any[]) || []).map((s: any) => ({ id: s.id, email: s.email, full_name: s.full_name })),
+                  ]
+
+                  const errors: string[] = []
+                  for (const recip of allRecipients) {
+                    const link = `https://easydrivecanada.com/admin/sales/deals/signature?${encodeURIComponent(recip.id)}`
+                    const res = await fetch('https://primary-production-6722.up.railway.app/webhook/request', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ name: recip.full_name || recip.email || '', email: recip.email || '', link, document_url: documentUrl }),
+                    })
+                    if (!res.ok) errors.push(recip.email || recip.id)
+                  }
+
+                  if (errors.length > 0) throw new Error(`Failed to send to: ${errors.join(', ')}`)
+
+                  handleCloseModal()
+                  setUploadResultOk(true)
+                  setUploadResultMessage(`Signature request sent to ${allRecipients.length} recipient(s).`)
+                  setIsSuccessModalOpen(true)
+                } catch (err: any) {
+                  alert(err?.message || 'Failed to send signature request')
+                } finally {
+                  setWizardSending(false)
+                }
+              }
+
+              return (
+                <div className="space-y-6">
+                  <div>
+                    <h2 className="text-2xl font-bold text-slate-900">Review and send</h2>
+                    <p className="text-sm text-slate-500 mt-1">Review your document and recipients before sending.</p>
+                  </div>
+                  <div className="bg-white border border-slate-200 rounded-xl p-6 space-y-5">
+                    {/* Signers */}
+                    <div>
+                      <h3 className="text-sm font-semibold text-slate-700 mb-3">Signers</h3>
+                      {!wizardSigData && wizardDocId ? (
+                        <div className="flex items-center gap-2 text-slate-400 text-sm">
+                          <svg className="animate-spin w-4 h-4" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>
+                          Loading signers…
+                        </div>
+                      ) : (
+                        <div className="space-y-2">
+                          {realRecipients.map((r, i) => (
+                            <div key={i} className="flex items-center gap-3">
+                              <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
+                                {(r.name || r.email).charAt(0).toUpperCase()}
+                              </div>
+                              <div>
+                                {r.name && r.name !== r.email && <p className="text-sm font-medium text-slate-800">{r.name}</p>}
+                                <p className="text-xs text-slate-500">{r.email}</p>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="border-t border-slate-100" />
+
+                    {/* Documents */}
+                    <div>
+                      <h3 className="text-sm font-semibold text-slate-700 mb-3">Documents</h3>
+                      <div className="space-y-2">
+                        {realDocs.map((name, i) => (
+                          <div key={i} className="flex items-center gap-2.5">
+                            <svg className="w-5 h-5 text-slate-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" /></svg>
+                            <span className="text-sm text-slate-700">{name}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between pt-4 border-t border-slate-200">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (wizardDocId) {
+                          router.push(`/admin/esignature/prepare/${encodeURIComponent(wizardDocId)}?fromWizard=true`)
+                        } else {
+                          setWizardStep(3)
+                        }
+                      }}
+                      className="px-6 py-2.5 border border-slate-300 text-slate-700 text-sm font-medium rounded-lg hover:bg-slate-50 transition-colors"
+                    >
+                      Back
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleSendForSignature}
+                      disabled={wizardSending}
+                      className="px-8 py-2.5 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+                    >
+                      {wizardSending ? (
+                        <>
+                          <svg className="animate-spin w-4 h-4" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>
+                          Sending…
+                        </>
+                      ) : (
+                        <>
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" /></svg>
+                          Send for Signature
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+              )
+            })()}
+
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-slate-50">
       {/* Header */}
@@ -1198,246 +1602,434 @@ export default function ESignaturePage() {
         </div>
       </div>
 
-      {/* Upload Modal */}
-      {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={handleCloseModal} />
-          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-hidden">
-            {/* Header */}
-            <div className="bg-gradient-to-r from-blue-600 to-blue-500 px-6 py-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h2 className="text-xl font-bold text-white">Upload Document</h2>
-                  <p className="text-blue-100 text-sm mt-0.5">Add a new document for e-signature</p>
-                </div>
+      {/* (wizard is now rendered via early return above, keeping admin sidebar visible) */}
+      {false && (
+        <div>
+          {/* Wizard Header */}
+          <div className="bg-white border-b border-slate-200 shadow-sm flex-shrink-0">
+            <div className="max-w-3xl mx-auto px-6 py-4 flex items-center justify-between">
+              <div className="flex items-center gap-3">
                 <button
                   type="button"
                   onClick={handleCloseModal}
-                  className="p-2 text-white/80 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+                  className="p-2 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
                 >
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                   </svg>
                 </button>
+                <span className="text-base font-semibold text-slate-800">Send for Signature</span>
+              </div>
+              {/* Step indicators */}
+              <div className="flex items-center gap-1">
+                {[
+                  { n: 1, label: 'Select documents' },
+                  { n: 2, label: 'Add recipients' },
+                  { n: 3, label: 'Place fields' },
+                  { n: 4, label: 'Review and send' },
+                ].map(({ n, label }, i, arr) => (
+                  <div key={n} className="flex items-center gap-1">
+                    <div className="flex items-center gap-1.5">
+                      <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold border-2 transition-all ${
+                        wizardStep > n
+                          ? 'bg-blue-600 border-blue-600 text-white'
+                          : wizardStep === n
+                            ? 'bg-blue-600 border-blue-600 text-white'
+                            : 'bg-white border-slate-300 text-slate-400'
+                      }`}>
+                        {wizardStep > n ? (
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                          </svg>
+                        ) : n}
+                      </div>
+                      <span className={`text-xs font-medium hidden lg:block ${wizardStep === n ? 'text-blue-600' : wizardStep > n ? 'text-slate-500' : 'text-slate-400'}`}>{label}</span>
+                    </div>
+                    {i < arr.length - 1 && <div className="w-6 h-px bg-slate-300 mx-1" />}
+                  </div>
+                ))}
               </div>
             </div>
+          </div>
 
-            {/* Form */}
-            <form onSubmit={handleModalSubmit} className="p-6 space-y-5 max-h-[calc(90vh-96px)] overflow-y-auto">
-              {/* File Upload */}
-              <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-2">Document File</label>
-                <div className="relative">
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    multiple
-                    accept=".pdf,.doc,.docx,.png,.jpg,.jpeg"
-                    onChange={handleFileSelect}
-                    className="hidden"
-                    id="file-upload"
-                  />
-                  <label
-                    htmlFor="file-upload"
-                    className="flex items-center justify-center gap-3 w-full px-4 py-4 border-2 border-dashed border-slate-300 rounded-xl hover:border-blue-400 hover:bg-blue-50/50 transition-all cursor-pointer group"
-                  >
-                    <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center group-hover:bg-blue-200 transition-colors">
-                      <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+          {/* Step content */}
+          <div className="flex-1 overflow-y-auto">
+            <div className="max-w-3xl mx-auto px-6 py-8">
+
+              {/* ── STEP 1: Select Documents ── */}
+              {wizardStep === 1 && (
+                <div className="space-y-6">
+                  <div>
+                    <h2 className="text-2xl font-bold text-slate-900">Select documents to be signed</h2>
+                    <p className="text-sm text-slate-500 mt-1">Upload one or more files. You can reorder them after uploading.</p>
+                  </div>
+
+                  {/* Drop zone */}
+                  <div>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      multiple
+                      accept=".pdf,.doc,.docx,.png,.jpg,.jpeg"
+                      onChange={handleFileSelect}
+                      className="hidden"
+                      id="wizard-file-upload"
+                    />
+                    <label
+                      htmlFor="wizard-file-upload"
+                      className="flex flex-col items-center justify-center gap-3 w-full px-6 py-14 border-2 border-dashed border-slate-300 rounded-xl hover:border-blue-400 hover:bg-blue-50/40 transition-all cursor-pointer"
+                    >
+                      <svg className="w-12 h-12 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 11v6m0 0l-2-2m2 2l2-2" />
                       </svg>
-                    </div>
-                    <div className="text-left">
-                      <p className="text-sm font-medium text-slate-700">
-                        {uploadFiles.length > 0
-                          ? `${uploadFiles.length} file${uploadFiles.length > 1 ? 's' : ''} selected`
-                          : 'Click to upload file(s)'}
-                      </p>
-                      <p className="text-xs text-slate-500">PDF, DOC, DOCX, PNG, JPG up to 10MB each</p>
-                    </div>
-                  </label>
-                </div>
-                {uploadFiles.length > 0 ? (
-                  <div className="mt-3 space-y-1.5 max-h-40 overflow-y-auto">
-                    {uploadFiles.map((file, index) => (
-                      <div
-                        key={`${file.name}-${file.size}-${file.lastModified}`}
-                        className="flex items-center gap-2 px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg group"
+                      <span className="text-sm text-slate-500">Drag documents here to upload</span>
+                    </label>
+                    <div className="flex gap-3 mt-3">
+                      <label
+                        htmlFor="wizard-file-upload"
+                        className="inline-flex items-center gap-2 px-4 py-2 border border-slate-300 rounded-lg text-sm font-medium text-slate-700 hover:bg-slate-50 cursor-pointer transition-colors"
                       >
-                        <svg className="w-4 h-4 flex-shrink-0 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1M12 4v10m0 0l-4-4m4 4l4-4" />
                         </svg>
-                        <span className="flex-1 text-xs text-slate-700 truncate" title={file.name}>
-                          {file.name}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveFile(index)}
-                          className="flex-shrink-0 w-5 h-5 flex items-center justify-center rounded-full text-slate-400 hover:bg-red-100 hover:text-red-500 transition-colors"
-                          aria-label={`Remove ${file.name}`}
-                        >
-                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
-                          </svg>
-                        </button>
+                        Upload
+                      </label>
+                    </div>
+                  </div>
+
+                  {/* Selected documents list */}
+                  {uploadFiles.length > 0 && (
+                    <div>
+                      <div className="mb-3">
+                        <p className="text-sm font-semibold text-slate-700">Selected documents</p>
+                        <p className="text-xs text-slate-400">Drag documents to reorder them</p>
+                      </div>
+                      <div className="border border-slate-200 rounded-xl overflow-hidden bg-white divide-y divide-slate-100">
+                        {uploadFiles.map((file, index) => (
+                          <div
+                            key={`${file.name}-${file.size}-${file.lastModified}`}
+                            className="flex items-center gap-3 px-4 py-3 hover:bg-slate-50 transition-colors"
+                          >
+                            <svg className="w-5 h-5 flex-shrink-0 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                            </svg>
+                            <span className="flex-1 text-sm text-slate-700 truncate">{file.name}</span>
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveFile(index)}
+                              className="p-1.5 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors"
+                              aria-label={`Remove ${file.name}`}
+                            >
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                              </svg>
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Bottom nav */}
+                  <div className="flex justify-end pt-4 border-t border-slate-200">
+                    <button
+                      type="button"
+                      onClick={() => setWizardStep(2)}
+                      disabled={uploadFiles.length === 0}
+                      className="px-8 py-2.5 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                    >
+                      Next
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* ── STEP 2: Add Recipients ── */}
+              {wizardStep === 2 && (
+                <div className="space-y-6">
+                  <div>
+                    <h2 className="text-2xl font-bold text-slate-900">Add signers</h2>
+                    <p className="text-sm text-slate-500 mt-1">Enter recipient details. All signers will receive the document.</p>
+                  </div>
+
+                  <div className="space-y-4">
+                    {uploadRecipients.map((recipient, index) => (
+                      <div key={index} className="bg-white rounded-xl border border-slate-200 p-5 space-y-4">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold uppercase tracking-widest text-slate-400">Recipient {index + 1}</span>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveUploadRecipient(index)}
+                            disabled={uploadRecipients.length === 1}
+                            className="text-xs text-slate-400 hover:text-red-500 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                          >
+                            Remove
+                          </button>
+                        </div>
+
+                        <div>
+                          <label className="block text-sm font-medium text-slate-700 mb-1.5">Email Address</label>
+                          <div className="relative">
+                            <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 12a4 4 0 10-8 0 4 4 0 008 0zm0 0v1.5a2.5 2.5 0 005 0V12a9 9 0 10-9 9m4.5-1.206a8.959 8.959 0 01-4.5 1.207" />
+                              </svg>
+                            </div>
+                            <input
+                              type="email"
+                              value={recipient.email}
+                              onChange={(e) => handleUploadRecipientChange(index, 'email', e.target.value)}
+                              placeholder={`recipient${index + 1}@example.com`}
+                              className="w-full pl-9 pr-4 py-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-sm font-medium text-slate-700 mb-1.5">Full Name</label>
+                            <div className="relative">
+                              <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                                </svg>
+                              </div>
+                              <input
+                                type="text"
+                                value={recipient.name}
+                                onChange={(e) => handleUploadRecipientChange(index, 'name', e.target.value)}
+                                placeholder="John Doe"
+                                className="w-full pl-9 pr-4 py-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                              />
+                            </div>
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-slate-700 mb-1.5">Company</label>
+                            <div className="relative">
+                              <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                                </svg>
+                              </div>
+                              <input
+                                type="text"
+                                value={recipient.company}
+                                onChange={(e) => handleUploadRecipientChange(index, 'company', e.target.value)}
+                                placeholder="Company Name"
+                                className="w-full pl-9 pr-4 py-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                              />
+                            </div>
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="block text-sm font-medium text-slate-700 mb-1.5">Title / Position</label>
+                          <div className="relative">
+                            <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                              </svg>
+                            </div>
+                            <input
+                              type="text"
+                              value={recipient.title}
+                              onChange={(e) => handleUploadRecipientChange(index, 'title', e.target.value)}
+                              placeholder="e.g. Sales Manager"
+                              className="w-full pl-9 pr-4 py-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                            />
+                          </div>
+                        </div>
                       </div>
                     ))}
-                  </div>
-                ) : null}
-              </div>
 
-              {/* Recipients */}
-              <div>
-                <div className="flex items-center justify-between gap-3 mb-2">
-                  <label className="block text-sm font-semibold text-slate-700">Recipients</label>
-                  <button
-                    type="button"
-                    onClick={handleAddUploadRecipient}
-                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-blue-200 text-blue-600 text-xs font-semibold hover:bg-blue-50 transition-colors"
-                  >
-                    <span className="text-sm leading-none">+</span>
-                    Add recipient
-                  </button>
-                </div>
-                <div className="flex items-center gap-2 overflow-x-auto pb-2 mb-3">
-                  {uploadRecipients.map((_, index) => {
-                    const isActive = index === activeUploadRecipientIdx
-                    return (
-                      <button
-                        key={`recipient-tab-${index}`}
-                        type="button"
-                        onClick={() => setActiveUploadRecipientIdx(index)}
-                        className={`whitespace-nowrap px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${
-                          isActive
-                            ? 'bg-blue-600 text-white border-blue-600'
-                            : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
-                        }`}
-                      >
-                        Recipient {index + 1}
-                      </button>
-                    )
-                  })}
-                </div>
-
-                {activeUploadRecipient ? (
-                  <div className="rounded-xl border border-slate-200 p-3 space-y-3">
-                    <div className="flex items-center justify-between">
-                      <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Recipient {activeUploadRecipientIdx + 1}</div>
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveUploadRecipient(activeUploadRecipientIdx)}
-                        disabled={uploadRecipients.length === 1}
-                        className="h-8 px-2 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors text-xs"
-                      >
-                        Remove
-                      </button>
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-semibold text-slate-700 mb-2">Email Address</label>
-                      <div className="relative">
-                        <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
-                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 12a4 4 0 10-8 0 4 4 0 008 0zm0 0v1.5a2.5 2.5 0 005 0V12a9 9 0 10-9 9m4.5-1.206a8.959 8.959 0 01-4.5 1.207" />
-                          </svg>
-                        </div>
-                        <input
-                          type="email"
-                          value={activeUploadRecipient.email}
-                          onChange={(e) => handleUploadRecipientChange(activeUploadRecipientIdx, 'email', e.target.value)}
-                          placeholder={`recipient${activeUploadRecipientIdx + 1}@example.com`}
-                          className="w-full pl-10 pr-4 py-3 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
-                          required
-                        />
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-sm font-semibold text-slate-700 mb-2">Full Name</label>
-                        <div className="relative">
-                          <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
-                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                            </svg>
-                          </div>
-                          <input
-                            type="text"
-                            value={activeUploadRecipient.name}
-                            onChange={(e) => handleUploadRecipientChange(activeUploadRecipientIdx, 'name', e.target.value)}
-                            placeholder="John Doe"
-                            className="w-full pl-10 pr-4 py-3 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
-                            required
-                          />
-                        </div>
-                      </div>
-                      <div>
-                        <label className="block text-sm font-semibold text-slate-700 mb-2">Company</label>
-                        <div className="relative">
-                          <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
-                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
-                            </svg>
-                          </div>
-                          <input
-                            type="text"
-                            value={activeUploadRecipient.company}
-                            onChange={(e) => handleUploadRecipientChange(activeUploadRecipientIdx, 'company', e.target.value)}
-                            placeholder="Company Name"
-                            className="w-full pl-10 pr-4 py-3 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
-                          />
-                        </div>
-                      </div>
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-semibold text-slate-700 mb-2">Title / Position</label>
-                      <div className="relative">
-                        <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
-                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                          </svg>
-                        </div>
-                        <input
-                          type="text"
-                          value={activeUploadRecipient.title}
-                          onChange={(e) => handleUploadRecipientChange(activeUploadRecipientIdx, 'title', e.target.value)}
-                          placeholder="e.g. Sales Manager"
-                          className="w-full pl-10 pr-4 py-3 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                ) : null}
-              </div>
-
-              {/* Actions */}
-              <div className="flex gap-3 pt-2">
-                <button
-                  type="button"
-                  onClick={handleCloseModal}
-                  className="flex-1 px-4 py-3 border border-slate-200 text-slate-700 font-medium rounded-xl hover:bg-slate-50 transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={uploading || uploadFiles.length === 0}
-                  className="flex-1 px-4 py-3 bg-gradient-to-r from-blue-600 to-blue-500 text-white font-medium rounded-xl shadow-lg shadow-blue-500/25 hover:shadow-blue-500/40 hover:scale-[1.02] transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
-                >
-                  {uploading ? (
-                    <span className="flex items-center justify-center gap-2">
-                      <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                    <button
+                      type="button"
+                      onClick={handleAddUploadRecipient}
+                      className="inline-flex items-center gap-2 px-4 py-2.5 border border-slate-300 rounded-lg text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                       </svg>
-                      Uploading...
-                    </span>
-                  ) : (
-                    'Upload Document(s)'
-                  )}
-                </button>
-              </div>
-            </form>
+                      Add another signer
+                    </button>
+                  </div>
+
+                  {/* Bottom nav */}
+                  <div className="flex items-center justify-between pt-4 border-t border-slate-200">
+                    <button
+                      type="button"
+                      onClick={() => setWizardStep(1)}
+                      className="px-6 py-2.5 border border-slate-300 text-slate-700 text-sm font-medium rounded-lg hover:bg-slate-50 transition-colors"
+                    >
+                      Back
+                    </button>
+                    <button
+                      type="button"
+                      disabled={uploading}
+                      onClick={async () => {
+                        const fakeEvent = { preventDefault: () => {} } as React.FormEvent
+                        await handleModalSubmit(fakeEvent)
+                      }}
+                      className="px-8 py-2.5 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+                    >
+                      {uploading ? (
+                        <>
+                          <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                          </svg>
+                          Uploading...
+                        </>
+                      ) : 'Next'}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* ── STEP 3: Place Fields ── */}
+              {wizardStep === 3 && (
+                <div className="space-y-6">
+                  <div>
+                    <h2 className="text-2xl font-bold text-slate-900">Place fields</h2>
+                    <p className="text-sm text-slate-500 mt-1">Drag signature, initial, and other fields onto your document.</p>
+                  </div>
+
+                  <div className="bg-white border border-slate-200 rounded-xl overflow-hidden" style={{ height: '60vh' }}>
+                    {wizardDocId ? (
+                      <iframe
+                        src={`/admin/esignature/prepare/${encodeURIComponent(wizardDocId)}?embedded=1`}
+                        className="w-full h-full border-0"
+                        title="Place signature fields"
+                      />
+                    ) : (
+                      <div className="flex flex-col items-center justify-center h-full gap-4 text-slate-400">
+                        <svg className="w-16 h-16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                        </svg>
+                        <p className="text-sm">Document editor loading…</p>
+                        <button
+                          type="button"
+                          onClick={() => { if (wizardDocId) router.push(`/admin/esignature/prepare/${encodeURIComponent(wizardDocId)}`) }}
+                          className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
+                        >
+                          Open full editor
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex items-center justify-between pt-4 border-t border-slate-200">
+                    <button
+                      type="button"
+                      onClick={() => setWizardStep(2)}
+                      className="px-6 py-2.5 border border-slate-300 text-slate-700 text-sm font-medium rounded-lg hover:bg-slate-50 transition-colors"
+                    >
+                      Back
+                    </button>
+                    <div className="flex gap-3">
+                      {wizardDocId && (
+                        <button
+                          type="button"
+                          onClick={() => router.push(`/admin/esignature/prepare/${encodeURIComponent(wizardDocId)}`)}
+                          className="px-6 py-2.5 border border-blue-300 text-blue-600 text-sm font-medium rounded-lg hover:bg-blue-50 transition-colors"
+                        >
+                          Open full editor
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => setWizardStep(4)}
+                        className="px-8 py-2.5 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 transition-colors"
+                      >
+                        Next
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* ── STEP 4: Review and Send ── */}
+              {wizardStep === 4 && (
+                <div className="space-y-6">
+                  <div>
+                    <h2 className="text-2xl font-bold text-slate-900">Review and send</h2>
+                    <p className="text-sm text-slate-500 mt-1">Review your document and recipients before sending.</p>
+                  </div>
+
+                  {/* Summary */}
+                  <div className="bg-white border border-slate-200 rounded-xl p-6 space-y-5">
+                    {/* Signers */}
+                    <div>
+                      <h3 className="text-sm font-semibold text-slate-700 mb-3">Signers</h3>
+                      <div className="space-y-2">
+                        {uploadRecipients.filter(r => r.email).map((r, i) => (
+                          <div key={i} className="flex items-center gap-3">
+                            <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
+                              {(r.name || r.email).charAt(0).toUpperCase()}
+                            </div>
+                            <div>
+                              {r.name && <p className="text-sm font-medium text-slate-800">{r.name}</p>}
+                              <p className="text-xs text-slate-500">{r.email}</p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="border-t border-slate-100" />
+
+                    {/* Documents */}
+                    <div>
+                      <h3 className="text-sm font-semibold text-slate-700 mb-3">Documents</h3>
+                      <div className="space-y-2">
+                        {uploadFiles.map((f, i) => (
+                          <div key={i} className="flex items-center gap-2.5">
+                            <svg className="w-5 h-5 text-slate-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                            </svg>
+                            <span className="text-sm text-slate-700">{f.name}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="border-t border-slate-100" />
+
+                    {/* Status */}
+                    <div className="flex items-center gap-3 p-3 bg-green-50 rounded-lg">
+                      <svg className="w-5 h-5 text-green-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      <p className="text-sm text-green-700">Document uploaded and ready. Signers will be notified by email.</p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between pt-4 border-t border-slate-200">
+                    <button
+                      type="button"
+                      onClick={() => setWizardStep(3)}
+                      className="px-6 py-2.5 border border-slate-300 text-slate-700 text-sm font-medium rounded-lg hover:bg-slate-50 transition-colors"
+                    >
+                      Back
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        handleCloseModal()
+                        setUploadResultOk(true)
+                        setUploadResultMessage('Document sent successfully for signing.')
+                        setIsSuccessModalOpen(true)
+                      }}
+                      className="px-8 py-2.5 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 transition-colors"
+                    >
+                      Done
+                    </button>
+                  </div>
+                </div>
+              )}
+
+            </div>
           </div>
         </div>
       )}
