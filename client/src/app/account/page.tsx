@@ -91,12 +91,13 @@ function AccountPageInner() {
         const isActive = Boolean((adminResult.data as any)?.is_active)
         if (isActive && (adminRole === 'ADMIN' || adminRole === 'STAFF')) {
           setAdminSession(normalizedEmail, adminRole)
-          router.replace('/admin')
-          return
+        } else {
+          setAdminSession(normalizedEmail, actualRole)
         }
+      } else {
+        setAdminSession(normalizedEmail, actualRole)
       }
-      // Regular customer — stay on account page
-      setRedirectingAdmin(false)
+      router.replace('/admin/account')
     } catch {
       // ignore
     }
@@ -439,8 +440,7 @@ function AccountPageInner() {
           
           if (isGoogle && user.email) {
             await tryRedirectGoogleAdmin(user.email, true)
-            // If tryRedirectGoogleAdmin redirected (admin/staff), this code won't matter.
-            // For regular customers, continue to load their profile below.
+            return
           }
 
           setUserEmail(user.email || null)
@@ -529,7 +529,7 @@ function AccountPageInner() {
       const { error: oauthError } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: `${window.location.origin}/admin`,
+          redirectTo: `${window.location.origin}/account`,
         },
       })
       if (oauthError) setError(oauthError.message)

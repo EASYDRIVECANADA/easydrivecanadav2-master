@@ -137,6 +137,8 @@ export default function Header() {
       window.localStorage.removeItem('edc_customer_verification')
       window.localStorage.removeItem('edc_account_verified')
       window.localStorage.removeItem('edc_oauth_flow')
+      window.localStorage.removeItem('edc_admin_session')
+      window.dispatchEvent(new Event('edc_admin_session_changed'))
       // Nuke all Supabase session keys so the OAuth token can't be auto-restored
       Object.keys(window.localStorage)
         .filter((k) => k.startsWith('sb-') || k.includes('supabase'))
@@ -148,12 +150,19 @@ export default function Header() {
     window.location.href = '/'
   }
 
-  const handleAdminSignOut = () => {
+  const handleAdminSignOut = async () => {
     if (typeof window !== 'undefined') {
       window.localStorage.removeItem('edc_admin_session')
+      window.localStorage.removeItem('edc_account_verified')
+      window.localStorage.removeItem('edc_customer_verification')
+      window.localStorage.removeItem('edc_oauth_flow')
+      Object.keys(window.localStorage)
+        .filter((k) => k.startsWith('sb-') || k.includes('supabase'))
+        .forEach((k) => window.localStorage.removeItem(k))
       window.dispatchEvent(new Event('edc_admin_session_changed'))
     }
-    router.push('/')
+    await supabase.auth.signOut({ scope: 'local' })
+    window.location.href = '/'
   }
 
   const isAdmin = !!adminRole && pathname.startsWith('/admin')
@@ -200,7 +209,7 @@ export default function Header() {
                   Dashboard
                   <span className="absolute -bottom-1 left-0 w-0 h-0.5 bg-gradient-to-r from-primary-600 to-primary-700 group-hover:w-full transition-all duration-300"></span>
                 </Link>
-                <Link href="/account" className="text-gray-600 hover:text-primary-600 focus-visible:text-primary-600 transition-all duration-300 font-medium relative group focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary-600 rounded">
+                <Link href="/admin/account" className="text-gray-600 hover:text-primary-600 focus-visible:text-primary-600 transition-all duration-300 font-medium relative group focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary-600 rounded">
                   Account
                   <span className="absolute -bottom-1 left-0 w-0 h-0.5 bg-gradient-to-r from-primary-600 to-primary-700 group-hover:w-full transition-all duration-300"></span>
                 </Link>
@@ -280,7 +289,7 @@ export default function Header() {
                   <Link href="/inventory" className="text-gray-700 hover:text-primary-600 focus-visible:text-primary-600 transition-colors font-medium px-2 py-1 rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600">
                     Dashboard
                   </Link>
-                  <Link href="/account" className="text-gray-700 hover:text-primary-600 focus-visible:text-primary-600 transition-colors font-medium px-2 py-1 rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600">
+                  <Link href="/admin/account" className="text-gray-700 hover:text-primary-600 focus-visible:text-primary-600 transition-colors font-medium px-2 py-1 rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600">
                     Account
                   </Link>
                 </>
@@ -382,7 +391,7 @@ export default function Header() {
                 className="h-10 px-4 rounded-xl bg-[#118df0] text-white text-sm font-semibold hover:bg-[#0d6ebd]"
                 onClick={() => {
                   setShowAdminSignOutModal(false)
-                  handleAdminSignOut()
+                  void handleAdminSignOut()
                 }}
               >
                 Sign Out
