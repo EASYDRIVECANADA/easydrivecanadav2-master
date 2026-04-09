@@ -91,15 +91,12 @@ function AccountPageInner() {
         const isActive = Boolean((adminResult.data as any)?.is_active)
         if (isActive && (adminRole === 'ADMIN' || adminRole === 'STAFF')) {
           setAdminSession(normalizedEmail, adminRole)
-        } else {
-          // Use actual role from users table (subscription-aware)
-          setAdminSession(normalizedEmail, actualRole)
+          router.replace('/admin')
+          return
         }
-      } else {
-        // Use actual role from users table (subscription-aware)
-        setAdminSession(normalizedEmail, actualRole)
       }
-      router.replace('/admin')
+      // Regular customer — stay on account page
+      setRedirectingAdmin(false)
     } catch {
       // ignore
     }
@@ -442,7 +439,8 @@ function AccountPageInner() {
           
           if (isGoogle && user.email) {
             await tryRedirectGoogleAdmin(user.email, true)
-            return
+            // If tryRedirectGoogleAdmin redirected (admin/staff), this code won't matter.
+            // For regular customers, continue to load their profile below.
           }
 
           setUserEmail(user.email || null)
