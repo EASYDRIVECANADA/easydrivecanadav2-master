@@ -825,8 +825,31 @@ export default function VehicleDetailPage() {
                 <div className="inline-block bg-gradient-to-r from-[#118df0] to-[#0a6bc4] text-white text-3xl font-bold px-6 py-3 rounded-xl shadow-lg shadow-[#118df0]/25">
                   {formatPrice(vehicle.price)}
                 </div>
+
+                {vehicle.status && (() => {
+                  const s = vehicle.status.toLowerCase()
+                  const isSold = s === 'sold'
+                  const isOnHold = s === 'on hold' || s === 'on_hold' || s === 'hold'
+                  const isAvailable = s === 'available' || s === 'active' || s === 'for sale'
+                  return (
+                    <span className={`inline-flex items-center gap-1.5 self-start px-3 py-1.5 rounded-full text-sm font-semibold ${
+                      isSold ? 'bg-red-100 text-red-700' :
+                      isOnHold ? 'bg-yellow-100 text-yellow-700' :
+                      isAvailable ? 'bg-green-100 text-green-700' :
+                      'bg-gray-100 text-gray-700'
+                    }`}>
+                      <span className={`w-2 h-2 rounded-full ${
+                        isSold ? 'bg-red-500' :
+                        isOnHold ? 'bg-yellow-500' :
+                        isAvailable ? 'bg-green-500' :
+                        'bg-gray-500'
+                      }`} />
+                      {vehicle.status.charAt(0).toUpperCase() + vehicle.status.slice(1)}
+                    </span>
+                  )
+                })()}
               </div>
-              
+
               <div className="border-t border-gray-200/60 my-6"></div>
 
               {/* Action Buttons */}

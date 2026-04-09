@@ -27,6 +27,7 @@ type MarketVehicle = {
   collection?: string
   adDescription?: string
   categories?: string
+  status?: string
 }
 
 export default function MarketplacePage() {
@@ -323,6 +324,7 @@ export default function MarketplacePage() {
               collection: r.collection || r.inventory_type || '',
               adDescription: r.ad_description || '',
               categories: r.categories || r.category || '',
+              status: r.status || '',
             }
           })
         )
@@ -812,6 +814,29 @@ export default function MarketplacePage() {
                   <span className="inline-flex items-center rounded-full bg-[#1EA7FF] text-white px-5 py-2 text-lg font-bold self-start">
                     ${selected.price.toLocaleString()}
                   </span>
+
+                  {selected.status && (() => {
+                    const s = selected.status.toLowerCase()
+                    const isAvailable = s === 'available' || s === 'active' || s === 'for sale'
+                    const isSold = s === 'sold'
+                    const isOnHold = s === 'on hold' || s === 'on_hold' || s === 'hold'
+                    return (
+                      <span className={`inline-flex items-center gap-1.5 self-start px-3 py-1 rounded-full text-sm font-semibold ${
+                        isSold ? 'bg-red-100 text-red-700' :
+                        isOnHold ? 'bg-yellow-100 text-yellow-700' :
+                        isAvailable ? 'bg-green-100 text-green-700' :
+                        'bg-gray-100 text-gray-700'
+                      }`}>
+                        <span className={`w-2 h-2 rounded-full ${
+                          isSold ? 'bg-red-500' :
+                          isOnHold ? 'bg-yellow-500' :
+                          isAvailable ? 'bg-green-500' :
+                          'bg-gray-500'
+                        }`} />
+                        {selected.status.charAt(0).toUpperCase() + selected.status.slice(1)}
+                      </span>
+                    )
+                  })()}
 
                   <div className="flex flex-col gap-2 mt-1">
                     <button
