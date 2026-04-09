@@ -319,6 +319,10 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
         window.localStorage.removeItem('edc_account_verified')
         window.localStorage.removeItem('edc_new_vehicle_wizard')
         window.localStorage.removeItem('edc_prefill_next_stock_number')
+        window.localStorage.removeItem('edc_oauth_flow')
+        Object.keys(window.localStorage)
+          .filter((k) => k.startsWith('sb-') || k.includes('supabase'))
+          .forEach((k) => window.localStorage.removeItem(k))
       } catch {
         // ignore
       }
@@ -326,15 +330,11 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
     }
 
     try {
-      void supabase.auth.signOut()
+      await supabase.auth.signOut({ scope: 'local' })
     } catch {
       // ignore
     }
-    if (typeof window !== 'undefined') {
-      window.location.assign('/')
-      return
-    }
-    router.replace('/')
+    window.location.href = '/'
   }
 
   return (
@@ -762,7 +762,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
                 type="button"
                 onClick={() => {
                   setShowSignOutModal(false)
-                  handleSignOut()
+                  void handleSignOut()
                 }}
                 className="edc-btn-primary text-sm"
               >
