@@ -209,8 +209,18 @@ export default function ESignaturePage() {
   }
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || [])
-    setUploadFiles(files)
+    const newFiles = Array.from(e.target.files || [])
+    setUploadFiles(prev => {
+      const existing = prev.map(f => `${f.name}-${f.size}`)
+      const unique = newFiles.filter(f => !existing.includes(`${f.name}-${f.size}`))
+      return [...prev, ...unique]
+    })
+    // Reset input so same file can be re-added if removed
+    e.target.value = ''
+  }
+
+  const handleRemoveFile = (index: number) => {
+    setUploadFiles(prev => prev.filter((_, i) => i !== index))
   }
 
   const parseUploadRecipients = (values: UploadRecipient[]) => {
@@ -1247,10 +1257,28 @@ export default function ESignaturePage() {
                   </label>
                 </div>
                 {uploadFiles.length > 0 ? (
-                  <div className="mt-2 space-y-1 max-h-24 overflow-auto text-xs text-slate-500">
-                    {uploadFiles.map((file) => (
-                      <div key={`${file.name}-${file.size}-${file.lastModified}`} className="truncate">
-                        {file.name}
+                  <div className="mt-3 space-y-1.5 max-h-40 overflow-y-auto">
+                    {uploadFiles.map((file, index) => (
+                      <div
+                        key={`${file.name}-${file.size}-${file.lastModified}`}
+                        className="flex items-center gap-2 px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg group"
+                      >
+                        <svg className="w-4 h-4 flex-shrink-0 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                        </svg>
+                        <span className="flex-1 text-xs text-slate-700 truncate" title={file.name}>
+                          {file.name}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveFile(index)}
+                          className="flex-shrink-0 w-5 h-5 flex items-center justify-center rounded-full text-slate-400 hover:bg-red-100 hover:text-red-500 transition-colors"
+                          aria-label={`Remove ${file.name}`}
+                        >
+                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
+                          </svg>
+                        </button>
                       </div>
                     ))}
                   </div>
