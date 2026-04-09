@@ -46,6 +46,7 @@ export default function InventoryPage() {
   const [phase3Tick, setPhase3Tick] = useState(0)
   const [searchQuery, setSearchQuery] = useState('')
   const [showMobileFilters, setShowMobileFilters] = useState(false)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [sortBy, setSortBy] = useState<SortOption>('newest')
   const [currentPage, setCurrentPage] = useState(1)
   const itemsPerPage = 12
@@ -645,7 +646,7 @@ export default function InventoryPage() {
                   placeholder="Search by make, model, or year..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full pl-13 pr-12 py-4 bg-white/10 backdrop-blur-xl border border-white/20 rounded-full text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-[#0ea5e9]/50 focus:border-[#0ea5e9]/30 focus:bg-white/15 transition-all shadow-lg shadow-black/10"
+                  className="w-full pl-13 pr-12 py-4 bg-white/10 backdrop-blur-xl border border-white/20 rounded-full text-white placeholder-white/40 text-center focus:outline-none focus:ring-2 focus:ring-[#0ea5e9]/50 focus:border-[#0ea5e9]/30 focus:bg-white/15 transition-all shadow-lg shadow-black/10"
                 />
                 {searchQuery && (
                   <button
@@ -664,10 +665,116 @@ export default function InventoryPage() {
       </section>
 
       {/* Main Content */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="flex flex-col lg:flex-row gap-8">
+      <div className="w-full px-0">
+        <div className="flex flex-col lg:flex-row">
+          {/* Quick Filters Sidebar — left, sticky */}
+          <aside
+            className="hidden lg:block flex-shrink-0 relative transition-all duration-300 ease-out"
+            style={{
+              width: sidebarCollapsed ? '0px' : '220px',
+              position: 'sticky',
+              top: 0,
+              height: '100vh',
+              overflow: 'visible',
+              zIndex: 10,
+            }}
+          >
+            {/* Sidebar background + scrollable content */}
+            <div
+              className="h-full flex flex-col transition-all duration-300 ease-out"
+              style={{
+                width: sidebarCollapsed ? '0px' : '220px',
+                background: 'linear-gradient(180deg, #0B1F3A 0%, #081726 60%, #060f1a 100%)',
+                borderRight: '1px solid rgba(30,167,255,.08)',
+                boxShadow: '4px 0 24px rgba(0,0,0,.3)',
+                overflow: 'hidden',
+                opacity: sidebarCollapsed ? 0 : 1,
+                pointerEvents: sidebarCollapsed ? 'none' : 'auto',
+              }}
+            >
+              <div className="overflow-y-auto flex-1 pt-6 pb-6">
+                <div className="px-4">
+                  <div className="flex items-center justify-between mb-5">
+                    <h3 className="text-xs font-bold text-white/60 uppercase tracking-widest">Quick Filters</h3>
+                    <button type="button" onClick={clearFilters} className="text-[10px] font-medium text-[#1EA7FF] hover:text-white transition-colors">Clear</button>
+                  </div>
+                  <div className="space-y-6">
+                    <div>
+                      <div className="text-[10px] font-semibold text-white/40 uppercase tracking-widest mb-2">Seller Type</div>
+                      <div className="flex flex-col gap-1">
+                        {[
+                          { key: 'private', label: 'Private Sellers' },
+                          { key: 'dealer', label: 'Dealers' },
+                          { key: 'fleet', label: 'Fleet' },
+                          { key: 'premier', label: 'Premier' },
+                        ].map(({ key, label }) => (
+                          <button key={key} type="button" onClick={() => toggleSellerType(key)}
+                            className={`w-full text-left px-3 py-2 text-sm rounded-lg transition-all duration-200 ${
+                              quickFilters.sellerTypes.includes(key)
+                                ? 'bg-[#1EA7FF]/20 text-[#1EA7FF] font-semibold'
+                                : 'text-white/70 hover:bg-white/5 hover:text-white'
+                            }`}
+                          >{label}</button>
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-[10px] font-semibold text-white/40 uppercase tracking-widest mb-2">Special Listings</div>
+                      <div className="flex flex-col gap-1">
+                        {[
+                          { key: 'newListings', label: 'New Listings' },
+                          { key: 'dealOfWeek', label: 'Deals of Week' },
+                          { key: 'featured', label: 'Featured' },
+                        ].map(({ key, label }) => (
+                          <button key={key} type="button" onClick={() => toggleQuickFilter(key as any)}
+                            className={`w-full text-left px-3 py-2 text-sm rounded-lg transition-all duration-200 ${
+                              (quickFilters as any)[key]
+                                ? 'bg-[#1EA7FF]/20 text-[#1EA7FF] font-semibold'
+                                : 'text-white/70 hover:bg-white/5 hover:text-white'
+                            }`}
+                          >{label}</button>
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-[10px] font-semibold text-white/40 uppercase tracking-widest mb-2">Cars Under</div>
+                      <div className="flex flex-col gap-1">
+                        {[
+                          { value: 25000, label: '$25K' },
+                          { value: 20000, label: '$20K' },
+                          { value: 15000, label: '$15K' },
+                          { value: 10000, label: '$10K' },
+                        ].map(({ value, label }) => (
+                          <button key={value} type="button" onClick={() => toggleQuickFilter('priceUnder', value)}
+                            className={`w-full text-left px-3 py-2 text-sm rounded-lg transition-all duration-200 ${
+                              quickFilters.priceUnder === value
+                                ? 'bg-[#1EA7FF]/20 text-[#1EA7FF] font-semibold'
+                                : 'text-white/70 hover:bg-white/5 hover:text-white'
+                            }`}
+                          >{label}</button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Toggle button — pill tab on right edge */}
+            <button
+              type="button"
+              onClick={() => setSidebarCollapsed(v => !v)}
+              className="absolute top-1/2 -translate-y-1/2 flex items-center justify-center bg-[#0B1F3A] border border-[rgba(30,167,255,.2)] text-[#1EA7FF] hover:bg-[#1a2f4a] transition-all duration-200 shadow-lg"
+              style={{ right: '-20px', zIndex: 50, width: '20px', height: '90px', borderRadius: '0 6px 6px 0', borderLeft: 'none' }}
+            >
+              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d={sidebarCollapsed ? 'M9 5l7 7-7 7' : 'M15 19l-7-7 7-7'} />
+              </svg>
+            </button>
+          </aside>
+
           {/* Vehicle Grid */}
-          <div className="flex-1">
+          <div className="flex-1 min-w-0 px-4 sm:px-6 lg:px-8 py-8">
             {/* Toolbar */}
             <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
               <div className="flex items-center gap-4">
@@ -770,93 +877,6 @@ export default function InventoryPage() {
                 )}
               </div>
             )}
-
-            {/* Quick Filters */}
-            <div className="bg-white rounded-2xl border border-slate-200/60 p-5 mb-6" style={{ boxShadow: '0 1px 3px rgba(0,0,0,.04)' }}>
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-sm font-bold text-[#0B1F3A] uppercase tracking-wider">Quick Filters</h3>
-                <button
-                  type="button"
-                  onClick={clearFilters}
-                  className="px-3 py-1.5 text-xs font-medium text-[#118df0] hover:text-white hover:bg-[#118df0] border border-[#118df0] rounded-full transition-all duration-200"
-                >
-                  Clear Filters
-                </button>
-              </div>
-              <div className="space-y-4">
-                <div>
-                  <div className="text-xs font-semibold text-slate-600 mb-2">Seller Type</div>
-                  <div className="flex flex-wrap gap-2">
-                    {[
-                      { key: 'private', label: 'Private Sellers' },
-                      { key: 'dealer', label: 'Dealers' },
-                      { key: 'fleet', label: 'Fleet' },
-                      { key: 'premier', label: 'Premier' },
-                    ].map(({ key, label }) => (
-                      <button
-                        key={key}
-                        type="button"
-                        onClick={() => toggleSellerType(key)}
-                        className={`px-4 py-2 text-sm font-medium rounded-full border transition-all duration-200 whitespace-nowrap ${
-                          quickFilters.sellerTypes.includes(key)
-                            ? 'bg-[#118df0] text-white border-[#118df0] shadow-lg shadow-[#118df0]/30'
-                            : 'bg-white text-slate-700 border-slate-200 hover:border-[#118df0] hover:text-[#118df0]'
-                        }`}
-                      >
-                        {label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <div>
-                  <div className="text-xs font-semibold text-slate-600 mb-2">Special Listings</div>
-                  <div className="flex flex-wrap gap-2">
-                    {[
-                      { key: 'newListings', label: 'New Listings' },
-                      { key: 'dealOfWeek', label: 'Deals of the Week' },
-                      { key: 'featured', label: 'Featured' },
-                    ].map(({ key, label }) => (
-                      <button
-                        key={key}
-                        type="button"
-                        onClick={() => toggleQuickFilter(key as any)}
-                        className={`px-4 py-2 text-sm font-medium rounded-full border transition-all duration-200 whitespace-nowrap ${
-                          (quickFilters as any)[key]
-                            ? 'bg-[#118df0] text-white border-[#118df0] shadow-lg shadow-[#118df0]/30'
-                            : 'bg-white text-slate-700 border-slate-200 hover:border-[#118df0] hover:text-[#118df0]'
-                        }`}
-                      >
-                        {label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <div>
-                  <div className="text-xs font-semibold text-slate-600 mb-2">Cars Under</div>
-                  <div className="flex flex-wrap gap-2">
-                    {[
-                      { value: 25000, label: '$25K' },
-                      { value: 20000, label: '$20K' },
-                      { value: 15000, label: '$15K' },
-                      { value: 10000, label: '$10K' },
-                    ].map(({ value, label }) => (
-                      <button
-                        key={value}
-                        type="button"
-                        onClick={() => toggleQuickFilter('priceUnder', value)}
-                        className={`px-4 py-2 text-sm font-medium rounded-full border transition-all duration-200 whitespace-nowrap ${
-                          quickFilters.priceUnder === value
-                            ? 'bg-[#118df0] text-white border-[#118df0] shadow-lg shadow-[#118df0]/30'
-                            : 'bg-white text-slate-700 border-slate-200 hover:border-[#118df0] hover:text-[#118df0]'
-                        }`}
-                      >
-                        {label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </div>
 
             {/* Vehicle Grid */}
             {loading ? (
@@ -1052,6 +1072,7 @@ export default function InventoryPage() {
               </div>
             )}
           </div>
+
         </div>
       </div>
 

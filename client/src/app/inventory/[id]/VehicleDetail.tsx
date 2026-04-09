@@ -55,6 +55,7 @@ export default function VehicleDetailPage() {
     activeIndex: number
   }>({ open: false, loading: false, files: [], activeIndex: 0 })
   const [carfaxAvailable, setCarfaxAvailable] = useState<boolean | null>(null)
+  const [certAvailable, setCertAvailable] = useState<boolean | null>(null)
 
   const [certModal, setCertModal] = useState<{
     open: boolean
@@ -402,6 +403,26 @@ export default function VehicleDetailPage() {
         setCarfaxAvailable(hasFiles)
       })
       .catch(() => setCarfaxAvailable(false))
+  }, [vehicle])
+
+  useEffect(() => {
+    if (!vehicle) {
+      setCertAvailable(null)
+      return
+    }
+    const lookupId = vehicle.vehicleId || vehicle.id
+    const checkCert = async () => {
+      try {
+        const { count } = await supabase
+          .from('certificate')
+          .select('id', { count: 'exact', head: true })
+          .eq('vehicleId', lookupId)
+        setCertAvailable((count ?? 0) > 0)
+      } catch {
+        setCertAvailable(false)
+      }
+    }
+    checkCert()
   }, [vehicle])
 
   const formatPrice = (price: number) => {
@@ -885,17 +906,19 @@ export default function VehicleDetailPage() {
                   View CARFAX Report
                 </button>
 
-                {/* View Certificate */}
-                <button
-                  type="button"
-                  onClick={() => openCertModal(vehicle.vehicleId || vehicle.id)}
-                  className="w-full flex items-center justify-center gap-2 bg-blue-50 hover:bg-blue-100 border border-blue-300 text-blue-700 font-semibold px-4 py-3 rounded-xl transition-colors"
-                >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" />
-                  </svg>
-                  View Certificate
-                </button>
+                {/* View Certificate — only show if available */}
+                {certAvailable && (
+                  <button
+                    type="button"
+                    onClick={() => openCertModal(vehicle.vehicleId || vehicle.id)}
+                    className="w-full flex items-center justify-center gap-2 bg-blue-50 hover:bg-blue-100 border border-blue-300 text-blue-700 font-semibold px-4 py-3 rounded-xl transition-colors"
+                  >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" />
+                    </svg>
+                    Safety Certificate
+                  </button>
+                )}
 
                 {/* View Important Disclosure — category-aware */}
                 <button

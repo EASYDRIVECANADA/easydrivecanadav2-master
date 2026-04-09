@@ -46,6 +46,7 @@ export default function MarketplacePage() {
   }>({ open: false, loading: false, files: [], activeIndex: 0 })
 
   const [carfaxAvailable, setCarfaxAvailable] = useState<boolean | null>(null)
+  const [certAvailable, setCertAvailable] = useState<boolean | null>(null)
 
   const [certModal, setCertModal] = useState<{
     open: boolean
@@ -102,6 +103,7 @@ export default function MarketplacePage() {
   const [sort, setSort] = useState<'newest' | 'price_asc' | 'price_desc'>('newest')
 
   // Quick Filter states
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [quickFilters, setQuickFilters] = useState({
     sellerTypes: [] as string[],
     newListings: false,
@@ -149,6 +151,25 @@ export default function MarketplacePage() {
         setCarfaxAvailable(hasFiles)
       })
       .catch(() => setCarfaxAvailable(false))
+  }, [selected])
+
+  useEffect(() => {
+    if (!selected) {
+      setCertAvailable(null)
+      return
+    }
+    const checkCert = async () => {
+      try {
+        const { count } = await supabase
+          .from('certificate')
+          .select('id', { count: 'exact', head: true })
+          .eq('vehicleId', selected.id)
+        setCertAvailable((count ?? 0) > 0)
+      } catch {
+        setCertAvailable(false)
+      }
+    }
+    checkCert()
   }, [selected])
 
   useEffect(() => {
@@ -491,95 +512,116 @@ export default function MarketplacePage() {
   }
 
   return (
-    <div className="px-6 lg:px-8 py-6">
-      <div className="flex items-start gap-6">
-        {/* Sidebar Filters (hidden on Marketplace as requested) */}
-        <aside className="hidden w-72 bg-white rounded-2xl border border-slate-200/60 p-5 sticky top-6 self-start" style={{ boxShadow: '0 1px 3px rgba(0,0,0,.04)' }}>
-          <div className="flex items-center justify-between pb-3 border-b border-slate-200/60">
-            <div className="text-xs font-bold text-[#0B1F3A] uppercase tracking-wider">Filters</div>
-            <button
-              type="button"
-              className="text-xs text-[#1EA7FF] hover:text-[#0B1F3A] font-medium transition-colors"
-              onClick={clearAllFilters}
-            >
-              Clear
-            </button>
-          </div>
-          <div className="mt-3 space-y-4">
-            <div>
-              <div className="text-xs font-semibold text-slate-500 mb-1">Make</div>
-              <select value={make} onChange={(e) => setMake(e.target.value)} className="w-full h-9 rounded-lg border border-slate-200 bg-white text-sm text-slate-700 px-2 focus:outline-none focus:ring-2 focus:ring-[#1EA7FF]/30 transition-all">
-                <option value="">All Makes</option>
-                {makes.map((m) => (
-                  <option key={m} value={m}>{m}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <div className="text-xs font-semibold text-slate-500 mb-1">Collection</div>
-              <select value={collection} onChange={(e) => setCollection(e.target.value)} className="w-full h-9 rounded-lg border border-slate-200 bg-white text-sm text-slate-700 px-2 focus:outline-none focus:ring-2 focus:ring-[#1EA7FF]/30 transition-all">
-                <option value="">All Vehicles</option>
-                {collections.map((c) => (
-                  <option key={c} value={c}>{c}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <div className="text-xs font-semibold text-slate-500 mb-1">Category</div>
-              <select value={category} onChange={(e) => setCategory(e.target.value)} className="w-full h-9 rounded-lg border border-slate-200 bg-white text-sm text-slate-700 px-2 focus:outline-none focus:ring-2 focus:ring-[#1EA7FF]/30 transition-all">
-                <option value="">All Categories</option>
-                <option value="fleet">Fleet</option>
-                <option value="dealer">Dealership</option>
-                <option value="premier">Premier</option>
-                <option value="private">Private</option>
-              </select>
-            </div>
-            <div>
-              <div className="text-xs font-semibold text-slate-500 mb-1">Body Style</div>
-              <select value={bodyStyle} onChange={(e) => setBodyStyle(e.target.value)} className="w-full h-9 rounded-lg border border-slate-200 bg-white text-sm text-slate-700 px-2 focus:outline-none focus:ring-2 focus:ring-[#1EA7FF]/30 transition-all">
-                <option value="">All Styles</option>
-                {bodyStyles.map((b) => (
-                  <option key={b} value={b}>{b}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <div className="text-xs font-semibold text-slate-500 mb-1">Exterior Color</div>
-              <select value={exteriorColor} onChange={(e) => setExteriorColor(e.target.value)} className="w-full h-9 rounded-lg border border-slate-200 bg-white text-sm text-slate-700 px-2 focus:outline-none focus:ring-2 focus:ring-[#1EA7FF]/30 transition-all">
-                <option value="">All Colors</option>
-                {colors.map((c) => (
-                  <option key={c} value={c}>{c}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <div className="text-xs font-semibold text-slate-500 mb-1">Features</div>
-              <select value={feature} onChange={(e) => setFeature(e.target.value)} className="w-full h-9 rounded-lg border border-slate-200 bg-white text-sm text-slate-700 px-2 focus:outline-none focus:ring-2 focus:ring-[#1EA7FF]/30 transition-all">
-                <option value="">All Features</option>
-                {features.map((f) => (
-                  <option key={f} value={f}>{f}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <div className="text-xs font-semibold text-slate-500 mb-1">Price Range</div>
-              <div className="grid grid-cols-2 gap-2">
-                <input value={minPrice} onChange={(e) => setMinPrice(e.target.value)} placeholder="Min" className="w-full h-9 rounded-lg border border-slate-200 bg-white text-sm text-slate-700 px-2 focus:outline-none focus:ring-2 focus:ring-[#1EA7FF]/30 transition-all" />
-                <input value={maxPrice} onChange={(e) => setMaxPrice(e.target.value)} placeholder="Max" className="w-full h-9 rounded-lg border border-slate-200 bg-white text-sm text-slate-700 px-2 focus:outline-none focus:ring-2 focus:ring-[#1EA7FF]/30 transition-all" />
+    <div className="flex min-h-screen">
+      <div className="flex flex-1 items-start">
+        {/* Quick Filters Sidebar — left, sticky */}
+        <aside
+          className="flex-shrink-0 relative transition-all duration-300 ease-out"
+          style={{
+            width: sidebarCollapsed ? '0px' : '220px',
+            position: 'sticky',
+            top: 0,
+            height: '100vh',
+            overflow: 'visible',
+            zIndex: 10,
+          }}
+        >
+          {/* Sidebar background + scrollable content */}
+          <div
+            className="h-full flex flex-col transition-all duration-300 ease-out"
+            style={{
+              width: sidebarCollapsed ? '0px' : '220px',
+              background: 'linear-gradient(180deg, #0B1F3A 0%, #081726 60%, #060f1a 100%)',
+              borderRight: '1px solid rgba(30,167,255,.08)',
+              boxShadow: '4px 0 24px rgba(0,0,0,.3)',
+              overflow: 'hidden',
+              opacity: sidebarCollapsed ? 0 : 1,
+              pointerEvents: sidebarCollapsed ? 'none' : 'auto',
+            }}
+          >
+            <div className="overflow-y-auto flex-1 pt-6 pb-6">
+              <div className="px-4">
+                <div className="flex items-center justify-between mb-5">
+                  <h3 className="text-xs font-bold text-white/60 uppercase tracking-widest">Quick Filters</h3>
+                  <button type="button" onClick={clearAllFilters} className="text-[10px] font-medium text-[#1EA7FF] hover:text-white transition-colors">Clear</button>
+                </div>
+                <div className="space-y-6">
+                  <div>
+                    <div className="text-[10px] font-semibold text-white/40 uppercase tracking-widest mb-2">Seller Type</div>
+                    <div className="flex flex-col gap-1">
+                      {[
+                        { key: 'private', label: 'Private Sellers' },
+                        { key: 'dealer', label: 'Dealers' },
+                        { key: 'fleet', label: 'Fleet' },
+                        { key: 'premier', label: 'Premier' },
+                      ].map(({ key, label }) => (
+                        <button key={key} type="button" onClick={() => toggleSellerType(key)}
+                          className={`w-full text-left px-3 py-2 text-sm rounded-lg transition-all duration-200 ${
+                            quickFilters.sellerTypes.includes(key)
+                              ? 'bg-[#1EA7FF]/20 text-[#1EA7FF] font-semibold'
+                              : 'text-white/70 hover:bg-white/5 hover:text-white'
+                          }`}
+                        >{label}</button>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] font-semibold text-white/40 uppercase tracking-widest mb-2">Special Listings</div>
+                    <div className="flex flex-col gap-1">
+                      {[
+                        { key: 'newListings', label: 'New Listings' },
+                        { key: 'dealOfWeek', label: 'Deals of Week' },
+                        { key: 'featured', label: 'Featured' },
+                      ].map(({ key, label }) => (
+                        <button key={key} type="button" onClick={() => toggleQuickFilter(key as any)}
+                          className={`w-full text-left px-3 py-2 text-sm rounded-lg transition-all duration-200 ${
+                            (quickFilters as any)[key]
+                              ? 'bg-[#1EA7FF]/20 text-[#1EA7FF] font-semibold'
+                              : 'text-white/70 hover:bg-white/5 hover:text-white'
+                          }`}
+                        >{label}</button>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] font-semibold text-white/40 uppercase tracking-widest mb-2">Cars Under</div>
+                    <div className="flex flex-col gap-1">
+                      {[
+                        { value: 25000, label: '$25K' },
+                        { value: 20000, label: '$20K' },
+                        { value: 15000, label: '$15K' },
+                        { value: 10000, label: '$10K' },
+                      ].map(({ value, label }) => (
+                        <button key={value} type="button" onClick={() => toggleQuickFilter('priceUnder', value)}
+                          className={`w-full text-left px-3 py-2 text-sm rounded-lg transition-all duration-200 ${
+                            quickFilters.priceUnder === value
+                              ? 'bg-[#1EA7FF]/20 text-[#1EA7FF] font-semibold'
+                              : 'text-white/70 hover:bg-white/5 hover:text-white'
+                          }`}
+                        >{label}</button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
-            <div>
-              <div className="text-xs font-semibold text-slate-500 mb-1">Year Range</div>
-              <div className="grid grid-cols-2 gap-2">
-                <input value={minYear} onChange={(e) => setMinYear(e.target.value)} placeholder="Min" className="w-full h-9 rounded-lg border border-slate-200 bg-white text-sm text-slate-700 px-2 focus:outline-none focus:ring-2 focus:ring-[#1EA7FF]/30 transition-all" />
-                <input value={maxYear} onChange={(e) => setMaxYear(e.target.value)} placeholder="Max" className="w-full h-9 rounded-lg border border-slate-200 bg-white text-sm text-slate-700 px-2 focus:outline-none focus:ring-2 focus:ring-[#1EA7FF]/30 transition-all" />
-              </div>
-            </div>
           </div>
+
+          {/* Toggle button — pill tab on right edge */}
+          <button
+            type="button"
+            onClick={() => setSidebarCollapsed(v => !v)}
+            className="absolute top-1/2 -translate-y-1/2 flex items-center justify-center bg-[#0B1F3A] border border-[rgba(30,167,255,.2)] text-[#1EA7FF] hover:bg-[#1a2f4a] transition-all duration-200 shadow-lg"
+            style={{ right: '-20px', zIndex: 50, width: '20px', height: '90px', borderRadius: '0 6px 6px 0', borderLeft: 'none' }}
+          >
+            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d={sidebarCollapsed ? 'M9 5l7 7-7 7' : 'M15 19l-7-7 7-7'} />
+            </svg>
+          </button>
         </aside>
 
         {/* Results */}
-        <section className="flex-1">
+        <section className="flex-1 min-w-0 px-6 py-6">
           <div className="flex items-center justify-between mb-3">
             <div className="text-sm text-slate-500">{loading ? 'Loading…' : error ? 'Failed to load vehicles' : `Showing ${filtered.length} of ${vehicles.length} total vehicles`}</div>
             <div className="w-48">
@@ -588,114 +630,6 @@ export default function MarketplacePage() {
                 <option value="price_asc">Price: Low to High</option>
                 <option value="price_desc">Price: High to Low</option>
               </select>
-            </div>
-          </div>
-
-          {/* Quick Filters */}
-          <div className="bg-white rounded-2xl border border-slate-200/60 p-5 mb-6" style={{ boxShadow: '0 1px 3px rgba(0,0,0,.04)' }}>
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-sm font-bold text-[#0B1F3A] uppercase tracking-wider">Quick Filters</h3>
-              <button
-                type="button"
-                onClick={clearAllFilters}
-                className="px-3 py-1.5 text-xs font-medium text-[#1EA7FF] hover:text-white hover:bg-[#1EA7FF] border border-[#1EA7FF] rounded-full transition-all duration-200"
-              >
-                Clear Filters
-              </button>
-            </div>
-            
-            <div className="space-y-4">
-              {/* Seller Type Filters */}
-              <div>
-                <div className="text-xs font-semibold text-slate-600 mb-2">Seller Type</div>
-                <div className="flex flex-wrap gap-2 overflow-x-auto pb-2">
-                  {[
-                    { key: 'private', label: 'Private Sellers' },
-                    { key: 'dealer', label: 'Dealers' },
-                    { key: 'fleet', label: 'Fleet' },
-                    { key: 'premier', label: 'Premier' }
-                  ].map(({ key, label }) => (
-                    <button
-                      key={key}
-                      type="button"
-                      onClick={() => toggleSellerType(key)}
-                      className={`px-4 py-2 text-sm font-medium rounded-full border transition-all duration-200 whitespace-nowrap ${
-                        quickFilters.sellerTypes.includes(key)
-                          ? 'bg-[#1EA7FF] text-white border-[#1EA7FF] shadow-lg shadow-[#1EA7FF]/30'
-                          : 'bg-white text-slate-700 border-slate-200 hover:border-[#1EA7FF] hover:text-[#1EA7FF]'
-                      }`}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Time Based & Promotional Filters */}
-              <div>
-                <div className="text-xs font-semibold text-slate-600 mb-2">Special Listings</div>
-                <div className="flex flex-wrap gap-2 overflow-x-auto pb-2">
-                  <button
-                    type="button"
-                    onClick={() => toggleQuickFilter('newListings')}
-                    className={`px-4 py-2 text-sm font-medium rounded-full border transition-all duration-200 whitespace-nowrap ${
-                      quickFilters.newListings
-                        ? 'bg-[#1EA7FF] text-white border-[#1EA7FF] shadow-lg shadow-[#1EA7FF]/30'
-                        : 'bg-white text-slate-700 border-slate-200 hover:border-[#1EA7FF] hover:text-[#1EA7FF]'
-                    }`}
-                  >
-                    New Listings
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => toggleQuickFilter('dealOfWeek')}
-                    className={`px-4 py-2 text-sm font-medium rounded-full border transition-all duration-200 whitespace-nowrap ${
-                      quickFilters.dealOfWeek
-                        ? 'bg-[#1EA7FF] text-white border-[#1EA7FF] shadow-lg shadow-[#1EA7FF]/30'
-                        : 'bg-white text-slate-700 border-slate-200 hover:border-[#1EA7FF] hover:text-[#1EA7FF]'
-                    }`}
-                  >
-                    Deals of the Week
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => toggleQuickFilter('featured')}
-                    className={`px-4 py-2 text-sm font-medium rounded-full border transition-all duration-200 whitespace-nowrap ${
-                      quickFilters.featured
-                        ? 'bg-[#1EA7FF] text-white border-[#1EA7FF] shadow-lg shadow-[#1EA7FF]/30'
-                        : 'bg-white text-slate-700 border-slate-200 hover:border-[#1EA7FF] hover:text-[#1EA7FF]'
-                    }`}
-                  >
-                    Featured
-                  </button>
-                </div>
-              </div>
-
-              {/* Price Quick Filters */}
-              <div>
-                <div className="text-xs font-semibold text-slate-600 mb-2">Cars Under</div>
-                <div className="flex flex-wrap gap-2 overflow-x-auto pb-2">
-                  {[
-                    { value: 25000, label: '$25K' },
-                    { value: 20000, label: '$20K' },
-                    { value: 15000, label: '$15K' },
-                    { value: 10000, label: '$10K' }
-                  ].map(({ value, label }) => (
-                    <button
-                      key={value}
-                      type="button"
-                      onClick={() => toggleQuickFilter('priceUnder', value)}
-                      className={`px-4 py-2 text-sm font-medium rounded-full border transition-all duration-200 whitespace-nowrap ${
-                        quickFilters.priceUnder === value
-                          ? 'bg-[#1EA7FF] text-white border-[#1EA7FF] shadow-lg shadow-[#1EA7FF]/30'
-                          : 'bg-white text-slate-700 border-slate-200 hover:border-[#1EA7FF] hover:text-[#1EA7FF]'
-                      }`}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
-              </div>
             </div>
           </div>
 
@@ -847,14 +781,16 @@ export default function MarketplacePage() {
                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-2a4 4 0 014-4h4M3 7h6m-6 4h6m-6 4h6M17 3l4 4-4 4" /></svg>
                       View CARFAX Report
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => openCertModal(selected.id)}
-                      className="w-full py-3 px-4 rounded-xl border border-blue-300 text-blue-700 bg-blue-50 hover:bg-blue-100 text-sm font-medium transition-colors flex items-center justify-center gap-2"
-                    >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" /></svg>
-                      View Certificate
-                    </button>
+                    {certAvailable && (
+                      <button
+                        type="button"
+                        onClick={() => openCertModal(selected.id)}
+                        className="w-full py-3 px-4 rounded-xl border border-blue-300 text-blue-700 bg-blue-50 hover:bg-blue-100 text-sm font-medium transition-colors flex items-center justify-center gap-2"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" /></svg>
+                        Safety Certificate
+                      </button>
+                    )}
                     <button
                       type="button"
                       onClick={() => {
@@ -1178,6 +1114,7 @@ export default function MarketplacePage() {
           </div>
         )}
         </section>
+
       </div>
     </div>
   )
