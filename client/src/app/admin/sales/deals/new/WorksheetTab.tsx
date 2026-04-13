@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, forwardRef, useImperativeHandle } from 'react'
 
 import { supabase } from '@/lib/supabaseClient'
 
@@ -67,16 +67,9 @@ function formatTaxRatePercent(rate: number): string {
   return String(normalized)
 }
 
-export default function WorksheetTab({
-  dealId,
-  dealMode = 'RTL',
-  dealType = 'Cash',
-  dealDate,
-  formMode,
-  onSaved,
-  initialData,
-  autoSaved,
-}: {
+export type WorksheetTabHandle = { save: (silent?: boolean) => Promise<void> }
+
+const WorksheetTab = forwardRef<WorksheetTabHandle, {
   dealId?: string
   dealMode?: 'RTL' | 'WHL'
   dealType?: 'Cash' | 'Finance'
@@ -85,7 +78,16 @@ export default function WorksheetTab({
   onSaved?: () => void
   initialData?: any
   autoSaved?: boolean
-}): JSX.Element {
+}>(function WorksheetTab({
+  dealId,
+  dealMode = 'RTL',
+  dealType = 'Cash',
+  dealDate,
+  formMode,
+  onSaved,
+  initialData,
+  autoSaved,
+}, ref) {
   const d = initialData || {}
   const appliedInitialKeyRef = useRef<string>('')
   const [worksheetSaving, setWorksheetSaving] = useState(false)
@@ -814,7 +816,7 @@ export default function WorksheetTab({
     return list.slice(0, 10)
   }, [insurancePresets, insuranceSearch, insurancePresetOpen])
 
-  const submitWorksheet = async () => {
+  const submitWorksheet = async (silent?: boolean) => {
     const norm = (v: any) => {
       if (v === undefined || v === null) return null
       if (typeof v === 'string') {
@@ -1157,7 +1159,11 @@ export default function WorksheetTab({
       }
 
       setHasBeenSaved(true)
-      setShowSavedModal(true)
+      if (!silent) {
+        setShowSavedModal(true)
+      } else {
+        onSaved?.()
+      }
     } catch (err) {
       const msg = (err as any)?.message || 'Failed to submit worksheet'
       setWorksheetSaveError(msg)
@@ -1955,6 +1961,11 @@ export default function WorksheetTab({
     payments: paymentsCard,
   }
 
+  // Expose save() to parent via ref
+  useImperativeHandle(ref, () => ({
+    save: async (silent?: boolean) => { await submitWorksheet(silent) }
+  }))
+
   return (
     <div className="w-full">
       {showSavedModal ? (
@@ -2309,7 +2320,7 @@ export default function WorksheetTab({
       <div className="mt-6 flex items-center justify-end">
         <button
           type="button"
-          onClick={submitWorksheet}
+          onClick={() => submitWorksheet()}
           disabled={worksheetSaving}
           className="h-10 px-6 rounded bg-[#118df0] text-white text-sm font-semibold hover:bg-[#0d6ebd] disabled:opacity-60 disabled:cursor-not-allowed"
         >
@@ -2788,4 +2799,6 @@ export default function WorksheetTab({
       ) : null}
     </div>
   )
-}
+})
+
+export default WorksheetTab

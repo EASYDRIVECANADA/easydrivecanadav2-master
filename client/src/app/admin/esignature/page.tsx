@@ -1898,7 +1898,7 @@ export default function ESignaturePage() {
                   <div className="bg-white border border-slate-200 rounded-xl overflow-hidden" style={{ height: '60vh' }}>
                     {wizardDocId ? (
                       <iframe
-                        src={`/admin/esignature/prepare/${encodeURIComponent(wizardDocId)}?embedded=1`}
+                        src={`/admin/esignature/prepare/${encodeURIComponent(wizardDocId!)}?embedded=1`}
                         className="w-full h-full border-0"
                         title="Place signature fields"
                       />
@@ -1931,7 +1931,7 @@ export default function ESignaturePage() {
                       {wizardDocId && (
                         <button
                           type="button"
-                          onClick={() => router.push(`/admin/esignature/prepare/${encodeURIComponent(wizardDocId)}`)}
+                          onClick={() => router.push(`/admin/esignature/prepare/${encodeURIComponent(wizardDocId!)}`)}
                           className="px-6 py-2.5 border border-blue-300 text-blue-600 text-sm font-medium rounded-lg hover:bg-blue-50 transition-colors"
                         >
                           Open full editor

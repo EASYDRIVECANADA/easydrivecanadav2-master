@@ -132,15 +132,10 @@ export default function CustomerShowroomPage() {
   // Check carfax + disclosure availability for selected vehicle
   useEffect(() => {
     if (!selected) { setCarfaxAvailable(null); setDisclosureAvailable(null); return }
-    supabase.storage
-      .from('Carfax')
-      .list(selected.id, { limit: 1 })
+    Promise.resolve(supabase.storage.from('Carfax').list(selected.id, { limit: 1 }))
       .then(({ data }) => setCarfaxAvailable(Array.isArray(data) && data.some((f) => !!f?.name && !String(f.name).endsWith('/'))))
       .catch(() => setCarfaxAvailable(false))
-    supabase
-      .from('edc_disclosures')
-      .select('id', { count: 'exact', head: true })
-      .eq('vehicleId', selected.id)
+    Promise.resolve(supabase.from('edc_disclosures').select('id', { count: 'exact', head: true }).eq('vehicleId', selected.id))
       .then(({ count }) => setDisclosureAvailable((count ?? 0) > 0))
       .catch(() => setDisclosureAvailable(false))
   }, [selected])
@@ -151,17 +146,12 @@ export default function CustomerShowroomPage() {
     const newCarfax = new Map<string, boolean>()
     const newDisc = new Map<string, boolean>()
     const carfaxChecks = rows.map((r) =>
-      supabase.storage
-        .from('Carfax')
-        .list(r.id, { limit: 1 })
+      Promise.resolve(supabase.storage.from('Carfax').list(r.id, { limit: 1 }))
         .then(({ data }) => { newCarfax.set(r.id, Array.isArray(data) && data.some((f) => !!f?.name && !String(f.name).endsWith('/'))) })
         .catch(() => { newCarfax.set(r.id, false) })
     )
     const discChecks = rows.map((r) =>
-      supabase
-        .from('edc_disclosures')
-        .select('id', { count: 'exact', head: true })
-        .eq('vehicleId', r.id)
+      Promise.resolve(supabase.from('edc_disclosures').select('id', { count: 'exact', head: true }).eq('vehicleId', r.id))
         .then(({ count }) => { newDisc.set(r.id, (count ?? 0) > 0) })
         .catch(() => { newDisc.set(r.id, false) })
     )

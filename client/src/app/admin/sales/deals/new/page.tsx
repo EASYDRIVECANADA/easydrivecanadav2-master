@@ -7,8 +7,8 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import CustomersTabNew from './CustomersTabNew'
 import DeliveryTab from './DeliveryTab'
 import DisclosuresTab from './DisclosuresTab'
-import VehiclesTab from './VehiclesTab'
-import WorksheetTab from './WorksheetTab'
+import VehiclesTab, { type VehiclesTabHandle } from './VehiclesTab'
+import WorksheetTab, { type WorksheetTabHandle } from './WorksheetTab'
 import { renderBillOfSalePdf, type BillOfSaleData } from './billOfSalePdf'
 import { renderDisclosureFormPdf } from './disclosureFormPdf'
 
@@ -71,6 +71,8 @@ function SalesNewDealPageContent() {
   const [pdfLoading, setPdfLoading] = useState(false)
   const [emailLoading, setEmailLoading] = useState(false)
   const printMenuRef = useRef<HTMLDivElement>(null)
+  const vehiclesTabRef = useRef<VehiclesTabHandle>(null)
+  const worksheetTabRef = useRef<WorksheetTabHandle>(null)
 
   const [esignModalOpen, setEsignModalOpen] = useState(false)
   const [esignModalTitle, setEsignModalTitle] = useState('')
@@ -309,7 +311,25 @@ function SalesNewDealPageContent() {
     }
   }, [])
 
-  // Auto-save removed - vehicle will display from prefillSelected but won't save until user clicks Save button
+  // Auto-save Vehicles + Worksheet tabs when coming from Showroom BUY NOW
+  const autoSaveTriggered = useRef(false)
+  useEffect(() => {
+    if (!initialVehicleId) return
+    if (autoSaveTriggered.current) return
+    if (vehiclePrefillLoading || !vehiclePrefill?.vehicle) return
+    autoSaveTriggered.current = true
+
+    const vehicle = vehiclePrefill.vehicle
+    const run = async () => {
+      try {
+        await vehiclesTabRef.current?.saveWithVehicle(vehicle)
+      } catch { /* ignore */ }
+      try {
+        await worksheetTabRef.current?.save(true)
+      } catch { /* ignore */ }
+    }
+    run()
+  }, [initialVehicleId, vehiclePrefillLoading, vehiclePrefill])
 
   // Close print menu on outside click
   useEffect(() => {
@@ -922,6 +942,7 @@ function SalesNewDealPageContent() {
               </div>
               <div style={{ display: activeTab === 'vehicles' ? 'block' : 'none' }}>
                 <VehiclesTab
+                  ref={vehiclesTabRef}
                   dealId={dealId}
                   dealMode={isRetail ? 'RTL' : 'WHL'}
                   dealType={dealType}
@@ -946,6 +967,7 @@ function SalesNewDealPageContent() {
               </div>
               <div style={{ display: activeTab === 'worksheet' ? 'block' : 'none' }}>
                 <WorksheetTab
+                  ref={worksheetTabRef}
                   key={`worksheet-${dealId}-${selectedVehicleData?.id || 'no-vehicle'}`}
                   dealId={dealId}
                   dealMode={isRetail ? 'RTL' : 'WHL'}

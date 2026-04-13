@@ -2173,7 +2173,7 @@ export default function PrepareDocumentPage() {
 
           {/* Save */}
           <button
-            onClick={handleSave}
+            onClick={() => handleSave()}
             disabled={saving}
             className={`w-12 flex flex-col items-center gap-1 py-2.5 px-1 rounded-xl disabled:opacity-40 transition-colors ${darkMode ? 'text-gray-400 hover:text-blue-400 hover:bg-blue-900/40' : 'text-gray-500 hover:text-blue-600 hover:bg-blue-50'}`}
           >

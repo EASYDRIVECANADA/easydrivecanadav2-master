@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState, useRef, forwardRef, useImperativeHandle } from 'react'
 
 import { supabase } from '@/lib/supabaseClient'
 
@@ -22,15 +22,12 @@ type VehicleRow = {
   created_at?: string | null
 }
 
-export default function VehiclesTab({
-  dealId,
-  dealMode,
-  dealType,
-  onSaved,
-  initialData,
-  prefillSelected,
-  autoSaved,
-}: {
+export type VehiclesTabHandle = {
+  save: () => Promise<void>
+  saveWithVehicle: (vehicle: any) => Promise<void>
+}
+
+const VehiclesTab = forwardRef<VehiclesTabHandle, {
   dealId?: string
   dealMode?: 'RTL' | 'WHL'
   dealType?: 'Cash' | 'Finance'
@@ -38,7 +35,15 @@ export default function VehiclesTab({
   initialData?: any
   prefillSelected?: any
   autoSaved?: boolean
-}) {
+}>(function VehiclesTab({
+  dealId,
+  dealMode,
+  dealType,
+  onSaved,
+  initialData,
+  prefillSelected,
+  autoSaved,
+}, ref) {
   const [query, setQuery] = useState(() => {
     if (Array.isArray(initialData) && initialData.length > 0) {
       const v = initialData[0]
@@ -911,8 +916,10 @@ export default function VehiclesTab({
     }
   }
 
-  const handleSaveAllTrades = async () => {
+  const handleSaveAllTrades = async (opts?: { silent?: boolean; overrideSelected?: VehicleRow | null }) => {
     if (savingTrades) return
+    const silent = opts?.silent ?? false
+    const effectiveSelected = opts?.overrideSelected !== undefined ? opts.overrideSelected : selected
     try {
       setSaveError(null)
       setLastSaveWasUpdate(hasBeenSaved)
@@ -959,7 +966,7 @@ export default function VehiclesTab({
 
       const trades = (Array.isArray(savedTrades) ? savedTrades : [])
 
-      const mainSelectedVehicle = makeSelectedVehiclePayload(manualSelectedCleared ? null : selected)
+      const mainSelectedVehicle = makeSelectedVehiclePayload(manualSelectedCleared ? null : effectiveSelected)
 
       const buildRow = (t: any | null) => {
         const sv = t ? makeSelectedVehiclePayload(manualSelectedCleared ? null : (t.selectedVehicle ?? makeSelectedVehicleSnapshot() ?? null)) : mainSelectedVehicle
@@ -1070,7 +1077,11 @@ export default function VehiclesTab({
         // ignore
       }
       console.log('[Save Trades] All trades saved: Done')
-      setShowSavedModal(true)
+      if (!silent) {
+        setShowSavedModal(true)
+      } else {
+        onSaved?.()
+      }
       setOpenSavedDisclosureIdx(null)
     } catch (e: any) {
       console.error('[Save Trades] Error:', e)
@@ -1081,6 +1092,32 @@ export default function VehiclesTab({
       setSavingTrades(false)
     }
   }
+
+  // Expose save() and saveWithVehicle() to parent via ref
+  useImperativeHandle(ref, () => ({
+    save: async () => { await handleSaveAllTrades({ silent: true }) },
+    saveWithVehicle: async (vehicle: any) => {
+      const row: VehicleRow = {
+        id: String(vehicle.id || ''),
+        year: vehicle.year ?? null,
+        make: vehicle.make ?? null,
+        model: vehicle.model ?? null,
+        trim: vehicle.trim ?? null,
+        stock_number: vehicle.stock_number ?? null,
+        key_number: vehicle.key_number ?? null,
+        vin: vehicle.vin ?? null,
+        status: vehicle.status ?? null,
+        exterior_color: vehicle.exterior_color ?? null,
+        interior_color: vehicle.interior_color ?? null,
+        mileage: vehicle.mileage ?? null,
+        odometer: vehicle.odometer ?? null,
+        odometer_unit: vehicle.odometer_unit ?? null,
+        created_at: vehicle.created_at ?? null,
+      }
+      setSelected(row)
+      await handleSaveAllTrades({ silent: true, overrideSelected: row })
+    },
+  }))
 
   useEffect(() => {
     // Auto-calc Trade Equity = Actual Cash Value - Trade Value
@@ -1998,7 +2035,7 @@ export default function VehiclesTab({
           ) : null}
           <button
             type="button"
-            onClick={handleSaveAllTrades}
+            onClick={() => handleSaveAllTrades()}
             disabled={savingTrades}
             className="h-10 px-6 rounded bg-[#118df0] text-white text-sm font-semibold hover:bg-[#0d6ebd] disabled:opacity-60 disabled:cursor-not-allowed"
           >
@@ -2913,4 +2950,6 @@ export default function VehiclesTab({
       ) : null}
     </div>
   )
-}
+})
+
+export default VehiclesTab
