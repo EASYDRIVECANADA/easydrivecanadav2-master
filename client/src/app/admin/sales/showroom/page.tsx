@@ -42,6 +42,22 @@ export default function CustomerShowroomPage() {
   const [imageIdx, setImageIdx] = useState(0)
   const [viewMode, setViewMode] = useState<'TBL' | 'CRD'>('TBL')
   const [showPayment, setShowPayment] = useState(false)
+  const [disclosureModal, setDisclosureModal] = useState<{
+    open: boolean
+    loading: boolean
+    title: string
+    body: string
+  }>({ open: false, loading: false, title: '', body: '' })
+  const [carfaxModal, setCarfaxModal] = useState<{
+    open: boolean
+    loading: boolean
+    files: { name: string; path: string; publicUrl: string }[]
+    activeIndex: number
+  }>({ open: false, loading: false, files: [], activeIndex: 0 })
+  const [carfaxAvailable, setCarfaxAvailable] = useState<boolean | null>(null)
+  const [carfaxMap, setCarfaxMap] = useState<Map<string, boolean>>(new Map())
+  const [disclosureMap, setDisclosureMap] = useState<Map<string, boolean>>(new Map())
+  const [disclosureAvailable, setDisclosureAvailable] = useState<boolean | null>(null)
   const [termMonths, setTermMonths] = useState<number>(96)
   const [frequency, setFrequency] = useState<'Monthly' | 'Bi-Weekly' | 'Weekly' | 'Semi-Monthly'>('Bi-Weekly')
   const [interestRateStr, setInterestRateStr] = useState<string>('')
@@ -66,9 +82,92 @@ export default function CustomerShowroomPage() {
 
   const [bucketImageCache] = useState(() => new Map<string, string[]>())
 
+  const openCarfaxModal = async (vehicleId: string) => {
+    setCarfaxModal({ open: true, loading: true, files: [], activeIndex: 0 })
+    try {
+      const { data, error } = await supabase.storage
+        .from('Carfax')
+        .list(vehicleId, { limit: 100, sortBy: { column: 'name', order: 'asc' } })
+      if (error || !Array.isArray(data) || data.length === 0) {
+        setCarfaxModal({ open: true, loading: false, files: [], activeIndex: 0 })
+        return
+      }
+      const files = data
+        .filter((f) => !!f?.name && !String(f.name).endsWith('/'))
+        .map((f) => {
+          const path = `${vehicleId}/${f.name}`
+          const { data: urlData } = supabase.storage.from('Carfax').getPublicUrl(path)
+          return { name: f.name, path, publicUrl: urlData.publicUrl }
+        })
+      setCarfaxModal({ open: true, loading: false, files, activeIndex: 0 })
+    } catch {
+      setCarfaxModal({ open: true, loading: false, files: [], activeIndex: 0 })
+    }
+  }
+
+  const openDisclosure = async (vehicleId: string) => {
+    setDisclosureModal({ open: true, loading: true, title: '', body: '' })
+    try {
+      const { data, error } = await supabase
+        .from('edc_disclosures')
+        .select('disclosures_title, disclosures_body')
+        .eq('vehicleId', vehicleId)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      if (error || !data) {
+        setDisclosureModal({ open: true, loading: false, title: 'No Disclosure', body: 'No disclosure information is available for this vehicle.' })
+        return
+      }
+      setDisclosureModal({ open: true, loading: false, title: String(data.disclosures_title || 'Important Disclosure'), body: String(data.disclosures_body || '') })
+    } catch {
+      setDisclosureModal({ open: true, loading: false, title: 'Error', body: 'Failed to load disclosure.' })
+    }
+  }
+
   useEffect(() => {
     setMounted(true)
   }, [])
+
+  // Check carfax + disclosure availability for selected vehicle
+  useEffect(() => {
+    if (!selected) { setCarfaxAvailable(null); setDisclosureAvailable(null); return }
+    supabase.storage
+      .from('Carfax')
+      .list(selected.id, { limit: 1 })
+      .then(({ data }) => setCarfaxAvailable(Array.isArray(data) && data.some((f) => !!f?.name && !String(f.name).endsWith('/'))))
+      .catch(() => setCarfaxAvailable(false))
+    supabase
+      .from('edc_disclosures')
+      .select('id', { count: 'exact', head: true })
+      .eq('vehicleId', selected.id)
+      .then(({ count }) => setDisclosureAvailable((count ?? 0) > 0))
+      .catch(() => setDisclosureAvailable(false))
+  }, [selected])
+
+  // Bulk check carfax + disclosure for all rows
+  useEffect(() => {
+    if (rows.length === 0) return
+    const newCarfax = new Map<string, boolean>()
+    const newDisc = new Map<string, boolean>()
+    const carfaxChecks = rows.map((r) =>
+      supabase.storage
+        .from('Carfax')
+        .list(r.id, { limit: 1 })
+        .then(({ data }) => { newCarfax.set(r.id, Array.isArray(data) && data.some((f) => !!f?.name && !String(f.name).endsWith('/'))) })
+        .catch(() => { newCarfax.set(r.id, false) })
+    )
+    const discChecks = rows.map((r) =>
+      supabase
+        .from('edc_disclosures')
+        .select('id', { count: 'exact', head: true })
+        .eq('vehicleId', r.id)
+        .then(({ count }) => { newDisc.set(r.id, (count ?? 0) > 0) })
+        .catch(() => { newDisc.set(r.id, false) })
+    )
+    Promise.all(carfaxChecks).then(() => setCarfaxMap(new Map(newCarfax)))
+    Promise.all(discChecks).then(() => setDisclosureMap(new Map(newDisc)))
+  }, [rows])
 
   useEffect(() => {
     let cancelled = false
@@ -453,138 +552,120 @@ export default function CustomerShowroomPage() {
             <table className="edc-table">
               <thead>
                 <tr>
-                  <th className="text-left text-xs font-semibold text-slate-500 uppercase tracking-wider px-3 py-3 w-12"></th>
+                  <th className="px-3 py-3 w-12"></th>
                   <th className="text-left text-xs font-semibold text-slate-500 uppercase tracking-wider px-6 py-3">Vehicle</th>
                   <th className="text-left text-xs font-semibold text-slate-500 uppercase tracking-wider px-6 py-3">Drive</th>
                   <th className="text-left text-xs font-semibold text-slate-500 uppercase tracking-wider px-6 py-3">Trans.</th>
                   <th className="text-left text-xs font-semibold text-slate-500 uppercase tracking-wider px-6 py-3">Cyl.</th>
                   <th className="text-left text-xs font-semibold text-slate-500 uppercase tracking-wider px-6 py-3">Colour</th>
-                  <th className="text-right text-xs font-semibold text-slate-500 uppercase tracking-wider px-6 py-3">Odometer</th>
-                  <th className="text-right text-xs font-semibold text-slate-500 uppercase tracking-wider px-6 py-3">Price</th>
-                  <th className="text-right text-xs font-semibold text-slate-500 uppercase tracking-wider px-6 py-3">Status</th>
+                  <th className="text-left text-xs font-semibold text-slate-500 uppercase tracking-wider px-6 py-3">Odometer</th>
+                  <th className="text-left text-xs font-semibold text-slate-500 uppercase tracking-wider px-6 py-3">Price</th>
+                  <th className="text-left text-xs font-semibold text-slate-500 uppercase tracking-wider px-6 py-3">Status</th>
                 </tr>
               </thead>
               <tbody>
                 {loading ? (
-                  <tr>
-                    <td className="px-6 py-10 text-center text-sm text-slate-400" colSpan={9}>
-                      Loading...
-                    </td>
-                  </tr>
+                  <tr><td className="px-6 py-10 text-center text-sm text-slate-400" colSpan={9}>Loading...</td></tr>
                 ) : null}
-
                 {filtered.map((r) => (
-                  <tr key={r.id}>
+                  <tr key={r.id} className="hover:bg-slate-50 transition-colors">
                     <td className="px-3 py-3">
                       <button
                         type="button"
                         onClick={() => { setSelected(r); setImageIdx(0) }}
-                        className="w-9 h-9 rounded-lg bg-slate-50 hover:bg-slate-100 flex items-center justify-center transition-colors"
-                        title="Open deal sheet"
-                        aria-label="Open deal sheet"
+                        className="w-8 h-8 rounded-lg bg-green-600 hover:bg-green-700 text-white flex items-center justify-center transition-colors"
+                        title="View vehicle"
                       >
-                        <svg className="w-5 h-5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13l-1.2 6H18M7 13l-1.6-8M9 21a1 1 0 100-2 1 1 0 000 2zm10 0a1 1 0 100-2 1 1 0 000 2z"
-                          />
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13l-1.2 6H18M7 13l-1.6-8M9 21a1 1 0 100-2 1 1 0 000 2zm10 0a1 1 0 100-2 1 1 0 000 2z" />
                         </svg>
                       </button>
                     </td>
                     <td className="px-6 py-3 text-sm font-medium text-slate-800 whitespace-nowrap">
-                      <div className="flex items-center gap-2">
-                        {r.vehicle}
-                        {(() => { const b = getCategoryBadge(r.categories); return b ? <img src={b.src} alt={b.label} className="h-6 w-auto flex-shrink-0" /> : null })()}
-                      </div>
+                      <button type="button" onClick={() => { setSelected(r); setImageIdx(0) }} className="text-cyan-600 hover:underline text-left">{r.vehicle}</button>
                     </td>
                     <td className="px-6 py-3 text-sm text-slate-600 whitespace-nowrap">{r.drive}</td>
                     <td className="px-6 py-3 text-sm text-slate-600 whitespace-nowrap">{r.transmission}</td>
                     <td className="px-6 py-3 text-sm text-slate-600 whitespace-nowrap">{r.cyl}</td>
                     <td className="px-6 py-3 text-sm text-slate-600 whitespace-nowrap">{r.colour}</td>
-                    <td className="px-6 py-3 text-sm text-slate-600 whitespace-nowrap text-right">{r.odometerKm.toLocaleString()} km</td>
-                    <td className="px-6 py-3 text-sm text-slate-800 whitespace-nowrap text-right">${r.price.toLocaleString()}</td>
-                    <td className="px-6 py-3 text-sm whitespace-nowrap text-right">
-                      <span
-                        className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold ${
-                          r.status === 'In Stock'
-                            ? 'bg-green-100 text-green-700'
-                            : r.status === 'Deal Pending'
-                              ? 'bg-amber-100 text-amber-700'
-                              : 'bg-slate-200 text-slate-700'
-                        }`}
-                      >
-                        {r.status}
-                      </span>
+                    <td className="px-6 py-3 text-sm text-slate-600 whitespace-nowrap">{r.odometerKm.toLocaleString()} km</td>
+                    <td className="px-6 py-3 text-sm font-semibold text-slate-800 whitespace-nowrap">${(Number(r.price) || 0).toLocaleString()}</td>
+                    <td className="px-6 py-3 text-sm whitespace-nowrap">
+                      <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold ${
+                        r.status === 'In Stock' ? 'bg-green-100 text-green-700'
+                        : r.status === 'Deal Pending' ? 'bg-amber-100 text-amber-700'
+                        : 'bg-slate-200 text-slate-700'
+                      }`}>{r.status}</span>
                     </td>
                   </tr>
                 ))}
-
-                {filtered.length === 0 ? (
-                  <tr>
-                    <td className="px-6 py-10 text-center text-sm text-slate-400" colSpan={9}>
-                      No results.
-                    </td>
-                  </tr>
+                {filtered.length === 0 && !loading ? (
+                  <tr><td className="px-6 py-10 text-center text-sm text-slate-400" colSpan={9}>No results.</td></tr>
                 ) : null}
               </tbody>
             </table>
           </div>
         </div>
         ) : (
-        <div className="edc-card mt-4">
-          <ul role="list" className="divide-y divide-slate-100">
-            {loading ? (
-              <li className="px-4 py-10 text-center text-sm text-slate-400">Loading...</li>
-            ) : null}
-            {filtered.map((r) => (
-              <li key={r.id} className="p-4 hover:bg-slate-50 transition-colors">
-                <div className="flex items-start gap-4">
-                  <div className="relative w-40 h-28 bg-slate-50 rounded-lg border border-slate-200/60 flex items-center justify-center overflow-hidden flex-shrink-0">
-                    {Array.isArray(r.images) && r.images.length > 0 ? (
-                      <img src={r.images[0]} alt={r.vehicle} className="w-full h-full object-cover" />
-                    ) : (
-                      <svg className="w-10 h-10 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4-4a3 5 0 013 0l4 4M14 14l1-1a3 5 0 013 0l2 2" />
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7a2 2 0 012-2h14a2 2 0 012 2v10a2 2 0 01-2 2H5a2 2 0 01-2-2V7z" />
-                      </svg>
-                    )}
-                    {(() => { const b = getCategoryBadge(r.categories); return b ? <img src={b.src} alt={b.label} className="absolute bottom-1 left-1 h-14 w-auto drop-shadow-md" /> : null })()}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between gap-2">
-                      <button type="button" className="text-sm font-semibold text-slate-800 hover:underline truncate text-left" onClick={() => { setSelected(r); setImageIdx(0) }}>{r.vehicle}</button>
-                      <div className="text-lg font-bold text-slate-800">${r.price.toLocaleString()}</div>
-                    </div>
-                    <div className="mt-1 text-xs text-slate-500">
-                      {r.odometerKm.toLocaleString()} kms <span className="text-slate-300">•</span> {r.drive} <span className="text-slate-300">•</span> {r.transmission}
-                    </div>
-                    <div className="mt-1 text-[11px] text-slate-400">Status: {r.status}</div>
-                    <div className="mt-2 flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => { setSelected(r); setImageIdx(0) }}
-                        className="edc-btn-ghost h-8 px-3 text-xs"
-                      >
-                        Open
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => router.push(`/admin/sales/deals/new?vehicleId=${encodeURIComponent(r.id)}`)}
-                        className="h-8 px-3 rounded bg-green-600 hover:bg-green-700 text-white text-xs font-semibold"
-                      >
-                        BUY NOW
-                      </button>
-                    </div>
-                  </div>
+        <div className="edc-card mt-4 divide-y divide-slate-100">
+          {loading ? (
+            <div className="px-6 py-10 text-center text-sm text-slate-400">Loading...</div>
+          ) : null}
+          {filtered.map((r) => (
+            <div key={r.id} className="flex items-stretch hover:bg-slate-50 transition-colors">
+              {/* Thumbnail */}
+              <div className="w-[160px] flex-shrink-0 bg-slate-100 flex items-center justify-center overflow-hidden">
+                {Array.isArray(r.images) && r.images.length > 0 ? (
+                  <img src={r.images[0]} alt={r.vehicle} className="w-full h-full object-cover" />
+                ) : (
+                  <svg className="w-10 h-10 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4-4a3 5 0 013 0l4 4M14 14l1-1a3 5 0 013 0l2 2" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7a2 2 0 012-2h14a2 2 0 012 2v10a2 2 0 01-2 2H5a2 2 0 01-2-2V7z" />
+                  </svg>
+                )}
+              </div>
+              {/* Info */}
+              <div className="flex-1 min-w-0 px-5 py-4">
+                <button
+                  type="button"
+                  onClick={() => { setSelected(r); setImageIdx(0) }}
+                  className="text-base font-semibold text-cyan-600 hover:underline text-left"
+                >
+                  {r.vehicle} {r.colour}
+                </button>
+                <div className="text-sm text-slate-500 italic mt-0.5">
+                  {r.odometerKm.toLocaleString()} kms &nbsp; {r.drive} &nbsp; {r.transmission}
                 </div>
-              </li>
-            ))}
-            {filtered.length === 0 && !loading ? (
-              <li className="px-4 py-10 text-center text-sm text-slate-400">No results.</li>
-            ) : null}
-          </ul>
+                <div className="text-xl font-bold text-slate-800 mt-1">
+                  ${(Number(r.price) || 0).toLocaleString()}.00{' '}
+                  <span className="text-xs font-normal text-slate-400">+ tax</span>
+                </div>
+                {(r.vin || r.stock) && (
+                  <div className="text-xs text-slate-400 mt-1">
+                    {r.vin ? <>VIN: {r.vin}</> : null}
+                    {r.vin && r.stock ? <span className="mx-1">·</span> : null}
+                    {r.stock ? <>Stock# {r.stock}</> : null}
+                  </div>
+                )}
+              </div>
+              {/* Cart button — opens modal */}
+              <div className="flex items-end justify-end px-4 py-4">
+                <button
+                  type="button"
+                  onClick={() => { setSelected(r); setImageIdx(0) }}
+                  className="w-9 h-9 rounded-lg bg-green-600 hover:bg-green-700 text-white flex items-center justify-center transition-colors"
+                  title="View vehicle"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13l-1.2 6H18M7 13l-1.6-8M9 21a1 1 0 100-2 1 1 0 000 2zm10 0a1 1 0 100-2 1 1 0 000 2z" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+          ))}
+          {filtered.length === 0 && !loading ? (
+            <div className="px-6 py-10 text-center text-sm text-slate-400">No results.</div>
+          ) : null}
         </div>
         )}
 
@@ -769,8 +850,9 @@ export default function CustomerShowroomPage() {
                   </div>
 
                   <div className="grid grid-cols-1 lg:grid-cols-2">
+                    {/* Left panel — image + vehicle info */}
                     <div className="bg-slate-50 p-6 flex flex-col">
-                      <div className="flex-1 rounded-xl bg-white border border-slate-200/60 flex items-center justify-center relative overflow-hidden">
+                      <div className="flex-1 rounded-xl bg-white border border-slate-200/60 flex items-center justify-center relative overflow-hidden" style={{ minHeight: 260 }}>
                         {Array.isArray(selected.images) && selected.images.length > 0 ? (
                           <img
                             src={selected.images[Math.min(imageIdx, selected.images.length - 1)]}
@@ -786,46 +868,34 @@ export default function CustomerShowroomPage() {
                             <div className="text-slate-400 text-sm font-semibold">NO IMAGE AVAILABLE</div>
                           </div>
                         )}
-
                         <button
                           type="button"
-                          onClick={() =>
-                            setImageIdx((i) =>
-                              selected.images && selected.images.length ? (i - 1 + selected.images.length) % selected.images.length : 0
-                            )
-                          }
+                          onClick={() => setImageIdx((i) => selected.images && selected.images.length ? (i - 1 + selected.images.length) % selected.images.length : 0)}
                           className="absolute left-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-white/80 hover:bg-white flex items-center justify-center"
                           disabled={!selected.images || selected.images.length <= 1}
                         >
-                          <svg className="w-5 h-5 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                          </svg>
+                          <svg className="w-5 h-5 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
                         </button>
                         <button
                           type="button"
-                          onClick={() => setImageIdx((i) => (selected.images && selected.images.length ? (i + 1) % selected.images.length : 0))}
+                          onClick={() => setImageIdx((i) => selected.images && selected.images.length ? (i + 1) % selected.images.length : 0)}
                           className="absolute right-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-white/80 hover:bg-white flex items-center justify-center"
                           disabled={!selected.images || selected.images.length <= 1}
                         >
-                          <svg className="w-5 h-5 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                          </svg>
+                          <svg className="w-5 h-5 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
                         </button>
                       </div>
-
                       <div className="mt-4">
-                        <div className="text-lg font-semibold text-slate-800">
-                          {selected.vehicle} {selected.colour}
-                        </div>
-                        <div className="text-sm text-slate-500">
-                          {selected.odometerKm.toLocaleString()} {selected.odoUnit || 'kms'} <span className="text-slate-300">•</span> {selected.drive}
-                          <span className="text-slate-300">•</span> {selected.transmission}
+                        <div className="text-lg font-semibold text-slate-800">{selected.vehicle} {selected.colour}</div>
+                        <div className="text-sm text-slate-500 mt-0.5">
+                          {selected.odometerKm.toLocaleString()} {selected.odoUnit || 'kms'} <span className="text-slate-300 mx-1">·</span> {selected.drive} <span className="text-slate-300 mx-1">·</span> {selected.transmission}
                         </div>
                         {selected.vin ? <div className="text-xs text-slate-400 mt-1">VIN: {selected.vin}</div> : null}
                         {selected.stock ? <div className="text-xs text-slate-400">Stock# {selected.stock}</div> : null}
                       </div>
                     </div>
 
+                    {/* Right panel — finance table */}
                     <div className="p-6">
                       <div className="bg-slate-50 rounded-xl border border-slate-200/60 overflow-hidden">
                         <div className="divide-y divide-slate-200/60">
@@ -846,6 +916,32 @@ export default function CustomerShowroomPage() {
                       </div>
 
                       <div className="mt-4 flex items-center justify-end gap-2">
+                        {/* Disclosure — only if available */}
+                        {disclosureAvailable && (
+                          <button
+                            type="button"
+                            onClick={() => openDisclosure(selected.id)}
+                            className="w-10 h-10 rounded-lg bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-600 flex items-center justify-center transition-colors"
+                            title="View Disclosure"
+                          >
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                            </svg>
+                          </button>
+                        )}
+                        {/* CARFAX — only if available */}
+                        {carfaxAvailable && (
+                          <button
+                            type="button"
+                            onClick={() => openCarfaxModal(selected.id)}
+                            className="w-10 h-10 rounded-lg bg-red-50 hover:bg-red-100 border border-red-200 text-red-600 flex items-center justify-center transition-colors"
+                            title="View CARFAX Report"
+                          >
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                            </svg>
+                          </button>
+                        )}
                         <button
                           type="button"
                           onClick={() => router.push(`/admin/sales/deals/new?vehicleId=${encodeURIComponent(selected.id)}`)}
@@ -985,6 +1081,102 @@ export default function CustomerShowroomPage() {
                         BUY NOW
                       </button>
                     </div>
+                  </div>
+                </div>
+              </div>,
+              document.body
+            )
+          : null}
+
+        {/* Disclosure Modal */}
+        {mounted && disclosureModal.open
+          ? createPortal(
+              <div className="fixed inset-0 z-[10001] flex items-center justify-center p-4 overflow-y-auto">
+                <div className="fixed inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setDisclosureModal({ open: false, loading: false, title: '', body: '' })} />
+                <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-2xl my-8 flex flex-col max-h-[90vh]">
+                  <div className="flex items-center justify-between px-6 py-4 border-b border-amber-200 bg-amber-50 rounded-t-2xl flex-shrink-0">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 bg-amber-100 text-amber-700 rounded-full flex items-center justify-center">
+                        <svg className="w-5 h-5 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                        </svg>
+                      </div>
+                      <div>
+                        <h2 className="text-lg font-bold text-amber-800">{disclosureModal.title || 'Important Disclosure'}</h2>
+                        <p className="text-sm text-amber-700">Please Read Carefully</p>
+                      </div>
+                    </div>
+                    <button onClick={() => setDisclosureModal({ open: false, loading: false, title: '', body: '' })} className="p-2 hover:bg-amber-100 rounded-xl transition-colors">
+                      <svg className="w-6 h-6 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+                  <div className="overflow-y-auto flex-1 p-6">
+                    {disclosureModal.loading ? (
+                      <div className="flex items-center justify-center py-10 gap-2 text-slate-400">
+                        <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" /></svg>
+                        <span className="text-sm">Loading disclosure…</span>
+                      </div>
+                    ) : (
+                      <div className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">
+                        {disclosureModal.body || 'No disclosure content available.'}
+                      </div>
+                    )}
+                  </div>
+                  <div className="px-6 py-4 border-t border-gray-200 flex-shrink-0">
+                    <button onClick={() => setDisclosureModal({ open: false, loading: false, title: '', body: '' })} className="w-full bg-amber-500 hover:bg-amber-600 text-white font-semibold py-3 rounded-xl transition-colors">I Understand</button>
+                  </div>
+                </div>
+              </div>,
+              document.body
+            )
+          : null}
+
+        {/* CARFAX Modal */}
+        {mounted && carfaxModal.open
+          ? createPortal(
+              <div className="fixed inset-0 z-[10001] flex items-center justify-center p-4 bg-black/60">
+                <div className="w-full max-w-4xl bg-white rounded-2xl shadow-xl flex flex-col" style={{ height: '90vh' }}>
+                  <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 flex-shrink-0">
+                    <h3 className="text-base font-semibold text-gray-900">CARFAX Report</h3>
+                    <div className="flex items-center gap-3">
+                      {carfaxModal.files.length > 1 && (
+                        <div className="flex gap-1">
+                          {carfaxModal.files.map((f, i) => (
+                            <button key={f.path} type="button" onClick={() => setCarfaxModal(prev => ({ ...prev, activeIndex: i }))}
+                              className={`px-3 py-1 text-xs rounded-full border transition-colors ${carfaxModal.activeIndex === i ? 'bg-red-600 text-white border-red-600' : 'text-gray-600 border-gray-300 hover:border-red-400'}`}>
+                              File {i + 1}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                      {carfaxModal.files.length > 0 && (
+                        <a href={carfaxModal.files[carfaxModal.activeIndex]?.publicUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-xs text-blue-600 hover:underline">
+                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+                          Open in new tab
+                        </a>
+                      )}
+                      <button type="button" onClick={() => setCarfaxModal({ open: false, loading: false, files: [], activeIndex: 0 })} className="text-gray-400 hover:text-gray-600 ml-1">
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                      </button>
+                    </div>
+                  </div>
+                  <div className="flex-1 min-h-0">
+                    {carfaxModal.loading ? (
+                      <div className="flex items-center justify-center h-full gap-2 text-gray-400">
+                        <svg className="w-6 h-6 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" /></svg>
+                        <span className="text-sm">Loading report…</span>
+                      </div>
+                    ) : carfaxModal.files.length === 0 ? (
+                      <div className="flex flex-col items-center justify-center h-full">
+                        <svg className="w-14 h-14 text-gray-200 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                        <p className="text-sm font-semibold text-gray-500">No CARFAX Report Uploaded</p>
+                        <p className="text-xs text-gray-400 mt-1">No report has been uploaded for this vehicle yet.</p>
+                      </div>
+                    ) : (
+                      <iframe src={carfaxModal.files[carfaxModal.activeIndex]?.publicUrl} className="w-full h-full rounded-b-2xl" title="CARFAX Report" />
+                    )}
                   </div>
                 </div>
               </div>,
