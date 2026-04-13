@@ -309,13 +309,6 @@ export default function DealsPage() {
         <div className="edc-card p-4">
           <div className="flex flex-col lg:flex-row lg:items-center gap-3">
             <div className="flex items-center gap-2">
-              <label className="text-sm text-slate-600">Show Closed</label>
-              <input
-                type="checkbox"
-                className="h-4 w-4"
-                checked={showClosed}
-                onChange={(e) => { setShowClosed(e.target.checked); setPage(1) }}
-              />
             </div>
 
             <div className="flex-1">

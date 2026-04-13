@@ -124,6 +124,10 @@ function DealsSignaturePageInner() {
   const [saveMessage, setSaveMessage] = useState<string>('')
   const [recipientEmail, setRecipientEmail] = useState('')
   const [currentSigningField, setCurrentSigningField] = useState<string | null>(null)
+  const [isInitialModal, setIsInitialModal] = useState(false)
+  // Edit field modal (company, title, text, dateSigned)
+  const [editFieldModal, setEditFieldModal] = useState<{ id: string; type: FieldType; label: string; value: string } | null>(null)
+  const [editFieldValue, setEditFieldValue] = useState('')
   const [isDealPurchaserSignature, setIsDealPurchaserSignature] = useState(false)
   const [purchaserSigned, setPurchaserSigned] = useState(false)
   const [purchaserSigOverlayY, setPurchaserSigOverlayY] = useState<number | null>(null)
@@ -278,14 +282,18 @@ function DealsSignaturePageInner() {
             const myFields = allFields.filter(f => (f.recipientIndex ?? 0) === myRecipientIndex)
             const baseFields = myFields.length > 0 ? myFields : allFields
 
-            // Pre-fill signature/initial fields if the recipient already has a signature saved
-            const filledFields = existingSig
-              ? baseFields.map(f =>
-                  (f.type === 'signature' || f.type === 'initial') && !f.value
-                    ? { ...f, value: existingSig }
-                    : f
-                )
-              : baseFields
+            // Auto-fill field values from recipient data and today's date
+            const today = new Date().toLocaleDateString('en-CA')
+            const filledFields = baseFields.map(f => {
+              if (f.value) return f // keep already-saved value
+              if ((f.type === 'signature' || f.type === 'initial') && existingSig)
+                return { ...f, value: existingSig }
+              if (f.type === 'dateSigned') return { ...f, value: today }
+              if (f.type === 'name')    return { ...f, value: sigData?.full_name || '' }
+              if (f.type === 'company') return { ...f, value: sigData?.company || '' }
+              if (f.type === 'title')   return { ...f, value: sigData?.title || '' }
+              return f
+            })
 
             setFields(filledFields)
             if (existingSig) setSignatureDataUrl(existingSig)
@@ -571,8 +579,11 @@ function DealsSignaturePageInner() {
     setSignatureDataUrl(url)
 
     // Stamp signature image onto the field that triggered the modal
+    // Also compute updatedFields synchronously so we can save them to DB below
+    let updatedFields = fields
     if (currentSigningField) {
-      setFields(prev => prev.map(f => f.id === currentSigningField ? { ...f, value: url } : f))
+      updatedFields = fields.map(f => f.id === currentSigningField ? { ...f, value: url } : f)
+      setFields(updatedFields)
       setCurrentSigningField(null)
     }
 
@@ -659,6 +670,45 @@ function DealsSignaturePageInner() {
             localStorage.setItem(lsKey, JSON.stringify(existing))
           }
         } catch { /* non-fatal */ }
+
+        // Save to database: update signature record + individual field rows
+        if (sigRecord?.id) {
+          const now = new Date().toISOString()
+          try {
+            // 1. Update signature record with per-field-type columns
+            await fetch(`/api/esignature/signature/${encodeURIComponent(sigRecord.id)}/complete`, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                signature_image: url,
+                signed_at: now,
+                status: 'completed',
+                fields_data: JSON.stringify(updatedFields),
+                recipient_index: 0,
+                deal_id: sigRecord.id,
+              }),
+            })
+          } catch { /* non-fatal — webhook already succeeded */ }
+
+          // 2. Save each individual field value to edc_esignature_fields
+          try {
+            const fieldUpdates = updatedFields
+              .filter(f => f.value !== undefined && f.value !== null && f.value !== '')
+              .map(f =>
+                fetch('/api/esignature/fields', {
+                  method: 'PATCH',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    dealId: sigRecord.id,
+                    fieldId: f.id,
+                    value: f.value,
+                    signedAt: now,
+                  }),
+                }).catch(() => null)
+              )
+            await Promise.all(fieldUpdates)
+          } catch { /* non-fatal */ }
+        }
       }
 
       setSaveOk(true)
@@ -772,6 +822,10 @@ function DealsSignaturePageInner() {
 
   // Render field content
   const renderFieldContent = (field: Field) => {
+    // Scale font size proportionally to the field height (baseline: 30px height = 11px font)
+    const fontSize = Math.max(8, Math.round(field.height * 0.38))
+    const fontStyle: React.CSSProperties = { fontSize: `${fontSize}px`, lineHeight: 1.2 }
+
     switch (field.type) {
       case 'signature':
         if (field.value) {
@@ -787,53 +841,107 @@ function DealsSignaturePageInner() {
         return (
           <div
             className="flex items-center justify-center h-full text-blue-600 text-xs font-medium cursor-pointer hover:bg-blue-100/90"
-            onClick={() => { setCurrentSigningField(field.id); setSignatureModalOpen(true) }}
+            onClick={() => { setIsInitialModal(false); setCurrentSigningField(field.id); setSignatureModalOpen(true) }}
           >
-            Signature
+            <span style={fontStyle}>Signature</span>
           </div>
         )
       case 'initial':
+        if (field.value) {
+          return (
+            <img
+              src={field.value}
+              alt="Initial"
+              className="w-full h-full object-contain p-1"
+              style={{ background: 'transparent' }}
+            />
+          )
+        }
         return (
-          <div className="flex items-center justify-center h-full text-blue-600 text-xs font-bold">
-            Initial
+          <div
+            className="flex items-center justify-center h-full text-blue-600 text-xs font-bold cursor-pointer hover:bg-blue-100/90"
+            onClick={() => {
+              // Pre-fill typed name with recipient's initials
+              const name = sigRecord?.full_name || ''
+              const initials = name ? name.split(' ').map((n: string) => n[0]).join('').toUpperCase() : ''
+              setTypedName(initials)
+              setSignatureMode('type')
+              setIsInitialModal(true)
+              setCurrentSigningField(field.id)
+              setSignatureModalOpen(true)
+            }}
+          >
+            <span style={fontStyle}>Initial</span>
           </div>
         )
-      case 'dateSigned':
+      case 'dateSigned': {
+        const openEdit = () => {
+          setEditFieldModal({ id: field.id, type: field.type, label: 'Date Signed', value: field.value || new Date().toLocaleDateString('en-CA') })
+          setEditFieldValue(field.value || new Date().toLocaleDateString('en-CA'))
+        }
         return (
-          <div className="flex items-center justify-center h-full text-gray-600 text-xs">
-            {new Date().toLocaleDateString('en-CA')}
+          <div className="flex items-center justify-center h-full font-medium cursor-pointer hover:bg-blue-50/80 text-gray-700 overflow-hidden" style={fontStyle} onClick={e => { e.stopPropagation(); openEdit() }}>
+            {field.value || new Date().toLocaleDateString('en-CA')}
           </div>
         )
+      }
       case 'name':
         return (
-          <div className="flex items-center h-full px-2 text-gray-800 text-xs">
-            {sigRecord?.full_name || 'Name'}
+          <div className="flex items-center h-full px-1 font-medium text-gray-800 overflow-hidden" style={fontStyle}>
+            {field.value || sigRecord?.full_name || 'Name'}
           </div>
         )
-      case 'company':
+      case 'company': {
+        const openEdit = () => {
+          const cur = field.value ?? sigRecord?.company ?? ''
+          setEditFieldModal({ id: field.id, type: field.type, label: 'Company', value: cur })
+          setEditFieldValue(cur)
+        }
         return (
-          <div className="flex items-center h-full px-2 text-gray-600 text-xs">
-            {sigRecord?.company || 'Company'}
+          <div className="flex items-center h-full px-1 text-gray-700 cursor-pointer hover:bg-blue-50/80 overflow-hidden" style={fontStyle} onClick={e => { e.stopPropagation(); openEdit() }}>
+            {field.value || sigRecord?.company || <span style={{ color: '#60a5fa' }}>Click to enter</span>}
           </div>
         )
-      case 'title':
+      }
+      case 'title': {
+        const openEdit = () => {
+          const cur = field.value ?? sigRecord?.title ?? ''
+          setEditFieldModal({ id: field.id, type: field.type, label: 'Title', value: cur })
+          setEditFieldValue(cur)
+        }
         return (
-          <div className="flex items-center h-full px-2 text-gray-600 text-xs">
-            {sigRecord?.title || 'Title'}
+          <div className="flex items-center h-full px-1 text-gray-700 cursor-pointer hover:bg-blue-50/80 overflow-hidden" style={fontStyle} onClick={e => { e.stopPropagation(); openEdit() }}>
+            {field.value || sigRecord?.title || <span style={{ color: '#60a5fa' }}>Click to enter</span>}
           </div>
         )
-      case 'text':
+      }
+      case 'text': {
+        const openEdit = () => {
+          const cur = field.value ?? ''
+          setEditFieldModal({ id: field.id, type: field.type, label: 'Text', value: cur })
+          setEditFieldValue(cur)
+        }
         return (
-          <div className="flex items-center h-full px-2 text-gray-600 text-xs">
-            {field.value || 'Text'}
+          <div className="flex items-center h-full px-1 text-gray-600 cursor-pointer hover:bg-blue-50/80 overflow-hidden" style={fontStyle} onClick={e => { e.stopPropagation(); openEdit() }}>
+            {field.value || <span style={{ color: '#60a5fa' }}>Click to enter</span>}
           </div>
         )
-      case 'checkbox':
+      }
+      case 'checkbox': {
+        const checked = ['true', '1', 'yes'].includes(String(field.value ?? '').toLowerCase())
+        const cbSize = Math.max(10, Math.round(field.height * 0.7))
         return (
-          <div className="flex items-center justify-center h-full">
-            <div className="w-4 h-4 border-2 border-blue-500 rounded bg-white" />
+          <div
+            className="flex items-center justify-center h-full cursor-pointer"
+            onClick={e => { e.stopPropagation(); setFields(prev => prev.map(f => f.id === field.id ? { ...f, value: checked ? 'false' : 'true' } : f)) }}
+          >
+            {checked
+              ? <svg style={{ width: cbSize, height: cbSize }} viewBox="0 0 20 20" fill="none"><rect x="1" y="1" width="18" height="18" rx="3" fill="#3b82f6" stroke="#2563eb" strokeWidth="1.5"/><path d="M5 10l3 3 7-7" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+              : <div style={{ width: cbSize, height: cbSize }} className="border-2 border-blue-500 rounded bg-white" />
+            }
           </div>
         )
+      }
       case 'stamp':
         return (
           <div className="flex items-center justify-center h-full text-red-600 text-xs font-bold">
@@ -1028,9 +1136,9 @@ function DealsSignaturePageInner() {
           <div className="relative w-full max-w-2xl bg-white rounded-2xl shadow-2xl overflow-hidden">
             <div className="px-6 py-4 border-b border-slate-200">
               <div className="flex items-center justify-between">
-                <h3 className="text-lg font-bold text-slate-900">Your Signature</h3>
+                <h3 className="text-lg font-bold text-slate-900">{isInitialModal ? 'Your Initial' : 'Your Signature'}</h3>
                 <button
-                  onClick={() => setSignatureModalOpen(false)}
+                  onClick={() => { setSignatureModalOpen(false); setIsInitialModal(false) }}
                   className="p-1 hover:bg-slate-100 rounded-lg transition-colors"
                 >
                   <svg className="w-5 h-5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1038,35 +1146,37 @@ function DealsSignaturePageInner() {
                   </svg>
                 </button>
               </div>
-              <p className="text-xs text-slate-500 mt-1">Draw your signature or type your name</p>
+              <p className="text-xs text-slate-500 mt-1">{isInitialModal ? 'Type or draw your initials' : 'Draw your signature or type your name'}</p>
             </div>
 
             <div className="px-6 py-4">
-              {/* Mode selector */}
-              <div className="flex gap-2 mb-4">
-                <button
-                  onClick={() => setSignatureMode('draw')}
-                  className={`flex-1 py-2 px-4 rounded-lg text-sm font-semibold transition-colors ${
-                    signatureMode === 'draw'
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-                  }`}
-                >
-                  Draw Signature
-                </button>
-                <button
-                  onClick={() => setSignatureMode('type')}
-                  className={`flex-1 py-2 px-4 rounded-lg text-sm font-semibold transition-colors ${
-                    signatureMode === 'type'
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-                  }`}
-                >
-                  Type Signature
-                </button>
-              </div>
+              {/* Mode selector — hidden for initial (type only) */}
+              {!isInitialModal && (
+                <div className="flex gap-2 mb-4">
+                  <button
+                    onClick={() => setSignatureMode('draw')}
+                    className={`flex-1 py-2 px-4 rounded-lg text-sm font-semibold transition-colors ${
+                      signatureMode === 'draw'
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                    }`}
+                  >
+                    Draw Signature
+                  </button>
+                  <button
+                    onClick={() => setSignatureMode('type')}
+                    className={`flex-1 py-2 px-4 rounded-lg text-sm font-semibold transition-colors ${
+                      signatureMode === 'type'
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                    }`}
+                  >
+                    Type Signature
+                  </button>
+                </div>
+              )}
 
-              {signatureMode === 'draw' ? (
+              {signatureMode === 'draw' && !isInitialModal ? (
                 <>
                   <div className="mb-3">
                     <div className="text-sm text-slate-600">Draw your signature below</div>
@@ -1077,13 +1187,14 @@ function DealsSignaturePageInner() {
                 </>
               ) : (
                 <>
-                  <div className="text-sm text-slate-600 mb-3">Type your full name</div>
+                  <div className="text-sm text-slate-600 mb-3">{isInitialModal ? 'Type your initials' : 'Type your full name'}</div>
                   <input
                     type="text"
                     value={typedName}
                     onChange={(e) => setTypedName(e.target.value)}
-                    placeholder="Enter your full name"
+                    placeholder={isInitialModal ? 'Enter your initials' : 'Enter your full name'}
                     className="w-full px-4 py-3 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    autoFocus
                   />
                   {typedName && (
                     <div className="mt-4 p-6 rounded-xl border-2 border-slate-300 bg-white text-center">
@@ -1113,8 +1224,9 @@ function DealsSignaturePageInner() {
               <button
                 onClick={async () => {
                   setSignatureModalOpen(false)
+                  setIsInitialModal(false)
                   if (signatureMode === 'type' && typedName) {
-                    // Convert typed name to off-screen canvas and get b64 directly (transparent background)
+                    // Convert typed text to off-screen canvas image
                     const offCanvas = document.createElement('canvas')
                     offCanvas.width = 800
                     offCanvas.height = 200
@@ -1136,7 +1248,69 @@ function DealsSignaturePageInner() {
                 disabled={signatureMode === 'type' && !typedName}
                 className="px-5 py-2 text-sm font-semibold text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                Submit Signature
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit field modal (company, title, text, dateSigned) */}
+      {editFieldModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+          <div className="relative w-full max-w-md bg-white rounded-2xl shadow-2xl overflow-hidden">
+            <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between">
+              <div>
+                <h3 className="text-lg font-bold text-slate-900">{editFieldModal.label}</h3>
+                <p className="text-xs text-slate-500 mt-0.5">Enter your {editFieldModal.label.toLowerCase()}</p>
+              </div>
+              <button onClick={() => setEditFieldModal(null)} className="p-1 hover:bg-slate-100 rounded-lg transition-colors">
+                <svg className="w-5 h-5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12"/></svg>
+              </button>
+            </div>
+            <div className="px-6 py-5">
+              {editFieldModal.type === 'dateSigned' ? (
+                <input
+                  type="date"
+                  autoFocus
+                  value={editFieldValue}
+                  onChange={e => setEditFieldValue(e.target.value)}
+                  className="w-full px-4 py-3 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              ) : (
+                <input
+                  type="text"
+                  autoFocus
+                  value={editFieldValue}
+                  onChange={e => setEditFieldValue(e.target.value)}
+                  placeholder={`Enter ${editFieldModal.label.toLowerCase()}`}
+                  className="w-full px-4 py-3 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') {
+                      setFields(prev => prev.map(f => f.id === editFieldModal.id ? { ...f, value: editFieldValue } : f))
+                      setEditFieldModal(null)
+                    }
+                  }}
+                />
+              )}
+              {editFieldValue && editFieldModal.type !== 'dateSigned' && (
+                <div className="mt-4 p-4 rounded-xl border border-slate-200 bg-slate-50 text-sm text-slate-800">
+                  {editFieldValue}
+                </div>
+              )}
+            </div>
+            <div className="px-6 py-4 bg-slate-50 flex items-center justify-end gap-2">
+              <button onClick={() => setEditFieldModal(null)} className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors">
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  setFields(prev => prev.map(f => f.id === editFieldModal.id ? { ...f, value: editFieldValue } : f))
+                  setEditFieldModal(null)
+                }}
+                className="px-5 py-2 text-sm font-semibold text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                Save
               </button>
             </div>
           </div>

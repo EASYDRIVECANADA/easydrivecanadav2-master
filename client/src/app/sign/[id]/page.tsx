@@ -166,9 +166,20 @@ export default function SignPage() {
         const fieldsJson = await fieldsRes.json()
         let allFields: Field[] = Array.isArray(fieldsJson.fields) ? fieldsJson.fields : []
 
-        // Filter to only this recipient's fields (primary loads master + filters by idx)
+        // Filter to only this recipient's fields
         const myFields = allFields.filter(f => (f.recipientIndex ?? 0) === recipientIdx)
-        setFields(myFields)
+
+        // Auto-fill fields that derive from the recipient record or current date
+        const today = new Date().toLocaleDateString('en-CA')
+        const autoFilled = myFields.map(f => {
+          if (f.value) return f // already has a saved value
+          if (f.type === 'name')       return { ...f, value: sigData?.full_name || '' }
+          if (f.type === 'company')    return { ...f, value: sigData?.company || '' }
+          if (f.type === 'title')      return { ...f, value: sigData?.title || '' }
+          if (f.type === 'dateSigned') return { ...f, value: today }
+          return f
+        })
+        setFields(autoFilled)
 
         // 3. Render document pages
         const docFile = sigData.document_file
@@ -200,11 +211,15 @@ export default function SignPage() {
     })()
   }, [id, recipientIdx])
 
+  const [editingTextField, setEditingTextField] = useState<string | null>(null)
+
   const handleFieldClick = useCallback((field: Field) => {
     if (field.type === 'signature' || field.type === 'initial') {
       setSigPadField(field.id)
     } else if (field.type === 'checkbox') {
       setFields(prev => prev.map(f => f.id === field.id ? { ...f, value: f.value === 'true' ? '' : 'true' } : f))
+    } else if (field.type === 'text' || field.type === 'name' || field.type === 'company' || field.type === 'title') {
+      setEditingTextField(field.id)
     }
   }, [])
 
@@ -222,19 +237,40 @@ export default function SignPage() {
     try {
       const sig = fields.find(f => f.type === 'signature' || f.type === 'initial')
       const sigValue = sig?.value || signatureData
+      const now = new Date().toISOString()
 
-      // Update the signature record with signature data and status
+      // 1. Save the signature record with all per-field-type columns populated
       const res = await fetch(`/api/esignature/signature/${encodeURIComponent(id)}/complete`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           signature_image: sigValue,
-          signed_at: new Date().toISOString(),
+          signed_at: now,
           status: 'completed',
           fields_data: JSON.stringify(fields),
+          recipient_index: recipientIdx,
+          deal_id: id, // signature id IS the deal_id for esign lookup
         }),
       })
       if (!res.ok) throw new Error('Failed to submit signature')
+
+      // 2. Save each individual field value to its own row in edc_esignature_fields
+      const fieldUpdates = fields
+        .filter(f => f.value !== undefined && f.value !== null && f.value !== '')
+        .map(f =>
+          fetch('/api/esignature/fields', {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              dealId: id,
+              fieldId: f.id,
+              value: f.value,
+              signedAt: now,
+            }),
+          }).catch(() => null)
+        )
+      await Promise.all(fieldUpdates)
+
       setSubmitted(true)
     } catch (e: any) {
       alert(e.message || 'Failed to submit')
@@ -363,21 +399,24 @@ export default function SignPage() {
                           <div className="w-4 h-4 border-2 border-blue-400 rounded" />
                         )}
                       </div>
-                    ) : field.type === 'name' ? (
-                      <div className="flex items-center px-2 h-full text-xs font-medium text-gray-900">
-                        {recipient?.full_name || 'Name'}
-                      </div>
-                    ) : field.type === 'company' ? (
-                      <div className="flex items-center px-2 h-full text-xs font-medium text-gray-900">
-                        {recipient?.company || 'Company'}
-                      </div>
-                    ) : field.type === 'title' ? (
-                      <div className="flex items-center px-2 h-full text-xs font-medium text-gray-900">
-                        {recipient?.title || 'Title'}
-                      </div>
+                    ) : field.type === 'name' || field.type === 'company' || field.type === 'title' || field.type === 'text' ? (
+                      editingTextField === field.id ? (
+                        <input
+                          autoFocus
+                          className="w-full h-full px-1 text-xs text-gray-900 bg-white border-0 outline-none"
+                          value={field.value || ''}
+                          onChange={e => setFields(prev => prev.map(f => f.id === field.id ? { ...f, value: e.target.value } : f))}
+                          onBlur={() => setEditingTextField(null)}
+                          onClick={e => e.stopPropagation()}
+                        />
+                      ) : (
+                        <div className="flex items-center px-2 h-full text-xs font-medium text-gray-900">
+                          {field.value || <span className="text-blue-400">Click to edit</span>}
+                        </div>
+                      )
                     ) : field.type === 'dateSigned' ? (
                       <div className="flex items-center justify-center h-full text-xs font-medium text-gray-700">
-                        {new Date().toLocaleDateString('en-CA')}
+                        {field.value || new Date().toLocaleDateString('en-CA')}
                       </div>
                     ) : field.type === 'stamp' ? (
                       <div className="flex items-center justify-center w-full h-full p-1">

@@ -153,6 +153,30 @@ const DEFAULT_TOTAL_PAGES = 3
    return bytes
  }
 
+// Fetch field values saved by sibling recipients and merge into master fields by field_id
+async function mergeFieldsWithSiblingValues(masterFields: Field[], siblingIds: string[]): Promise<Field[]> {
+  if (siblingIds.length === 0) return masterFields
+  const maps = await Promise.all(
+    siblingIds.map(async (sid) => {
+      try {
+        const r = await fetch(`/api/esignature/fields?dealId=${encodeURIComponent(sid)}`, { cache: 'no-store' })
+        const j = r.ok ? await r.json().catch(() => null) : null
+        const rows: Field[] = Array.isArray(j?.fields) ? j.fields : []
+        const map: Record<string, string> = {}
+        rows.forEach((f: Field) => { if (f.id && f.value) map[f.id] = f.value })
+        return map
+      } catch { return {} as Record<string, string> }
+    })
+  )
+  return masterFields.map(f => {
+    if (f.value) return f
+    for (const map of maps) {
+      if (map[f.id]) return { ...f, value: map[f.id] }
+    }
+    return f
+  })
+}
+
 export default function PrepareDocumentPage() {
   const params = useParams()
   const router = useRouter()
@@ -585,13 +609,16 @@ export default function PrepareDocumentPage() {
             if (fieldsRes.ok) {
               const fieldsData = await fieldsRes.json()
               if (fieldsData.fields) {
-                setFields(fieldsData.fields)
-                historyRef.current = [fieldsData.fields]
+                // Merge signed values from sibling recipients into master fields
+                const siblingIds = siblingRecipients.map((s: Recipient) => s.id)
+                const mergedFields = await mergeFieldsWithSiblingValues(fieldsData.fields, siblingIds)
+                setFields(mergedFields)
+                historyRef.current = [mergedFields]
                 historyIdxRef.current = 0
                 setIsDirty(false)
               }
             }
-            
+
             setLoading(false)
             return
           }
@@ -757,8 +784,11 @@ export default function PrepareDocumentPage() {
         if (fieldsRes.ok) {
           const fieldsData = await fieldsRes.json()
           if (fieldsData.fields) {
-            setFields(fieldsData.fields)
-            historyRef.current = [fieldsData.fields]
+            // Merge signed values from sibling recipients into master fields
+            const siblingIds = (sigData?.siblings || []).map((s: any) => s.id as string)
+            const mergedFields = await mergeFieldsWithSiblingValues(fieldsData.fields, siblingIds)
+            setFields(mergedFields)
+            historyRef.current = [mergedFields]
             historyIdxRef.current = 0
           }
         }
@@ -997,64 +1027,67 @@ export default function PrepareDocumentPage() {
       const w = field.width * xScale
       const h = field.height * yScale
 
-      // Per-recipient data
+      // Per-recipient fallback data (name/company/title if field has no saved value)
       const rIdx = field.recipientIndex ?? 0
       const r = recipients[rIdx]
       const rName = r?.full_name || (rIdx === 0 ? (String(sigData?.full_name ?? '').trim() || [c.firstname, c.lastname].filter(Boolean).join(' ')) : '') || ''
-      const rInitials = rName ? rName.split(' ').map((n: string) => n[0]).join('').toUpperCase() : 'DS'
-      const rawSig = r?.signature_image || (rIdx === 0 ? String(sigData?.signature_image ?? c.signature ?? '').trim() : '')
-      const rSig = rawSig ? (rawSig.startsWith('data:') || rawSig.startsWith('http') ? rawSig : `data:image/png;base64,${rawSig}`) : ''
       const rCompany = r?.company || ''
       const rTitle = r?.title || ''
-      const signedAtRaw = rIdx === 0 ? String(sigData?.signed_at ?? sigData?.updated_at ?? sigData?.created_at ?? '').trim() : ''
-      const signedDate = (() => { try { if (!signedAtRaw) return ''; const d = new Date(signedAtRaw); return isNaN(d.getTime()) ? '' : d.toLocaleDateString('en-CA') } catch { return '' } })()
+
+      // Per-field value is the source of truth (stored in edc_esignature_fields.value)
+      const fv = String(field.value ?? '').trim()
+      const toImgUrl = (raw: string) => {
+        if (!raw) return ''
+        if (raw.startsWith('data:') || raw.startsWith('http')) return raw
+        return `data:image/png;base64,${raw}`
+      }
+      const fieldImg = toImgUrl(fv)
 
       try {
         switch (field.type) {
           case 'signature':
-            if (rSig) pdf.addImage(rSig, 'PNG', x, y, w, h)
-            break
           case 'initial':
-            pdf.setTextColor(29, 78, 216); pdf.setFontSize(14); pdf.setFont('helvetica', 'bold')
-            pdf.text(rInitials, x + w / 2, y + h / 2, { align: 'center', baseline: 'middle' })
-            pdf.setFont('helvetica', 'normal')
+            if (fieldImg) pdf.addImage(fieldImg, 'PNG', x, y, w, h)
             break
-          case 'stamp':
-            pdf.setDrawColor(220, 38, 38); pdf.setTextColor(220, 38, 38)
-            pdf.circle(x + w / 2, y + h / 2, Math.max(Math.min(w, h) / 2 - 2, 2), 'S')
-            pdf.circle(x + w / 2, y + h / 2, Math.max(Math.min(w, h) / 2 - 8, 1), 'S')
-            pdf.setFontSize(12); pdf.setFont('helvetica', 'bold')
-            pdf.text('APPROVED', x + w / 2, y + h / 2 - 5, { align: 'center' })
-            pdf.setFontSize(9); pdf.setFont('helvetica', 'normal')
-            pdf.text(new Date().toLocaleDateString('en-CA'), x + w / 2, y + h / 2 + 8, { align: 'center' })
+          case 'stamp': {
+            const stampImg = toImgUrl(fv)
+            if (stampImg) {
+              pdf.addImage(stampImg, 'PNG', x, y, w, h)
+            } else {
+              pdf.setDrawColor(220, 38, 38); pdf.setTextColor(220, 38, 38)
+              pdf.circle(x + w / 2, y + h / 2, Math.max(Math.min(w, h) / 2 - 2, 2), 'S')
+              pdf.circle(x + w / 2, y + h / 2, Math.max(Math.min(w, h) / 2 - 8, 1), 'S')
+              pdf.setFontSize(12); pdf.setFont('helvetica', 'bold')
+              pdf.text('APPROVED', x + w / 2, y + h / 2 - 5, { align: 'center' })
+              pdf.setFontSize(9); pdf.setFont('helvetica', 'normal')
+              pdf.text(new Date().toLocaleDateString('en-CA'), x + w / 2, y + h / 2 + 8, { align: 'center' })
+            }
             break
+          }
           case 'dateSigned':
             pdf.setTextColor(55, 65, 81); pdf.setFontSize(10)
-            if (signedDate) pdf.text(signedDate, x + w / 2, y + h / 2, { align: 'center', baseline: 'middle' })
+            if (fv) pdf.text(fv, x + w / 2, y + h / 2, { align: 'center', baseline: 'middle' })
             break
           case 'name':
             pdf.setTextColor(17, 24, 39); pdf.setFontSize(10)
-            if (rName) pdf.text(rName, x + 5, y + h / 2, { baseline: 'middle' })
-            else if (field.value) pdf.text(String(field.value), x + 5, y + h / 2, { baseline: 'middle' })
+            if (fv || rName) pdf.text(fv || rName, x + 5, y + h / 2, { baseline: 'middle' })
             break
           case 'company':
             pdf.setTextColor(55, 65, 81); pdf.setFontSize(10)
-            if (rCompany) pdf.text(rCompany, x + 5, y + h / 2, { baseline: 'middle' })
-            else if (field.value) pdf.text(String(field.value), x + 5, y + h / 2, { baseline: 'middle' })
+            if (fv || rCompany) pdf.text(fv || rCompany, x + 5, y + h / 2, { baseline: 'middle' })
             break
           case 'title':
             pdf.setTextColor(55, 65, 81); pdf.setFontSize(10)
-            if (rTitle) pdf.text(rTitle, x + 5, y + h / 2, { baseline: 'middle' })
-            else if (field.value) pdf.text(String(field.value), x + 5, y + h / 2, { baseline: 'middle' })
+            if (fv || rTitle) pdf.text(fv || rTitle, x + 5, y + h / 2, { baseline: 'middle' })
             break
           case 'text':
             pdf.setTextColor(55, 65, 81); pdf.setFontSize(10)
-            if (field.value) pdf.text(String(field.value), x + 5, y + h / 2, { baseline: 'middle' })
+            if (fv) pdf.text(fv, x + 5, y + h / 2, { baseline: 'middle' })
             break
           case 'checkbox':
             pdf.setDrawColor(37, 99, 235)
             pdf.roundedRect(x + w / 2 - 7.5, y + h / 2 - 7.5, 15, 15, 2, 2, 'S')
-            if (['true', '1', 'yes'].includes(String(field.value ?? '').toLowerCase())) {
+            if (['true', '1', 'yes'].includes(fv.toLowerCase())) {
               pdf.setTextColor(37, 99, 235); pdf.setFontSize(12)
               pdf.text('✓', x + w / 2, y + h / 2 + 1, { align: 'center', baseline: 'middle' })
             }
@@ -1482,21 +1515,25 @@ export default function PrepareDocumentPage() {
       [c.firstname, c.lastname].filter(Boolean).join(' ') ||
       fieldRecipient?.email || ''
     const initials = fullName ? fullName.split(' ').map((n: string) => n[0]).join('').toUpperCase() : 'DS'
-    // Get signature from the specific recipient's stored signature_image (any recipient index)
-    const rawSig = fieldRecipient?.signature_image ||
-      (fieldRecipientIdx === 0 ? (sigData?.signature_image || String(c.signature ?? '').trim()) : '')
-    const signature = rawSig
-      ? (rawSig.startsWith('data:') || rawSig.startsWith('http') ? rawSig : `data:image/png;base64,${rawSig}`)
-      : ''
+    // Per-field value is the source of truth (stored in edc_esignature_fields.value)
     const fieldValue = String(field.value ?? '')
+    const toImgUrl = (raw: string) => {
+      if (!raw) return ''
+      if (raw.startsWith('data:') || raw.startsWith('http')) return raw
+      return `data:image/png;base64,${raw}`
+    }
+    const fieldImgUrl = toImgUrl(fieldValue)
 
     switch (field.type) {
       case 'signature':
-        if (signature) {
-          return <img src={signature} alt="Signature" className="w-full h-full object-contain" draggable={false} onError={(e) => { e.currentTarget.style.display = 'none' }} />
+        if (fieldImgUrl) {
+          return <img src={fieldImgUrl} alt="Signature" className="w-full h-full object-contain" draggable={false} onError={(e) => { e.currentTarget.style.display = 'none' }} />
         }
         return <div className="flex items-center justify-center h-full text-xs text-blue-500 font-medium">Signature</div>
       case 'initial':
+        if (fieldImgUrl) {
+          return <img src={fieldImgUrl} alt="Initial" className="w-full h-full object-contain" draggable={false} onError={(e) => { e.currentTarget.style.display = 'none' }} />
+        }
         return <div className="flex items-center justify-center h-full text-base font-bold text-blue-700">{initials}</div>
       case 'stamp':
         return (

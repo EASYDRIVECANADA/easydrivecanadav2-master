@@ -737,25 +737,35 @@ export default function EsignatureClient() {
       ...((sigData?.siblings as any[]) || []),
     ]
 
-    const signedDate = (() => {
-      const raw = String(sigData?.signed_at ?? sigData?.updated_at ?? sigData?.created_at ?? '').trim()
-      if (!raw) return ''
-      try { const d = new Date(raw); return Number.isNaN(d.getTime()) ? '' : d.toLocaleDateString('en-CA') } catch { return '' }
-    })()
     const xScale = pdfW / PAGE_WIDTH
     const yScale = pdfH / PAGE_HEIGHT
     const fileFields = fields.filter(f => (f as any).fileIndex === undefined ? fileIndex === 0 : (f as any).fileIndex === fileIndex)
     fileFields.forEach(field => {
       const recipIdx = (field as any).recipientIndex ?? 0
       const recip = recipients[recipIdx] ?? recipients[0] ?? sigData
+
+      // Per-field value is the source of truth — stored individually in edc_esignature_fields
+      const fieldValue = String(field.value ?? '').trim()
+
+      // Normalize image value to a usable data URL
+      const toImgUrl = (raw: string) => {
+        if (!raw) return ''
+        if (raw.startsWith('data:') || raw.startsWith('http')) return raw
+        return `data:image/png;base64,${raw}`
+      }
+
+      // Fallback: full name / company / title from recipient record if field has no saved value
       const fullName = String(recip?.full_name ?? '').trim()
-      const initials = fullName ? fullName.split(' ').map((n: string) => n[0]).join('').toUpperCase() : ''
-      const rawSig = String(recip?.signature_image ?? '').trim()
-      const signature = rawSig
-        ? (rawSig.startsWith('data:') || rawSig.startsWith('http') ? rawSig : `data:image/png;base64,${rawSig}`)
-        : ''
       const company = String(recip?.company ?? '').trim()
       const title = String(recip?.title ?? '').trim()
+
+      // dateSigned: prefer field value, then signed_at from the recipient's sibling record
+      const signedDate = (() => {
+        if (fieldValue) return fieldValue
+        const raw = String(recip?.signed_at ?? recip?.updated_at ?? '').trim()
+        if (!raw) return ''
+        try { const d = new Date(raw); return Number.isNaN(d.getTime()) ? '' : d.toLocaleDateString('en-CA') } catch { return '' }
+      })()
 
       const pageNum = Math.min(Math.max(field.page || 1, 1), pdf.getNumberOfPages())
       pdf.setPage(pageNum)
@@ -764,42 +774,46 @@ export default function EsignatureClient() {
       try {
         switch (field.type) {
           case 'signature':
-            if (signature) { pdf.addImage(signature, 'PNG', x, y, w, h) }
+          case 'initial': {
+            // Use per-field value (individual signature/initial image saved in edc_esignature_fields)
+            const img = toImgUrl(fieldValue)
+            if (img) { pdf.addImage(img, 'PNG', x, y, w, h) }
             break
-          case 'initial':
-            if (initials) { pdf.setTextColor(29,78,216); pdf.setFontSize(14); pdf.setFont('helvetica','bold'); pdf.text(initials,x+w/2,y+h/2,{align:'center',baseline:'middle'}); pdf.setFont('helvetica','normal') }
+          }
+          case 'stamp': {
+            const img = toImgUrl(fieldValue)
+            if (img) {
+              pdf.addImage(img, 'PNG', x, y, w, h)
+            } else {
+              pdf.setDrawColor(220,38,38); pdf.setTextColor(220,38,38)
+              pdf.circle(x+w/2,y+h/2,Math.max(Math.min(w,h)/2-2,2),'S'); pdf.circle(x+w/2,y+h/2,Math.max(Math.min(w,h)/2-8,1),'S')
+              pdf.setFontSize(12); pdf.setFont('helvetica','bold'); pdf.text('APPROVED',x+w/2,y+h/2-5,{align:'center'})
+              pdf.setFontSize(9); pdf.setFont('helvetica','normal'); pdf.text(new Date().toLocaleDateString('en-CA'),x+w/2,y+h/2+8,{align:'center'})
+            }
             break
-          case 'stamp':
-            pdf.setDrawColor(220,38,38); pdf.setTextColor(220,38,38)
-            pdf.circle(x+w/2,y+h/2,Math.max(Math.min(w,h)/2-2,2),'S'); pdf.circle(x+w/2,y+h/2,Math.max(Math.min(w,h)/2-8,1),'S')
-            pdf.setFontSize(12); pdf.setFont('helvetica','bold'); pdf.text('APPROVED',x+w/2,y+h/2-5,{align:'center'})
-            pdf.setFontSize(9); pdf.setFont('helvetica','normal'); pdf.text(new Date().toLocaleDateString('en-CA'),x+w/2,y+h/2+8,{align:'center'})
-            break
+          }
           case 'dateSigned':
             if (signedDate) { pdf.setTextColor(55,65,81); pdf.setFontSize(10); pdf.text(signedDate,x+w/2,y+h/2,{align:'center',baseline:'middle'}) }
             break
           case 'name':
             pdf.setTextColor(17,24,39); pdf.setFontSize(10)
-            if (fullName) pdf.text(fullName,x+5,y+h/2,{baseline:'middle'})
-            else if (field.value) pdf.text(String(field.value),x+5,y+h/2,{baseline:'middle'})
+            pdf.text(fieldValue || fullName,x+5,y+h/2,{baseline:'middle'})
             break
           case 'company':
             pdf.setTextColor(55,65,81); pdf.setFontSize(10)
-            if (company) pdf.text(company,x+5,y+h/2,{baseline:'middle'})
-            else if (field.value) pdf.text(String(field.value),x+5,y+h/2,{baseline:'middle'})
+            pdf.text(fieldValue || company,x+5,y+h/2,{baseline:'middle'})
             break
           case 'title':
             pdf.setTextColor(55,65,81); pdf.setFontSize(10)
-            if (title) pdf.text(title,x+5,y+h/2,{baseline:'middle'})
-            else if (field.value) pdf.text(String(field.value),x+5,y+h/2,{baseline:'middle'})
+            pdf.text(fieldValue || title,x+5,y+h/2,{baseline:'middle'})
             break
           case 'text':
             pdf.setTextColor(55,65,81); pdf.setFontSize(10)
-            if (field.value) pdf.text(String(field.value),x+5,y+h/2,{baseline:'middle'})
+            if (fieldValue) pdf.text(fieldValue,x+5,y+h/2,{baseline:'middle'})
             break
           case 'checkbox':
             pdf.setDrawColor(37,99,235); pdf.roundedRect(x+w/2-7.5,y+h/2-7.5,15,15,2,2,'S')
-            if (['true','1','yes'].includes(String(field.value??'').toLowerCase())) { pdf.setTextColor(37,99,235); pdf.setFontSize(12); pdf.text('✓',x+w/2,y+h/2+1,{align:'center',baseline:'middle'}) }
+            if (['true','1','yes'].includes(fieldValue.toLowerCase())) { pdf.setTextColor(37,99,235); pdf.setFontSize(12); pdf.text('✓',x+w/2,y+h/2+1,{align:'center',baseline:'middle'}) }
             break
         }
       } catch (err) { console.error('Field render error:', field.id, err) }
@@ -816,9 +830,36 @@ export default function EsignatureClient() {
       const sigData = await sigRes.json()
       if (!sigData?.document_file) throw new Error('No document file found')
 
+      // Fetch master fields (positions + primary recipient's values)
       const fieldsRes = await fetch(`/api/esignature/fields?dealId=${encodeURIComponent(doc.id)}`, { cache: 'no-store' })
       const fieldsJson = fieldsRes.ok ? await fieldsRes.json().catch(() => null) : null
-      const fields: EsignField[] = Array.isArray(fieldsJson?.fields) ? fieldsJson.fields : []
+      let fields: EsignField[] = Array.isArray(fieldsJson?.fields) ? fieldsJson.fields : []
+
+      // Fetch signed field values for each sibling recipient and merge by field_id
+      const siblings: any[] = sigData?.siblings || []
+      if (siblings.length > 0) {
+        const siblingFieldMaps = await Promise.all(
+          siblings.map(async (s: any) => {
+            try {
+              const r = await fetch(`/api/esignature/fields?dealId=${encodeURIComponent(s.id)}`, { cache: 'no-store' })
+              const j = r.ok ? await r.json().catch(() => null) : null
+              const rows: EsignField[] = Array.isArray(j?.fields) ? j.fields : []
+              // Build map: field_id -> value
+              const map: Record<string, string> = {}
+              rows.forEach(f => { if (f.id && f.value) map[f.id] = f.value })
+              return map
+            } catch { return {} }
+          })
+        )
+        // Merge: for each master field, if it has no value, check sibling maps
+        fields = fields.map(f => {
+          if (f.value) return f
+          for (const map of siblingFieldMaps) {
+            if (map[f.id]) return { ...f, value: map[f.id] }
+          }
+          return f
+        })
+      }
 
       // Parse document_file: may be JSON array, JSON object, or plain base64
       const rawDoc = String(sigData.document_file || '').trim()
