@@ -784,11 +784,9 @@ export default function PrepareDocumentPage() {
         if (fieldsRes.ok) {
           const fieldsData = await fieldsRes.json()
           if (fieldsData.fields) {
-            // Merge signed values from sibling recipients into master fields
-            const siblingIds = (sigData?.siblings || []).map((s: any) => s.id as string)
-            const mergedFields = await mergeFieldsWithSiblingValues(fieldsData.fields, siblingIds)
-            setFields(mergedFields)
-            historyRef.current = [mergedFields]
+            // Bill of Sale flow has no siblings — use master fields as-is
+            setFields(fieldsData.fields)
+            historyRef.current = [fieldsData.fields]
             historyIdxRef.current = 0
           }
         }
