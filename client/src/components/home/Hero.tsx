@@ -197,7 +197,7 @@ export default function Hero() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
               </svg>
             </div>
-            <span className={`text-sm font-medium transition-colors duration-300 ${onLight ? 'text-slate-900' : 'text-white/90'}`}>Free Delivery in Ontario</span>
+            <span className={`text-sm font-medium transition-colors duration-300 ${onLight ? 'text-slate-900' : 'text-white/90'}`}>We Bring It to You</span>
           </div>
 
           <div className={`hidden sm:block w-px h-6 ${onLight ? 'bg-slate-300' : 'bg-white/40'} transition-colors duration-300`} aria-hidden="true" />
