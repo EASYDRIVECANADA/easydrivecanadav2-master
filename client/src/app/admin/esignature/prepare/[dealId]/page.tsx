@@ -1502,6 +1502,10 @@ export default function PrepareDocumentPage() {
     const sigData = dealData?.signature
     const c = dealData?.customer || {}
 
+    // Font scales with field height
+    const fontSize = Math.min(48, Math.max(11, Math.round(field.height * 0.55)))
+    const fontStyle: React.CSSProperties = { fontSize: `${fontSize}px`, lineHeight: 1.1 }
+
     // Pick the recipient matching this field's recipientIndex
     const fieldRecipientIdx = field.recipientIndex ?? 0
     const fieldRecipient = recipients[fieldRecipientIdx]
@@ -1527,12 +1531,12 @@ export default function PrepareDocumentPage() {
         if (fieldImgUrl) {
           return <img src={fieldImgUrl} alt="Signature" className="w-full h-full object-contain" draggable={false} onError={(e) => { e.currentTarget.style.display = 'none' }} />
         }
-        return <div className="flex items-center justify-center h-full text-xs text-blue-500 font-medium">Signature</div>
+        return <div className="flex items-center justify-center h-full font-medium text-blue-500 overflow-hidden" style={fontStyle}>Signature</div>
       case 'initial':
         if (fieldImgUrl) {
           return <img src={fieldImgUrl} alt="Initial" className="w-full h-full object-contain" draggable={false} onError={(e) => { e.currentTarget.style.display = 'none' }} />
         }
-        return <div className="flex items-center justify-center h-full text-base font-bold text-blue-700">{initials}</div>
+        return <div className="flex items-center justify-center h-full font-bold text-blue-700 overflow-hidden" style={fontStyle}>{initials}</div>
       case 'stamp':
         return (
           <div className="flex items-center justify-center w-full h-full p-1">
@@ -1547,13 +1551,13 @@ export default function PrepareDocumentPage() {
           </div>
         )
       case 'dateSigned':
-        return <div className="flex items-center justify-center h-full text-xs font-medium text-gray-700">{new Date().toLocaleDateString('en-CA')}</div>
+        return <div className="flex items-center justify-center h-full font-medium text-gray-700 overflow-hidden" style={fontStyle}>{fieldValue || new Date().toLocaleDateString('en-CA')}</div>
       case 'name':
-        return <div className="flex items-center px-2 h-full text-xs font-medium text-gray-900">{fullName || 'Name'}</div>
+        return <div className="flex items-center px-1 h-full font-medium text-gray-900 overflow-hidden" style={fontStyle}>{fieldValue || fullName || 'Name'}</div>
       case 'company':
-        return <div className="flex items-center px-2 h-full text-xs font-medium text-gray-900">{fieldRecipient?.company || fieldValue || 'Company'}</div>
+        return <div className="flex items-center px-1 h-full text-gray-900 overflow-hidden" style={fontStyle}>{fieldValue || fieldRecipient?.company || 'Company'}</div>
       case 'title':
-        return <div className="flex items-center px-2 h-full text-xs font-medium text-gray-900">{fieldRecipient?.title || fieldValue || 'Title'}</div>
+        return <div className="flex items-center px-1 h-full text-gray-900 overflow-hidden" style={fontStyle}>{fieldValue || fieldRecipient?.title || 'Title'}</div>
       case 'text':
         return (
           <input
@@ -1563,15 +1567,18 @@ export default function PrepareDocumentPage() {
             onMouseDown={(e) => e.stopPropagation()}
             onClick={(e) => e.stopPropagation()}
             placeholder="Enter text"
-            className="w-full h-full px-2 text-xs text-gray-700 bg-transparent outline-none placeholder:text-gray-400"
+            style={fontStyle}
+            className="w-full h-full px-1 text-gray-700 bg-transparent outline-none placeholder:text-gray-400"
           />
         )
-      case 'checkbox':
+      case 'checkbox': {
+        const cbSize = Math.max(12, Math.round(field.height * 0.8))
         return (
           <div className="flex items-center justify-center h-full">
-            <svg viewBox="0 0 20 20" className="w-4 h-4"><rect x="1" y="1" width="18" height="18" rx="3" fill="#3b82f6" stroke="#2563eb" strokeWidth="1.5"/><path d="M5 10l3 3 7-7" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+            <svg style={{ width: cbSize, height: cbSize }} viewBox="0 0 20 20"><rect x="1" y="1" width="18" height="18" rx="3" fill="#3b82f6" stroke="#2563eb" strokeWidth="1.5"/><path d="M5 10l3 3 7-7" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
           </div>
         )
+      }
       default:
         return null
     }

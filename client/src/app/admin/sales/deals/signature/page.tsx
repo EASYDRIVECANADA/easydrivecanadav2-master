@@ -283,11 +283,11 @@ function DealsSignaturePageInner() {
             const baseFields = myFields.length > 0 ? myFields : allFields
 
             // Auto-fill field values from recipient data and today's date
+            // NOTE: signature/initial fields are NOT auto-filled — recipient must explicitly sign each field.
+            // existingSig is only used to restore the signature pad so re-signing is one click.
             const today = new Date().toLocaleDateString('en-CA')
             const filledFields = baseFields.map(f => {
               if (f.value) return f // keep already-saved value
-              if ((f.type === 'signature' || f.type === 'initial') && existingSig)
-                return { ...f, value: existingSig }
               if (f.type === 'dateSigned') return { ...f, value: today }
               if (f.type === 'name')    return { ...f, value: sigData?.full_name || '' }
               if (f.type === 'company') return { ...f, value: sigData?.company || '' }
@@ -755,6 +755,7 @@ function DealsSignaturePageInner() {
       ensureHiDpi()
       applyPen()
 
+
       const onPointerDown = (e: PointerEvent) => {
         e.preventDefault()
         c.setPointerCapture(e.pointerId)
@@ -822,9 +823,9 @@ function DealsSignaturePageInner() {
 
   // Render field content
   const renderFieldContent = (field: Field) => {
-    // Scale font size proportionally to the field height (baseline: 30px height = 11px font)
-    const fontSize = Math.max(8, Math.round(field.height * 0.38))
-    const fontStyle: React.CSSProperties = { fontSize: `${fontSize}px`, lineHeight: 1.2 }
+    // Font fills ~55% of field height, clamped between 11px and 48px
+    const fontSize = Math.min(48, Math.max(11, Math.round(field.height * 0.55)))
+    const fontStyle: React.CSSProperties = { fontSize: `${fontSize}px`, lineHeight: 1.1 }
 
     switch (field.type) {
       case 'signature':
@@ -929,7 +930,7 @@ function DealsSignaturePageInner() {
       }
       case 'checkbox': {
         const checked = ['true', '1', 'yes'].includes(String(field.value ?? '').toLowerCase())
-        const cbSize = Math.max(10, Math.round(field.height * 0.7))
+        const cbSize = Math.max(12, Math.round(field.height * 0.8))
         return (
           <div
             className="flex items-center justify-center h-full cursor-pointer"
@@ -1197,8 +1198,8 @@ function DealsSignaturePageInner() {
                     autoFocus
                   />
                   {typedName && (
-                    <div className="mt-4 p-6 rounded-xl border-2 border-slate-300 bg-white text-center">
-                      <div className="text-4xl" style={{ fontFamily: 'Brush Script MT, cursive', fontStyle: 'italic' }}>
+                    <div className="mt-4 rounded-xl border-2 border-slate-300 bg-white flex items-center justify-center" style={{ height: '200px' }}>
+                      <div className="w-full text-center px-4 overflow-hidden" style={{ fontFamily: 'Brush Script MT, cursive', fontStyle: 'italic', fontSize: 'clamp(2rem, 8vw, 4.5rem)', lineHeight: 1.2 }}>
                         {typedName}
                       </div>
                     </div>
@@ -1226,21 +1227,28 @@ function DealsSignaturePageInner() {
                   setSignatureModalOpen(false)
                   setIsInitialModal(false)
                   if (signatureMode === 'type' && typedName) {
-                    // Convert typed text to off-screen canvas image
+                    // Measure text then render tightly so object-contain fills the field
+                    const fontStr = 'italic 120px "Brush Script MT", cursive'
+                    const measure = document.createElement('canvas')
+                    measure.width = 1200; measure.height = 300
+                    const mCtx = measure.getContext('2d')!
+                    mCtx.font = fontStr
+                    const metrics = mCtx.measureText(typedName)
+                    const textW = Math.ceil(metrics.width)
+                    const ascent = Math.ceil(metrics.actualBoundingBoxAscent ?? 100)
+                    const descent = Math.ceil(metrics.actualBoundingBoxDescent ?? 20)
+                    const pad = 10
                     const offCanvas = document.createElement('canvas')
-                    offCanvas.width = 800
-                    offCanvas.height = 200
-                    const ctx = offCanvas.getContext('2d')
-                    if (ctx) {
-                      ctx.clearRect(0, 0, offCanvas.width, offCanvas.height)
-                      ctx.fillStyle = '#000000'
-                      ctx.font = 'italic 60px "Brush Script MT", cursive'
-                      ctx.textAlign = 'center'
-                      ctx.textBaseline = 'middle'
-                      ctx.fillText(typedName, offCanvas.width / 2, offCanvas.height / 2)
-                      const url = offCanvas.toDataURL('image/png')
-                      await save(url)
-                    }
+                    offCanvas.width = textW + pad * 2
+                    offCanvas.height = ascent + descent + pad * 2
+                    const ctx = offCanvas.getContext('2d')!
+                    ctx.font = fontStr
+                    ctx.fillStyle = '#000000'
+                    ctx.textAlign = 'left'
+                    ctx.textBaseline = 'alphabetic'
+                    ctx.fillText(typedName, pad, pad + ascent)
+                    const url = offCanvas.toDataURL('image/png')
+                    await save(url)
                   } else {
                     await save()
                   }
