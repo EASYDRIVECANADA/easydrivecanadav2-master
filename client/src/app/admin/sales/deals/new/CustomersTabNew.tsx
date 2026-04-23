@@ -844,9 +844,20 @@ export default function CustomersTabNew({
 
 
 
-  const removeActiveCustomer = () => {
+  const removeActiveCustomer = async () => {
 
     if (activeCustomer === 0) return
+
+    const dbId = formIds[activeCustomer]
+    if (dbId != null) {
+      try {
+        await fetch('/api/deals/delete-row', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ table: 'edc_deals_customers', id: dbId }),
+        })
+      } catch { /* non-critical — row will be orphaned but UI is correct */ }
+    }
 
     setForms((prev) => prev.filter((_, idx) => idx !== activeCustomer))
 
