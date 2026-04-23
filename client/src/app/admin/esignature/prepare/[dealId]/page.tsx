@@ -1281,8 +1281,8 @@ export default function PrepareDocumentPage() {
   }
 
   const handleDeleteRecipient = (recipientId: string, recipientIndex: number) => {
-    if (recipientIndex === 0) {
-      openActionModal(false, 'Not Allowed', 'Primary recipient cannot be deleted.')
+    if (recipients.length === 1) {
+      openActionModal(false, 'Not Allowed', 'Cannot delete the only recipient.')
       return
     }
     const target = recipients[recipientIndex]
@@ -1810,8 +1810,8 @@ export default function PrepareDocumentPage() {
                         </button>
                         <button
                           type="button"
-                          title={idx === 0 ? 'Primary recipient cannot be deleted' : `Delete ${r.full_name || r.email}`}
-                          disabled={sending || addingRecipient || idx === 0}
+                          title={recipients.length === 1 ? 'Cannot delete the only recipient' : `Delete ${r.full_name || r.email}`}
+                          disabled={sending || addingRecipient || recipients.length === 1}
                           onClick={() => handleDeleteRecipient(r.id, idx)}
                           className="w-6 h-6 flex items-center justify-center rounded-md text-slate-400 hover:text-red-600 hover:bg-red-50 disabled:opacity-40 transition-colors shrink-0"
                         >

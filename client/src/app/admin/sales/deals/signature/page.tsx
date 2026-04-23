@@ -145,6 +145,213 @@ function DealsSignaturePageInner() {
 
   const [dealData, setDealData] = useState<any>(null)
 
+  // Sidebar state
+  const [dark, setDark] = useState(true)
+  const [showPages, setShowPages] = useState(false)
+  const [zoom, setZoom] = useState(1)
+  const pageRefs = useRef<(HTMLDivElement | null)[]>([])
+  const contentRef = useRef<HTMLDivElement>(null)
+  const pagesPanelRef = useRef<HTMLDivElement>(null)
+  const pagesButtonRef = useRef<HTMLButtonElement>(null)
+
+  // Submit modals
+  const [showIncompleteModal, setShowIncompleteModal] = useState(false)
+  const [showThankYouModal, setShowThankYouModal] = useState(false)
+
+  // Download state
+  const [downloadModal, setDownloadModal] = useState(false)
+  const [downloadingFileIdx, setDownloadingFileIdx] = useState<number | null>(null)
+  const [downloading, setDownloading] = useState(false)
+
+  const ZOOM_STEP = 0.25
+  const ZOOM_MIN = 0.25
+  const ZOOM_MAX = 3
+
+  const handleZoomIn = () => setZoom(z => Math.min(ZOOM_MAX, parseFloat((z + ZOOM_STEP).toFixed(2))))
+  const handleZoomOut = () => setZoom(z => Math.max(ZOOM_MIN, parseFloat((z - ZOOM_STEP).toFixed(2))))
+  const handleFit = () => {
+    if (!contentRef.current) return
+    const containerW = contentRef.current.clientWidth - 48
+    const fit = Math.min(1, containerW / PAGE_WIDTH)
+    setZoom(parseFloat(fit.toFixed(2)))
+  }
+  const scrollToPage = (idx: number) => {
+    const container = contentRef.current
+    if (!container) return
+    // Each page block is PAGE_HEIGHT * zoom tall, plus gap (16px) and page label (~40px)
+    const pageBlockHeight = PAGE_HEIGHT * zoom + 40 + 16
+    const paddingTop = 24 // py-6 = 24px
+    container.scrollTo({ top: paddingTop + idx * pageBlockHeight, behavior: 'smooth' })
+    // do NOT close the panel — user should keep browsing pages
+  }
+  const renderFileToImagesForDownload = async (fileIdx: number): Promise<string[]> => {
+    const file = uploadedFiles[fileIdx]
+    if (!file) return pageImages
+    const src = (file as any).url || file.file_b64 || ''
+    if (!src) return pageImages
+    const mime = file.file_type || 'application/pdf'
+    const isPdf = mime.includes('pdf') || src.startsWith('JVBERi0') || (src.startsWith('http') && src.toLowerCase().endsWith('.pdf'))
+    if (!isPdf) {
+      const dataUrl = src.startsWith('http') || src.startsWith('data:') ? src : `data:${mime};base64,${src}`
+      return [dataUrl]
+    }
+    const pdfjs = await loadPdfJsFromCdn()
+    const pdfSource = src.startsWith('http://') || src.startsWith('https://')
+      ? { url: src }
+      : (() => {
+          const raw = src.startsWith('data:') ? src.split(',')[1] || src : src
+          const binary = atob(raw)
+          const bytes = new Uint8Array(binary.length)
+          for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+          return { data: bytes }
+        })()
+    const doc = await pdfjs.getDocument(pdfSource).promise
+    const rendered: string[] = []
+    for (let p = 1; p <= doc.numPages; p++) {
+      const page = await doc.getPage(p)
+      const viewport0 = page.getViewport({ scale: 1 })
+      const viewport = page.getViewport({ scale: (PAGE_WIDTH / viewport0.width) * PDF_RENDER_QUALITY })
+      const canvas = document.createElement('canvas')
+      canvas.width = Math.floor(viewport.width)
+      canvas.height = Math.floor(viewport.height)
+      const ctx = canvas.getContext('2d')
+      if (ctx) await page.render({ canvasContext: ctx, viewport, background: 'white' }).promise
+      rendered.push(canvas.toDataURL('image/png'))
+    }
+    return rendered
+  }
+
+  const overlayFieldsOnPdf = (pdf: any, fileIdx: number) => {
+    const pdfW = pdf.internal.pageSize.getWidth()
+    const pdfH = pdf.internal.pageSize.getHeight()
+    const xScale = pdfW / PAGE_WIDTH
+    const yScale = pdfH / PAGE_HEIGHT
+    const toImgUrl = (raw: string) => {
+      if (!raw) return ''
+      if (raw.startsWith('data:') || raw.startsWith('http')) return raw
+      return `data:image/png;base64,${raw}`
+    }
+    fields.filter(f => (f.fileIndex ?? 0) === fileIdx).forEach(field => {
+      const pageNum = Math.min(Math.max(field.page || 1, 1), pdf.getNumberOfPages())
+      pdf.setPage(pageNum)
+      const x = field.x * xScale
+      const y = field.y * yScale
+      const w = field.width * xScale
+      const h = field.height * yScale
+      const fv = String(field.value ?? '').trim()
+      try {
+        switch (field.type) {
+          case 'signature':
+          case 'initial': {
+            const img = toImgUrl(fv || signatureDataUrl || '')
+            if (img) pdf.addImage(img, 'PNG', x, y, w, h)
+            break
+          }
+          case 'dateSigned':
+            pdf.setTextColor(55, 65, 81); pdf.setFontSize(10)
+            if (fv) pdf.text(fv, x + w / 2, y + h / 2, { align: 'center', baseline: 'middle' })
+            break
+          case 'name':
+            pdf.setTextColor(17, 24, 39); pdf.setFontSize(10)
+            if (fv) pdf.text(fv, x + 5, y + h / 2, { baseline: 'middle' })
+            break
+          case 'company':
+          case 'title':
+          case 'text':
+            pdf.setTextColor(55, 65, 81); pdf.setFontSize(10)
+            if (fv) pdf.text(fv, x + 5, y + h / 2, { baseline: 'middle' })
+            break
+          case 'checkbox':
+            pdf.setDrawColor(37, 99, 235)
+            pdf.roundedRect(x + w / 2 - 7.5, y + h / 2 - 7.5, 15, 15, 2, 2, 'S')
+            if (['true', '1', 'yes'].includes(fv.toLowerCase())) {
+              pdf.setTextColor(37, 99, 235); pdf.setFontSize(12)
+              pdf.text('✓', x + w / 2, y + h / 2 + 1, { align: 'center', baseline: 'middle' })
+            }
+            break
+        }
+      } catch { /* skip broken field */ }
+    })
+  }
+
+  const bakeAndDownload = async (fileIdx: number) => {
+    const { jsPDF } = await import('jspdf')
+    const imgs = uploadedFiles.length > 0 ? await renderFileToImagesForDownload(fileIdx) : pageImages
+    if (!imgs.length) throw new Error('No pages to download')
+    const pdf = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'letter' })
+    const pdfW = pdf.internal.pageSize.getWidth()
+    const pdfH = pdf.internal.pageSize.getHeight()
+    imgs.forEach((img, i) => { if (i > 0) pdf.addPage(); if (img) pdf.addImage(img, 'PNG', 0, 0, pdfW, pdfH) })
+    overlayFieldsOnPdf(pdf, fileIdx)
+    const fileName = uploadedFiles[fileIdx]?.file_name?.replace(/\.[^.]+$/, '') || `Document_${fileIdx + 1}`
+    pdf.save(`${fileName}_signed.pdf`)
+  }
+
+  const handleDownloadFile = async (fileIdx: number) => {
+    setDownloadingFileIdx(fileIdx)
+    try {
+      await bakeAndDownload(fileIdx)
+    } catch (e: any) {
+      alert(e?.message || 'Download failed')
+    } finally {
+      setDownloadingFileIdx(null)
+    }
+  }
+
+  const handleDownload = async () => {
+    if (uploadedFiles.length > 1) { setDownloadModal(true); return }
+    setDownloading(true)
+    try {
+      await bakeAndDownload(0)
+    } catch (e: any) {
+      alert(e?.message || 'Download failed')
+    } finally {
+      setDownloading(false)
+    }
+  }
+
+  const fireSubmitWebhook = async () => {
+    try {
+      await fetch('https://primary-production-6722.up.railway.app/webhook/Submit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: sigRecord?.id || dealId || null,
+          email: recipientEmail || sigRecord?.email || null,
+          deal_id: dealId || sigRecord?.deal_id || null,
+          submitted_at: new Date().toISOString(),
+        }),
+      })
+    } catch { /* non-fatal */ }
+  }
+
+  const handleSubmitClick = () => {
+    const hasSignature = signatureDataUrl || fields.some(f => (f.type === 'signature' || f.type === 'initial') && f.value)
+    const hasPurchaser = !dealId || purchaserSigned
+    if (!hasSignature || !hasPurchaser) {
+      setShowIncompleteModal(true)
+    } else {
+      fireSubmitWebhook()
+      setShowThankYouModal(true)
+    }
+  }
+
+  // Close pages panel when clicking outside (but not when clicking the toggle button itself)
+  useEffect(() => {
+    if (!showPages) return
+    const handler = (e: MouseEvent) => {
+      const target = e.target as Node
+      if (
+        pagesPanelRef.current && !pagesPanelRef.current.contains(target) &&
+        pagesButtonRef.current && !pagesButtonRef.current.contains(target)
+      ) {
+        setShowPages(false)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [showPages])
+
   const title = useMemo(() => {
     if (dealId) return `E-Signature Request`
     if (sigId) return `E-Signature Request`
@@ -954,180 +1161,302 @@ function DealsSignaturePageInner() {
     }
   }
 
+  // Theme-aware tokens (dark default since page bg is dark)
+  const sidebarBg = dark ? 'bg-[#1f2937] border-gray-700' : 'bg-white border-gray-200'
+  const sidebarText = dark ? 'text-gray-300' : 'text-gray-600'
+  const sidebarHover = dark ? 'hover:bg-gray-700 hover:text-white' : 'hover:bg-gray-100 hover:text-gray-900'
+  const popoverBg = dark ? 'bg-[#1f2937] border-gray-700' : 'bg-white border-gray-200'
+  const popoverText = dark ? 'text-gray-200' : 'text-gray-700'
+  const popoverHover = dark ? 'hover:bg-gray-700' : 'hover:bg-gray-50'
+  const pageBg = dark ? '#1a1a2e' : '#f3f4f6'
+
   return (
-    <div className="min-h-screen w-full" style={{ backgroundColor: '#1a1a2e', backgroundImage: 'radial-gradient(circle, rgba(255,255,255,0.05) 1px, transparent 1px)', backgroundSize: '24px 24px' }}>
-      <div className="sticky top-0 z-10 border-b border-white/10 bg-[#1a1a2e]/95 backdrop-blur-xl">
+    <div className="h-screen w-full flex flex-col overflow-hidden" style={{ backgroundColor: pageBg, backgroundImage: dark ? 'radial-gradient(circle, rgba(255,255,255,0.05) 1px, transparent 1px)' : 'none', backgroundSize: '24px 24px', transition: 'background-color 0.2s' }}>
+      {/* Header */}
+      <div className="shrink-0 z-10 border-b border-white/10 bg-[#1a1a2e]/95 backdrop-blur-xl" style={{ backgroundColor: dark ? 'rgba(26,26,46,0.95)' : 'rgba(255,255,255,0.95)', borderColor: dark ? 'rgba(255,255,255,0.1)' : '#e5e7eb' }}>
         <div className="w-full px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex flex-col items-center text-center">
             <div className="relative h-12 w-12 sm:h-14 sm:w-14">
               <NextImage src="/images/logo.png" alt="EDC" fill className="object-contain" />
             </div>
-            <div className="mt-2 text-lg sm:text-xl font-bold text-white">{title}</div>
+            <div className={`mt-2 text-lg sm:text-xl font-bold ${dark ? 'text-white' : 'text-gray-900'}`}>{title}</div>
             {recipientEmail && (
-              <div className="mt-1 text-sm text-slate-300">For: {recipientEmail}</div>
+              <div className={`mt-1 text-sm ${dark ? 'text-slate-300' : 'text-slate-600'}`}>For: {recipientEmail}</div>
             )}
-            <div className="mt-1 text-xs text-slate-400">Review the document and sign where indicated</div>
+            <div className={`mt-1 text-xs ${dark ? 'text-slate-400' : 'text-slate-500'}`}>Review the document and sign where indicated</div>
           </div>
         </div>
       </div>
 
-      <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
-        {loading ? (
-          <div className="flex items-center justify-center py-20">
-            <div className="flex flex-col items-center gap-3">
-              <div className="animate-spin rounded-full h-10 w-10 border-2 border-blue-500 border-t-transparent"></div>
-              <span className="text-sm text-slate-400">Loading document...</span>
-            </div>
+      {/* File tabs — sticky below header when multiple files */}
+      {uploadedFiles.length > 1 && (
+        <div className={`shrink-0 px-4 py-2 flex items-center gap-1 overflow-x-auto ${dark ? 'bg-[#151525] border-b border-white/10' : 'bg-gray-200 border-b border-gray-300'}`}>
+          {uploadedFiles.map((file, idx) => (
+            <button
+              key={`sig-file-tab-${idx}`}
+              type="button"
+              onClick={() => handleSwitchFile(idx)}
+              title={file.file_name}
+              className={`shrink-0 px-3 py-1.5 rounded-md text-xs font-medium transition-colors truncate max-w-[200px] ${
+                selectedFileIndex === idx
+                  ? 'bg-white text-blue-700 shadow-sm'
+                  : dark ? 'text-slate-300 hover:text-white hover:bg-white/10' : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
+              }`}
+            >
+              {file.file_name || `File ${idx + 1}`}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Body: content + sidebar */}
+      <div className="flex flex-1 overflow-hidden relative">
+
+        {/* ── Document content ─────────────────────────────────────────────── */}
+
+        {/* ── Right Sidebar ────────────────────────────────────────────────── */}
+        <aside className={`${sidebarBg} border-l w-16 flex flex-col items-center py-3 gap-1 shrink-0 z-50 order-last overflow-y-auto`}>
+
+          {/* View Pages */}
+          <div className="relative w-full flex justify-center">
+            <button
+              ref={pagesButtonRef}
+              onClick={() => setShowPages(v => !v)}
+              title="View Pages"
+              className={`flex flex-col items-center gap-1 py-2 w-full ${sidebarText} ${sidebarHover} transition-colors rounded-lg mx-1`}
+            >
+              <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+                <rect x="4" y="3" width="12" height="16" rx="1.5"/>
+                <path d="M8 7h6M8 11h6M8 15h4"/>
+                <rect x="8" y="5" width="12" height="16" rx="1.5" className="opacity-40"/>
+              </svg>
+              <span className="text-[9px] font-medium leading-none">Pages</span>
+            </button>
           </div>
-        ) : error ? (
-          <div className="flex items-center justify-center py-20">
-            <div className="text-center">
-              <div className="text-red-400 text-lg font-semibold mb-2">Error</div>
-              <div className="text-slate-300">{error}</div>
-            </div>
-          </div>
-        ) : (
-          <>
-            {/* Document with fields */}
-            <div className="mb-6">
-              <div className="mb-4 flex items-center justify-between flex-wrap gap-2">
-                <div>
-                  <div className="text-sm font-semibold text-white">Document</div>
-                  <div className="text-xs text-slate-400">Review the document below. Fields are highlighted where you need to take action.</div>
-                </div>
-                {/* File tabs — visible when there are multiple files */}
-                {uploadedFiles.length > 1 && (
-                  <div className="flex items-center gap-1 bg-white/10 rounded-lg p-1 overflow-x-auto max-w-full">
-                    {uploadedFiles.map((file, idx) => (
-                      <button
-                        key={`sig-file-tab-${idx}`}
-                        type="button"
-                        onClick={() => handleSwitchFile(idx)}
-                        title={file.file_name}
-                        className={`shrink-0 px-3 py-1.5 rounded-md text-xs font-medium transition-colors truncate max-w-[160px] ${
-                          selectedFileIndex === idx
-                            ? 'bg-white text-blue-700 shadow-sm'
-                            : 'text-slate-300 hover:text-white hover:bg-white/10'
-                        }`}
-                      >
-                        {file.file_name || `File ${idx + 1}`}
-                      </button>
-                    ))}
-                  </div>
-                )}
+
+          {/* Download */}
+          <button
+            onClick={handleDownload}
+            title="Download"
+            disabled={!pdfDataUrl && !uploadedFiles.length}
+            className={`flex flex-col items-center gap-1 py-2 w-full ${sidebarText} ${sidebarHover} disabled:opacity-40 transition-colors rounded-lg mx-1`}
+          >
+            <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v13m0 0l-4-4m4 4l4-4M4 20h16"/>
+            </svg>
+            <span className="text-[9px] font-medium leading-none">Download</span>
+          </button>
+
+          {/* Divider */}
+          <div className={`w-8 border-t ${dark ? 'border-gray-700' : 'border-gray-200'} my-1`} />
+
+          {/* Dark / Light toggle */}
+          <button
+            onClick={() => setDark(v => !v)}
+            title={dark ? 'Switch to Light' : 'Switch to Dark'}
+            className={`flex flex-col items-center gap-1 py-2 w-full ${sidebarText} ${sidebarHover} transition-colors rounded-lg mx-1`}
+          >
+            {dark ? (
+              <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+                <circle cx="12" cy="12" r="4"/>
+                <path strokeLinecap="round" d="M12 2v2M12 20v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M2 12h2M20 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
+              </svg>
+            ) : (
+              <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+              </svg>
+            )}
+            <span className="text-[9px] font-medium leading-none">{dark ? 'Light' : 'Dark'}</span>
+          </button>
+
+          {/* Zoom controls */}
+          <div className={`w-8 border-t ${dark ? 'border-gray-700' : 'border-gray-200'} mt-1 mb-1`} />
+
+          <button
+            onClick={handleZoomIn}
+            title="Zoom In"
+            disabled={zoom >= ZOOM_MAX}
+            className={`flex flex-col items-center gap-1 py-2 w-full ${sidebarText} ${sidebarHover} disabled:opacity-40 transition-colors rounded-lg mx-1`}
+          >
+            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <circle cx="11" cy="11" r="7"/>
+              <path strokeLinecap="round" d="M21 21l-4.35-4.35M11 8v6M8 11h6"/>
+            </svg>
+            <span className="text-[9px] font-medium leading-none">+</span>
+          </button>
+
+          <span className={`text-[10px] font-semibold ${sidebarText} tabular-nums`}>{Math.round(zoom * 100)}%</span>
+
+          <button
+            onClick={handleZoomOut}
+            title="Zoom Out"
+            disabled={zoom <= ZOOM_MIN}
+            className={`flex flex-col items-center gap-1 py-2 w-full ${sidebarText} ${sidebarHover} disabled:opacity-40 transition-colors rounded-lg mx-1`}
+          >
+            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <circle cx="11" cy="11" r="7"/>
+              <path strokeLinecap="round" d="M21 21l-4.35-4.35M8 11h6"/>
+            </svg>
+            <span className="text-[9px] font-medium leading-none">−</span>
+          </button>
+
+          <button
+            onClick={handleFit}
+            title="Fit to screen"
+            className={`flex flex-col items-center gap-1 py-2 w-full ${sidebarText} ${sidebarHover} transition-colors rounded-lg mx-1`}
+          >
+            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M4 8V5a1 1 0 0 1 1-1h3M4 16v3a1 1 0 0 0 1 1h3M16 4h3a1 1 0 0 1 1 1v3M16 20h3a1 1 0 0 0 1-1v-3"/>
+            </svg>
+            <span className="text-[9px] font-medium leading-none">Fit</span>
+          </button>
+        </aside>
+
+        {/* ── Document content ─────────────────────────────────────────────── */}
+        <div ref={contentRef} className="flex-1 overflow-auto py-6 px-4">
+          {loading ? (
+            <div className="flex items-center justify-center py-20">
+              <div className="flex flex-col items-center gap-3">
+                <div className="animate-spin rounded-full h-10 w-10 border-2 border-blue-500 border-t-transparent"></div>
+                <span className={`text-sm ${dark ? 'text-slate-400' : 'text-slate-500'}`}>Loading document...</span>
               </div>
-
-              <div className="flex justify-center overflow-auto">
-                <div 
-                  className="relative"
-                  style={{ width: `${PAGE_WIDTH}px` }}
-                >
-                  {/* Render pages */}
-                  {pageImages.length > 0 ? (
-                    pageImages.map((img, idx) => {
-                      const pageNo = idx + 1
-                      const pageFields = fields.filter(f => f.page === pageNo && (f.fileIndex ?? 0) === selectedFileIndex)
-                      const isLast = idx === pageImages.length - 1
-                      return (
-                        <div key={pageNo} className="relative">
-                          <div className="relative bg-white border-2 border-slate-300 shadow-md" style={{ height: `${PAGE_HEIGHT}px` }}>
-                            <img
-                              src={img}
-                              alt={`Page ${pageNo}`}
-                              className="w-full h-full object-contain"
-                            />
-                            {/* Field overlays */}
-                            {pageFields.map((field) => (
-                              <div
-                                key={field.id}
-                                className="absolute border-2 border-blue-400 bg-blue-50/80 rounded cursor-pointer hover:bg-blue-100/90 transition-colors"
-                                style={{
-                                  left: `${field.x}px`,
-                                  top: `${field.y}px`,
-                                  width: `${field.width}px`,
-                                  height: `${field.height}px`,
-                                }}
-                                title={fieldTypeLabels[field.type]}
-                              >
-                                {renderFieldContent(field)}
-                              </div>
-                            ))}
-                            {/* Purchaser signature overlay — dealId flow, page 1 only */}
-                            {dealId && pageNo === 1 && purchaserSigOverlayY !== null && (
-                              <div
-                                className="absolute border-2 border-blue-400 bg-blue-50/80 rounded hover:bg-blue-100/90 transition-colors"
-                                style={{
-                                  left: `${Math.round(96 * PAGE_WIDTH / 612)}px`,
-                                  top: `${purchaserSigOverlayY - 34}px`,
-                                  width: `${Math.round(199 * PAGE_WIDTH / 612)}px`,
-                                  height: '34px',
-                                }}
-                                title="Purchaser Signature"
-                              >
-                                {purchaserSigned && signatureDataUrl ? (
-                                  <img
-                                    src={signatureDataUrl}
-                                    alt="Purchaser Signature"
-                                    className="w-full h-full object-contain p-1"
-                                    style={{ background: 'transparent' }}
-                                  />
-                                ) : (
-                                  <div
-                                    className="flex items-center justify-center h-full text-blue-600 text-xs font-medium cursor-pointer"
-                                    onClick={() => {
-                                      setIsDealPurchaserSignature(true)
-                                      setSignatureModalOpen(true)
-                                    }}
-                                  >
-                                    Signature
-                                  </div>
-                                )}
-                              </div>
-                            )}
-                          </div>
-
-                          <div className="w-full flex items-center justify-center py-3">
-                            <div className="text-xs font-semibold text-slate-400">Page {pageNo} of {pageImages.length}</div>
-                          </div>
+            </div>
+          ) : error ? (
+            <div className="flex items-center justify-center py-20">
+              <div className="text-center">
+                <div className="text-red-400 text-lg font-semibold mb-2">Error</div>
+                <div className={dark ? 'text-slate-300' : 'text-slate-600'}>{error}</div>
+              </div>
+            </div>
+          ) : (
+            <>
+              {/* Document pages */}
+              <div className="flex flex-col items-center gap-4">
+                {pageImages.length > 0 ? (
+                  pageImages.map((img, idx) => {
+                    const pageNo = idx + 1
+                    const pageFields = fields.filter(f => f.page === pageNo && (f.fileIndex ?? 0) === selectedFileIndex)
+                    return (
+                      <div
+                        key={pageNo}
+                        ref={el => { pageRefs.current[idx] = el }}
+                        className="origin-top"
+                        style={{
+                          transform: `scale(${zoom})`,
+                          transformOrigin: 'top center',
+                          marginBottom: `${(zoom - 1) * PAGE_HEIGHT}px`,
+                        }}
+                      >
+                        <div className="relative bg-white border-2 border-slate-300 shadow-md" style={{ width: `${PAGE_WIDTH}px`, height: `${PAGE_HEIGHT}px` }}>
+                          <img src={img} alt={`Page ${pageNo}`} className="w-full h-full object-contain" />
+                          {pageFields.map((field) => (
+                            <div
+                              key={field.id}
+                              className="absolute border-2 border-blue-400 bg-blue-50/80 rounded cursor-pointer hover:bg-blue-100/90 transition-colors"
+                              style={{ left: `${field.x}px`, top: `${field.y}px`, width: `${field.width}px`, height: `${field.height}px` }}
+                              title={fieldTypeLabels[field.type]}
+                            >
+                              {renderFieldContent(field)}
+                            </div>
+                          ))}
+                          {dealId && pageNo === 1 && purchaserSigOverlayY !== null && (
+                            <div
+                              className="absolute border-2 border-blue-400 bg-blue-50/80 rounded hover:bg-blue-100/90 transition-colors"
+                              style={{ left: `${Math.round(96 * PAGE_WIDTH / 612)}px`, top: `${purchaserSigOverlayY - 34}px`, width: `${Math.round(199 * PAGE_WIDTH / 612)}px`, height: '34px' }}
+                              title="Purchaser Signature"
+                            >
+                              {purchaserSigned && signatureDataUrl ? (
+                                <img src={signatureDataUrl} alt="Purchaser Signature" className="w-full h-full object-contain p-1" style={{ background: 'transparent' }} />
+                              ) : (
+                                <div className="flex items-center justify-center h-full text-blue-600 text-xs font-medium cursor-pointer" onClick={() => { setIsDealPurchaserSignature(true); setSignatureModalOpen(true) }}>
+                                  Signature
+                                </div>
+                              )}
+                            </div>
+                          )}
                         </div>
-                      )
-                    })
-                  ) : docMime && docMime.startsWith('image/') && pdfDataUrl ? (
-                    <div className="relative" style={{ height: `${PAGE_HEIGHT}px` }}>
-                      <img
-                        src={pdfDataUrl}
-                        alt="Document"
-                        className="w-full h-full object-contain"
-                      />
+                        <div className="w-full flex items-center justify-center py-3">
+                          <div className={`text-xs font-semibold ${dark ? 'text-slate-400' : 'text-slate-500'}`}>Page {pageNo} of {pageImages.length}</div>
+                        </div>
+                      </div>
+                    )
+                  })
+                ) : docMime && docMime.startsWith('image/') && pdfDataUrl ? (
+                  <div
+                    className="origin-top"
+                    style={{ transform: `scale(${zoom})`, transformOrigin: 'top center', marginBottom: `${(zoom - 1) * PAGE_HEIGHT}px` }}
+                  >
+                    <div className="relative" style={{ width: `${PAGE_WIDTH}px`, height: `${PAGE_HEIGHT}px` }}>
+                      <img src={pdfDataUrl} alt="Document" className="w-full h-full object-contain" />
                       {fields.filter(f => f.page === 1 && (f.fileIndex ?? 0) === selectedFileIndex).map((field) => (
                         <div
                           key={field.id}
                           className="absolute border-2 border-blue-400 bg-blue-50/80 rounded cursor-pointer hover:bg-blue-100/90 transition-colors"
-                          style={{
-                            left: `${field.x}px`,
-                            top: `${field.y}px`,
-                            width: `${field.width}px`,
-                            height: `${field.height}px`,
-                          }}
+                          style={{ left: `${field.x}px`, top: `${field.y}px`, width: `${field.width}px`, height: `${field.height}px` }}
                           title={fieldTypeLabels[field.type]}
                         >
                           {renderFieldContent(field)}
                         </div>
                       ))}
                     </div>
-                  ) : (
-                    <div className="flex items-center justify-center h-96 text-slate-400">
-                      <div className="flex flex-col items-center gap-2">
-                        <div className="animate-spin rounded-full h-8 w-8 border-2 border-blue-500 border-t-transparent"></div>
-                        <span>Rendering document...</span>
-                      </div>
+                  </div>
+                ) : (
+                  <div className={`flex items-center justify-center h-96 ${dark ? 'text-slate-400' : 'text-slate-500'}`}>
+                    <div className="flex flex-col items-center gap-2">
+                      <div className="animate-spin rounded-full h-8 w-8 border-2 border-blue-500 border-t-transparent"></div>
+                      <span>Rendering document...</span>
                     </div>
-                  )}
-                </div>
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* ── Pages panel — absolute inside body, never covers header ─────── */}
+        {showPages && (
+          <>
+            <div
+              ref={pagesPanelRef}
+              className="absolute inset-y-0 right-16 z-50 w-64 bg-white shadow-2xl flex flex-col"
+              style={{ borderLeft: '1px solid #e2e8f0' }}
+            >
+              <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 shrink-0">
+                <span className="text-base font-semibold text-slate-800">Pages</span>
+                <button
+                  onClick={() => setShowPages(false)}
+                  className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition-colors"
+                >
+                  <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"/>
+                  </svg>
+                </button>
+              </div>
+              <div className="flex-1 overflow-y-auto py-4 px-3 flex flex-col gap-6">
+                {pageImages.length === 0 ? (
+                  <p className="text-sm text-slate-400 text-center mt-8">No pages to display yet.</p>
+                ) : (
+                  pageImages.map((url, idx) => (
+                    <button
+                      key={idx}
+                      onClick={() => scrollToPage(idx)}
+                      className="flex flex-col items-center gap-1.5 group w-full"
+                    >
+                      <div className="w-full rounded-md overflow-hidden border-2 border-slate-200 group-hover:border-blue-400 transition-colors shadow-sm bg-white">
+                        <img
+                          src={url}
+                          alt={`Page ${idx + 1}`}
+                          className="w-full h-auto block"
+                          draggable={false}
+                          style={{ aspectRatio: `${PAGE_WIDTH} / ${PAGE_HEIGHT}` }}
+                        />
+                      </div>
+                      <span className="text-xs font-medium text-slate-500 group-hover:text-blue-600 transition-colors">{idx + 1}</span>
+                    </button>
+                  ))
+                )}
               </div>
             </div>
-
-
           </>
         )}
       </div>
@@ -1341,6 +1670,135 @@ function DealsSignaturePageInner() {
               >
                 Close
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Fixed Submit button (bottom-right, above sidebar) ─────────────── */}
+      <button
+        onClick={handleSubmitClick}
+        disabled={saving}
+        className="fixed bottom-6 right-20 z-40 flex items-center gap-2 px-5 py-3 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-semibold rounded-xl shadow-lg transition-colors"
+      >
+        {saving ? (
+          <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2a10 10 0 1 0 10 10"/></svg>
+        ) : (
+          <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M20 6L9 17l-5-5"/></svg>
+        )}
+        {saving ? 'Saving…' : 'Finish & Submit'}
+      </button>
+
+      {/* ── Incomplete fields reminder modal ──────────────────────────────── */}
+      {showIncompleteModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+          <div className="relative w-full max-w-md bg-white rounded-2xl shadow-2xl overflow-hidden">
+            <div className="px-6 pt-6 pb-4 flex flex-col items-center text-center">
+              <div className="w-14 h-14 rounded-full bg-amber-100 flex items-center justify-center mb-4">
+                <svg className="w-7 h-7 text-amber-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+                </svg>
+              </div>
+              <h3 className="text-lg font-bold text-slate-900 mb-2">Document Not Complete</h3>
+              <p className="text-sm text-slate-500 leading-relaxed">
+                It looks like some required fields haven't been filled in yet. Please review the document and make sure all signature and required fields are completed before submitting.
+              </p>
+            </div>
+            <div className="px-6 pb-6 flex flex-col gap-2">
+              <button
+                onClick={() => { fireSubmitWebhook(); setShowIncompleteModal(false); setShowThankYouModal(true) }}
+                className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold rounded-xl transition-colors"
+              >
+                Continue Anyway
+              </button>
+              <button
+                onClick={() => setShowIncompleteModal(false)}
+                className="w-full py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-medium rounded-xl transition-colors"
+              >
+                Go Back & Complete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Download files modal (multi-file) ────────────────────────────── */}
+      {downloadModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+          <div className="relative w-full max-w-md bg-white rounded-2xl shadow-2xl overflow-hidden">
+            <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between">
+              <div className="text-lg font-bold text-slate-800">Download Files</div>
+              <button
+                onClick={() => setDownloadModal(false)}
+                className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition-colors"
+              >
+                <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"/>
+                </svg>
+              </button>
+            </div>
+            <div className="px-6 py-4 flex flex-col gap-3">
+              {uploadedFiles.map((file, idx) => (
+                <div key={idx} className="flex items-center justify-between gap-3 p-3 rounded-xl bg-slate-50 border border-slate-200">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <svg className="w-4 h-4 shrink-0 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                      <polyline points="14 2 14 8 20 8"/>
+                    </svg>
+                    <span className="text-sm text-slate-700 font-medium truncate">{file.file_name || `File ${idx + 1}`}</span>
+                  </div>
+                  <button
+                    disabled={downloadingFileIdx === idx}
+                    onClick={() => handleDownloadFile(idx)}
+                    className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed text-white text-xs font-semibold rounded-lg transition-colors"
+                  >
+                    {downloadingFileIdx === idx ? (
+                      <>
+                        <svg className="w-3 h-3 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2a10 10 0 1 0 10 10"/></svg>
+                        Downloading…
+                      </>
+                    ) : (
+                      <>
+                        <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v13m0 0l-4-4m4 4l4-4M4 20h16"/>
+                        </svg>
+                        Download
+                      </>
+                    )}
+                  </button>
+                </div>
+              ))}
+            </div>
+            <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex justify-end">
+              <button
+                onClick={() => setDownloadModal(false)}
+                className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Thank you modal ───────────────────────────────────────────────── */}
+      {showThankYouModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+          <div className="relative w-full max-w-md bg-white rounded-2xl shadow-2xl overflow-hidden">
+            <div className="px-6 pt-8 pb-4 flex flex-col items-center text-center">
+              <div className="w-16 h-16 rounded-full bg-emerald-100 flex items-center justify-center mb-5">
+                <svg className="w-8 h-8 text-emerald-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M20 6L9 17l-5-5"/>
+                </svg>
+              </div>
+              <h2 className="text-xl font-bold text-slate-900 mb-3">Thank You for Using Our E-Signature System!</h2>
+              <p className="text-sm text-slate-500 leading-relaxed mb-2">
+                Your document has been successfully signed and submitted. A confirmation will be sent to the provided email address.
+              </p>
+              <p className="text-xs text-slate-400 leading-relaxed">
+                If you have any questions or need assistance, please don't hesitate to contact us at{' '}
+                <a href="mailto:info@easydrivecanada.com" className="text-blue-500 underline">info@easydrivecanada.com</a>.
+              </p>
             </div>
           </div>
         </div>
