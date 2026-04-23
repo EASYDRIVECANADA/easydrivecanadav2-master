@@ -7,6 +7,13 @@ import { supabase } from '@/lib/supabaseClient'
 type WarrantyPresetRow = {
   id: string
   name: string | null
+  description?: string | null
+  duration?: string | null
+  distance?: string | null
+  deductible?: string | null
+  price?: string | null
+  cost?: string | null
+  dealer_warranty?: boolean | null
 }
 
 interface WarrantyData {
@@ -116,7 +123,7 @@ export default function WarrantyTab({ vehicleId }: WarrantyTabProps) {
 
         const { data, error } = await supabase
           .from('presets_warranty')
-          .select('id, name')
+          .select('id, name, description, duration, distance, deductible, price, cost, dealer_warranty')
           .eq('user_id', scopedUserId)
           .order('name', { ascending: true })
 
@@ -195,6 +202,23 @@ export default function WarrantyTab({ vehicleId }: WarrantyTabProps) {
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value, type } = e.target
     const checked = (e.target as HTMLInputElement).checked
+
+    if (name === 'warrantyType') {
+      const preset = warrantyPresets.find((p) => String(p.name || '').trim() === value)
+      if (preset) {
+        const mileageNum = preset.distance ? Number(preset.distance) : NaN
+        const costNum = preset.cost ? Number(preset.cost) : NaN
+        setWarrantyData(prev => ({
+          ...prev,
+          warrantyType: value,
+          ...(preset.description ? { warrantyDescription: preset.description } : {}),
+          ...(!isNaN(mileageNum) && mileageNum > 0 ? { warrantyMileageLimit: mileageNum } : {}),
+          ...(!isNaN(costNum) && costNum > 0 ? { extendedWarrantyCost: costNum } : {}),
+        }))
+        return
+      }
+    }
+
     setWarrantyData(prev => ({
       ...prev,
       [name]: type === 'checkbox' ? checked : value

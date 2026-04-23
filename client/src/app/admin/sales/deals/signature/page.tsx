@@ -3,6 +3,7 @@
 import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import NextImage from 'next/image'
+import { supabase } from '@/lib/supabaseClient'
 
 declare global {
   interface Window {
@@ -533,6 +534,86 @@ function DealsSignaturePageInner() {
         const w = dealData.worksheet || {}
         const d = dealData.delivery || {}
 
+        // Build warrantyDataSig: prefer worksheet warranties, fall back to edc_warranty table
+        let warrantyDataSig: { has_extended: boolean; description: string; duration: string; distance: string; cost: string } | null = null
+
+        const parseSigWarranties = (raw: any): any[] => {
+          if (!raw) return []
+          if (Array.isArray(raw)) return raw
+          if (typeof raw === 'string') { try { const p = JSON.parse(raw); return Array.isArray(p) ? p : [] } catch { return [] } }
+          return []
+        }
+        const wsWarrantiesSig = parseSigWarranties(w.warranties)
+        if (wsWarrantiesSig.length > 0) {
+          // Fetch presets to enrich warranty items missing duration/distance
+          const warrantyPresetMapSig: Record<string, { duration: string; distance: string; price: string; cost: string; description: string }> = {}
+          try {
+            const sessionRaw = typeof window !== 'undefined' ? window.localStorage.getItem('edc_admin_session') : null
+            const parsed = sessionRaw ? JSON.parse(sessionRaw) as { email?: string; user_id?: string } : null
+            let userId = parsed?.user_id ? String(parsed.user_id).trim() : ''
+            if (!userId && parsed?.email) {
+              const email = String(parsed.email).trim().toLowerCase()
+              const { data: accRow } = await supabase.from('edc_account_verifications').select('id').eq('email', email).order('created_at', { ascending: false }).limit(1).maybeSingle()
+              userId = (accRow as any)?.id ?? ''
+            }
+            const presetQuery = userId
+              ? supabase.from('presets_warranty').select('name, duration, distance, price, cost, description').eq('user_id', userId)
+              : supabase.from('presets_warranty').select('name, duration, distance, price, cost, description')
+            const { data: presetRowsSig } = await presetQuery
+            if (Array.isArray(presetRowsSig)) {
+              for (const p of presetRowsSig) {
+                if (p.name) warrantyPresetMapSig[String(p.name).trim()] = { duration: p.duration || '', distance: p.distance || '', price: p.price || '', cost: p.cost || '', description: p.description || '' }
+              }
+            }
+          } catch { /* non-critical */ }
+
+          const desc = wsWarrantiesSig.map((wi: any) => {
+            const wiName = String(wi.name || '').trim()
+            const preset = warrantyPresetMapSig[wiName]
+            const descText = preset?.description || String(wi.desc || '').trim()
+            return wiName && descText ? `${wiName}\n${descText}` : wiName || descText
+          }).filter(Boolean).join('\n\n')
+          const totalCost = wsWarrantiesSig.reduce((s: number, wi: any) => s + (Number(wi.amount || 0)), 0)
+          const firstWiSig = wsWarrantiesSig[0] || {}
+          const presetMatchSig = warrantyPresetMapSig[String(firstWiSig.name || '').trim()] || {}
+          const dur = wsWarrantiesSig.find((wi: any) => wi.duration)?.duration || presetMatchSig.duration || ''
+          const dist = wsWarrantiesSig.find((wi: any) => wi.distance)?.distance || presetMatchSig.distance || ''
+
+          warrantyDataSig = {
+            has_extended: true,
+            description: desc,
+            duration: String(dur),
+            distance: String(dist),
+            cost: totalCost > 0 ? String(totalCost) : '',
+          }
+        }
+
+        if (!warrantyDataSig) {
+          const vehicleIdSig = vRaw?.selected_id || vRaw?.id || sv?.selected_id || sv?.id || ''
+          const stockNumberSig = String(sv.selected_stock_number ?? sv.stockNumber ?? sv.stock_number ?? '')
+          if (vehicleIdSig || stockNumberSig) {
+            try {
+              const wParamsSig = new URLSearchParams()
+              if (vehicleIdSig) wParamsSig.set('vehicleId', vehicleIdSig)
+              if (stockNumberSig) wParamsSig.set('stockNumber', stockNumberSig)
+              const wRes = await fetch(`/api/warranty/vehicle?${wParamsSig.toString()}`, { cache: 'no-store' })
+              if (wRes.ok) {
+                const wJson = await wRes.json()
+                const wr = wJson?.warranty
+                if (wr && (wr.extended_warranty || wr.has_warranty)) {
+                  warrantyDataSig = {
+                    has_extended: true,
+                    description: [wr.extended_warranty_provider || wr.warranty_provider || '', wr.warranty_type || ''].filter(Boolean).join(' | ') || '',
+                    duration: String(wr.extended_warranty_end_date || wr.warranty_end_date || ''),
+                    distance: String(wr.extended_warranty_mileage_limit || wr.warranty_mileage_limit || ''),
+                    cost: String(wr.extended_warranty_cost || ''),
+                  }
+                }
+              }
+            } catch { /* non-fatal */ }
+          }
+        }
+
         const billData = {
           dealDate: c.created_at ? new Date(c.created_at).toLocaleDateString('en-CA', { year: 'numeric', month: 'short', day: 'numeric' }) : '',
           invoiceNumber: String(dealId || ''),
@@ -578,7 +659,8 @@ function DealsSignaturePageInner() {
           downPayment: String(w.down_payment ?? 0),
           taxOnInsurance: String(w.tax_on_insurance ?? 0),
           totalBalanceDue: String(w.balance_due ?? w.total_due ?? 0),
-          extendedWarranty: 'DECLINED',
+          extendedWarranty: warrantyDataSig ? '' : 'DECLINED',
+          extendedWarrantyData: warrantyDataSig,
           commentsHtml: dealData.disclosures?.disclosures_html ?? '',
           purchaserName: [c.firstname, c.lastname].filter(Boolean).join(' ') || '',
           purchaserSignatureB64: undefined,

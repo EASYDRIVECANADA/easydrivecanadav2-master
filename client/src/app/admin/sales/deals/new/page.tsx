@@ -11,6 +11,7 @@ import VehiclesTab, { type VehiclesTabHandle } from './VehiclesTab'
 import WorksheetTab, { type WorksheetTabHandle } from './WorksheetTab'
 import { renderBillOfSalePdf, type BillOfSaleData } from './billOfSalePdf'
 import { renderDisclosureFormPdf } from './disclosureFormPdf'
+import { supabase } from '@/lib/supabaseClient'
 
 type DealTab = 'customers' | 'vehicles' | 'worksheet' | 'disclosures' | 'delivery'
 
@@ -156,6 +157,47 @@ function SalesNewDealPageContent() {
     const s = v.trim()
     if (!s) return null
     try { return JSON.parse(s) } catch { return null }
+  }
+
+  const getAdminUserId = async (): Promise<string | null> => {
+    try {
+      const raw = typeof window !== 'undefined' ? window.localStorage.getItem('edc_admin_session') : null
+      if (!raw) return null
+      const parsed = JSON.parse(raw) as { email?: string; user_id?: string }
+      const directId = String(parsed?.user_id ?? '').trim()
+      if (directId) return directId
+      const email = String(parsed?.email ?? '').trim().toLowerCase()
+      if (!email) return null
+      const { data } = await supabase.from('edc_account_verifications').select('id').eq('email', email).order('created_at', { ascending: false }).limit(1).maybeSingle()
+      return (data as any)?.id ?? null
+    } catch {
+      return null
+    }
+  }
+
+  const fetchWarrantyPresets = async (): Promise<Record<string, { duration: string; distance: string; price: string; cost: string; description: string }>> => {
+    try {
+      const userId = await getAdminUserId()
+      if (!userId) {
+        // Fallback: fetch without user_id filter (returns all, use name as key — last write wins)
+        const { data } = await supabase.from('presets_warranty').select('name, duration, distance, price, cost, description')
+        if (!Array.isArray(data)) return {}
+        const map: Record<string, { duration: string; distance: string; price: string; cost: string; description: string }> = {}
+        for (const p of data) {
+          if (p.name) map[String(p.name).trim()] = { duration: p.duration || '', distance: p.distance || '', price: p.price || '', cost: p.cost || '', description: p.description || '' }
+        }
+        return map
+      }
+      const { data } = await supabase.from('presets_warranty').select('name, duration, distance, price, cost, description').eq('user_id', userId)
+      if (!Array.isArray(data)) return {}
+      const map: Record<string, { duration: string; distance: string; price: string; cost: string; description: string }> = {}
+      for (const p of data) {
+        if (p.name) map[String(p.name).trim()] = { duration: p.duration || '', distance: p.distance || '', price: p.price || '', cost: p.cost || '', description: p.description || '' }
+      }
+      return map
+    } catch {
+      return {}
+    }
   }
 
   const toMoneyNumber = (v: any) => {
@@ -331,6 +373,33 @@ function SalesNewDealPageContent() {
     run()
   }, [initialVehicleId, vehiclePrefillLoading, vehiclePrefill])
 
+  // When a vehicle is selected in VehiclesTab, fetch its warranty and auto-add to worksheet
+  const handleVehicleSelected = useCallback(async (vehicle: any) => {
+    const vehicleId = vehicle?.id
+    if (!vehicleId) return
+    try {
+      const res = await fetch(`/api/warranty/vehicle?vehicleId=${encodeURIComponent(vehicleId)}`)
+      if (!res.ok) return
+      const data = await res.json()
+      const w = data?.warranty
+      if (!w || !w.has_warranty) return
+
+      const name = [w.warranty_provider || '', w.warranty_type || ''].filter(Boolean).join(' | ') || 'Warranty'
+      const desc = w.warranty_description || ''
+      const amount = Number(w.extended_warranty_cost ?? w.warranty_cost ?? 0)
+      const duration = w.warranty_end_date
+        ? `Until ${w.warranty_end_date}`
+        : w.extended_warranty_end_date
+        ? `Until ${w.extended_warranty_end_date}`
+        : ''
+      const distance = w.warranty_mileage_limit ? `${w.warranty_mileage_limit} km` : w.extended_warranty_mileage_limit ? `${w.extended_warranty_mileage_limit} km` : ''
+
+      worksheetTabRef.current?.addWarranty({ name, desc, amount, duration, distance })
+    } catch {
+      // ignore warranty fetch errors — not critical
+    }
+  }, [])
+
   // Close print menu on outside click
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -353,6 +422,9 @@ function SalesNewDealPageContent() {
     setShowPrintMenu(false)
     setPdfLoading(true)
     try {
+      // Auto-save worksheet so latest in-memory state (warranties, etc.) is persisted before PDF generation
+      try { await worksheetTabRef.current?.save(true) } catch { /* ignore */ }
+
       // Fetch all deal data from Supabase
       const res = await fetch(`/api/deals/${encodeURIComponent(dealId)}`)
       const deal = res.ok ? await res.json() : null
@@ -378,6 +450,70 @@ function SalesNewDealPageContent() {
       const w = deal?.worksheet || {}
       const d = deal?.delivery || {}
       const disc = deal?.disclosures || {}
+
+      // Build warrantyData: prefer worksheet warranties array, fall back to edc_warranty table
+      let warrantyData: { has_extended: boolean; description: string; duration: string; distance: string; cost: string } | null = null
+
+      // 1. Worksheet warranties (added in the deal's Worksheet tab)
+      const parseFeeItemsEarly = (raw: any): any[] => {
+        if (!raw) return []
+        if (Array.isArray(raw)) return raw
+        if (typeof raw === 'string') { try { const p = JSON.parse(raw); return Array.isArray(p) ? p : [] } catch { return [] } }
+        return []
+      }
+      const wsWarranties = parseFeeItemsEarly(w.warranties)
+      if (wsWarranties.length > 0) {
+        const warrantyPresetMap = await fetchWarrantyPresets()
+        const desc = wsWarranties.map((wi: any) => {
+          const wiName = String(wi.name || '').trim()
+          const preset = warrantyPresetMap[wiName] as any
+          // Use preset description if available, otherwise fall back to stored desc
+          const descText = (preset as any)?.description || String(wi.desc || '').trim()
+          return wiName && descText ? `${wiName}\n${descText}` : wiName || descText
+        }).filter(Boolean).join('\n\n')
+        const totalCost = wsWarranties.reduce((s: number, wi: any) => s + (Number(wi.amount || 0)), 0)
+        const firstWi = wsWarranties[0] || {}
+        const presetMatch = warrantyPresetMap[String(firstWi.name || '').trim()] || {}
+        const dur = wsWarranties.find((wi: any) => wi.duration)?.duration || presetMatch.duration || ''
+        const dist = wsWarranties.find((wi: any) => wi.distance)?.distance || presetMatch.distance || ''
+        warrantyData = {
+          has_extended: true,
+          description: desc,
+          duration: String(dur),
+          distance: String(dist),
+          cost: totalCost > 0 ? String(totalCost) : '',
+        }
+      }
+
+      // 2. Fallback: edc_warranty table by vehicle_id / stock_number
+      if (!warrantyData) {
+        const vehicleId = vRaw?.selected_id || vRaw?.id || sv?.selected_id || sv?.id || ''
+        const stockNumberForWarranty = v.stock_number || ''
+        if (vehicleId || stockNumberForWarranty) {
+          try {
+            const wParams = new URLSearchParams()
+            if (vehicleId) wParams.set('vehicleId', vehicleId)
+            if (stockNumberForWarranty) wParams.set('stockNumber', stockNumberForWarranty)
+            const wRes = await fetch(`/api/warranty/vehicle?${wParams.toString()}`, { cache: 'no-store' })
+            if (wRes.ok) {
+              const wJson = await wRes.json()
+              const wr = wJson?.warranty
+              if (wr && (wr.extended_warranty || wr.has_warranty)) {
+                warrantyData = {
+                  has_extended: true,
+                  description: [
+                    wr.extended_warranty_provider || wr.warranty_provider || '',
+                    wr.warranty_type || '',
+                  ].filter(Boolean).join(' | ') || '',
+                  duration: String(wr.extended_warranty_end_date || wr.warranty_end_date || ''),
+                  distance: String(wr.extended_warranty_mileage_limit || wr.warranty_mileage_limit || ''),
+                  cost: String(wr.extended_warranty_cost || ''),
+                }
+              }
+            }
+          } catch { /* non-fatal */ }
+        }
+      }
 
       const parseFeeItems = (raw: any): any[] => {
         if (!raw) return []
@@ -497,7 +633,8 @@ function SalesNewDealPageContent() {
         downPayment: String(downPayment),
         taxOnInsurance: String(taxInsurance),
         totalBalanceDue: String(totalDue),
-        extendedWarranty: 'DECLINED',
+        extendedWarranty: warrantyData ? '' : 'DECLINED',
+        extendedWarrantyData: warrantyData,
         commentsHtml: disc.disclosures_html ?? '',
         purchaserName: fullName,
         purchaserSignatureB64: c.signature ?? undefined,
@@ -570,6 +707,9 @@ function SalesNewDealPageContent() {
       const okToSend = await confirmEsignChargeIfNeeded(senderEmail)
       if (!okToSend) return
 
+      // Auto-save worksheet so latest in-memory state is persisted before PDF generation
+      try { await worksheetTabRef.current?.save(true) } catch { /* ignore */ }
+
       const res = await fetch(`/api/deals/${encodeURIComponent(dealId)}`)
       const deal = res.ok ? await res.json() : null
       const c = deal?.customer || {}
@@ -597,6 +737,67 @@ function SalesNewDealPageContent() {
       const w = deal?.worksheet || {}
       const d = deal?.delivery || {}
       const disc = deal?.disclosures || {}
+
+      // Build warrantyDataE: prefer worksheet warranties, fall back to edc_warranty table
+      let warrantyDataE: { has_extended: boolean; description: string; duration: string; distance: string; cost: string } | null = null
+
+      const parseFeeItemsEarlyE = (raw: any): any[] => {
+        if (!raw) return []
+        if (Array.isArray(raw)) return raw
+        if (typeof raw === 'string') { try { const p = JSON.parse(raw); return Array.isArray(p) ? p : [] } catch { return [] } }
+        return []
+      }
+      const wsWarrantiesE = parseFeeItemsEarlyE(w.warranties)
+      if (wsWarrantiesE.length > 0) {
+        const warrantyPresetMapE = await fetchWarrantyPresets()
+        const desc = wsWarrantiesE.map((wi: any) => {
+          const wiName = String(wi.name || '').trim()
+          const preset = warrantyPresetMapE[wiName] as any
+          const descText = preset?.description || String(wi.desc || '').trim()
+          return wiName && descText ? `${wiName}\n${descText}` : wiName || descText
+        }).filter(Boolean).join('\n\n')
+        const totalCost = wsWarrantiesE.reduce((s: number, wi: any) => s + (Number(wi.amount || 0)), 0)
+        const firstWiE = wsWarrantiesE[0] || {}
+        const presetMatchE = warrantyPresetMapE[String(firstWiE.name || '').trim()] || {}
+        const dur = wsWarrantiesE.find((wi: any) => wi.duration)?.duration || presetMatchE.duration || ''
+        const dist = wsWarrantiesE.find((wi: any) => wi.distance)?.distance || presetMatchE.distance || ''
+        warrantyDataE = {
+          has_extended: true,
+          description: desc,
+          duration: String(dur),
+          distance: String(dist),
+          cost: totalCost > 0 ? String(totalCost) : '',
+        }
+      }
+
+      if (!warrantyDataE) {
+        const vehicleIdE = vRaw?.selected_id || vRaw?.id || sv?.selected_id || sv?.id || ''
+        const stockNumberForWarrantyE = v.stock_number || ''
+        if (vehicleIdE || stockNumberForWarrantyE) {
+          try {
+            const wParamsE = new URLSearchParams()
+            if (vehicleIdE) wParamsE.set('vehicleId', vehicleIdE)
+            if (stockNumberForWarrantyE) wParamsE.set('stockNumber', stockNumberForWarrantyE)
+            const wRes = await fetch(`/api/warranty/vehicle?${wParamsE.toString()}`, { cache: 'no-store' })
+            if (wRes.ok) {
+              const wJson = await wRes.json()
+              const wr = wJson?.warranty
+              if (wr && (wr.extended_warranty || wr.has_warranty)) {
+                warrantyDataE = {
+                  has_extended: true,
+                  description: [
+                    wr.extended_warranty_provider || wr.warranty_provider || '',
+                    wr.warranty_type || '',
+                  ].filter(Boolean).join(' | ') || '',
+                  duration: String(wr.extended_warranty_end_date || wr.warranty_end_date || ''),
+                  distance: String(wr.extended_warranty_mileage_limit || wr.warranty_mileage_limit || ''),
+                  cost: String(wr.extended_warranty_cost || ''),
+                }
+              }
+            }
+          } catch { /* non-fatal */ }
+        }
+      }
 
       const parseFeeItems = (raw: any): any[] => {
         if (!raw) return []
@@ -716,7 +917,8 @@ function SalesNewDealPageContent() {
         downPayment: String(downPayment),
         taxOnInsurance: String(taxInsurance),
         totalBalanceDue: String(totalDue),
-        extendedWarranty: 'DECLINED',
+        extendedWarranty: warrantyDataE ? '' : 'DECLINED',
+        extendedWarrantyData: warrantyDataE,
         commentsHtml: disc.disclosures_html ?? '',
         purchaserName: fullName,
         purchaserSignatureB64: c.signature ?? undefined,
@@ -963,6 +1165,7 @@ function SalesNewDealPageContent() {
                     status: vehiclePrefill.vehicle.status,
                     stock_number: vehiclePrefill.vehicle.stock_number,
                   } : null}
+                  onVehicleSelected={handleVehicleSelected}
                 />
               </div>
               <div style={{ display: activeTab === 'worksheet' ? 'block' : 'none' }}>

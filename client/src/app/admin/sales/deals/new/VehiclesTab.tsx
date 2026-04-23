@@ -35,6 +35,7 @@ const VehiclesTab = forwardRef<VehiclesTabHandle, {
   initialData?: any
   prefillSelected?: any
   autoSaved?: boolean
+  onVehicleSelected?: (vehicle: VehicleRow) => void
 }>(function VehiclesTab({
   dealId,
   dealMode,
@@ -43,6 +44,7 @@ const VehiclesTab = forwardRef<VehiclesTabHandle, {
   initialData,
   prefillSelected,
   autoSaved,
+  onVehicleSelected,
 }, ref) {
   const [query, setQuery] = useState(() => {
     if (Array.isArray(initialData) && initialData.length > 0) {
@@ -1222,6 +1224,8 @@ const VehiclesTab = forwardRef<VehiclesTabHandle, {
     const mv = v.odometer ?? v.mileage
     setOdoDraft(mv !== null && mv !== undefined ? String(mv) : '')
     setOdoEditing(false)
+
+    onVehicleSelected?.(v)
   }
 
   const clearSelected = () => {

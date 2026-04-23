@@ -67,7 +67,10 @@ function formatTaxRatePercent(rate: number): string {
   return String(normalized)
 }
 
-export type WorksheetTabHandle = { save: (silent?: boolean) => Promise<void> }
+export type WorksheetTabHandle = {
+  save: (silent?: boolean) => Promise<void>
+  addWarranty: (item: { name: string; desc: string; amount: number; duration?: string; distance?: string }) => void
+}
 
 const WorksheetTab = forwardRef<WorksheetTabHandle, {
   dealId?: string
@@ -110,7 +113,7 @@ const WorksheetTab = forwardRef<WorksheetTabHandle, {
   const [taxPresetsLoading, setTaxPresetsLoading] = useState(false)
   const [feePresets, setFeePresets] = useState<Array<{ id: string; name: string; description?: string; fee_amount?: number }>>([])
   const [accessoryPresets, setAccessoryPresets] = useState<Array<{ id: string; name: string; description?: string; amount?: number; cost?: number; type?: string; default_tax_rate?: string }>>([])
-  const [warrantyPresets, setWarrantyPresets] = useState<Array<{ id: string; name: string; description?: string; price?: number }>>([])
+  const [warrantyPresets, setWarrantyPresets] = useState<Array<{ id: string; name: string; description?: string; price?: number; cost?: number; duration?: string; distance?: string; deductible?: string; dealer_warranty?: boolean; default_tax_rate?: string }>>([])
   const [insurancePresets, setInsurancePresets] = useState<Array<{ id: string; name: string; description?: string; price?: number }>>([])
   const [taxOverride, setTaxOverride] = useState(d.tax_override === true || d.tax_override === 'true')
   const [taxManual, setTaxManual] = useState(d.tax_manual ?? '0')
@@ -1338,12 +1341,12 @@ const WorksheetTab = forwardRef<WorksheetTabHandle, {
           const [fees, accs, wars, ins] = await Promise.all([
             supabase.from('presets_fee').select('id, name, description, fee_amount').eq('user_id', scopedUserId).order('name', { ascending: true }),
             supabase.from('presets_accessories').select('id, name, description, amount, cost, type, default_tax_rate').eq('user_id', scopedUserId).order('name', { ascending: true }),
-            supabase.from('presets_warranty').select('id, name, description, price').eq('user_id', scopedUserId).order('name', { ascending: true }),
+            supabase.from('presets_warranty').select('id, name, description, price, cost, duration, distance, deductible, dealer_warranty, default_tax_rate').eq('user_id', scopedUserId).order('name', { ascending: true }),
             supabase.from('presets_insurance').select('id, name, description, price').eq('user_id', scopedUserId).order('name', { ascending: true }),
           ])
           if (!fees.error && Array.isArray(fees.data)) setFeePresets(fees.data.map((r: any) => ({ id: String(r.id), name: String(r.name ?? ''), description: String(r.description ?? ''), fee_amount: Number(r.fee_amount ?? 0) })).filter((r: any) => r.name))
           if (!accs.error && Array.isArray(accs.data)) setAccessoryPresets(accs.data.map((r: any) => ({ id: String(r.id), name: String(r.name ?? ''), description: String(r.description ?? ''), amount: Number(r.amount ?? 0), cost: Number(r.cost ?? 0), type: r.type ? String(r.type) : '', default_tax_rate: r.default_tax_rate ? String(r.default_tax_rate) : '' })).filter((r: any) => r.name))
-          if (!wars.error && Array.isArray(wars.data)) setWarrantyPresets(wars.data.map((r: any) => ({ id: String(r.id), name: String(r.name ?? ''), description: String(r.description ?? ''), price: Number(r.price ?? 0) })).filter((r: any) => r.name))
+          if (!wars.error && Array.isArray(wars.data)) setWarrantyPresets(wars.data.map((r: any) => ({ id: String(r.id), name: String(r.name ?? ''), description: String(r.description ?? ''), price: Number(r.price ?? 0), cost: Number(r.cost ?? 0), duration: r.duration ? String(r.duration) : '', distance: r.distance ? String(r.distance) : '', deductible: r.deductible ? String(r.deductible) : '', dealer_warranty: Boolean(r.dealer_warranty), default_tax_rate: r.default_tax_rate ? String(r.default_tax_rate) : '' })).filter((r: any) => r.name))
           if (!ins.error && Array.isArray(ins.data)) setInsurancePresets(ins.data.map((r: any) => ({ id: String(r.id), name: String(r.name ?? ''), description: String(r.description ?? ''), price: Number(r.price ?? 0) })).filter((r: any) => r.name))
           return true
         } catch (e) {
@@ -1383,8 +1386,17 @@ const WorksheetTab = forwardRef<WorksheetTabHandle, {
     setAccessorySearch('')
   }
 
-  const addWarrantyFromPreset = (preset: { id: string; name: string; description?: string; price?: number }) => {
-    setWarranties((prev) => [{ id: `war_${Date.now()}_${preset.id}`, name: preset.name, desc: preset.description || '', amount: Number(preset.price ?? 0) }, ...prev])
+  const addWarrantyFromPreset = (preset: { id: string; name: string; description?: string; price?: number; cost?: number; duration?: string; distance?: string; deductible?: string; dealer_warranty?: boolean; default_tax_rate?: string }) => {
+    setWarranties((prev) => [{
+      id: `war_${Date.now()}_${preset.id}`,
+      name: preset.name,
+      desc: preset.description || '',
+      amount: Number(preset.price ?? 0),
+      cost: Number(preset.cost ?? 0),
+      duration: preset.duration || '',
+      distance: preset.distance || '',
+      isDealerGuaranty: Boolean(preset.dealer_warranty),
+    }, ...prev])
     setWarrantySearch('')
   }
 
@@ -1778,7 +1790,11 @@ const WorksheetTab = forwardRef<WorksheetTabHandle, {
                   onClick={() => { addWarrantyFromPreset(p); setWarrantyPresetOpen(false) }}
                 >
                   <div className="font-semibold text-gray-800">{p.name}</div>
-                  <div className="text-xs text-gray-500">${fmtMoney(Number(p.price ?? 0))}</div>
+                  <div className="text-xs text-gray-500">
+                    ${fmtMoney(Number(p.price ?? 0))}
+                    {p.duration ? ` · ${p.duration}` : ''}
+                    {p.distance ? ` · ${p.distance}` : ''}
+                  </div>
                 </button>
               ))}
             </div>
@@ -1961,9 +1977,16 @@ const WorksheetTab = forwardRef<WorksheetTabHandle, {
     payments: paymentsCard,
   }
 
-  // Expose save() to parent via ref
+  // Expose save() and addWarranty() to parent via ref
   useImperativeHandle(ref, () => ({
-    save: async (silent?: boolean) => { await submitWorksheet(silent) }
+    save: async (silent?: boolean) => { await submitWorksheet(silent) },
+    addWarranty: (item: { name: string; desc: string; amount: number; duration?: string; distance?: string }) => {
+      setWarranties((prev) => {
+        const alreadyExists = prev.some((w) => w.name === item.name && w.desc === item.desc)
+        if (alreadyExists) return prev
+        return [{ id: `war_${Date.now()}`, name: item.name, desc: item.desc, amount: item.amount, duration: item.duration || '', distance: item.distance || '' }, ...prev]
+      })
+    },
   }))
 
   return (

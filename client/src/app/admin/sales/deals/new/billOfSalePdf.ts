@@ -55,6 +55,13 @@ export interface BillOfSaleData {
 
   // Extended warranty
   extendedWarranty: string
+  extendedWarrantyData?: {
+    has_extended: boolean
+    description: string
+    duration: string
+    distance: string
+    cost: string
+  } | null
 
   // Comments & Disclosures
   commentsHtml: string
@@ -380,19 +387,84 @@ export function renderBillOfSalePdf(
   doc.text('SETTLEMENT TERMS', ML + leftColW + rightColW / 2, y + 10, { align: 'center' })
   y += 14
 
-  // Left: DECLINED text
-  doc.setFontSize(8)
-  doc.setFont('helvetica', 'bold')
-  doc.setTextColor(DARK)
-  doc.text(fmt(data.extendedWarranty) || 'DECLINED', ML + leftColW / 2, y + 12, { align: 'center' })
-
-  // Left: Privacy statement
-  const privacyY = y + 20
-  doc.setFontSize(5)
-  doc.setFont('helvetica', 'normal')
-  doc.setTextColor(DARK)
+  // Left: Extended Warranty content
+  // NOTE: privacy text is drawn AFTER the section height is known so it pins to the bottom
+  const ew = data.extendedWarrantyData
+  const ewBodyStartY = y
   const privacyText = 'Privacy Statement: I understand that you and your service providers, affiliates and business partners collect, use and retain my personal information that I disclose to you for the purpose of (i) providing motor vehicle products and related services that I have requested; (ii) providing me with related information and services that you believe may be of interest to me; and (iii) compiling aggregated or statistical data in which will not be personally identifiable. I may notify you in writing at any time if I no longer consent to any of these uses and to update or correct my personal information.'
-  doc.text(privacyText, ML + 4, privacyY, { maxWidth: leftColW - 8 })
+
+  // Column layout (used for both warranty and DECLINED)
+  const colDescW = leftColW * 0.50
+  const colDurW  = leftColW * 0.17
+  const colDistW = leftColW * 0.17
+  const colRetW  = leftColW * 0.16
+  const colDurX  = ML + colDescW
+  const colDistX = colDurX + colDurW
+  const colRetX  = colDistX + colDistW
+
+  if (ew && ew.has_extended) {
+    const headerRowH = 14
+    const descLineH  = 5.5
+    const descPadV   = 9   // top padding inside data row
+
+    // Pre-measure description to size the data row
+    const descMaxW = colDescW - 8
+    doc.setFontSize(6.5)
+    doc.setFont('helvetica', 'normal')
+    const descLines = doc.splitTextToSize(fmt(ew.description), descMaxW)
+    const dataRowH  = Math.max(24, descPadV + descLines.length * descLineH + 6)
+
+    // ── Header row border + column dividers ──────────────────────────
+    doc.setDrawColor(GRAY_LINE)
+    doc.setLineWidth(0.4)
+    doc.rect(ML, ewBodyStartY, leftColW, headerRowH)
+    doc.line(colDurX,  ewBodyStartY, colDurX,  ewBodyStartY + headerRowH)
+    doc.line(colDistX, ewBodyStartY, colDistX, ewBodyStartY + headerRowH)
+    doc.line(colRetX,  ewBodyStartY, colRetX,  ewBodyStartY + headerRowH)
+
+    // Header labels
+    doc.setFontSize(5.5)
+    doc.setFont('helvetica', 'normal')
+    doc.setTextColor(GRAY_LINE)
+    doc.text('duration',     colDurX + colDurW / 2,  ewBodyStartY + 9, { align: 'center' })
+    doc.text('distance',     colDistX + colDistW / 2, ewBodyStartY + 9, { align: 'center' })
+    doc.text('retail value', colRetX + colRetW / 2,   ewBodyStartY + 9, { align: 'center' })
+
+    // ── Data row border + column dividers ────────────────────────────
+    const dataRowY = ewBodyStartY + headerRowH
+    doc.setDrawColor(GRAY_LINE)
+    doc.setLineWidth(0.4)
+    doc.rect(ML, dataRowY, leftColW, dataRowH)
+    doc.line(colDurX,  dataRowY, colDurX,  dataRowY + dataRowH)
+    doc.line(colDistX, dataRowY, colDistX, dataRowY + dataRowH)
+    doc.line(colRetX,  dataRowY, colRetX,  dataRowY + dataRowH)
+
+    // Description text in description column
+    doc.setFontSize(6.5)
+    doc.setFont('helvetica', 'normal')
+    doc.setTextColor(DARK)
+    const dataTextY = dataRowY + descPadV
+    doc.text(descLines, ML + 4, dataTextY)
+
+    // Duration / distance / retail value — top-aligned in data row
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(7)
+    if (ew.duration) doc.text(fmt(ew.duration), colDurX + colDurW / 2,  dataTextY, { align: 'center' })
+    if (ew.distance) doc.text(fmt(ew.distance), colDistX + colDistW / 2, dataTextY, { align: 'center' })
+    if (ew.cost) {
+      const costNum = Number(ew.cost)
+      const costStr = ew.cost.startsWith('$') ? ew.cost : !isNaN(costNum) ? `$${costNum.toLocaleString('en-CA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : ew.cost
+      doc.text(costStr, colRetX + colRetW - 2, dataTextY, { align: 'right' })
+    }
+    // privacy drawn below after section height is known
+  } else {
+    // DECLINED — bold centered
+    doc.setFontSize(8)
+    doc.setFont('helvetica', 'bold')
+    doc.setTextColor(DARK)
+    doc.text('DECLINED', ML + leftColW / 2, ewBodyStartY + 12, { align: 'center' })
+    // privacy drawn below after section height is known
+  }
 
   // Right: Settlement terms rows
   const stX = ML + leftColW
@@ -465,6 +537,18 @@ export function renderBillOfSalePdf(
   doc.setLineWidth(0.5)
   doc.rect(ML, ewStartY + 14, leftColW, ewHeight - 14)
   doc.rect(ML + leftColW, ewStartY + 14, rightColW, ewHeight - 14)
+
+  // Privacy statement pinned to bottom of left box, above the Initial line
+  // Pre-calculate privacy text height so we can place it flush to the bottom
+  doc.setFontSize(5)
+  doc.setFont('helvetica', 'normal')
+  doc.setTextColor(DARK)
+  const privacyLines = doc.splitTextToSize(privacyText, leftColW - 8)
+  const privacyLineH = 5.5
+  const initLineH = 14 // space for "Initial:" line at bottom
+  const privacyBottomY = ewStartY + ewHeight - initLineH
+  const privacyTopY = privacyBottomY - privacyLines.length * privacyLineH
+  doc.text(privacyLines, ML + 4, privacyTopY)
 
   // Initial line at bottom of left box
   const initY = ewStartY + ewHeight - 2
