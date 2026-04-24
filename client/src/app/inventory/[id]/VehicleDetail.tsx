@@ -894,17 +894,19 @@ export default function VehicleDetailPage() {
                   </button>
                 )}
 
-                {/* View CARFAX Report */}
-                <button
-                  type="button"
-                  onClick={() => openCarfaxModal(vehicle.vehicleId || vehicle.id)}
-                  className="w-full flex items-center justify-center gap-2 bg-red-50 hover:bg-red-100 border border-red-300 text-red-700 font-semibold px-4 py-3 rounded-xl transition-colors"
-                >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                  </svg>
-                  View CARFAX Report
-                </button>
+                {/* View CARFAX Report — only show if available */}
+                {carfaxAvailable && (
+                  <button
+                    type="button"
+                    onClick={() => openCarfaxModal(vehicle.vehicleId || vehicle.id)}
+                    className="w-full flex items-center justify-center gap-2 bg-red-50 hover:bg-red-100 border border-red-300 text-red-700 font-semibold px-4 py-3 rounded-xl transition-colors"
+                  >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                    View CARFAX Report
+                  </button>
+                )}
 
                 {/* View Certificate — only show if available */}
                 {certAvailable && (
@@ -1453,8 +1455,8 @@ export default function VehicleDetailPage() {
       )}
 
       {carfaxModal.open && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60">
-          <div className="w-full max-w-4xl bg-white rounded-2xl shadow-xl flex flex-col" style={{ height: '90vh' }}>
+        <div className="fixed inset-0 z-[60] flex items-center justify-center sm:p-4 bg-black/60">
+          <div className="w-full sm:max-w-4xl bg-white sm:rounded-2xl shadow-xl flex flex-col h-[100dvh] sm:h-[90vh]">
             {/* Header */}
             <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 flex-shrink-0">
               <h3 className="text-base font-semibold text-gray-900">CARFAX Report</h3>
@@ -1503,7 +1505,7 @@ export default function VehicleDetailPage() {
             </div>
 
             {/* Body */}
-            <div className="flex-1 min-h-0">
+            <div className="flex-1 min-h-0 overflow-hidden">
               {carfaxModal.loading ? (
                 <div className="flex items-center justify-center h-full gap-2 text-gray-400">
                   <svg className="w-6 h-6 animate-spin" fill="none" viewBox="0 0 24 24">
@@ -1523,8 +1525,9 @@ export default function VehicleDetailPage() {
               ) : (
                 <iframe
                   src={carfaxModal.files[carfaxModal.activeIndex]?.publicUrl}
-                  className="w-full h-full rounded-b-2xl"
+                  className="w-full h-full sm:rounded-b-2xl"
                   title="CARFAX Report"
+                  style={{ display: 'block' }}
                 />
               )}
             </div>

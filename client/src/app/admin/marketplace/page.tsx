@@ -773,14 +773,16 @@ export default function MarketplacePage() {
                   })()}
 
                   <div className="flex flex-col gap-2 mt-1">
-                    <button
-                      type="button"
-                      onClick={() => openCarfaxModal(selected.id)}
-                      className="w-full py-3 px-4 rounded-xl border border-[#B22222] text-[#B22222] bg-red-50 hover:bg-red-100 text-sm font-medium transition-colors flex items-center justify-center gap-2"
-                    >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-2a4 4 0 014-4h4M3 7h6m-6 4h6m-6 4h6M17 3l4 4-4 4" /></svg>
-                      View CARFAX Report
-                    </button>
+                    {carfaxAvailable && (
+                      <button
+                        type="button"
+                        onClick={() => openCarfaxModal(selected.id)}
+                        className="w-full py-3 px-4 rounded-xl border border-[#B22222] text-[#B22222] bg-red-50 hover:bg-red-100 text-sm font-medium transition-colors flex items-center justify-center gap-2"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-2a4 4 0 014-4h4M3 7h6m-6 4h6m-6 4h6M17 3l4 4-4 4" /></svg>
+                        View CARFAX Report
+                      </button>
+                    )}
                     {certAvailable && (
                       <button
                         type="button"
@@ -1085,7 +1087,7 @@ export default function MarketplacePage() {
               </div>
 
               {/* Body */}
-              <div className="flex-1 min-h-0">
+              <div className="flex-1 min-h-0 overflow-hidden">
                 {carfaxModal.loading ? (
                   <div className="flex items-center justify-center h-full gap-2 text-gray-400">
                     <svg className="w-6 h-6 animate-spin" fill="none" viewBox="0 0 24 24">
@@ -1107,6 +1109,7 @@ export default function MarketplacePage() {
                     src={carfaxModal.files[carfaxModal.activeIndex]?.publicUrl}
                     className="w-full h-full rounded-b-2xl"
                     title="CARFAX Report"
+                    style={{ display: 'block' }}
                   />
                 )}
               </div>
