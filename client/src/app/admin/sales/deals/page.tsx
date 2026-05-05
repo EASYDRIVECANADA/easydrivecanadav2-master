@@ -5,6 +5,37 @@ import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
 import { motion } from 'framer-motion'
 
+type PurchaseSubmission = {
+  id: string
+  vehicle_year: number
+  vehicle_make: string
+  vehicle_model: string
+  vehicle_trim: string
+  vehicle_vin: string
+  vehicle_stock_number: string
+  vehicle_price: number
+  customer_first_name: string
+  customer_last_name: string
+  customer_email: string
+  customer_phone: string
+  customer_address: string
+  customer_city: string
+  customer_province: string
+  customer_postal_code: string
+  deposit_amount: number
+  total_price: number
+  hst: number
+  warranty_name: string | null
+  warranty_total: number | null
+  add_ons: string[]
+  status: string
+  deal_stage: string | null
+  submitted_at: string
+  approved_at: string | null
+  deal_id: string | null
+  order_data: any
+}
+
 type DealRow = {
   dealId: string
   primaryCustomer: string
@@ -43,6 +74,20 @@ export default function DealsPage() {
   const [deleting, setDeleting] = useState(false)
   const [isAdminRole, setIsAdminRole] = useState(false)
   const [bulkDeleteConfirmOpen, setBulkDeleteConfirmOpen] = useState(false)
+
+  // Purchase submissions
+  const [submissions, setSubmissions] = useState<PurchaseSubmission[]>([])
+  const [submissionsLoading, setSubmissionsLoading] = useState(true)
+  const [approvingId, setApprovingId] = useState<string | null>(null)
+  const [approveError, setApproveError] = useState<string | null>(null)
+  const [expandedSubmission, setExpandedSubmission] = useState<string | null>(null)
+  const [decliningId, setDecliningId] = useState<string | null>(null)
+  const [declineTarget, setDeclineTarget] = useState<PurchaseSubmission | null>(null)
+  const [declineReason, setDeclineReason] = useState('')
+  const [activeWebDeals, setActiveWebDeals] = useState<PurchaseSubmission[]>([])
+  const [activeWebDealsLoading, setActiveWebDealsLoading] = useState(true)
+  const [stagingId, setStagingId] = useState<string | null>(null)
+  const [expandedWebDeal, setExpandedWebDeal] = useState<string | null>(null)
 
   const getAdminHeaders = useCallback((): Record<string, string> => {
     try {
@@ -165,6 +210,101 @@ export default function DealsPage() {
   useEffect(() => {
     fetchDeals()
   }, [fetchDeals])
+
+  const fetchSubmissions = useCallback(async () => {
+    try {
+      setSubmissionsLoading(true)
+      setActiveWebDealsLoading(true)
+      const res = await fetch('/api/purchase-submissions')
+      const json = await res.json()
+      const all: PurchaseSubmission[] = json.submissions || []
+      setSubmissions(all.filter((s) => s.status === 'pending'))
+      setActiveWebDeals(all.filter((s) => s.status === 'approved' && s.deal_stage !== 'closed'))
+    } catch {
+      // silent
+    } finally {
+      setSubmissionsLoading(false)
+      setActiveWebDealsLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    fetchSubmissions()
+  }, [fetchSubmissions])
+
+  const handleDecline = async () => {
+    if (!declineTarget) return
+    setDecliningId(declineTarget.id)
+    try {
+      const res = await fetch('/api/purchase-submissions/decline', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ submissionId: declineTarget.id, reason: declineReason.trim() || undefined }),
+      })
+      const json = await res.json()
+      if (!res.ok || json.error) throw new Error(json.error || 'Decline failed')
+      setSubmissions((prev) => prev.filter((s) => s.id !== declineTarget.id))
+      setDeclineTarget(null)
+      setDeclineReason('')
+    } catch (e: any) {
+      setApproveError(e?.message || 'Failed to decline')
+    } finally {
+      setDecliningId(null)
+    }
+  }
+
+  const STAGE_LABELS: Record<string, string> = {
+    insurance_pending: 'Insurance Pending',
+    delivery_pending: 'Delivery Pending',
+    closed: 'Closed',
+  }
+  const STAGE_ORDER = ['insurance_pending', 'delivery_pending', 'closed']
+
+  const handleAdvanceStage = async (sub: PurchaseSubmission) => {
+    const currentIdx = STAGE_ORDER.indexOf(sub.deal_stage || 'insurance_pending')
+    const nextStage = STAGE_ORDER[currentIdx + 1]
+    if (!nextStage) return
+    setStagingId(sub.id)
+    try {
+      const res = await fetch('/api/purchase-submissions/stage', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ submissionId: sub.id, stage: nextStage }),
+      })
+      const json = await res.json()
+      if (!res.ok || json.error) throw new Error(json.error || 'Stage update failed')
+      if (nextStage === 'closed') {
+        setActiveWebDeals((prev) => prev.filter((s) => s.id !== sub.id))
+        await fetchDeals()
+      } else {
+        setActiveWebDeals((prev) => prev.map((s) => s.id === sub.id ? { ...s, deal_stage: nextStage } : s))
+      }
+    } catch (e: any) {
+      alert(e?.message || 'Failed to update stage')
+    } finally {
+      setStagingId(null)
+    }
+  }
+
+  const handleApprove = async (sub: PurchaseSubmission) => {
+    setApprovingId(sub.id)
+    setApproveError(null)
+    try {
+      const res = await fetch('/api/purchase-submissions/approve', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ submissionId: sub.id }),
+      })
+      const json = await res.json()
+      if (!res.ok || json.error) throw new Error(json.error || 'Approval failed')
+      setSubmissions((prev) => prev.filter((s) => s.id !== sub.id))
+      await Promise.all([fetchDeals(), fetchSubmissions()])
+    } catch (e: any) {
+      setApproveError(e?.message || 'Failed to approve')
+    } finally {
+      setApprovingId(null)
+    }
+  }
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -306,6 +446,333 @@ export default function DealsPage() {
       </div>
 
       <div className="px-6 py-6">
+
+        {/* Pending Approvals Section */}
+        {(submissionsLoading || submissions.length > 0) && (
+          <div className="mb-8">
+            <div className="flex items-center gap-2 mb-3">
+              <h2 className="text-base font-bold text-slate-900">Pending Approvals</h2>
+              {submissions.length > 0 && (
+                <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-amber-500 text-white text-xs font-bold">{submissions.length}</span>
+              )}
+            </div>
+            {approveError && (
+              <div className="mb-3 rounded-xl border border-red-200 bg-red-50 text-red-600 px-4 py-2 text-sm">{approveError}</div>
+            )}
+            {submissionsLoading ? (
+              <div className="edc-card p-6 text-sm text-slate-400">Loading submissions...</div>
+            ) : (
+              <div className="space-y-3">
+                {submissions.map((sub) => {
+                  const vehicleLabel = [sub.vehicle_year, sub.vehicle_make, sub.vehicle_model, sub.vehicle_trim].filter(Boolean).join(' ')
+                  const customerName = [sub.customer_first_name, sub.customer_last_name].filter(Boolean).join(' ')
+                  const isExpanded = expandedSubmission === sub.id
+                  const isApproving = approvingId === sub.id
+                  return (
+                    <div key={sub.id} className="edc-card overflow-hidden">
+                      <div className="flex items-center justify-between gap-4 px-5 py-4">
+                        <div className="flex items-center gap-4 min-w-0">
+                          <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center shrink-0">
+                            <svg className="w-5 h-5 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                          </div>
+                          <div className="min-w-0">
+                            <div className="text-sm font-semibold text-slate-900 truncate">{vehicleLabel}</div>
+                            <div className="text-xs text-slate-500 truncate">{customerName} &middot; {sub.customer_email}</div>
+                            <div className="text-xs text-slate-400 mt-0.5">{new Date(sub.submitted_at).toLocaleString('en-CA', { dateStyle: 'medium', timeStyle: 'short' })}</div>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <div className="text-right hidden sm:block">
+                            <div className="text-sm font-bold text-slate-900">${Number(sub.deposit_amount).toLocaleString('en-CA')}</div>
+                            <div className="text-xs text-slate-400">deposit</div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setExpandedSubmission(isExpanded ? null : sub.id)}
+                            className="h-8 px-3 rounded-lg border border-slate-200 text-xs font-medium text-slate-600 hover:bg-slate-50 transition-colors"
+                          >
+                            {isExpanded ? 'Hide' : 'Details'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => { setDeclineTarget(sub); setDeclineReason('') }}
+                            disabled={isApproving || decliningId === sub.id}
+                            className="h-8 px-3 rounded-lg bg-red-50 border border-red-200 text-red-600 text-xs font-semibold hover:bg-red-100 disabled:opacity-50 flex items-center gap-1.5 transition-colors"
+                          >
+                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                            Decline
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleApprove(sub)}
+                            disabled={isApproving || decliningId === sub.id}
+                            className="h-8 px-4 rounded-lg bg-green-600 text-white text-xs font-semibold hover:bg-green-700 disabled:opacity-50 flex items-center gap-1.5 transition-colors"
+                          >
+                            {isApproving ? (
+                              <svg className="w-3.5 h-3.5 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2a10 10 0 1 0 10 10"/></svg>
+                            ) : (
+                              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                            )}
+                            {isApproving ? 'Approving...' : 'Approve'}
+                          </button>
+                        </div>
+                      </div>
+                      {isExpanded && (() => {
+                        const od = sub.order_data || {}
+                        const docs = od.documents || {}
+                        const sigs = od.signatures || {}
+                        const licFront = docs.licenceFront?.dataUrl
+                        const licBack = docs.licenceBack?.dataUrl
+                        const carfaxInitial = od.carfax?.initialDataUrl
+                        const carfaxTypedInitials = od.carfax?.typedInitials
+                        const sigBoS = sigs.billOfSaleCustomer
+                        const sigDG = sigs.dealerGuaranteeCustomer
+                        return (
+                          <div className="border-t border-slate-100 px-5 py-4 bg-slate-50 text-sm space-y-5">
+                            {/* Core details */}
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-2">
+                              <div><span className="text-slate-500 font-medium">VIN:</span> <span className="text-slate-800">{sub.vehicle_vin || '—'}</span></div>
+                              <div><span className="text-slate-500 font-medium">Stock #:</span> <span className="text-slate-800">{sub.vehicle_stock_number || '—'}</span></div>
+                              <div><span className="text-slate-500 font-medium">Vehicle Price:</span> <span className="text-slate-800">${Number(sub.vehicle_price).toLocaleString('en-CA')}</span></div>
+                              <div><span className="text-slate-500 font-medium">Total (incl. HST):</span> <span className="text-slate-800">${Number(sub.total_price).toLocaleString('en-CA')}</span></div>
+                              <div><span className="text-slate-500 font-medium">Phone:</span> <span className="text-slate-800">{sub.customer_phone || '—'}</span></div>
+                              <div><span className="text-slate-500 font-medium">Address:</span> <span className="text-slate-800">{[sub.customer_address, sub.customer_city, sub.customer_province, sub.customer_postal_code].filter(Boolean).join(', ') || '—'}</span></div>
+                              {sub.warranty_name && <div><span className="text-slate-500 font-medium">Warranty:</span> <span className="text-slate-800">{sub.warranty_name} (${Number(sub.warranty_total).toLocaleString('en-CA')})</span></div>}
+                              {sub.add_ons?.length > 0 && <div><span className="text-slate-500 font-medium">Add-ons:</span> <span className="text-slate-800">{sub.add_ons.join(', ')}</span></div>}
+                              {od.customer?.dob && <div><span className="text-slate-500 font-medium">Date of Birth:</span> <span className="text-slate-800">{od.customer.dob}</span></div>}
+                              {od.customer?.licenceNumber && <div><span className="text-slate-500 font-medium">Licence #:</span> <span className="text-slate-800">{od.customer.licenceNumber}</span></div>}
+                              {od.customer?.licenceExpiry && <div><span className="text-slate-500 font-medium">Licence Expiry:</span> <span className="text-slate-800">{od.customer.licenceExpiry}</span></div>}
+                            </div>
+
+                            {/* Licence images */}
+                            {(licFront || licBack) && (
+                              <div>
+                                <div className="text-slate-700 font-semibold mb-2">Driver's Licence</div>
+                                <div className="flex flex-wrap gap-3">
+                                  {licFront && (
+                                    <div>
+                                      <div className="text-xs text-slate-400 mb-1">Front</div>
+                                      <img src={licFront} alt="Licence front" className="h-28 rounded-lg border border-slate-200 object-cover" />
+                                    </div>
+                                  )}
+                                  {licBack && (
+                                    <div>
+                                      <div className="text-xs text-slate-400 mb-1">Back</div>
+                                      <img src={licBack} alt="Licence back" className="h-28 rounded-lg border border-slate-200 object-cover" />
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Signatures */}
+                            {(carfaxInitial || carfaxTypedInitials || sigBoS || sigDG) && (
+                              <div>
+                                <div className="text-slate-700 font-semibold mb-2">Signatures &amp; Initials</div>
+                                <div className="flex flex-wrap gap-6">
+                                  {(carfaxInitial || carfaxTypedInitials) && (
+                                    <div>
+                                      <div className="text-xs text-slate-400 mb-1">CARFAX</div>
+                                      {carfaxInitial
+                                        ? <img src={carfaxInitial} alt="CARFAX initials" className="h-14 rounded border border-slate-200 bg-white object-contain px-2" />
+                                        : <div className="flex items-center justify-center h-14 rounded border border-slate-200 bg-white px-4" style={{ fontFamily: '"Brush Script MT","Segoe Script",cursive', fontSize: '1.4rem', color: '#1e293b' }}>{carfaxTypedInitials}</div>
+                                      }
+                                      {od.carfax?.acknowledgedAt && (
+                                        <div className="text-xs text-slate-400 mt-1">{new Date(od.carfax.acknowledgedAt).toLocaleString('en-CA', { dateStyle: 'medium', timeStyle: 'short' })}</div>
+                                      )}
+                                    </div>
+                                  )}
+                                  {sigBoS && (
+                                    <div>
+                                      <div className="text-xs text-slate-400 mb-1">Bill of Sale</div>
+                                      {sigBoS.drawnDataUrl
+                                        ? <img src={sigBoS.drawnDataUrl} alt="Bill of Sale signature" className="h-14 rounded border border-slate-200 bg-white object-contain px-2" />
+                                        : <div className="text-slate-700 italic text-sm border border-slate-200 rounded px-3 py-1 bg-white">{sigBoS.typedName}</div>
+                                      }
+                                      <div className="text-xs text-slate-400 mt-1">{sigBoS.signedAt ? new Date(sigBoS.signedAt).toLocaleString('en-CA', { dateStyle: 'medium', timeStyle: 'short' }) : ''}</div>
+                                    </div>
+                                  )}
+                                  {sigDG && (
+                                    <div>
+                                      <div className="text-xs text-slate-400 mb-1">Dealer Guarantee</div>
+                                      {sigDG.drawnDataUrl
+                                        ? <img src={sigDG.drawnDataUrl} alt="Dealer guarantee signature" className="h-14 rounded border border-slate-200 bg-white object-contain px-2" />
+                                        : <div className="text-slate-700 italic text-sm border border-slate-200 rounded px-3 py-1 bg-white">{sigDG.typedName}</div>
+                                      }
+                                      <div className="text-xs text-slate-400 mt-1">{sigDG.signedAt ? new Date(sigDG.signedAt).toLocaleString('en-CA', { dateStyle: 'medium', timeStyle: 'short' }) : ''}</div>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })()}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Decline Confirmation Modal */}
+        {declineTarget && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+            <div className="edc-card w-full max-w-md p-6 shadow-premium">
+              <div className="flex items-start gap-3 mb-4">
+                <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center shrink-0 mt-0.5">
+                  <svg className="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                </div>
+                <div>
+                  <div className="text-base font-bold text-slate-900 mb-0.5">Decline Submission</div>
+                  <div className="text-sm text-slate-500">
+                    {[declineTarget.vehicle_year, declineTarget.vehicle_make, declineTarget.vehicle_model].filter(Boolean).join(' ')} &mdash; {[declineTarget.customer_first_name, declineTarget.customer_last_name].filter(Boolean).join(' ')}
+                  </div>
+                </div>
+              </div>
+              <label className="block text-sm font-medium text-slate-700 mb-1.5">
+                Reason <span className="text-slate-400 font-normal">(optional — sent to customer)</span>
+              </label>
+              <textarea
+                value={declineReason}
+                onChange={(e) => setDeclineReason(e.target.value)}
+                rows={3}
+                placeholder="e.g. Deposit not received within the required timeframe."
+                className="edc-input resize-none text-sm"
+              />
+              <div className="flex justify-end gap-2 mt-4">
+                <button
+                  type="button"
+                  onClick={() => { setDeclineTarget(null); setDeclineReason('') }}
+                  className="h-9 px-4 rounded-lg border border-slate-200 text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDecline}
+                  disabled={decliningId === declineTarget.id}
+                  className="h-9 px-4 rounded-lg bg-red-600 text-white text-sm font-semibold hover:bg-red-700 disabled:opacity-50 flex items-center gap-1.5 transition-colors"
+                >
+                  {decliningId === declineTarget.id ? (
+                    <svg className="w-3.5 h-3.5 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2a10 10 0 1 0 10 10"/></svg>
+                  ) : null}
+                  {decliningId === declineTarget.id ? 'Declining...' : 'Confirm Decline'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Active Web Deals Section */}
+        {(activeWebDealsLoading || activeWebDeals.length > 0) && (
+          <div className="mb-8">
+            <div className="flex items-center gap-2 mb-3">
+              <h2 className="text-base font-bold text-slate-900">Active Web Deals</h2>
+              {activeWebDeals.length > 0 && (
+                <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-blue-600 text-white text-xs font-bold">{activeWebDeals.length}</span>
+              )}
+            </div>
+            {activeWebDealsLoading ? (
+              <div className="edc-card p-6 text-sm text-slate-400">Loading active deals...</div>
+            ) : (
+              <div className="space-y-3">
+                {activeWebDeals.map((sub) => {
+                  const vehicleLabel = [sub.vehicle_year, sub.vehicle_make, sub.vehicle_model, sub.vehicle_trim].filter(Boolean).join(' ')
+                  const customerName = [sub.customer_first_name, sub.customer_last_name].filter(Boolean).join(' ')
+                  const currentStage = sub.deal_stage || 'insurance_pending'
+                  const currentIdx = STAGE_ORDER.indexOf(currentStage)
+                  const isAdvancing = stagingId === sub.id
+                  const canAdvance = currentIdx < STAGE_ORDER.length - 1
+                  const isExpanded = expandedWebDeal === sub.id
+                  return (
+                    <div key={sub.id} className="edc-card overflow-hidden">
+                      <div className="flex flex-col sm:flex-row sm:items-center gap-4 px-5 py-4">
+                        {/* Left: vehicle / customer */}
+                        <div className="flex items-center gap-3 min-w-0 flex-1">
+                          <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center shrink-0">
+                            <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                          </div>
+                          <div className="min-w-0">
+                            <div className="text-sm font-semibold text-slate-900 truncate">{vehicleLabel}</div>
+                            <div className="text-xs text-slate-500 truncate">{customerName} &middot; {sub.deal_id || '—'}</div>
+                            <div className="text-xs text-slate-400 mt-0.5">Approved {sub.approved_at ? new Date(sub.approved_at).toLocaleDateString('en-CA', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}</div>
+                          </div>
+                        </div>
+                        {/* Centre: stage pills */}
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          {STAGE_ORDER.map((stage, idx) => {
+                            const isPast = idx < currentIdx
+                            const isCurrent = idx === currentIdx
+                            return (
+                              <span
+                                key={stage}
+                                className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold whitespace-nowrap ${
+                                  isPast
+                                    ? 'bg-green-100 text-green-700'
+                                    : isCurrent
+                                    ? 'bg-amber-100 text-amber-700'
+                                    : 'bg-slate-100 text-slate-400'
+                                }`}
+                              >
+                                {isPast && (
+                                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" /></svg>
+                                )}
+                                {STAGE_LABELS[stage]}
+                              </span>
+                            )
+                          })}
+                        </div>
+                        {/* Right: actions */}
+                        <div className="flex items-center gap-2 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => setExpandedWebDeal(isExpanded ? null : sub.id)}
+                            className="h-8 px-3 rounded-lg border border-slate-200 text-xs font-medium text-slate-600 hover:bg-slate-50 transition-colors"
+                          >
+                            {isExpanded ? 'Hide' : 'Details'}
+                          </button>
+                          {canAdvance && (
+                            <button
+                              type="button"
+                              onClick={() => handleAdvanceStage(sub)}
+                              disabled={isAdvancing}
+                              className="h-8 px-4 rounded-lg bg-blue-600 text-white text-xs font-semibold hover:bg-blue-700 disabled:opacity-50 flex items-center gap-1.5 transition-colors"
+                            >
+                              {isAdvancing ? (
+                                <svg className="w-3.5 h-3.5 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2a10 10 0 1 0 10 10"/></svg>
+                              ) : (
+                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" /></svg>
+                              )}
+                              {isAdvancing ? 'Updating...' : `Move to ${STAGE_LABELS[STAGE_ORDER[currentIdx + 1]]}`}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                      {isExpanded && (() => {
+                        const od = sub.order_data || {}
+                        return (
+                          <div className="border-t border-slate-100 px-5 py-4 bg-slate-50 text-sm space-y-3">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-2">
+                              <div><span className="text-slate-500 font-medium">VIN:</span> <span className="text-slate-800">{sub.vehicle_vin || '—'}</span></div>
+                              <div><span className="text-slate-500 font-medium">Deal ID:</span> <span className="text-slate-800">{sub.deal_id || '—'}</span></div>
+                              <div><span className="text-slate-500 font-medium">Phone:</span> <span className="text-slate-800">{sub.customer_phone || '—'}</span></div>
+                              <div><span className="text-slate-500 font-medium">Email:</span> <span className="text-slate-800">{sub.customer_email || '—'}</span></div>
+                              <div><span className="text-slate-500 font-medium">Total:</span> <span className="text-slate-800">${Number(sub.total_price).toLocaleString('en-CA')}</span></div>
+                              {sub.warranty_name && <div><span className="text-slate-500 font-medium">Warranty:</span> <span className="text-slate-800">{sub.warranty_name}</span></div>}
+                            </div>
+                          </div>
+                        )
+                      })()}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
         <div className="edc-card p-4">
           <div className="flex flex-col lg:flex-row lg:items-center gap-3">
             <div className="flex items-center gap-2">

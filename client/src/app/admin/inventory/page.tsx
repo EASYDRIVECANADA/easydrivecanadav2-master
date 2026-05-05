@@ -1123,6 +1123,38 @@ export default function AdminInventoryPage() {
     })
   }
 
+  const handleResetToAvailable = (vehicle: Vehicle) => {
+    openConfirm(
+      'Reset vehicle status',
+      `This will set "${vehicle.year} ${vehicle.make} ${vehicle.model}" back to In Stock and cancel any pending purchase submissions for it. Continue?`,
+      async () => {
+        setModalBusy(true)
+        try {
+          // Reset vehicle status
+          await supabase
+            .from('edc_vehicles')
+            .update({ status: 'In Stock' })
+            .eq('id', vehicle.id)
+
+          // Cancel any pending/approved submissions for this vehicle
+          await supabase
+            .from('edc_purchase_submissions')
+            .update({ status: 'cancelled' })
+            .eq('vehicle_id', vehicle.id)
+            .in('status', ['pending', 'approved'])
+
+          // Refresh list
+          setVehicles((prev) =>
+            prev.map((v) => v.id === vehicle.id ? { ...v, status: 'In Stock' } : v)
+          )
+          closeModal()
+        } finally {
+          setModalBusy(false)
+        }
+      }
+    )
+  }
+
   const handleImportClick = () => {
     if (importing) return
     importInputRef.current?.click()
@@ -1172,11 +1204,11 @@ export default function AdminInventoryPage() {
   return (
     <div className="min-h-screen">
       {/* Header */}
-      <div className="px-6 lg:px-8 pt-8 pb-4">
+      <div className="px-6 lg:px-8 pt-8 pb-4 border-b border-slate-100">
         <div className="flex justify-between items-center">
           <div>
-            <h1 className="text-2xl font-bold text-[#0B1F3A]">Inventory Management</h1>
-            <p className="text-sm text-slate-500 mt-0.5">Manage your vehicle inventory</p>
+            <h1 className="text-2xl font-bold text-slate-900">Inventory</h1>
+            <p className="text-sm text-slate-400 mt-0.5">{filteredVehicles.length} of {vehicles.length} vehicles</p>
           </div>
           <div className="flex items-center gap-2">
             <input
@@ -1189,18 +1221,20 @@ export default function AdminInventoryPage() {
               type="button"
               onClick={handleImportClick}
               disabled={importing}
-              className={`h-10 px-4 rounded-xl border border-slate-200 bg-white text-sm font-medium text-[#0B1F3A] hover:bg-slate-50 transition-colors ${importing ? 'opacity-50 cursor-not-allowed' : ''}`}
+              className={`h-10 px-5 rounded-full border border-slate-200 bg-white text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors inline-flex items-center gap-1.5 ${importing ? 'opacity-50 cursor-not-allowed' : ''}`}
             >
-              {importing ? 'Importing…' : 'Import File'}
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
+              {importing ? 'Importing…' : 'Import file'}
             </button>
             <button
               type="button"
               onClick={handleOpenAddModal}
               disabled={!canAddVehicle || addGateLoading}
               title={!canAddVehicle ? (addGateReason || 'Upgrade your account to add more vehicles.') : undefined}
-              className={`h-10 px-4 rounded-xl bg-[#1EA7FF] text-white text-sm font-semibold hover:bg-[#0B1F3A] transition-colors ${!canAddVehicle || addGateLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
+              className={`h-10 px-5 rounded-full bg-[#0B1F3A] text-white text-sm font-semibold hover:bg-[#1EA7FF] transition-colors inline-flex items-center gap-1.5 ${!canAddVehicle || addGateLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
             >
-              + Add Vehicle
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+              Add vehicle
             </button>
           </div>
         </div>
@@ -1361,156 +1395,86 @@ export default function AdminInventoryPage() {
       )}
 
       <div className="px-6 py-6">
-        {/* Vehicle Count/Limit Display */}
-        <div className={`flex items-center justify-between gap-4 px-3 py-2 rounded-lg border mb-3 ${usageBgColor}`}>
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-1.5">
-              <svg className="w-4 h-4 text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M9 17a2 2 0 11-4 0 2 2 0 014 0zM19 17a2 2 0 11-4 0 2 2 0 014 0z" />
-                <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M13 16V6a1 1 0 00-1-1H4a1 1 0 00-1 1v10a1 1 0 001 1h1m8-1a1 1 0 01-1 1H9m4-1V8a1 1 0 011-1h2.586a1 1 0 01.707.293l3.414 3.414a1 1 0 01.293.707V16a1 1 0 01-1 1h-1m-4-1a1 1 0 001 1h3M9 17h6" />
-              </svg>
-              <span className="text-xs text-slate-600">Vehicles:</span>
-              <span className={`text-sm font-bold ${usageColor}`}>
-                {currentVehicleCount} / {vehicleLimit === Infinity ? '∞' : vehicleLimit}
-              </span>
-            </div>
-            {vehicleLimit !== Infinity && (
-              <div className="w-24 h-1.5 rounded-full bg-slate-200 overflow-hidden">
-                <div
-                  className={`h-full rounded-full transition-all duration-500 ${
-                    usageRatio >= 1 ? 'bg-red-500' : usageRatio >= 0.7 ? 'bg-orange-400' : 'bg-green-500'
-                  }`}
-                  style={{ width: `${Math.min(usageRatio * 100, 100)}%` }}
-                />
-              </div>
-            )}
-          </div>
-          <div className="flex items-center gap-1.5">
-            <span className="text-[11px] text-slate-500">Current Plan:</span>
-            <span className="text-xs font-semibold text-slate-800">{planDisplayName}</span>
-          </div>
-        </div>
-
-        {/* Premier/Fleet category tabs - only show for Premier accounts */}
-        {String(accountRole || '').trim().toLowerCase() === 'premier' && (
-          <div className="bg-white rounded-2xl border border-slate-200/60 p-3 mb-5" style={{ boxShadow: '0 1px 3px rgba(0,0,0,.04)' }}>
-            <div className="flex items-center gap-2">
-              {(() => {
-                const premierCount = vehicles.filter(v => (v.category || '').toLowerCase() === 'premier').length
-                const fleetCount = vehicles.filter(v => (v.category || '').toLowerCase() === 'fleet').length
-                const TabBtn = ({ label, val, count }: { label: string; val: '' | 'premier' | 'fleet'; count?: number }) => (
-                  <button
-                    type="button"
-                    onClick={() => setCategoryTab(val)}
-                    className={`px-4 py-1.5 rounded-full text-sm border transition ${
-                      categoryTab === val ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
-                    }`}
-                  >
-                    {label}{typeof count === 'number' ? ` (${count})` : ''}
-                  </button>
-                )
-                return (
-                  <div className="flex items-center gap-2">
-                    <TabBtn label="All" val="" />
-                    <TabBtn label="Premier" val="premier" count={premierCount} />
-                    <TabBtn label="Fleet" val="fleet" count={fleetCount} />
-                  </div>
-                )
-              })()}
-            </div>
-          </div>
-        )}
-
-        {/* Search / Filters / Page size */}
-        <div className="bg-white rounded-2xl border border-slate-200/60 p-4 mb-5" style={{ boxShadow: '0 1px 3px rgba(0,0,0,.04)' }}>
-          <div className="flex items-center justify-between gap-4 flex-wrap">
-            <div className="flex items-center gap-3 flex-1 min-w-[320px]">
-              <div className="flex-1 relative">
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Search inventory"
-                  className="edc-input pl-10"
-                />
-                <svg className="absolute left-3 top-2.5 w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                </svg>
-              </div>
-
-              <div className="relative">
+        {/* Tab bar + search row */}
+        <div className="flex items-center justify-between gap-4 mb-5 flex-wrap">
+          {/* Category tabs */}
+          <div className="flex items-center gap-2">
+            {(() => {
+              const allCount = vehicles.length
+              const premierCount = vehicles.filter(v => (v.category || '').toLowerCase().includes('premier')).length
+              const fleetCount = vehicles.filter(v => (v.category || '').toLowerCase().includes('fleet')).length
+              const TabBtn = ({ label, val, count }: { label: string; val: '' | 'premier' | 'fleet'; count?: number }) => (
                 <button
                   type="button"
-                  onClick={() => setStatusFilterOpen((v) => !v)}
-                  className="edc-btn-ghost text-sm py-2"
+                  onClick={() => setCategoryTab(val)}
+                  className={`px-4 py-1.5 rounded-full text-sm font-medium border transition-all ${
+                    categoryTab === val
+                      ? 'bg-[#0B1F3A] text-white border-[#0B1F3A]'
+                      : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                  }`}
                 >
-                  {selectedStatusLabel}
-                  <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                  </svg>
+                  {label}
                 </button>
+              )
+              return (
+                <>
+                  <TabBtn label="All" val="" count={allCount} />
+                  <TabBtn label="Premier" val="premier" count={premierCount} />
+                  <TabBtn label="Fleet" val="fleet" count={fleetCount} />
+                </>
+              )
+            })()}
+          </div>
 
-                {statusFilterOpen && (
-                  <div className="absolute z-20 mt-2 w-56 bg-white border border-slate-200 rounded-xl shadow-premium p-3 animate-slide-down">
-                    <div className="text-xs font-semibold text-slate-500 mb-2">Filter by Status</div>
-                    <div className="max-h-56 overflow-auto space-y-2">
-                      {allStatusOptions.map((s) => (
-                        <label key={s} className="flex items-center gap-2 text-sm text-gray-700">
-                          <input
-                            type="checkbox"
-                            className="h-4 w-4 rounded border-slate-300 text-cyan-500 focus:ring-cyan-500"
-                            checked={statusFilter.has(s)}
-                            onChange={(e) => toggleStatus(s, e.target.checked)}
-                          />
-                          <span>{s}</span>
-                        </label>
-                      ))}
-                    </div>
-                    <div className="flex items-center justify-between mt-3 pt-3 border-t border-gray-100">
-                      <button
-                        type="button"
-                        onClick={() => setStatusFilter(new Set(allStatusOptions))}
-                        className="text-xs text-gray-600 hover:text-gray-900"
-                      >
-                        Select All
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setStatusFilter(new Set())}
-                        className="text-xs text-gray-600 hover:text-gray-900"
-                      >
-                        Clear
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setStatusFilterOpen(false)}
-                        className="text-xs text-cyan-600 hover:text-cyan-700 font-medium"
-                      >
-                        Close
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
+          {/* Right: search + status dropdown */}
+          <div className="flex items-center gap-2">
+            <div className="relative">
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search inventory..."
+                className="h-9 pl-9 pr-4 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-[#1EA7FF]/30 w-56"
+              />
+              <svg className="absolute left-3 top-2.5 w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
             </div>
 
-            <div className="flex items-center gap-3">
-              <select
-                value={itemsPerPage}
-                onChange={(e) => {
-                  setItemsPerPage(parseInt(e.target.value, 10) || 10)
-                  setCurrentPage(1)
-                }}
-                className="edc-select text-sm w-auto py-2"
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setStatusFilterOpen((v) => !v)}
+                className="h-9 px-3 text-sm border border-slate-200 rounded-lg bg-white text-slate-600 hover:bg-slate-50 transition-colors inline-flex items-center gap-1.5"
               >
-                <option value={10}>10</option>
-                <option value={20}>20</option>
-                <option value={50}>50</option>
-                <option value={100}>100</option>
-              </select>
-              <div className="text-sm text-slate-500 font-medium">
-                Total Inventory: {totalVehicles}
-              </div>
+                {selectedStatusLabel}
+                <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+              {statusFilterOpen && (
+                <div className="absolute right-0 z-20 mt-1 w-52 bg-white border border-slate-200 rounded-xl shadow-lg p-3">
+                  <div className="text-xs font-semibold text-slate-500 mb-2">Filter by Status</div>
+                  <div className="max-h-56 overflow-auto space-y-2">
+                    {allStatusOptions.map((s) => (
+                      <label key={s} className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          className="h-4 w-4 rounded border-slate-300 text-[#1EA7FF] focus:ring-[#1EA7FF]"
+                          checked={statusFilter.has(s)}
+                          onChange={(e) => toggleStatus(s, e.target.checked)}
+                        />
+                        {s}
+                      </label>
+                    ))}
+                  </div>
+                  <div className="flex justify-between mt-3 pt-3 border-t border-slate-100 text-xs">
+                    <button type="button" onClick={() => setStatusFilter(new Set(allStatusOptions))} className="text-slate-500 hover:text-slate-800">All</button>
+                    <button type="button" onClick={() => setStatusFilter(new Set())} className="text-slate-500 hover:text-slate-800">Clear</button>
+                    <button type="button" onClick={() => setStatusFilterOpen(false)} className="text-[#1EA7FF] font-medium">Done</button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -1576,103 +1540,121 @@ export default function AdminInventoryPage() {
         ) : (
           <>
             {/* Desktop Table View */}
-            <div className="hidden lg:block bg-white rounded-2xl border border-slate-200/60 overflow-hidden" style={{ boxShadow: '0 1px 3px rgba(0,0,0,.04)' }}>
+            <div className="hidden lg:block bg-white rounded-2xl border border-slate-200 overflow-hidden">
               <table className="w-full text-sm">
                 <thead>
-                  <tr>
-                    <th className="px-3 py-3 text-center sticky left-0 bg-slate-50/80 z-10">
-                      <div className="flex items-center justify-center gap-2">
-                        <input
-                          type="checkbox"
-                          className="h-4 w-4 rounded border-gray-300 text-[#118df0] focus:ring-[#118df0]"
-                          checked={allSelected}
-                          onChange={(e) => toggleSelectAll(e.target.checked)}
-                          aria-label="Select all"
-                        />
-                        <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 5a2 2 0 012-2h6a2 2 0 012 2v13a2 2 0 01-2 2H6a2 2 0 01-2-2V5zm10 0h4a2 2 0 012 2v11a2 2 0 01-2 2h-4V5z" />
-                        </svg>
-                      </div>
+                  <tr className="border-b border-slate-100">
+                    <th className="w-10 px-4 py-3">
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4 rounded border-gray-300 text-[#1EA7FF] focus:ring-[#1EA7FF]"
+                        checked={allSelected}
+                        onChange={(e) => toggleSelectAll(e.target.checked)}
+                        aria-label="Select all"
+                      />
                     </th>
-                    <th>Description</th>
-                    <th>Trim</th>
-                    <th className="leading-tight">Vehicle<br />Type</th>
-                    <th>Drive</th>
-                    <th className="leading-tight">Trans-<br />mission</th>
-                    <th>Cylinders</th>
-                    <th>Colour</th>
-                    <th>Odometer</th>
-                    <th className="leading-tight">Actual Cash<br />Value</th>
-                    <th>List Price</th>
-                    <th className="leading-tight">Sale<br />Price</th>
-                    <th>DII</th>
-                    <th>Stock #</th>
-                    <th>Key #</th>
-                    <th className="leading-tight">Cert/<br />AS-IS</th>
-                    <th>Status</th>
-                    <th>Other</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-slate-400 uppercase tracking-wide">Description</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-slate-400 uppercase tracking-wide">Trim</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-slate-400 uppercase tracking-wide">Listing</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-slate-400 uppercase tracking-wide">Odometer</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-slate-400 uppercase tracking-wide">Sale Price</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-slate-400 uppercase tracking-wide">Stock #</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-slate-400 uppercase tracking-wide">Status</th>
+                    <th className="w-16 px-4 py-3"></th>
                   </tr>
                 </thead>
-                <tbody>
-                  {paginatedVehicles.map((vehicle) => (
-                  <tr key={vehicle.id} className="cursor-pointer" onClick={() => setDrawerVehicle(vehicle)}>
-                    <td className="px-3 py-3 whitespace-nowrap text-center sticky left-0 bg-white z-10">
-                      <div className="flex items-center justify-center gap-2">
+                <tbody className="divide-y divide-slate-100">
+                  {paginatedVehicles.map((vehicle) => {
+                    const listingBadge = (() => {
+                      const raw = String(vehicle.category || vehicle.inventoryType || '').toLowerCase()
+                      if (raw.includes('private')) return { label: 'Private Seller', cls: 'bg-amber-50 text-amber-700 border-amber-200' }
+                      if (raw.includes('premier')) return { label: 'EDC Premier', cls: 'bg-blue-50 text-blue-700 border-blue-200' }
+                      if (raw.includes('fleet')) return { label: 'Fleet Select', cls: 'bg-slate-100 text-slate-600 border-slate-200' }
+                      if (raw.includes('dealer')) return { label: 'Dealer Select', cls: 'bg-purple-50 text-purple-700 border-purple-200' }
+                      return { label: raw || '—', cls: 'bg-slate-100 text-slate-600 border-slate-200' }
+                    })()
+                    const statusBadge = (() => {
+                      const s = String(vehicle.status || '').toLowerCase()
+                      if (s === 'in stock' || s === 'active') return { label: vehicle.status, cls: 'bg-green-50 text-green-700 border-green-200' }
+                      if (s === 'deal pending' || s === 'pending') return { label: vehicle.status, cls: 'bg-orange-50 text-orange-700 border-orange-200' }
+                      if (s === 'sold') return { label: vehicle.status, cls: 'bg-slate-100 text-slate-500 border-slate-200' }
+                      if (s === 'coming soon') return { label: vehicle.status, cls: 'bg-sky-50 text-sky-700 border-sky-200' }
+                      return { label: vehicle.status || '—', cls: 'bg-slate-100 text-slate-500 border-slate-200' }
+                    })()
+                    return (
+                    <tr key={vehicle.id} className="hover:bg-slate-50/60 transition-colors cursor-pointer" onClick={() => setDrawerVehicle(vehicle)}>
+                      <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                         <input
                           type="checkbox"
-                          className="h-4 w-4 rounded border-gray-300 text-[#118df0] focus:ring-[#118df0]"
+                          className="h-4 w-4 rounded border-gray-300 text-[#1EA7FF] focus:ring-[#1EA7FF]"
                           aria-label={`Select ${vehicle.year} ${vehicle.make} ${vehicle.model}`}
                           checked={selectedIds.has(vehicle.id)}
                           onChange={(e) => toggleSelect(vehicle.id, e.target.checked)}
-                          onClick={(e) => e.stopPropagation()}
                         />
-                        <Link
-                          href={`/admin/inventory/${vehicle.id}`}
-                          className="p-1.5 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
-                          title="Edit vehicle"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                          </svg>
-                        </Link>
-                      </div>
-                    </td>
-                    <td className="px-3 py-3 whitespace-nowrap text-xs font-medium text-slate-800">
-                      {vehicle.year} {vehicle.make} {vehicle.model}
-                    </td>
-                    <td className="px-3 py-3 whitespace-nowrap text-xs text-slate-500">{vehicle.trim || '—'}</td>
-                    <td className="px-3 py-3 whitespace-nowrap text-xs text-slate-500">{vehicle.vehicleType || '—'}</td>
-                    <td className="px-3 py-3 whitespace-nowrap text-xs text-slate-500">{vehicle.drivetrain || '—'}</td>
-                    <td className="px-3 py-3 whitespace-nowrap text-xs text-slate-500">{vehicle.transmission || '—'}</td>
-                    <td className="px-3 py-3 whitespace-nowrap text-xs text-slate-500">{vehicle.cylinders || '—'}</td>
-                    <td className="px-3 py-3 whitespace-nowrap text-xs text-slate-500">{vehicle.exteriorColor || '—'}</td>
-                    <td className="px-3 py-3 whitespace-nowrap text-xs text-slate-500">
-                      {typeof vehicle.odometer === 'number' ? vehicle.odometer.toLocaleString() : '—'} {vehicle.odometerUnit || ''}
-                    </td>
-                    <td className="px-3 py-3 whitespace-nowrap text-xs font-medium text-slate-800">
-                      {formatMoney((vehicle.purchaseData as any)?.actualCashValue ?? (vehicle.purchaseData as any)?.actual_cash_value ?? 0)}
-                    </td>
-                    <td className="px-3 py-3 whitespace-nowrap text-xs font-medium text-slate-800">{formatMoney(vehicle.price)}</td>
-                    <td className="px-3 py-3 whitespace-nowrap text-xs font-medium text-slate-800">
-                      {formatMoney(vehicle.salePrice ?? (vehicle.costsData as any)?.salePrice ?? (vehicle.costsData as any)?.sale_price ?? 0)}
-                    </td>
-                    <td className="px-3 py-3 whitespace-nowrap text-xs text-slate-500">{getDaysInInventory(vehicle)}</td>
-                    <td className="px-3 py-3 whitespace-nowrap text-xs text-slate-500">{vehicle.stockNumber || '—'}</td>
-                    <td className="px-3 py-3 whitespace-nowrap text-xs text-slate-500">{vehicle.keyNumber || '—'}</td>
-                    <td className="px-3 py-3 whitespace-nowrap text-xs text-slate-500">
-                      {vehicle.certified || vehicle.condition || '—'}
-                    </td>
-                    <td className="px-3 py-3 whitespace-nowrap">
-                      <span className="edc-badge-neutral text-[10px]">
-                        {vehicle.status || '—'}
-                      </span>
-                    </td>
-                    <td className="px-3 py-3 whitespace-nowrap text-xs text-slate-500">
-                      {(vehicle as any).raw?.assignment || (vehicle as any).raw?.substatus || (vehicle as any).raw?.lot_location || '—'}
-                    </td>
-                  </tr>
-                ))}
+                      </td>
+                      <td className="px-4 py-3 font-medium text-slate-900 whitespace-nowrap">
+                        {vehicle.year} {vehicle.make} {vehicle.model}
+                      </td>
+                      <td className="px-4 py-3 text-slate-500 whitespace-nowrap">{vehicle.trim || <span className="text-slate-300">—</span>}</td>
+                      <td className="px-4 py-3">
+                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${listingBadge.cls}`}>
+                          {listingBadge.label}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-slate-600 whitespace-nowrap tabular-nums">
+                        {typeof vehicle.odometer === 'number'
+                          ? vehicle.odometer.toLocaleString()
+                          : vehicle.mileage
+                          ? vehicle.mileage.toLocaleString()
+                          : <span className="text-slate-300">—</span>}
+                      </td>
+                      <td className="px-4 py-3 text-slate-900 font-medium whitespace-nowrap tabular-nums">
+                        {formatPrice(Number(vehicle.salePrice || vehicle.price || 0))}
+                      </td>
+                      <td className="px-4 py-3 text-slate-500 whitespace-nowrap">{vehicle.stockNumber || <span className="text-slate-300">—</span>}</td>
+                      <td className="px-4 py-3">
+                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${statusBadge.cls}`}>
+                          {statusBadge.label}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-center gap-1 justify-end">
+                          {String(vehicle.status || '').toLowerCase() === 'reserved' && (
+                            <button
+                              type="button"
+                              onClick={() => handleResetToAvailable(vehicle)}
+                              className="p-1.5 text-amber-500 hover:text-amber-700 hover:bg-amber-50 rounded-lg transition-colors"
+                              title="Reset to Available"
+                            >
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                              </svg>
+                            </button>
+                          )}
+                          <Link
+                            href={`/admin/inventory/${vehicle.id}`}
+                            className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors"
+                            title="Edit"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                            </svg>
+                          </Link>
+                          <button
+                            type="button"
+                            onClick={() => handleDelete(vehicle)}
+                            className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                            title="Delete"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                    )
+                  })}
               </tbody>
             </table>
           </div>

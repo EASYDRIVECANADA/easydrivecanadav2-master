@@ -53,15 +53,11 @@ export default function AdminUsersPage() {
 
   const fetchUsers = async () => {
     try {
-      const { data, error: dbError } = await supabase
-        .from('edc_admin_users')
-        .select('id, email, access_code, role, is_active, created_at')
-        .order('created_at', { ascending: false })
-
-      if (dbError) throw dbError
-
+      const res = await fetch('/api/admin-users')
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error)
       setUsers(
-        (data || []).map((u) => ({
+        (json.users || []).map((u: any) => ({
           id: u.id,
           email: u.email,
           accessCode: u.access_code || '',
@@ -106,32 +102,27 @@ export default function AdminUsersPage() {
       }
 
       if (editingUser) {
-        const { error: dbError } = await supabase
-          .from('edc_admin_users')
-          .update({
-            email: normalizedEmail,
-            access_code: accessCode,
-            role: formData.role,
-            is_active: formData.isActive,
-          })
-          .eq('id', editingUser.id)
-
-        if (dbError) throw dbError
-      } else {
-        const { error: dbError } = await supabase.from('edc_admin_users').insert({
-          email: normalizedEmail,
-          access_code: accessCode,
-          role: formData.role,
-          is_active: formData.isActive,
+        const res = await fetch('/api/admin-users', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: editingUser.id, email: normalizedEmail, access_code: accessCode, role: formData.role, is_active: formData.isActive }),
         })
-
-        if (dbError) throw dbError
+        const json = await res.json()
+        if (!res.ok) throw new Error(json.error)
+      } else {
+        const res = await fetch('/api/admin-users', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: normalizedEmail, access_code: accessCode, role: formData.role, is_active: formData.isActive }),
+        })
+        const json = await res.json()
+        if (!res.ok) throw new Error(json.error)
       }
 
       setShowModal(false)
       fetchUsers()
-    } catch {
-      setError('Failed to connect to server')
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to save user')
     } finally {
       setSaving(false)
     }
@@ -139,12 +130,13 @@ export default function AdminUsersPage() {
 
   const handleToggleActive = async (user: User) => {
     try {
-      const { error: dbError } = await supabase
-        .from('edc_admin_users')
-        .update({ is_active: !user.isActive })
-        .eq('id', user.id)
-
-      if (dbError) throw dbError
+      const res = await fetch('/api/admin-users', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: user.id, email: user.email, access_code: user.accessCode, role: user.role, is_active: !user.isActive }),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error)
       fetchUsers()
     } catch (_error) {
       console.error('Error toggling user status:', _error)
@@ -153,10 +145,14 @@ export default function AdminUsersPage() {
 
   const handleDelete = async (user: User) => {
     if (!confirm(`Delete user ${user.email}? This cannot be undone.`)) return
-
     try {
-      const { error: dbError } = await supabase.from('edc_admin_users').delete().eq('id', user.id)
-      if (dbError) throw dbError
+      const res = await fetch('/api/admin-users', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: user.id }),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error)
       fetchUsers()
     } catch (_error) {
       console.error('Error deleting user:', _error)

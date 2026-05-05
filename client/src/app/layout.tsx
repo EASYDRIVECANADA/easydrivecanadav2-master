@@ -3,6 +3,7 @@ import { Plus_Jakarta_Sans } from 'next/font/google'
 import './globals.css'
 import Header from '@/components/Header'
 import Footer from '@/components/Footer'
+import PageViewTracker from '@/components/PageViewTracker'
 
 const jakarta = Plus_Jakarta_Sans({
   subsets: ['latin'],
@@ -38,9 +39,10 @@ export default function RootLayout({
       <head>
         <link rel="icon" href="/images/favicon.png" />
       </head>
-      <body className={`${jakarta.variable} ${jakarta.className}`}>
+      <body className={`${jakarta.variable} ${jakarta.className} min-h-screen flex flex-col`}>
+        <PageViewTracker />
         <Header />
-        <main id="main-content" className="min-h-screen">
+        <main id="main-content" className="flex-1 flex flex-col">
           {children}
         </main>
         <Footer />

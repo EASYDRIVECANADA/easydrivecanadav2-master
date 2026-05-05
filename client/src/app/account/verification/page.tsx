@@ -74,10 +74,19 @@ export default function AccountVerificationPage() {
   useEffect(() => {
     setMounted(true)
     const init = async () => {
+      const returnUrl = typeof window !== 'undefined'
+        ? new URLSearchParams(window.location.search).get('returnUrl')
+        : null
+      const safeReturnUrl = returnUrl && returnUrl.startsWith('/') ? returnUrl : null
+
       const { data } = await supabase.auth.getSession()
       const user = data.session?.user
       if (!user) {
-        router.replace('/account')
+        if (safeReturnUrl) {
+          router.replace(`/account?returnUrl=${encodeURIComponent(safeReturnUrl)}`)
+        } else {
+          router.replace('/account')
+        }
         return
       }
 
@@ -92,8 +101,12 @@ export default function AccountVerificationPage() {
           if (typeof window !== 'undefined') {
             window.localStorage.setItem(VERIFIED_KEY, 'true')
           }
-          setStaffAdminSession(user.email)
-          router.replace('/admin')
+          if (safeReturnUrl) {
+            router.replace(safeReturnUrl)
+          } else {
+            setStaffAdminSession(user.email)
+            router.replace('/admin')
+          }
           return
         }
       }
@@ -349,8 +362,15 @@ export default function AccountVerificationPage() {
         window.localStorage.setItem(VERIFIED_KEY, 'true')
       }
 
-      setStaffAdminSession(userEmail)
-      router.push('/admin')
+      const returnUrl = typeof window !== 'undefined'
+        ? new URLSearchParams(window.location.search).get('returnUrl')
+        : null
+      if (returnUrl && returnUrl.startsWith('/')) {
+        router.push(returnUrl)
+      } else {
+        setStaffAdminSession(userEmail)
+        router.push('/admin')
+      }
     } catch {
       setInsertError('Failed to save verification. Please try again.')
     } finally {

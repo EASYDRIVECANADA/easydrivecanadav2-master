@@ -102,6 +102,8 @@ export default function MarketplacePage() {
   const [maxYear, setMaxYear] = useState('')
   const [sort, setSort] = useState<'newest' | 'price_asc' | 'price_desc'>('newest')
 
+  const [tab, setTab] = useState('All')
+
   // Quick Filter states
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [quickFilters, setQuickFilters] = useState({
@@ -349,6 +351,7 @@ export default function MarketplacePage() {
             }
           })
         )
+        console.log('[Marketplace] sample vehicle fields:', mapped.slice(0, 3).map(v => ({ id: v.id, collection: v.collection, categories: v.categories })))
         setVehicles(mapped)
       } catch (e: any) {
         if (!cancelled) setError(e?.message || 'Failed to load vehicles')
@@ -401,7 +404,12 @@ export default function MarketplacePage() {
     const ft = feature.trim()
 
     if (m) rows = rows.filter((v) => (v.make || '').trim() === m)
-    if (c) rows = rows.filter((v) => ((v.collection || '').trim()) === c)
+    if (c) rows = rows.filter((v) => {
+      const col = String(v.collection || '').trim().toLowerCase()
+      const cat = String(v.categories || '').trim().toLowerCase()
+      const cl = c.trim().toLowerCase()
+      return col.includes(cl) || cat.includes(cl) || cl.includes(col.split(' ')[0])
+    })
     if (cat) rows = rows.filter((v) => String((v as any)?.categories || '').toLowerCase().includes(cat))
     if (bs) rows = rows.filter((v) => ((v.bodyStyle || '').trim()) === bs)
     if (ec) rows = rows.filter((v) => ((v.exteriorColor || '').trim()) === ec)
@@ -511,137 +519,141 @@ export default function MarketplacePage() {
     })
   }
 
+  const getListingType = (v: MarketVehicle): string => {
+    // Check categories first (more specific), then collection as fallback
+    const cat = String(v.categories || '').toLowerCase()
+    const col = String(v.collection || '').toLowerCase()
+    const raw = cat || col
+
+    if (raw.includes('private')) return 'Private Seller'
+    if (raw.includes('premier')) return 'EDC Premier'
+    if (raw.includes('dealer')) return 'Dealer Select'
+    if (raw.includes('fleet')) return 'Fleet Select'
+    // If only collection is set and it has no keyword, fall back to checking it explicitly
+    if (!cat && col) {
+      if (col.includes('private')) return 'Private Seller'
+      if (col.includes('premier')) return 'EDC Premier'
+      if (col.includes('dealer')) return 'Dealer Select'
+      if (col.includes('fleet')) return 'Fleet Select'
+    }
+    return 'EDC Premier'
+  }
+
+  const LISTING_TABS = ['All', 'EDC Premier', 'Dealer Select', 'Fleet Select', 'Private Seller']
+  const CHIP_STYLES: Record<string, string> = {
+    'EDC Premier': 'bg-[#1EA7FF] text-white',
+    'Dealer Select': 'bg-purple-600 text-white',
+    'Fleet Select': 'bg-slate-600 text-white',
+    'Private Seller': 'bg-amber-500 text-white',
+  }
+  const DOT_COLORS: Record<string, string> = {
+    'EDC Premier': 'bg-[#1EA7FF]',
+    'Dealer Select': 'bg-purple-500',
+    'Fleet Select': 'bg-slate-400',
+    'Private Seller': 'bg-amber-400',
+  }
+  const tabCounts = LISTING_TABS.reduce<Record<string, number>>((acc, t) => {
+    acc[t] = t === 'All' ? filtered.length : filtered.filter((v) => getListingType(v) === t).length
+    return acc
+  }, {})
+  const tabFiltered = tab === 'All' ? filtered : filtered.filter((v) => getListingType(v) === tab)
+
   return (
-    <div className="flex min-h-screen">
-      <div className="flex flex-1 items-start">
-        {/* Quick Filters Sidebar — left, sticky */}
-        <aside
-          className="flex-shrink-0 relative transition-all duration-300 ease-out"
-          style={{
-            width: sidebarCollapsed ? '0px' : '220px',
-            position: 'sticky',
-            top: 0,
-            height: '100vh',
-            overflow: 'visible',
-            zIndex: 10,
-          }}
+    <div className="w-full">
+      {/* Page header */}
+      <div className="px-6 lg:px-8 py-6 flex flex-col gap-3 border-b border-slate-200 bg-white sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-[#0B1F3A]">Marketplace</h1>
+          <p className="mt-0.5 text-sm text-slate-500">
+            {loading
+              ? 'Loading vehicles…'
+              : `${tabFiltered.length} of ${vehicles.length} vehicles · published to AutoTrader, Kijiji & Facebook`}
+          </p>
+        </div>
+        <button
+          type="button"
+          className="inline-flex h-10 items-center px-5 rounded-full bg-[#0B1F3A] text-white text-sm font-semibold hover:bg-[#1EA7FF] transition-colors self-start sm:self-auto"
         >
-          {/* Sidebar background + scrollable content */}
-          <div
-            className="h-full flex flex-col transition-all duration-300 ease-out"
-            style={{
-              width: sidebarCollapsed ? '0px' : '220px',
-              background: 'linear-gradient(180deg, #0B1F3A 0%, #081726 60%, #060f1a 100%)',
-              borderRight: '1px solid rgba(30,167,255,.08)',
-              boxShadow: '4px 0 24px rgba(0,0,0,.3)',
-              overflow: 'hidden',
-              opacity: sidebarCollapsed ? 0 : 1,
-              pointerEvents: sidebarCollapsed ? 'none' : 'auto',
-            }}
-          >
-            <div className="overflow-y-auto flex-1 pt-6 pb-6">
-              <div className="px-4">
-                <div className="flex items-center justify-between mb-5">
-                  <h3 className="text-xs font-bold text-white/60 uppercase tracking-widest">Quick Filters</h3>
-                  <button type="button" onClick={clearAllFilters} className="text-[10px] font-medium text-[#1EA7FF] hover:text-white transition-colors">Clear</button>
-                </div>
-                <div className="space-y-6">
-                  <div>
-                    <div className="text-[10px] font-semibold text-white/40 uppercase tracking-widest mb-2">Seller Type</div>
-                    <div className="flex flex-col gap-1">
-                      {[
-                        { key: 'private', label: 'Private Sellers' },
-                        { key: 'dealer', label: 'Dealers' },
-                        { key: 'fleet', label: 'Fleet' },
-                        { key: 'premier', label: 'Premier' },
-                      ].map(({ key, label }) => (
-                        <button key={key} type="button" onClick={() => toggleSellerType(key)}
-                          className={`w-full text-left px-3 py-2 text-sm rounded-lg transition-all duration-200 ${
-                            quickFilters.sellerTypes.includes(key)
-                              ? 'bg-[#1EA7FF]/20 text-[#1EA7FF] font-semibold'
-                              : 'text-white/70 hover:bg-white/5 hover:text-white'
-                          }`}
-                        >{label}</button>
-                      ))}
-                    </div>
+          Sync now
+        </button>
+      </div>
+
+      {/* Tab bar */}
+      <div className="border-b border-slate-200 bg-white">
+        <div className="flex flex-wrap gap-1.5 px-6 py-3">
+          {LISTING_TABS.map((t) => {
+            const active = tab === t
+            return (
+              <button
+                key={t}
+                type="button"
+                onClick={() => setTab(t)}
+                className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold transition-all ${
+                  active
+                    ? 'border-[#1EA7FF] bg-[#1EA7FF] text-white'
+                    : 'border-slate-200 text-slate-500 hover:bg-slate-50'
+                }`}
+              >
+                {t !== 'All' && (
+                  <span className={`h-1.5 w-1.5 rounded-full ${DOT_COLORS[t] ?? 'bg-slate-400'}`} />
+                )}
+                {t}
+                <span
+                  className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold ${
+                    active ? 'bg-white/25 text-white' : 'bg-slate-100 text-slate-700'
+                  }`}
+                >
+                  {tabCounts[t] ?? 0}
+                </span>
+              </button>
+            )
+          })}
+        </div>
+      </div>
+
+      {/* Grid area */}
+      <div className="p-6 lg:p-8">
+        {error ? (
+          <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-600">{error}</div>
+        ) : loading ? (
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <div key={i} className="rounded-2xl border border-slate-200 bg-white overflow-hidden animate-pulse">
+                <div className="bg-slate-200" style={{ aspectRatio: '16/10' }} />
+                <div className="p-4 space-y-3">
+                  <div className="flex justify-between">
+                    <div className="h-4 w-36 rounded bg-slate-200" />
+                    <div className="h-4 w-16 rounded bg-slate-200" />
                   </div>
-                  <div>
-                    <div className="text-[10px] font-semibold text-white/40 uppercase tracking-widest mb-2">Special Listings</div>
-                    <div className="flex flex-col gap-1">
-                      {[
-                        { key: 'newListings', label: 'New Listings' },
-                        { key: 'dealOfWeek', label: 'Deals of Week' },
-                        { key: 'featured', label: 'Featured' },
-                      ].map(({ key, label }) => (
-                        <button key={key} type="button" onClick={() => toggleQuickFilter(key as any)}
-                          className={`w-full text-left px-3 py-2 text-sm rounded-lg transition-all duration-200 ${
-                            (quickFilters as any)[key]
-                              ? 'bg-[#1EA7FF]/20 text-[#1EA7FF] font-semibold'
-                              : 'text-white/70 hover:bg-white/5 hover:text-white'
-                          }`}
-                        >{label}</button>
-                      ))}
-                    </div>
+                  <div className="h-3 w-48 rounded bg-slate-100" />
+                  <div className="flex gap-1.5">
+                    <div className="h-5 w-16 rounded-full bg-slate-100" />
+                    <div className="h-5 w-12 rounded-full bg-slate-100" />
+                    <div className="h-5 w-16 rounded-full bg-slate-100" />
                   </div>
-                  <div>
-                    <div className="text-[10px] font-semibold text-white/40 uppercase tracking-widest mb-2">Cars Under</div>
-                    <div className="flex flex-col gap-1">
-                      {[
-                        { value: 25000, label: '$25K' },
-                        { value: 20000, label: '$20K' },
-                        { value: 15000, label: '$15K' },
-                        { value: 10000, label: '$10K' },
-                      ].map(({ value, label }) => (
-                        <button key={value} type="button" onClick={() => toggleQuickFilter('priceUnder', value)}
-                          className={`w-full text-left px-3 py-2 text-sm rounded-lg transition-all duration-200 ${
-                            quickFilters.priceUnder === value
-                              ? 'bg-[#1EA7FF]/20 text-[#1EA7FF] font-semibold'
-                              : 'text-white/70 hover:bg-white/5 hover:text-white'
-                          }`}
-                        >{label}</button>
-                      ))}
-                    </div>
-                  </div>
+                  <div className="h-9 w-full rounded-full bg-slate-100" />
                 </div>
               </div>
-            </div>
-          </div>
-
-          {/* Toggle button — pill tab on right edge */}
-          <button
-            type="button"
-            onClick={() => setSidebarCollapsed(v => !v)}
-            className="absolute top-1/2 -translate-y-1/2 flex items-center justify-center bg-[#0B1F3A] border border-[rgba(30,167,255,.2)] text-[#1EA7FF] hover:bg-[#1a2f4a] transition-all duration-200 shadow-lg"
-            style={{ right: '-20px', zIndex: 50, width: '20px', height: '90px', borderRadius: '0 6px 6px 0', borderLeft: 'none' }}
-          >
-            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d={sidebarCollapsed ? 'M9 5l7 7-7 7' : 'M15 19l-7-7 7-7'} />
-            </svg>
-          </button>
-        </aside>
-
-        {/* Results */}
-        <section className="flex-1 min-w-0 px-6 py-6">
-          <div className="flex items-center justify-between mb-3">
-            <div className="text-sm text-slate-500">{loading ? 'Loading…' : error ? 'Failed to load vehicles' : `Showing ${filtered.length} of ${vehicles.length} total vehicles`}</div>
-            <div className="w-48">
-              <select value={sort} onChange={(e) => setSort(e.target.value as any)} className="w-full h-10 rounded-xl border border-slate-200 bg-white text-sm text-slate-700 px-3 focus:outline-none focus:ring-2 focus:ring-[#1EA7FF]/30 transition-all">
-                <option value="newest">Newest</option>
-                <option value="price_asc">Price: Low to High</option>
-                <option value="price_desc">Price: High to Low</option>
-              </select>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-            {filtered.map((v) => (
-              <VehicleCard key={v.id} vehicle={v} hideFooter onClick={() => setSelected(v)} />
             ))}
-
-            {filtered.length === 0 ? (
-              <div className="col-span-full text-center text-sm text-slate-400 py-10">No vehicles found.</div>
-            ) : null}
           </div>
+        ) : tabFiltered.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-20 text-slate-400">
+            <svg className="h-10 w-10 mb-3 opacity-40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <p className="text-sm font-medium">No listings found</p>
+          </div>
+        ) : (
+          <>
+          <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+            {tabFiltered.map((v) => (
+              <VehicleCard
+                key={v.id}
+                vehicle={v}
+                onClick={() => { setSelected(v); setSelectedImageIndex(0) }}
+              />
+            ))}
+          </section>
 
           {selected ? (
             <div
@@ -1116,7 +1128,10 @@ export default function MarketplacePage() {
             </div>
           </div>
         )}
-        </section>
+
+          </>
+        )
+      }
 
       </div>
     </div>

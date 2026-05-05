@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useState, useMemo, forwardRef, useImperativeHandle } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 
 type UserRow = {
@@ -9,10 +9,15 @@ type UserRow = {
   email: string | null
   role: string | null
   name: string | null
+  phone: string | null
+  status: string | null
+  title: string | null
   created_at: string | null
 }
 
-export default function UsersTab() {
+export type UsersTabHandle = { openAdd: () => void }
+
+const UsersTab = forwardRef<UsersTabHandle>(function UsersTab(_, ref) {
   const [rows, setRows] = useState<UserRow[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -62,6 +67,14 @@ export default function UsersTab() {
   const [currentPassword, setCurrentPassword] = useState('')
   const [showCurrentPassword, setShowCurrentPassword] = useState(false)
 
+  // Add employee modal
+  const [showAddModal, setShowAddModal] = useState(false)
+  const [addForm, setAddForm] = useState({ first_name: '', last_name: '', email: '', phone: '', role: 'Private', title: '', password: '' })
+  const [addSaving, setAddSaving] = useState(false)
+  const [addError, setAddError] = useState('')
+
+  useImperativeHandle(ref, () => ({ openAdd: () => { setAddForm({ first_name: '', last_name: '', email: '', phone: '', role: 'Private', title: '', password: '' }); setAddError(''); setShowAddModal(true) } }))
+
   useEffect(() => {
     fetchUsers()
   }, [])
@@ -79,7 +92,10 @@ export default function UsersTab() {
       if (dbError) throw dbError
       const mapped = Array.isArray(data) ? data.map((r: any) => ({
         ...r,
-        name: [r.first_name, r.last_name].filter(Boolean).join(' ') || null
+        name: [r.first_name, r.last_name].filter(Boolean).join(' ') || null,
+        phone: r.phone || null,
+        status: r.status || null,
+        title: r.title || null,
       })) : []
       setRows(mapped)
     } catch (e: any) {
@@ -222,94 +238,156 @@ export default function UsersTab() {
     }
   }
 
+  const handleAddSave = async () => {
+    if (!addForm.email.trim()) { setAddError('Email is required'); return }
+    setAddSaving(true)
+    setAddError('')
+    try {
+      const { error: insertError } = await supabase.from('users').insert({
+        email: addForm.email.trim().toLowerCase(),
+        first_name: addForm.first_name.trim() || null,
+        last_name: addForm.last_name.trim() || null,
+        phone: addForm.phone.trim() || null,
+        role: addForm.role || 'Private',
+        title: addForm.title.trim() || null,
+        password: addForm.password.trim() || null,
+        status: 'Active',
+        created_at: new Date().toISOString(),
+      })
+      if (insertError) throw insertError
+      await fetchUsers()
+      setShowAddModal(false)
+    } catch (e: any) {
+      setAddError(e?.message || 'Failed to create employee')
+    } finally {
+      setAddSaving(false)
+    }
+  }
+
+  const getInitials = (name: string | null, email: string | null) => {
+    if (name) {
+      const parts = name.trim().split(' ')
+      return (parts[0]?.[0] ?? '') + (parts[1]?.[0] ?? '')
+    }
+    return (email?.[0] ?? '?').toUpperCase()
+  }
+
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between gap-3">
-        <input
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search users..."
-          autoComplete="off"
-          className="h-10 w-72 max-w-full pl-4 pr-4 rounded-xl border border-slate-200 bg-white text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#1EA7FF]/30 focus:border-[#1EA7FF]/40 transition-all"
-        />
-        <div className="flex items-center gap-2">
-          <select
-            value={pageSize}
-            onChange={(e) => setPageSize(Number(e.target.value) || 10)}
-            className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none focus:ring-2 focus:ring-[#1EA7FF]/30 transition-all"
-          >
-            <option value={10}>10 per page</option>
-            <option value={20}>20 per page</option>
-            <option value={50}>50 per page</option>
-            <option value={100}>100 per page</option>
-          </select>
+      {/* Search bar */}
+      <div className="flex items-center gap-3">
+        <div className="relative">
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search..."
+            autoComplete="off"
+            className="h-9 w-64 pl-9 pr-4 rounded-lg border border-slate-200 bg-white text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#1EA7FF]/30 transition-all"
+          />
+          <svg className="absolute left-3 top-2.5 w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+          </svg>
         </div>
       </div>
 
       {error && <div className="text-sm text-red-600 bg-red-50 px-4 py-3 rounded-xl">{error}</div>}
 
-      <div className="overflow-hidden rounded-xl border border-slate-200/60">
-        <table className="w-full table-auto text-sm">
-          <thead className="bg-slate-50/80 text-slate-600">
+      <div className="rounded-2xl border border-slate-200 overflow-hidden">
+        <table className="w-full text-sm">
+          <thead className="bg-slate-50 border-b border-slate-100">
             <tr>
-              <th className="w-52 px-3 py-3 text-left font-semibold">EMAIL</th>
-              <th className="w-28 px-3 py-3 text-left font-semibold">ROLE</th>
-              <th className="w-40 px-3 py-3 text-left font-semibold">NAME</th>
-              <th className="w-32 px-3 py-3 text-left font-semibold">USER ID</th>
-              <th className="w-32 px-3 py-3 text-left font-semibold">CREATED</th>
-              <th className="w-28 px-3 py-3 text-center font-semibold">ACTIONS</th>
+              <th className="px-5 py-3 text-left text-xs font-semibold text-slate-400 uppercase tracking-wide">Name</th>
+              <th className="px-5 py-3 text-left text-xs font-semibold text-slate-400 uppercase tracking-wide">Role</th>
+              <th className="px-5 py-3 text-left text-xs font-semibold text-slate-400 uppercase tracking-wide">Phone</th>
+              <th className="px-5 py-3 text-left text-xs font-semibold text-slate-400 uppercase tracking-wide">Joined</th>
+              <th className="px-5 py-3 text-left text-xs font-semibold text-slate-400 uppercase tracking-wide">Status</th>
+              <th className="w-10 px-5 py-3" />
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {loading ? (
               <tr>
-                <td className="px-4 py-4 text-slate-400 text-center" colSpan={6}>
-                  Loading...
+                <td className="px-5 py-8 text-center text-slate-400" colSpan={6}>
+                  <div className="inline-flex items-center gap-2">
+                    <div className="animate-spin h-4 w-4 border-2 border-[#1EA7FF] border-t-transparent rounded-full" />
+                    Loading...
+                  </div>
                 </td>
               </tr>
             ) : paged.length === 0 ? (
               <tr>
-                <td className="px-4 py-4 text-slate-400 text-center" colSpan={6}>
-                  No users found.
-                </td>
+                <td className="px-5 py-8 text-center text-slate-400" colSpan={6}>No users found.</td>
               </tr>
             ) : (
               paged.map((r) => (
-                <tr key={r.id} className="hover:bg-slate-50/70 transition-colors">
-                  <td className="px-3 py-2 text-slate-900">{r.email || '-'}</td>
-                  <td className="px-3 py-2">
-                    <span className={`inline-flex px-2 py-1 rounded-lg text-xs font-semibold ${
-                      r.role === 'admin' ? 'bg-purple-100 text-purple-700' : 'bg-slate-100 text-slate-700'
-                    }`}>
-                      {r.role || '-'}
-                    </span>
+                <tr key={r.id} className="hover:bg-slate-50/60 transition-colors">
+                  {/* NAME col: avatar + name + email */}
+                  <td className="px-5 py-3">
+                    <div className="flex items-center gap-3">
+                      <div
+                        className="w-10 h-10 rounded-full bg-[#0B1F3A] text-white text-sm font-bold flex-shrink-0 flex items-center justify-center uppercase"
+                      >
+                        {getInitials(r.name, r.email)}
+                      </div>
+                      <div>
+                        <div className="font-medium text-slate-900">{r.name || '—'}</div>
+                        <div className="text-xs text-slate-400">{r.email || '—'}</div>
+                      </div>
+                    </div>
                   </td>
-                  <td className="px-3 py-2 text-slate-900">{r.name || '-'}</td>
-                  <td className="px-3 py-2 text-slate-500 text-xs font-mono">{r.user_id ? r.user_id.substring(0, 8) + '...' : '-'}</td>
-                  <td className="px-3 py-2 text-slate-500 text-xs">
-                    {r.created_at ? new Date(r.created_at).toLocaleDateString() : '-'}
+                  {/* ROLE */}
+                  <td className="px-5 py-3">
+                    {r.role ? (
+                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border border-slate-200 text-slate-700 bg-white capitalize">
+                        {r.role.charAt(0).toUpperCase() + r.role.slice(1)}
+                      </span>
+                    ) : <span className="text-slate-300">—</span>}
                   </td>
-                  <td className="px-3 py-2 text-center">
-                    <div className="flex items-center justify-center gap-3">
+                  {/* PHONE */}
+                  <td className="px-5 py-3 text-slate-500">{r.phone || <span className="text-slate-300">—</span>}</td>
+                  {/* JOINED */}
+                  <td className="px-5 py-3 text-slate-500 tabular-nums">
+                    {r.created_at
+                      ? new Date(r.created_at).toISOString().slice(0, 10)
+                      : <span className="text-slate-300">—</span>}
+                  </td>
+                  {/* STATUS */}
+                  <td className="px-5 py-3">
+                    {(() => {
+                      const s = (r.status || 'active').toLowerCase()
+                      const isActive = s === 'active'
+                      return (
+                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${
+                          isActive
+                            ? 'bg-green-50 text-green-700 border-green-200'
+                            : 'bg-red-50 text-red-600 border-red-200'
+                        }`}>
+                          {isActive ? 'Active' : 'Inactive'}
+                        </span>
+                      )
+                    })()}
+                  </td>
+                  {/* ACTIONS */}
+                  <td className="px-5 py-3 text-right">
+                    <div className="flex items-center justify-end gap-1">
                       <button
                         type="button"
                         onClick={() => handleEdit(r)}
-                        className="text-slate-400 hover:text-[#1EA7FF] transition-colors"
+                        className="p-1.5 text-slate-400 hover:text-[#1EA7FF] hover:bg-blue-50 rounded-lg transition-colors"
                         title="Edit"
                       >
                         <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 3.5a2.121 2.121 0 113 3L7 19l-4 1 1-4 12.5-12.5z" />
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4 12.5-12.5z" />
                         </svg>
                       </button>
                       <button
                         type="button"
                         onClick={() => handleDelete(r.id)}
-                        className="text-red-400 hover:text-red-600 transition-colors"
+                        className="p-1.5 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
                         title="Delete"
                       >
                         <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7" />
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M10 11v6m4-6v6" />
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                         </svg>
                       </button>
                     </div>
@@ -722,6 +800,69 @@ export default function UsersTab() {
           </div>
         </div>
       )}
+
+      {/* Add Employee Modal */}
+      {showAddModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
+            <div className="flex items-center justify-between mb-5">
+              <h2 className="text-base font-bold text-slate-900">Add Employee</h2>
+              <button type="button" onClick={() => setShowAddModal(false)} className="text-slate-400 hover:text-slate-600">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+              </button>
+            </div>
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">First Name</label>
+                  <input value={addForm.first_name} onChange={e => setAddForm(f => ({ ...f, first_name: e.target.value }))} autoComplete="given-name" className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1EA7FF]" placeholder="Jane" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Last Name</label>
+                  <input value={addForm.last_name} onChange={e => setAddForm(f => ({ ...f, last_name: e.target.value }))} autoComplete="family-name" className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1EA7FF]" placeholder="Doe" />
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Email <span className="text-red-500">*</span></label>
+                <input value={addForm.email} onChange={e => setAddForm(f => ({ ...f, email: e.target.value }))} type="email" autoComplete="off" className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1EA7FF]" placeholder="jane@example.com" />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Phone</label>
+                  <input value={addForm.phone} onChange={e => setAddForm(f => ({ ...f, phone: e.target.value }))} autoComplete="off" className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1EA7FF]" placeholder="6135550100" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Role</label>
+                  <select value={addForm.role} onChange={e => setAddForm(f => ({ ...f, role: e.target.value }))} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1EA7FF]">
+                    <option value="Private">Private</option>
+                    <option value="Premier">Premier</option>
+                    <option value="Staff">Staff</option>
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Title</label>
+                <input value={addForm.title} onChange={e => setAddForm(f => ({ ...f, title: e.target.value }))} autoComplete="organization-title" className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1EA7FF]" placeholder="Sales Manager" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Password</label>
+                <input value={addForm.password} onChange={e => setAddForm(f => ({ ...f, password: e.target.value }))} type="password" autoComplete="new-password" className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1EA7FF]" placeholder="••••••••" />
+              </div>
+              {addError && <p className="text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">{addError}</p>}
+            </div>
+            <div className="flex justify-end gap-2 mt-5">
+              <button type="button" onClick={() => setShowAddModal(false)} className="h-9 px-4 rounded-lg border border-slate-200 text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors">
+                Cancel
+              </button>
+              <button type="button" onClick={handleAddSave} disabled={addSaving} className="h-9 px-5 rounded-lg bg-[#0B1F3A] text-white text-sm font-semibold hover:bg-[#1EA7FF] disabled:opacity-50 transition-colors">
+                {addSaving ? 'Saving...' : 'Add Employee'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
-}
+})
+
+export default UsersTab

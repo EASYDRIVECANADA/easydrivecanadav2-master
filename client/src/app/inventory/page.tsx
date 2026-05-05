@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabaseClient'
-import { PHASE3_CHANGE_EVENT, getVehicleHoldRecord } from '@/lib/phase3Mock'
+// phase3Mock removed — reservation status now comes from edc_vehicles.status
 
 interface Vehicle {
   id: string
@@ -43,7 +43,6 @@ type SortOption =
 export default function InventoryPage() {
   const [vehicles, setVehicles] = useState<Vehicle[]>([])
   const [loading, setLoading] = useState(true)
-  const [phase3Tick, setPhase3Tick] = useState(0)
   const [searchQuery, setSearchQuery] = useState('')
   const [showMobileFilters, setShowMobileFilters] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
@@ -152,15 +151,6 @@ export default function InventoryPage() {
   useEffect(() => {
     fetchVehicles()
   }, [])
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return
-    const onChange = () => setPhase3Tick((t) => t + 1)
-    window.addEventListener(PHASE3_CHANGE_EVENT, onChange)
-    return () => window.removeEventListener(PHASE3_CHANGE_EVENT, onChange)
-  }, [])
-
-  void phase3Tick
 
   const fetchVehicles = async () => {
     try {
@@ -609,181 +599,179 @@ export default function InventoryPage() {
   )
 
   return (
-    <div className="min-h-screen">
-      {/* Hero Header */}
-      <section className="relative overflow-hidden py-14 lg:py-18">
-        <div className="absolute inset-0 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900" />
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-[#118df0]/20 via-transparent to-transparent" />
-        <div className="absolute top-10 right-10 w-72 h-72 bg-[#118df0]/10 rounded-full blur-3xl" />
-        <div className="absolute bottom-0 left-0 w-96 h-48 bg-[#118df0]/5 rounded-full blur-3xl" />
-        
-        <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center">
-            <span className="inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium bg-white/10 backdrop-blur-sm border border-white/20 text-white/90 mb-5">
-              <span className="relative flex h-2 w-2">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#38bdf8] opacity-75" />
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-[#38bdf8]" />
-              </span>
-              {vehicles.length} Vehicles Available
-            </span>
-            <h1 className="text-3xl md:text-4xl lg:text-5xl font-extrabold text-white mb-4 tracking-tight">
-              Find Your Perfect <span className="bg-gradient-to-r from-[#38bdf8] to-[#0ea5e9] bg-clip-text text-transparent">Vehicle</span>
-            </h1>
-            <p className="text-slate-300 text-lg max-w-2xl mx-auto mb-8">
-              Browse our selection of quality pre-owned vehicles
+    <div className="min-h-screen bg-gray-50">
+      {/* Page Header */}
+      <section className="px-4 sm:px-6 lg:px-8 pt-8 pb-6 max-w-7xl mx-auto">
+        <h1 className="text-3xl font-bold text-gray-900 mb-1">Shop our inventory</h1>
+        <div className="flex items-center justify-between gap-4">
+          <p className="text-[#118df0] font-medium text-sm">{vehicles.length} vehicles available</p>
+          {!loading && filteredVehicles.length > 0 && (
+            <p className="hidden lg:block text-sm text-gray-500">
+              Showing {startIndex + 1}–{Math.min(endIndex, filteredVehicles.length)} of{' '}
+              <span className="font-semibold text-gray-900">{filteredVehicles.length}</span> vehicles
             </p>
-
-            {/* Search Bar */}
-            <div className="max-w-2xl mx-auto">
-              <div className="relative group">
-                <div className="absolute inset-y-0 left-0 pl-5 flex items-center pointer-events-none">
-                  <svg className="w-5 h-5 text-white/40 group-focus-within:text-[#38bdf8] transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                  </svg>
-                </div>
-                <input
-                  type="text"
-                  placeholder="Search by make, model, or year..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full pl-13 pr-12 py-4 bg-white/10 backdrop-blur-xl border border-white/20 rounded-full text-white placeholder-white/40 text-center focus:outline-none focus:ring-2 focus:ring-[#0ea5e9]/50 focus:border-[#0ea5e9]/30 focus:bg-white/15 transition-all shadow-lg shadow-black/10"
-                />
-                {searchQuery && (
-                  <button
-                    onClick={() => setSearchQuery('')}
-                    className="absolute inset-y-0 right-0 pr-5 flex items-center text-white/40 hover:text-white transition-colors"
-                  >
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                  </button>
-                )}
-              </div>
-            </div>
-          </div>
+          )}
         </div>
       </section>
 
       {/* Main Content */}
-      <div className="w-full px-0">
-        <div className="flex flex-col lg:flex-row">
-          {/* Quick Filters Sidebar — left, sticky */}
-          <aside
-            className="hidden lg:block flex-shrink-0 relative transition-all duration-300 ease-out"
-            style={{
-              width: sidebarCollapsed ? '0px' : '220px',
-              position: 'sticky',
-              top: 0,
-              height: '100vh',
-              overflow: 'visible',
-              zIndex: 10,
-            }}
-          >
-            {/* Sidebar background + scrollable content */}
-            <div
-              className="h-full flex flex-col transition-all duration-300 ease-out"
-              style={{
-                width: sidebarCollapsed ? '0px' : '220px',
-                background: 'linear-gradient(180deg, #0B1F3A 0%, #081726 60%, #060f1a 100%)',
-                borderRight: '1px solid rgba(30,167,255,.08)',
-                boxShadow: '4px 0 24px rgba(0,0,0,.3)',
-                overflow: 'hidden',
-                opacity: sidebarCollapsed ? 0 : 1,
-                pointerEvents: sidebarCollapsed ? 'none' : 'auto',
-              }}
-            >
-              <div className="overflow-y-auto flex-1 pt-6 pb-6">
-                <div className="px-4">
-                  <div className="flex items-center justify-between mb-5">
-                    <h3 className="text-xs font-bold text-white/60 uppercase tracking-widest">Quick Filters</h3>
-                    <button type="button" onClick={clearFilters} className="text-[10px] font-medium text-[#1EA7FF] hover:text-white transition-colors">Clear</button>
-                  </div>
-                  <div className="space-y-6">
-                    <div>
-                      <div className="text-[10px] font-semibold text-white/40 uppercase tracking-widest mb-2">Seller Type</div>
-                      <div className="flex flex-col gap-1">
-                        {[
-                          { key: 'private', label: 'Private Sellers' },
-                          { key: 'dealer', label: 'Dealers' },
-                          { key: 'fleet', label: 'Fleet' },
-                          { key: 'premier', label: 'Premier' },
-                        ].map(({ key, label }) => (
-                          <button key={key} type="button" onClick={() => toggleSellerType(key)}
-                            className={`w-full text-left px-3 py-2 text-sm rounded-lg transition-all duration-200 ${
-                              quickFilters.sellerTypes.includes(key)
-                                ? 'bg-[#1EA7FF]/20 text-[#1EA7FF] font-semibold'
-                                : 'text-white/70 hover:bg-white/5 hover:text-white'
-                            }`}
-                          >{label}</button>
-                        ))}
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-[10px] font-semibold text-white/40 uppercase tracking-widest mb-2">Special Listings</div>
-                      <div className="flex flex-col gap-1">
-                        {[
-                          { key: 'newListings', label: 'New Listings' },
-                          { key: 'dealOfWeek', label: 'Deals of Week' },
-                          { key: 'featured', label: 'Featured' },
-                        ].map(({ key, label }) => (
-                          <button key={key} type="button" onClick={() => toggleQuickFilter(key as any)}
-                            className={`w-full text-left px-3 py-2 text-sm rounded-lg transition-all duration-200 ${
-                              (quickFilters as any)[key]
-                                ? 'bg-[#1EA7FF]/20 text-[#1EA7FF] font-semibold'
-                                : 'text-white/70 hover:bg-white/5 hover:text-white'
-                            }`}
-                          >{label}</button>
-                        ))}
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-[10px] font-semibold text-white/40 uppercase tracking-widest mb-2">Cars Under</div>
-                      <div className="flex flex-col gap-1">
-                        {[
-                          { value: 25000, label: '$25K' },
-                          { value: 20000, label: '$20K' },
-                          { value: 15000, label: '$15K' },
-                          { value: 10000, label: '$10K' },
-                        ].map(({ value, label }) => (
-                          <button key={value} type="button" onClick={() => toggleQuickFilter('priceUnder', value)}
-                            className={`w-full text-left px-3 py-2 text-sm rounded-lg transition-all duration-200 ${
-                              quickFilters.priceUnder === value
-                                ? 'bg-[#1EA7FF]/20 text-[#1EA7FF] font-semibold'
-                                : 'text-white/70 hover:bg-white/5 hover:text-white'
-                            }`}
-                          >{label}</button>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
+      <div className="w-full px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto pb-6">
+        <div className="flex flex-col lg:flex-row gap-8">
+          {/* Filter Sidebar */}
+          <aside className="hidden lg:block w-64 flex-shrink-0">
+            <div className="sticky top-24 bg-white border border-gray-300 rounded-xl shadow-sm p-5 space-y-6">
+              {/* Search */}
+              <div>
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Search</p>
+                <input
+                  type="text"
+                  placeholder="Make, model..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#118df0]/30 focus:border-[#118df0]"
+                />
+              </div>
+
+              {/* Max Price Slider */}
+              <div>
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
+                  Max Price: {filters.maxPrice ? `$${parseInt(filters.maxPrice).toLocaleString()}` : '$150,000'}
+                </p>
+                <input
+                  type="range"
+                  min={5000}
+                  max={150000}
+                  step={1000}
+                  value={filters.maxPrice || 150000}
+                  onChange={(e) => setFilters({ ...filters, maxPrice: e.target.value })}
+                  className="w-full accent-gray-900"
+                />
+              </div>
+
+              {/* Min Year Slider */}
+              <div>
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
+                  Min Year: {filters.minYear || new Date().getFullYear() - 10}
+                </p>
+                <input
+                  type="range"
+                  min={2000}
+                  max={new Date().getFullYear()}
+                  step={1}
+                  value={filters.minYear || new Date().getFullYear() - 10}
+                  onChange={(e) => setFilters({ ...filters, minYear: e.target.value })}
+                  className="w-full accent-gray-900"
+                />
+              </div>
+
+              {/* Make */}
+              <div>
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Make</p>
+                <div className="space-y-1">
+                  {uniqueMakes.map((make) => (
+                    <label key={make} className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="make"
+                        value={make}
+                        checked={filters.make === make}
+                        onChange={() => {}}
+                        onClick={() => setFilters({ ...filters, make: filters.make === make ? '' : make })}
+                        className="accent-[#118df0]"
+                      />
+                      <span className="text-sm text-gray-700">{make}</span>
+                    </label>
+                  ))}
                 </div>
               </div>
-            </div>
 
-            {/* Toggle button — pill tab on right edge */}
-            <button
-              type="button"
-              onClick={() => setSidebarCollapsed(v => !v)}
-              className="absolute top-1/2 -translate-y-1/2 flex items-center justify-center bg-[#0B1F3A] border border-[rgba(30,167,255,.2)] text-[#1EA7FF] hover:bg-[#1a2f4a] transition-all duration-200 shadow-lg"
-              style={{ right: '-20px', zIndex: 50, width: '20px', height: '90px', borderRadius: '0 6px 6px 0', borderLeft: 'none' }}
-            >
-              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d={sidebarCollapsed ? 'M9 5l7 7-7 7' : 'M15 19l-7-7 7-7'} />
-              </svg>
-            </button>
+              {/* Body Type */}
+              <div>
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Body Type</p>
+                <div className="space-y-1">
+                  {uniqueBodyStyles.map((style) => (
+                    <label key={style} className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="bodyStyle"
+                        value={style}
+                        checked={filters.bodyStyle === style}
+                        onChange={() => {}}
+                        onClick={() => setFilters({ ...filters, bodyStyle: filters.bodyStyle === style ? '' : style })}
+                        className="accent-[#118df0]"
+                      />
+                      <span className="text-sm text-gray-700">{style}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              {/* Listing Type */}
+              <div>
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Listing Type</p>
+                <div className="space-y-1.5">
+                  {[
+                    { key: 'premier', label: 'EDC Premier', color: '#118df0' },
+                    { key: 'dealer', label: 'Dealer Select', color: '#8b5cf6' },
+                    { key: 'fleet', label: 'Fleet Select', color: '#374151' },
+                    { key: 'private', label: 'Private Seller', color: '#f59e0b' },
+                  ].map(({ key, label, color }) => (
+                    <label key={key} className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="sellerType"
+                        value={key}
+                        checked={quickFilters.sellerTypes.includes(key)}
+                        onChange={() => {}}
+                        onClick={() => toggleSellerType(key)}
+                        className="accent-[#118df0]"
+                      />
+                      <span className="inline-block w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: color }} />
+                      <span className="text-sm text-gray-700">{label}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              {/* Sort By */}
+              <div>
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Sort By</p>
+                <select
+                  value={sortBy}
+                  onChange={(e) => setSortBy(e.target.value as SortOption)}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#118df0]/30 focus:border-[#118df0]"
+                >
+                  <option value="newest">Newest</option>
+                  <option value="price-low">Price: Low to High</option>
+                  <option value="price-high">Price: High to Low</option>
+                  <option value="mileage-low">Mileage: Low to High</option>
+                  <option value="mileage-high">Mileage: High to Low</option>
+                  <option value="year-new">Year: Newest First</option>
+                  <option value="year-old">Year: Oldest First</option>
+                </select>
+              </div>
+
+              {/* Reset */}
+              <button
+                onClick={clearFilters}
+                className="w-full border border-gray-300 rounded-full py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+              >
+                Reset filters
+              </button>
+            </div>
           </aside>
 
           {/* Vehicle Grid */}
-          <div className="flex-1 min-w-0 px-4 sm:px-6 lg:px-8 py-8">
-            {/* Toolbar */}
-            <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
+          <div className="flex-1 min-w-0">
+            {/* Toolbar (mobile only) */}
+            <div className="lg:hidden flex flex-wrap items-center justify-between gap-4 mb-6">
               <div className="flex items-center gap-4">
                 {/* Mobile Filter Button */}
                 <button
                   onClick={() => setShowMobileFilters(true)}
-                  className="lg:hidden flex items-center gap-2 px-4 py-2 glass-card rounded-xl text-gray-700 font-medium"
+                  className="lg:hidden flex items-center gap-2 px-4 py-2 border border-gray-200 rounded-xl text-gray-700 font-medium text-sm"
                 >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
                   </svg>
                   Filters
@@ -793,21 +781,19 @@ export default function InventoryPage() {
                     </span>
                   )}
                 </button>
-
-                <p className="text-gray-600">
-                  Showing {startIndex + 1}-{Math.min(endIndex, filteredVehicles.length)} of {' '}
-                  <span className="font-semibold text-gray-900">{filteredVehicles.length}</span>
-                  {' '}total vehicles
+                <p className="lg:hidden text-sm text-gray-500">
+                  Showing {startIndex + 1}–{Math.min(endIndex, filteredVehicles.length)} of{' '}
+                  <span className="font-semibold text-gray-900">{filteredVehicles.length}</span> vehicles
                 </p>
               </div>
 
               {/* Sort Dropdown */}
-              <div className="flex items-center gap-2">
-                <label className="text-sm text-gray-600">Sort by:</label>
+              <div className="lg:hidden flex items-center gap-2">
+                <label className="text-sm text-gray-500">Sort by:</label>
                 <select
                   value={sortBy}
                   onChange={(e) => setSortBy(e.target.value as SortOption)}
-                  className="select-field py-2 text-sm w-auto"
+                  className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#118df0]/30"
                 >
                   <option value="newest">Newest</option>
                   <option value="price-low">Price: Low to High</option>
@@ -816,222 +802,172 @@ export default function InventoryPage() {
                   <option value="mileage-high">Mileage: High to Low</option>
                   <option value="year-new">Year: Newest First</option>
                   <option value="year-old">Year: Oldest First</option>
-                  <option value="features-most">Features: Most</option>
-                  <option value="features-least">Features: Least</option>
                 </select>
               </div>
             </div>
 
-            {/* Active Filters Pills */}
-            {activeFilterCount > 0 && (
-              <div className="flex flex-wrap gap-2 mb-6">
-                {searchQuery && (
-                  <span className="inline-flex items-center gap-1 px-3 py-1 bg-[#118df0]/10 text-[#118df0] rounded-full text-sm">
-                    Search: &quot;{searchQuery}&quot;
-                    <button onClick={() => setSearchQuery('')} className="hover:text-[#0a7dd4]">
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                      </svg>
-                    </button>
-                  </span>
-                )}
-                {filters.make && (
-                  <span className="inline-flex items-center gap-1 px-3 py-1 bg-[#118df0]/10 text-[#118df0] rounded-full text-sm">
-                    {filters.make}
-                    <button onClick={() => setFilters({ ...filters, make: '' })} className="hover:text-[#0a7dd4]">
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                      </svg>
-                    </button>
-                  </span>
-                )}
-                {filters.bodyStyle && (
-                  <span className="inline-flex items-center gap-1 px-3 py-1 bg-[#118df0]/10 text-[#118df0] rounded-full text-sm">
-                    {filters.bodyStyle}
-                    <button onClick={() => setFilters({ ...filters, bodyStyle: '' })} className="hover:text-[#0a7dd4]">
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                      </svg>
-                    </button>
-                  </span>
-                )}
-                {filters.exteriorColor && (
-                  <span className="inline-flex items-center gap-1 px-3 py-1 bg-[#118df0]/10 text-[#118df0] rounded-full text-sm">
-                    {filters.exteriorColor}
-                    <button onClick={() => setFilters({ ...filters, exteriorColor: '' })} className="hover:text-[#0a7dd4]">
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                      </svg>
-                    </button>
-                  </span>
-                )}
-                {filters.features.length > 0 && (
-                  <span className="inline-flex items-center gap-1 px-3 py-1 bg-[#118df0]/10 text-[#118df0] rounded-full text-sm">
-                    Feature: {filters.features[0]}
-                    <button onClick={() => setFilters({ ...filters, features: [] })} className="hover:text-[#0a7dd4]">
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                      </svg>
-                    </button>
-                  </span>
-                )}
-              </div>
-            )}
-
             {/* Vehicle Grid */}
             {loading ? (
-              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+              <div className="grid grid-cols-2 md:grid-cols-2 xl:grid-cols-3 gap-3 md:gap-5">
                 {[1, 2, 3, 4, 5, 6].map((i) => (
-                  <div key={i} className="glass-card rounded-2xl overflow-hidden">
-                    <div className="h-52 shimmer" />
-                    <div className="p-5 space-y-3">
-                      <div className="h-5 shimmer rounded-lg w-3/4" />
-                      <div className="h-4 shimmer rounded-lg w-1/2" />
-                      <div className="flex gap-2 pt-2">
-                        <div className="h-8 shimmer rounded-full w-20" />
-                        <div className="h-8 shimmer rounded-full w-20" />
-                        <div className="h-8 shimmer rounded-full w-16" />
-                      </div>
+                  <div key={i} className="border border-gray-300 rounded-xl overflow-hidden shadow-sm">
+                    <div className="h-48 bg-gray-100 animate-pulse" />
+                    <div className="p-4 space-y-3">
+                      <div className="h-4 bg-gray-100 animate-pulse rounded w-3/4" />
+                      <div className="h-5 bg-gray-100 animate-pulse rounded w-1/3" />
+                      <div className="h-3 bg-gray-100 animate-pulse rounded w-1/2" />
                     </div>
                   </div>
                 ))}
               </div>
             ) : filteredVehicles.length > 0 ? (
               <>
-              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-                {paginatedVehicles.map((vehicle) => (
-                  <Link key={vehicle.id} href={`/inventory/${vehicle.id}`}>
-                    <div className="glass-card rounded-2xl overflow-hidden group h-full flex flex-col transition-all duration-300 hover:shadow-xl hover:shadow-black/10 hover:-translate-y-1 hover:bg-white/90">
-                      <div className="relative h-52 bg-gradient-to-br from-gray-100 to-gray-200 overflow-hidden flex-shrink-0">
-                        {(() => {
-                          const rec = getVehicleHoldRecord(vehicle.id)
-                          const isOnHold = rec?.status === 'ON_HOLD'
-                          if (!isOnHold) return null
-                          return (
-                            <div className="absolute top-4 left-4 z-10">
-                              <span className="inline-flex items-center rounded-full bg-amber-500/90 px-3 py-1 text-xs font-semibold text-white shadow">
-                                On Hold
-                              </span>
-                            </div>
-                          )
-                        })()}
+              <div className="grid grid-cols-2 md:grid-cols-2 xl:grid-cols-3 gap-3 md:gap-5">
+                {paginatedVehicles.map((vehicle) => {
+                  const raw = String((vehicle as any)?.categories ?? '').trim().toLowerCase()
+                  let badgeLabel = ''
+                  let badgeBg = '#118df0'
+                  if (raw.includes('premier') || raw.includes('premiere')) {
+                    badgeLabel = 'EDC PREMIER'; badgeBg = '#118df0'
+                  } else if (raw.includes('dealer')) {
+                    badgeLabel = 'DEALER SELECT'; badgeBg = '#8b5cf6'
+                  } else if (raw.includes('fleet')) {
+                    badgeLabel = 'FLEET SELECT'; badgeBg = '#374151'
+                  } else if (raw.includes('private')) {
+                    badgeLabel = 'PRIVATE SELLER'; badgeBg = '#f59e0b'
+                  }
 
-                        {vehicle.images && vehicle.images.length > 0 ? (
-                          <img
-                            src={toImageSrc(vehicle.images[0])}
-                            alt={`${vehicle.year} ${vehicle.make} ${vehicle.model}`}
-                            className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
-                          />
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center">
-                            <div className="text-center">
-                              <svg className="w-16 h-16 mx-auto mb-2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  const sellerName = (vehicle as any)?.sellerName || (vehicle as any)?.dealer_name || ''
+
+                  return (
+                    <Link key={vehicle.id} href={`/inventory/${vehicle.id}`} className="block h-full">
+                      <div className="h-full flex flex-col border border-gray-300 rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-shadow duration-200 bg-white group">
+                        {/* Image */}
+                        <div className="relative h-36 sm:h-48 bg-gray-100 overflow-hidden">
+                          {badgeLabel && (
+                            <span
+                              className="absolute top-2 left-2 z-10 text-[10px] font-bold tracking-wider px-2.5 py-1 rounded-full text-white shadow-sm"
+                              style={{ backgroundColor: badgeBg }}
+                            >
+                              {badgeLabel}
+                            </span>
+                          )}
+                          {(() => {
+                            const s = vehicle.status?.toLowerCase()
+                            if (s !== 'reserved') return null
+                            return (
+                              <span className="absolute top-2 right-2 z-10 text-[10px] font-bold px-2 py-1 rounded bg-amber-500 text-white tracking-wider">
+                                RESERVED
+                              </span>
+                            )
+                          })()}
+                          {vehicle.images && vehicle.images.length > 0 ? (
+                            <img
+                              src={toImageSrc(vehicle.images[0])}
+                              alt={`${vehicle.year} ${vehicle.make} ${vehicle.model}`}
+                              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                            />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center">
+                              <svg className="w-12 h-12 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
                               </svg>
-                              <p className="text-sm text-gray-500">No Image</p>
                             </div>
-                          </div>
-                        )}
-                        {/* Hover overlay with View Vehicle button */}
-                        <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center">
-                          <span className="inline-flex items-center gap-1.5 text-white text-sm font-semibold bg-white/20 backdrop-blur-sm px-4 py-2 rounded-full border border-white/30">
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
-                            View Vehicle
-                          </span>
+                          )}
                         </div>
-                        <div className="absolute top-4 right-4 price-tag">
-                          {formatPrice(vehicle.price)}
-                        </div>
-                        {(() => {
-                          const raw = String((vehicle as any)?.categories ?? '').trim()
-                          if (!raw) return null
-                          const v = raw.toLowerCase()
-                          let catSrc = ''
-                          let catLabel = raw
-                          if (v.includes('private')) { catSrc = '/images/Private.png'; catLabel = 'Private' }
-                          else if (v.includes('dealer')) { catSrc = '/images/Dealership.png'; catLabel = 'Dealership' }
-                          else if (v.includes('premier') || v.includes('premiere')) { catSrc = '/images/Premier.png'; catLabel = 'Premier' }
-                          else if (v.includes('fleet')) { catSrc = '/images/Fleet%20Cars.png'; catLabel = 'Fleet Cars' }
-                          if (!catSrc) return null
-                          return <img src={catSrc} alt={catLabel} className="absolute bottom-3 left-3 h-20 w-auto drop-shadow-md z-10" />
-                        })()}
-                      </div>
-                      <div className="p-5 flex flex-col flex-1">
-                        <div className="flex items-start justify-between gap-2 mb-0">
-                          <h3 className="text-lg font-bold text-gray-900 group-hover:text-[#118df0] transition-colors line-clamp-2 leading-snug">
-                            {vehicle.year} {vehicle.make} {vehicle.model} {vehicle.series}
+
+                        {/* Card Body */}
+                        <div className="p-3 sm:p-4 flex-1 flex flex-col">
+                          <h3 className="text-sm font-semibold text-gray-900 leading-snug line-clamp-1">
+                            {vehicle.year} {vehicle.make} {vehicle.model}
                           </h3>
-                        </div>
-                        {formatLocation(vehicle.city, vehicle.province) && (
-                          <p className="text-sm text-gray-500 mt-1 flex items-center gap-1">
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                            </svg>
-                            {formatLocation(vehicle.city, vehicle.province)}
-                          </p>
-                        )}
-                        <div className="flex flex-wrap gap-1.5 mt-3">
-                          <span className="inline-flex items-center gap-1 text-xs font-medium text-gray-600 bg-gray-100/80 px-2.5 py-1.5 rounded-full">
-                            <svg className="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                            {formatOdometer(vehicle)}
-                          </span>
-                          {vehicle.transmission && vehicle.transmission.trim() !== '' && (
-                            <span className="inline-flex items-center text-xs font-medium text-gray-600 bg-gray-100/80 px-2.5 py-1.5 rounded-full">
-                              {vehicle.transmission}
-                            </span>
+                          {/* Series — desktop only */}
+                          {vehicle.series && (
+                            <p className="hidden sm:block text-xs text-[#118df0] font-medium mt-1 line-clamp-1">{vehicle.series}</p>
                           )}
-                          {vehicle.fuelType && vehicle.fuelType.trim() !== '' && (
-                            <span className="inline-flex items-center gap-1 text-xs font-medium text-gray-600 bg-gray-100/80 px-2.5 py-1.5 rounded-full">
-                              <svg className="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
-                              {vehicle.fuelType}
+
+                          {/* Mobile: miles + price only */}
+                          <div className="flex sm:hidden items-center justify-between mt-auto pt-2">
+                            <span className="flex items-center gap-1 text-xs text-gray-500">
+                              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                              </svg>
+                              {formatOdometer(vehicle)}
                             </span>
+                            <p className="text-sm font-bold text-gray-900">{formatPrice(vehicle.price)}</p>
+                          </div>
+
+                          {/* Desktop: full stats */}
+                          <div className="hidden sm:flex items-center justify-between gap-2 mt-2">
+                            <p className="text-base font-bold text-gray-900">{formatPrice(vehicle.price)}</p>
+                          </div>
+                          <div className="hidden sm:flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500 mt-2">
+                            <span className="flex items-center gap-1">
+                              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                              </svg>
+                              {formatOdometer(vehicle)}
+                            </span>
+                            {vehicle.transmission && (
+                              <span className="flex items-center gap-1">
+                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 9l4-4 4 4m0 6l-4 4-4-4" />
+                                </svg>
+                                {vehicle.transmission}
+                              </span>
+                            )}
+                            {vehicle.fuelType && (
+                              <span className="flex items-center gap-1">
+                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                                </svg>
+                                {vehicle.fuelType}
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Seller info — desktop only */}
+                          {sellerName && (
+                            <p className="hidden sm:block text-xs text-gray-400 mt-2">Sold by {sellerName}</p>
                           )}
                         </div>
                       </div>
-                    </div>
-                  </Link>
-                ))}
+                    </Link>
+                  )
+                })}
               </div>
 
               {/* Pagination */}
               {totalPages > 1 && (
-                <div className="mt-12 flex justify-center items-center gap-2">
+                <div className="mt-10 flex justify-center items-center gap-2">
                   <button
                     onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
                     disabled={currentPage === 1}
-                    className={`px-4 py-2 rounded-lg font-medium transition-all ${
+                    className={`px-3 py-2 rounded-lg text-sm font-medium transition-all ${
                       currentPage === 1
                         ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                        : 'bg-white text-gray-700 hover:bg-[#118df0] hover:text-white shadow-sm'
+                        : 'bg-white border border-gray-200 text-gray-700 hover:bg-[#118df0] hover:text-white hover:border-[#118df0]'
                     }`}
                   >
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
                     </svg>
                   </button>
-
-                  {/* Page Numbers */}
-                  <div className="flex gap-2">
+                  <div className="flex gap-1">
                     {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
                       let pageNum
-                      if (totalPages <= 5) {
-                        pageNum = i + 1
-                      } else if (currentPage <= 3) {
-                        pageNum = i + 1
-                      } else if (currentPage >= totalPages - 2) {
-                        pageNum = totalPages - 4 + i
-                      } else {
-                        pageNum = currentPage - 2 + i
-                      }
-                      
+                      if (totalPages <= 5) { pageNum = i + 1 }
+                      else if (currentPage <= 3) { pageNum = i + 1 }
+                      else if (currentPage >= totalPages - 2) { pageNum = totalPages - 4 + i }
+                      else { pageNum = currentPage - 2 + i }
                       return (
                         <button
                           key={pageNum}
                           onClick={() => setCurrentPage(pageNum)}
-                          className={`px-4 py-2 rounded-lg font-medium transition-all ${
+                          className={`px-3 py-2 rounded-lg text-sm font-medium transition-all ${
                             currentPage === pageNum
-                              ? 'bg-[#118df0] text-white shadow-md'
-                              : 'bg-white text-gray-700 hover:bg-gray-100 shadow-sm'
+                              ? 'bg-[#118df0] text-white'
+                              : 'bg-white border border-gray-200 text-gray-700 hover:bg-gray-50'
                           }`}
                         >
                           {pageNum}
@@ -1039,17 +975,16 @@ export default function InventoryPage() {
                       )
                     })}
                   </div>
-
                   <button
                     onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
                     disabled={currentPage === totalPages}
-                    className={`px-4 py-2 rounded-lg font-medium transition-all ${
+                    className={`px-3 py-2 rounded-lg text-sm font-medium transition-all ${
                       currentPage === totalPages
                         ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                        : 'bg-white text-gray-700 hover:bg-[#118df0] hover:text-white shadow-sm'
+                        : 'bg-white border border-gray-200 text-gray-700 hover:bg-[#118df0] hover:text-white hover:border-[#118df0]'
                     }`}
                   >
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                     </svg>
                   </button>
@@ -1057,44 +992,31 @@ export default function InventoryPage() {
               )}
               </>
             ) : (
-              <div className="glass-card rounded-2xl text-center py-16 px-6">
-                <div className="w-20 h-20 bg-gradient-to-br from-[#118df0]/10 to-[#118df0]/5 rounded-2xl flex items-center justify-center mx-auto mb-6">
-                  <svg className="w-10 h-10 text-[#118df0]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                </div>
-                <h3 className="text-xl font-bold text-gray-700 mb-2">No Vehicles Found</h3>
-                <p className="text-gray-500 mb-8 max-w-md mx-auto">Try adjusting your filters or search query to find what you&apos;re looking for.</p>
-                <button onClick={clearFilters} className="inline-flex items-center gap-2 bg-[#118df0] text-white px-6 py-3 rounded-full font-semibold hover:bg-[#0a7dd4] transition-all shadow-lg shadow-[#118df0]/20 hover:shadow-xl hover:-translate-y-0.5">
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+              <div className="text-center py-16 px-6 border border-gray-300 rounded-xl">
+                <svg className="w-12 h-12 text-gray-300 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <h3 className="text-lg font-semibold text-gray-700 mb-2">No Vehicles Found</h3>
+                <p className="text-gray-400 text-sm mb-6">Try adjusting your filters or search query.</p>
+                <button onClick={clearFilters} className="inline-flex items-center gap-2 bg-[#118df0] text-white px-5 py-2.5 rounded-lg text-sm font-medium hover:bg-[#0a7dd4] transition-colors">
                   Clear All Filters
                 </button>
               </div>
             )}
           </div>
-
         </div>
       </div>
 
       {/* Mobile Filter Drawer */}
       {showMobileFilters && (
         <div className="fixed inset-0 z-50 lg:hidden">
-          {/* Backdrop */}
-          <div 
-            className="absolute inset-0 bg-black/50 backdrop-blur-sm"
-            onClick={() => setShowMobileFilters(false)}
-          ></div>
-          
-          {/* Drawer */}
+          <div className="absolute inset-0 bg-black/50" onClick={() => setShowMobileFilters(false)} />
           <div className="absolute right-0 top-0 h-full w-full max-w-sm bg-white shadow-2xl overflow-y-auto">
             <div className="p-6">
               <div className="flex items-center justify-between mb-6">
-                <h2 className="text-xl font-bold text-gray-900">Filters</h2>
-                <button
-                  onClick={() => setShowMobileFilters(false)}
-                  className="p-2 hover:bg-gray-100 rounded-xl transition-colors"
-                >
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <h2 className="text-lg font-bold text-gray-900">Filters</h2>
+                <button onClick={() => setShowMobileFilters(false)} className="p-2 hover:bg-gray-100 rounded-lg">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                   </svg>
                 </button>
@@ -1107,3 +1029,4 @@ export default function InventoryPage() {
     </div>
   )
 }
+

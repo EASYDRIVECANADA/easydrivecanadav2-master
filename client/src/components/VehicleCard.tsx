@@ -1,4 +1,3 @@
-import Link from 'next/link'
 import { useState } from 'react'
 
 interface Vehicle {
@@ -14,6 +13,9 @@ interface Vehicle {
   images: string[]
   inventoryType?: string
   categories?: string
+  collection?: string
+  vin?: string
+  status?: string
 }
 
 interface VehicleCardProps {
@@ -22,27 +24,17 @@ interface VehicleCardProps {
   onClick?: () => void
 }
 
-export default function VehicleCard({ vehicle, hideFooter, onClick }: VehicleCardProps) {
+export default function VehicleCard({ vehicle, onClick }: VehicleCardProps) {
   const [imageError, setImageError] = useState(false)
-  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'
+  const API_URL = process.env.NEXT_PUBLIC_API_URL || ''
 
   const categoryBadge = (() => {
-    const raw = String((vehicle as any)?.categories ?? '').trim()
+    const raw = String((vehicle as any)?.categories || (vehicle as any)?.collection || '').trim().toLowerCase()
     if (!raw) return null
-    const v = raw.toLowerCase()
-
-    if (v.includes('private')) {
-      return { label: 'Private', src: '/images/Private.png' }
-    }
-    if (v.includes('dealer')) {
-      return { label: 'Dealership', src: '/images/Dealership.png' }
-    }
-    if (v.includes('premier') || v.includes('premiere')) {
-      return { label: 'Premier', src: '/images/Premier.png' }
-    }
-    if (v.includes('fleet')) {
-      return { label: 'Fleet Cars', src: '/images/Fleet%20Cars.png' }
-    }
+    if (raw.includes('private')) return { label: 'Private Seller', cls: 'bg-amber-500 text-white' }
+    if (raw.includes('premier')) return { label: 'EDC Premier', cls: 'bg-[#1EA7FF] text-white' }
+    if (raw.includes('fleet')) return { label: 'Fleet Select', cls: 'bg-slate-600 text-white' }
+    if (raw.includes('dealer')) return { label: 'Dealer Select', cls: 'bg-purple-600 text-white' }
     return null
   })()
 
@@ -50,7 +42,6 @@ export default function VehicleCard({ vehicle, hideFooter, onClick }: VehicleCar
     const v = String(value || '').trim()
     if (!v) return ''
     if (v.startsWith('http://') || v.startsWith('https://') || v.startsWith('data:')) return v
-    // Infer MIME from base64 header if possible
     const head = v.slice(0, 10)
     if (/^[A-Za-z0-9+/=]+$/.test(v) && v.length > 100) {
       let mime = 'image/jpeg'
@@ -59,100 +50,94 @@ export default function VehicleCard({ vehicle, hideFooter, onClick }: VehicleCar
       else if (head.startsWith('UklGR')) mime = 'image/webp'
       return `data:${mime};base64,${v}`
     }
-    // Relative path
     const path = v.startsWith('/') ? v : `/${v}`
     return `${API_URL}${path}`
   }
 
-  const formatPrice = (price: number) => {
-    return new Intl.NumberFormat('en-CA', {
-      style: 'currency',
-      currency: 'CAD',
-      minimumFractionDigits: 0,
-    }).format(price)
-  }
+  const formatMileage = (mileage: number) =>
+    new Intl.NumberFormat('en-CA').format(mileage)
 
-  const formatMileage = (mileage: number) => {
-    return new Intl.NumberFormat('en-CA').format(mileage)
-  }
-
-  const CardContainer: any = onClick ? 'div' : Link
-  const containerProps: any = onClick
-    ? { onClick, role: 'button', className: 'glass-card-hover rounded-2xl overflow-hidden group cursor-pointer' }
-    : { href: `/inventory/${vehicle.id}` }
+  const formatPrice = (price: number) =>
+    new Intl.NumberFormat('en-CA', { style: 'currency', currency: 'CAD', minimumFractionDigits: 0 }).format(price)
 
   return (
-    <CardContainer {...containerProps}>
-      <div className={onClick ? '' : 'glass-card-hover rounded-2xl overflow-hidden group'}>
-        {/* Image */}
-        <div className="relative h-52 bg-gradient-to-br from-gray-100 to-gray-200 overflow-hidden">
-          {vehicle.images && vehicle.images.length > 0 && !imageError ? (
-            <img
-              src={toImageSrc(vehicle.images[0])}
-              alt={`${vehicle.year} ${vehicle.make} ${vehicle.model}`}
-              className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
-              onError={() => setImageError(true)}
-            />
-          ) : (
-            <div className="w-full h-full flex items-center justify-center">
-              <div className="text-center">
-                <svg className="w-16 h-16 mx-auto mb-2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                </svg>
-                <p className="text-sm text-gray-500">No Image</p>
-              </div>
-            </div>
-          )}
-          <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
-
-          <div className="absolute top-4 right-4 price-tag">
-            {formatPrice(vehicle.price)}
+    <div
+      className="bg-white rounded-2xl overflow-hidden border border-slate-100 shadow-sm hover:shadow-md transition-shadow cursor-pointer group"
+      onClick={onClick}
+      role="button"
+    >
+      {/* Image */}
+      <div className="relative overflow-hidden" style={{ aspectRatio: '16/10' }}>
+        {vehicle.images && vehicle.images.length > 0 && !imageError ? (
+          <img
+            src={toImageSrc(vehicle.images[0])}
+            alt={`${vehicle.year} ${vehicle.make} ${vehicle.model}`}
+            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+            onError={() => setImageError(true)}
+          />
+        ) : (
+          <div className="w-full h-full bg-slate-100 flex flex-col items-center justify-center gap-2">
+            <svg className="w-10 h-10 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+            </svg>
+            <p className="text-xs text-slate-400">No Image</p>
           </div>
+        )}
 
-          {categoryBadge ? (
-            <img src={categoryBadge.src} alt={categoryBadge.label} className="absolute bottom-3 left-3 h-24 w-auto drop-shadow-md" />
-          ) : null}
+        {/* Category badge — top left */}
+        {categoryBadge && (
+          <span className={`absolute top-3 left-3 inline-flex items-center px-3 py-1 rounded-full text-xs font-bold tracking-wide shadow ${categoryBadge.cls}`}>
+            {categoryBadge.label.toUpperCase()}
+          </span>
+        )}
+      </div>
+
+      {/* Body */}
+      <div className="p-4">
+        {/* Title row */}
+        <div className="flex items-start justify-between gap-2">
+          <h3 className="text-base font-bold text-slate-900 leading-snug">
+            {vehicle.year} {vehicle.make} {vehicle.model}
+            {vehicle.series ? ` ${vehicle.series}` : ''}
+          </h3>
+          <span className="flex-shrink-0 text-base font-bold text-slate-900">
+            {formatPrice(vehicle.price)}
+          </span>
         </div>
 
-        {/* Details */}
-        <div className="p-5">
-          <div className="flex items-start justify-between gap-2 mb-2">
-            <h3 className="text-lg font-bold text-gray-900 group-hover:text-[#118df0] transition-colors leading-snug">
-              {vehicle.year} {vehicle.make} {vehicle.model} {vehicle.series}
-            </h3>
-          </div>
-          
-          <div className="flex flex-wrap gap-2 mt-3">
-            <span className="inline-flex items-center text-sm text-gray-500 bg-gray-100/80 px-3 py-1.5 rounded-lg">
-              <svg className="w-4 h-4 mr-1.5 text-[#118df0]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-              </svg>
-              {formatMileage(vehicle.mileage)} km
-            </span>
-            <span className="inline-flex items-center text-sm text-gray-500 bg-gray-100/80 px-3 py-1.5 rounded-lg">
-              <svg className="w-4 h-4 mr-1.5 text-[#118df0]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-              </svg>
+        {/* Stock + dealer */}
+        {vehicle.mileage != null && (
+          <p className="mt-0.5 text-xs text-slate-400">
+            {formatMileage(vehicle.mileage)} km
+          </p>
+        )}
+
+        {/* Spec pills */}
+        <div className="flex flex-wrap gap-1.5 mt-3">
+          {vehicle.fuelType && (
+            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
               {vehicle.fuelType}
             </span>
-            <span className="inline-flex items-center text-sm text-gray-500 bg-gray-100/80 px-3 py-1.5 rounded-lg">
-              <svg className="w-4 h-4 mr-1.5 text-[#118df0]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-              </svg>
+          )}
+          {vehicle.transmission && (
+            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
               {vehicle.transmission}
             </span>
-          </div>
-
-          {!hideFooter ? (
-            <div className="mt-4 flex items-center justify-between">
-              <span className="text-[#118df0] font-semibold group-hover:underline">
-                View Details →
-              </span>
-            </div>
-          ) : null}
+          )}
         </div>
+
+        {/* View listing button */}
+        <button
+          type="button"
+          className="mt-3 w-full flex items-center justify-center gap-1.5 py-2 rounded-xl border border-slate-200 text-sm text-slate-600 hover:bg-slate-50 transition-colors"
+          onClick={onClick}
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+          </svg>
+          View listing
+        </button>
       </div>
-    </CardContainer>
+    </div>
   )
 }

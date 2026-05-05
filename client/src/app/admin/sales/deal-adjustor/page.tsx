@@ -85,7 +85,7 @@ export default function DealAdjustorPage() {
         : ({ data: null } as any)
 
       const r = String((byId as any)?.role ?? (byEmail as any)?.role ?? '').trim().toLowerCase()
-      return r === 'admin'
+      return r === 'admin' || r === 'premier'
     } catch {
       return false
     }
