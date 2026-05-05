@@ -6,8 +6,6 @@ export async function POST(request: Request) {
     const userId = String(body?.user_id ?? '').trim()
     const callerEmail = String(body?.email ?? '').trim().toLowerCase()
 
-    console.log('[simple-expiry] Processing:', { userId, callerEmail })
-
     if (!userId) {
       return NextResponse.json({ ok: false, error: 'Missing user_id' }, { status: 400 })
     }
@@ -36,7 +34,6 @@ export async function POST(request: Request) {
     }
 
     const users = await usersRes.json().catch(() => [])
-    console.log('[simple-expiry] Users found:', users.length)
 
     if (users.length === 0) {
       return NextResponse.json({ ok: true, expired: false, callerStatus: 'enable' })
@@ -49,30 +46,20 @@ export async function POST(request: Request) {
     }
 
     const currentRole = String(ownerRow.role || '').trim().toLowerCase()
-    console.log('[simple-expiry] Owner role:', currentRole)
 
     const subscriptionEnd = String(ownerRow.subscription_end || '').trim()
     const endDate = subscriptionEnd ? new Date(subscriptionEnd) : null
     const endDateValid = !!endDate && !Number.isNaN(endDate.getTime())
     const now = new Date()
     const isExpired = endDateValid && endDate <= now
-    console.log('[simple-expiry] subscription_end check:', {
-      subscriptionEnd,
-      endDateValid,
-      isExpired,
-      now: now.toISOString(),
-    })
 
     // If owner has a paid role (not private), only expire when subscription_end is past.
     // Preserve Premier roles - they should never be downgraded.
     const isPaidRole = currentRole && currentRole !== 'private' && currentRole !== 'starter'
     
     if (isPaidRole && isExpired) {
-      console.log('[simple-expiry] Paid role expired, applying expiry...')
-      
       // If owner is Premier, preserve the role and just disable status
       if (currentRole === 'premier') {
-        console.log('[simple-expiry] Owner is Premier - preserving role, only disabling status')
         const updatePremierRes = await fetch(
           `${supabaseUrl}/rest/v1/users?user_id=eq.${encodeURIComponent(userId)}`,
           {
@@ -85,7 +72,6 @@ export async function POST(request: Request) {
             body: JSON.stringify({ status: 'disable' }), // Only update status, preserve Premier role
           }
         )
-        console.log('[simple-expiry] Premier users disable result:', updatePremierRes.ok)
       } else {
         // For non-Premier paid roles, downgrade to private
         const updateAllRes = await fetch(
@@ -100,7 +86,6 @@ export async function POST(request: Request) {
             body: JSON.stringify({ role: 'private', status: 'disable' }),
           }
         )
-        console.log('[simple-expiry] Update all users result:', updateAllRes.ok)
       }
 
       // Re-enable owner
@@ -116,8 +101,6 @@ export async function POST(request: Request) {
           body: JSON.stringify({ status: 'enable' }),
         }
       )
-      
-      console.log('[simple-expiry] Re-enable owner result:', ownerRes.ok)
 
       const isCallerOwner = callerEmail && String(ownerRow.email || '').trim().toLowerCase() === callerEmail
       const callerStatus = isCallerOwner ? 'enable' : 'disable'

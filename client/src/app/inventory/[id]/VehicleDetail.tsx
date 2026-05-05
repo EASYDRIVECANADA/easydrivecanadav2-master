@@ -5,7 +5,7 @@ import { useState, useEffect } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabaseClient'
-import { PHASE3_CHANGE_EVENT, getActiveHoldVehicleId, getVehicleHoldRecord } from '@/lib/phase3Mock'
+// phase3Mock removed — reservation status now comes from edc_vehicles.status
 
 interface Vehicle {
   id: string
@@ -47,6 +47,9 @@ export default function VehicleDetailPage() {
   const [selectedImage, setSelectedImage] = useState(0)
   const [showInquiryForm, setShowInquiryForm] = useState(false)
   const [showTestDriveModal, setShowTestDriveModal] = useState(false)
+  const [downPayment, setDownPayment] = useState(2000)
+  const [termLength, setTermLength] = useState(60)
+  const [openFaq, setOpenFaq] = useState<number | null>(null)
   const [disclosureModal, setDisclosureModal] = useState<'premier' | 'private' | 'fleet' | 'dealership' | null>(null)
   const [carfaxModal, setCarfaxModal] = useState<{
     open: boolean
@@ -117,11 +120,9 @@ export default function VehicleDetailPage() {
 
   const [isVerified, setIsVerified] = useState(false)
   const [userEmail, setUserEmail] = useState<string | null>(null)
-  const [activeHoldVehicleId, setActiveHoldVehicleId] = useState<string | null>(null)
-  const [isOnHold, setIsOnHold] = useState(false)
-  const [onHoldByOther, setOnHoldByOther] = useState(false)
+  // Reservation status comes from vehicle.status in DB (Reserved / Sold / In Stock)
 
-  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'
+  const API_URL = process.env.NEXT_PUBLIC_API_URL || ''
 
   const openCarfaxModal = async (vehicleId: string) => {
     setCarfaxModal({ open: true, loading: true, files: [], activeIndex: 0 })
@@ -243,26 +244,6 @@ export default function VehicleDetailPage() {
 
   useEffect(() => {
     if (!vehicle?.id) return
-    const refreshHold = () => {
-      const active = getActiveHoldVehicleId()
-      setActiveHoldVehicleId(active)
-
-      const rec = getVehicleHoldRecord(vehicle.id)
-      const hold = rec?.status === 'ON_HOLD'
-      setIsOnHold(hold)
-
-      const heldByOther = hold && !!rec?.holderEmail && !!userEmail && rec.holderEmail !== userEmail
-      const lockedByOtherVehicle = !!active && active !== vehicle.id
-      setOnHoldByOther(heldByOther || lockedByOtherVehicle)
-    }
-
-    refreshHold()
-
-    if (typeof window !== 'undefined') {
-      window.addEventListener(PHASE3_CHANGE_EVENT, refreshHold)
-      return () => window.removeEventListener(PHASE3_CHANGE_EVENT, refreshHold)
-    }
-    return
   }, [vehicle?.id, userEmail])
 
   useEffect(() => {
@@ -506,557 +487,537 @@ export default function VehicleDetailPage() {
   }
 
   return (
-    <div className="min-h-screen">
+    <div className="min-h-screen bg-white">
       {/* Breadcrumb */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-        <nav className="flex items-center text-sm">
-          <Link href="/" className="text-gray-500 hover:text-[#118df0] transition-colors">Home</Link>
-          <svg className="w-4 h-4 mx-2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-          </svg>
-          <Link href="/inventory" className="text-gray-500 hover:text-[#118df0] transition-colors">Inventory</Link>
-          <svg className="w-4 h-4 mx-2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-          </svg>
-          <span className="text-gray-900 font-medium">{vehicle.year} {vehicle.make} {vehicle.model} {vehicle.series}</span>
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+        <nav className="flex items-center gap-1 text-sm text-gray-500">
+          <Link href="/" className="hover:text-[#118df0] transition-colors">Home</Link>
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+          <Link href="/inventory" className="hover:text-[#118df0] transition-colors">Inventory</Link>
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+          <span className="text-gray-900 font-medium">{vehicle.year} {vehicle.make} {vehicle.model}</span>
         </nav>
       </div>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-16">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* Left Column - Images & Details */}
-          <div className="lg:col-span-2 space-y-6">
+        <div className="grid grid-cols-1 lg:grid-cols-5 gap-8">
+
+          {/* LEFT COLUMN */}
+          <div className="lg:col-span-3 space-y-5">
+
             {/* Main Image */}
-            <div className="glass-card rounded-2xl overflow-hidden">
-              <div className="relative h-[400px] md:h-[500px] bg-gradient-to-br from-gray-100 to-gray-200">
-                {vehicle.images && vehicle.images.length > 0 ? (
-                  <img
-                    src={toImageSrc(vehicle.images[selectedImage])}
-                    alt={`${vehicle.year} ${vehicle.make} ${vehicle.model} ${vehicle.series}`}
-                    className="w-full h-full object-cover"
-                  />
-                ) : (
-                  <div className="w-full h-full flex items-center justify-center">
-                    <div className="text-center">
-                      <svg className="w-24 h-24 mx-auto mb-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                      </svg>
-                      <p className="text-gray-500">No Image Available</p>
-                    </div>
-                  </div>
-                )}
-                {/* Image Counter */}
-                {vehicle.images && vehicle.images.length > 1 && (
-                  <div className="absolute bottom-4 right-4 bg-black/60 backdrop-blur-sm text-white px-3 py-1.5 rounded-lg text-sm font-medium">
+            <div className="relative rounded-xl overflow-hidden bg-gray-100" style={{ aspectRatio: '16/10' }}>
+              {vehicle.images && vehicle.images.length > 0 ? (
+                <img
+                  src={toImageSrc(vehicle.images[selectedImage])}
+                  alt={`${vehicle.year} ${vehicle.make} ${vehicle.model}`}
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center min-h-[280px]">
+                  <svg className="w-20 h-20 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                  </svg>
+                </div>
+              )}
+              {vehicle.images && vehicle.images.length > 1 && (
+                <>
+                  <button
+                    onClick={() => setSelectedImage(selectedImage === 0 ? vehicle.images.length - 1 : selectedImage - 1)}
+                    className="absolute left-3 top-1/2 -translate-y-1/2 w-9 h-9 bg-white/80 rounded-full flex items-center justify-center shadow hover:bg-white transition-colors"
+                  >
+                    <svg className="w-5 h-5 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
+                  </button>
+                  <button
+                    onClick={() => setSelectedImage(selectedImage === vehicle.images.length - 1 ? 0 : selectedImage + 1)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 w-9 h-9 bg-white/80 rounded-full flex items-center justify-center shadow hover:bg-white transition-colors"
+                  >
+                    <svg className="w-5 h-5 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+                  </button>
+                  <div className="absolute bottom-3 right-3 bg-black/50 text-white text-xs px-2.5 py-1 rounded-lg font-medium">
                     {selectedImage + 1} / {vehicle.images.length}
                   </div>
-                )}
-                {/* Navigation Arrows */}
-                {vehicle.images && vehicle.images.length > 1 && (
-                  <>
-                    <button
-                      onClick={() => setSelectedImage(selectedImage === 0 ? vehicle.images.length - 1 : selectedImage - 1)}
-                      className="absolute left-4 top-1/2 -translate-y-1/2 w-10 h-10 bg-white/80 backdrop-blur-sm rounded-full flex items-center justify-center hover:bg-white transition-colors shadow-lg"
-                    >
-                      <svg className="w-5 h-5 text-gray-800" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                      </svg>
-                    </button>
-                    <button
-                      onClick={() => setSelectedImage(selectedImage === vehicle.images.length - 1 ? 0 : selectedImage + 1)}
-                      className="absolute right-4 top-1/2 -translate-y-1/2 w-10 h-10 bg-white/80 backdrop-blur-sm rounded-full flex items-center justify-center hover:bg-white transition-colors shadow-lg"
-                    >
-                      <svg className="w-5 h-5 text-gray-800" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                      </svg>
-                    </button>
-                  </>
-                )}
-              </div>
+                </>
+              )}
             </div>
 
-            {/* Thumbnail Gallery */}
+            {/* Thumbnails */}
             {vehicle.images && vehicle.images.length > 1 && (
-              <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-thin">
-                {vehicle.images.map((image, index) => (
+              <div className="flex gap-2 overflow-x-auto pb-1">
+                {vehicle.images.map((img, index) => (
                   <button
                     key={index}
                     onClick={() => setSelectedImage(index)}
-                    className={`flex-shrink-0 w-24 h-20 rounded-xl overflow-hidden transition-all duration-200 ${
-                      selectedImage === index 
-                        ? 'ring-2 ring-[#118df0] ring-offset-2 scale-105' 
-                        : 'opacity-70 hover:opacity-100'
+                    className={`flex-shrink-0 w-20 h-16 rounded-lg overflow-hidden border-2 transition-all ${
+                      selectedImage === index ? 'border-[#118df0]' : 'border-transparent opacity-60 hover:opacity-100'
                     }`}
                   >
-                    <img
-                      src={toImageSrc(image)}
-                      alt={`View ${index + 1}`}
-                      className="w-full h-full object-cover"
-                    />
+                    <img src={toImageSrc(img)} alt={`View ${index + 1}`} className="w-full h-full object-cover" />
                   </button>
                 ))}
               </div>
             )}
 
             {/* Quick Stats */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-2xl mx-auto">
-              <div className="glass-card rounded-xl p-5 text-center">
-                <div className="icon-container w-10 h-10 mx-auto mb-2">
-                  <svg className="w-5 h-5 text-[#118df0]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="border border-gray-100 rounded-xl p-5 text-center">
+                <div className="flex justify-center mb-2">
+                  <svg className="w-6 h-6 text-[#118df0]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
                   </svg>
                 </div>
                 <p className="text-xl font-bold text-gray-900">{formatOdometer(vehicle)}</p>
-                <p className="text-xs text-gray-500 mt-1">{odometerLabel(vehicle)}</p>
+                <p className="text-xs text-[#118df0] mt-0.5">{odometerLabel(vehicle)}</p>
               </div>
-              <div className="glass-card rounded-xl p-5 text-center">
-                <div className="icon-container w-10 h-10 mx-auto mb-2">
-                  <svg className="w-5 h-5 text-[#118df0]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <div className="border border-gray-100 rounded-xl p-5 text-center">
+                <div className="flex justify-center mb-2">
+                  <svg className="w-6 h-6 text-[#118df0]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                   </svg>
                 </div>
                 <p className="text-xl font-bold text-gray-900">{vehicle.year}</p>
-                <p className="text-xs text-gray-500 mt-1">Year</p>
+                <p className="text-xs text-[#118df0] mt-0.5">Year</p>
               </div>
             </div>
 
-            {/* Vehicle Details */}
-            <div className="glass-card rounded-2xl p-6">
-              <h2 className="text-xl font-bold text-gray-900 mb-6 flex items-center">
-                <span className="w-1 h-6 bg-gradient-to-b from-[#118df0] to-[#0a6bc4] rounded-full mr-3"></span>
+            {/* Vehicle Specifications */}
+            <div>
+              <h2 className="text-lg font-bold text-gray-900 mb-5 flex items-center gap-2">
+                <span className="w-1 h-5 bg-[#118df0] rounded-full inline-block" />
                 Vehicle Specifications
               </h2>
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-y-5 gap-x-4">
-                <div className="flex items-start gap-3">
-                  <div className="w-8 h-8 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                    <svg className="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
-                    </svg>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                {([
+                  { label: 'Make', value: vehicle.make },
+                  { label: 'Model', value: vehicle.model },
+                  { label: 'Year', value: String(vehicle.year) },
+                  { label: 'Odometer', value: formatOdometer(vehicle) },
+                  vehicle.transmission ? { label: 'Transmission', value: vehicle.transmission } : null,
+                  vehicle.drivetrain ? { label: 'Drivetrain', value: vehicle.drivetrain } : null,
+                  vehicle.fuelType ? { label: 'Fuel', value: vehicle.fuelType } : null,
+                  vehicle.engine ? { label: 'Engine', value: vehicle.engine } : null,
+                  vehicle.exteriorColor ? { label: 'Colour', value: vehicle.exteriorColor } : null,
+                  vehicle.doors ? { label: 'Doors', value: String(vehicle.doors) } : null,
+                  vehicle.bodyStyle ? { label: 'Body Style', value: vehicle.bodyStyle } : null,
+                  vehicle.vin ? { label: 'VIN', value: vehicle.vin } : null,
+                  vehicle.stockNumber ? { label: 'Stock #', value: vehicle.stockNumber } : null,
+                ] as ({ label: string; value: string } | null)[]).filter((s): s is { label: string; value: string } => !!s).map((spec) => (
+                  <div key={spec.label} className="border border-gray-200 rounded-xl p-4 bg-white">
+                    <p className="text-[11px] font-semibold uppercase tracking-wider text-[#118df0] mb-1">{spec.label}</p>
+                    <p className="text-sm font-semibold text-gray-900 break-words">{spec.value}</p>
                   </div>
-                  <div>
-                    <span className="text-gray-500 text-sm">Make</span>
-                    <p className="font-semibold text-gray-900">{vehicle.make}</p>
-                  </div>
-                </div>
-                <div className="flex items-start gap-3">
-                  <div className="w-8 h-8 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                    <svg className="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
-                    </svg>
-                  </div>
-                  <div>
-                    <span className="text-gray-500 text-sm">Model</span>
-                    <p className="font-semibold text-gray-900">{vehicle.model}</p>
-                  </div>
-                </div>
-                {vehicle.series && (
-                  <div className="flex items-start gap-3">
-                    <div className="w-8 h-8 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                      <svg className="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 20l4-16m2 16l4-16M6 9h14M4 15h14" />
-                      </svg>
-                    </div>
-                    <div>
-                      <span className="text-gray-500 text-sm">Series</span>
-                      <p className="font-semibold text-gray-900">{vehicle.series}</p>
-                    </div>
-                  </div>
-                )}
-                <div className="flex items-start gap-3">
-                  <div className="w-8 h-8 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                    <svg className="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                    </svg>
-                  </div>
-                  <div>
-                    <span className="text-gray-500 text-sm">Year</span>
-                    <p className="font-semibold text-gray-900">{vehicle.year}</p>
-                  </div>
-                </div>
-                <div className="flex items-start gap-3">
-                  <div className="w-8 h-8 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                    <svg className="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                    </svg>
-                  </div>
-                  <div>
-                    <span className="text-gray-500 text-sm">Odometer</span>
-                    <p className="font-semibold text-gray-900">{formatOdometer(vehicle)}</p>
-                  </div>
-                </div>
-                {vehicle.transmission && vehicle.transmission.trim() !== '' && (
-                  <div className="flex items-start gap-3">
-                    <div className="w-8 h-8 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                      <svg className="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
-                      </svg>
-                    </div>
-                    <div>
-                      <span className="text-gray-500 text-sm">Transmission</span>
-                      <p className="font-semibold text-gray-900">{vehicle.transmission}</p>
-                    </div>
-                  </div>
-                )}
-                {vehicle.fuelType && vehicle.fuelType.trim() !== '' && (
-                  <div className="flex items-start gap-3">
-                    <div className="w-8 h-8 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                      <svg className="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 18.657A8 8 0 016.343 7.343S7 9 9 10c0-2 .5-5 2.986-7C14 5 16.09 5.777 17.656 7.343A7.975 7.975 0 0120 13a7.975 7.975 0 01-2.343 5.657z" />
-                      </svg>
-                    </div>
-                    <div>
-                      <span className="text-gray-500 text-sm">Fuel Type</span>
-                      <p className="font-semibold text-gray-900">{vehicle.fuelType}</p>
-                    </div>
-                  </div>
-                )}
-                {vehicle.engine && (
-                  <div className="flex items-start gap-3">
-                    <div className="w-8 h-8 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                      <svg className="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                      </svg>
-                    </div>
-                    <div>
-                      <span className="text-gray-500 text-sm">Engine</span>
-                      <p className="font-semibold text-gray-900">{vehicle.engine}</p>
-                    </div>
-                  </div>
-                )}
-                {vehicle.drivetrain && (
-                  <div className="flex items-start gap-3">
-                    <div className="w-8 h-8 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                      <svg className="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
-                      </svg>
-                    </div>
-                    <div>
-                      <span className="text-gray-500 text-sm">Drivetrain</span>
-                      <p className="font-semibold text-gray-900">{vehicle.drivetrain}</p>
-                    </div>
-                  </div>
-                )}
-                {vehicle.exteriorColor && (
-                  <div className="flex items-start gap-3">
-                    <div className="w-8 h-8 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                      <svg className="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" />
-                      </svg>
-                    </div>
-                    <div>
-                      <span className="text-gray-500 text-sm">Exterior Color</span>
-                      <p className="font-semibold text-gray-900">{vehicle.exteriorColor}</p>
-                    </div>
-                  </div>
-                )}
-                {vehicle.interiorColor && (
-                  <div className="flex items-start gap-3">
-                    <div className="w-8 h-8 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                      <svg className="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z" />
-                      </svg>
-                    </div>
-                    <div>
-                      <span className="text-gray-500 text-sm">Interior Color</span>
-                      <p className="font-semibold text-gray-900">{vehicle.interiorColor}</p>
-                    </div>
-                  </div>
-                )}
-                {vehicle.bodyStyle && (
-                  <div className="flex items-start gap-3">
-                    <div className="w-8 h-8 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                      <svg className="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
-                      </svg>
-                    </div>
-                    <div>
-                      <span className="text-gray-500 text-sm">Body Style</span>
-                      <p className="font-semibold text-gray-900">{vehicle.bodyStyle}</p>
-                    </div>
-                  </div>
-                )}
-                {vehicle.vin && (
-                  <div className="flex items-start gap-3 col-span-2 md:col-span-3">
-                    <div className="w-8 h-8 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                      <svg className="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V8a2 2 0 00-2-2h-5m-4 0V5a2 2 0 114 0v1m-4 0a2 2 0 104 0m-5 8a2 2 0 100-4 2 2 0 000 4zm0 0c1.306 0 2.417.835 2.83 2M9 14a3.001 3.001 0 00-2.83 2M15 11h3m-3 4h2" />
-                      </svg>
-                    </div>
-                    <div>
-                      <span className="text-gray-500 text-sm">VIN</span>
-                      <p className="font-semibold text-gray-900 font-mono text-sm">{vehicle.vin}</p>
-                    </div>
-                  </div>
-                )}
+                ))}
               </div>
             </div>
 
-            {/* Description */}
+            {/* About this vehicle */}
             {vehicle.description && (
-              <div className="glass-card rounded-2xl p-6">
-                <h2 className="text-xl font-bold text-gray-900 mb-4 flex items-center">
-                  <span className="w-1 h-6 bg-gradient-to-b from-[#118df0] to-[#0a6bc4] rounded-full mr-3"></span>
-                  Description
+              <div className="border border-gray-100 rounded-xl p-6">
+                <h2 className="text-lg font-bold text-gray-900 mb-3 flex items-center gap-2">
+                  <span className="w-1 h-5 bg-[#118df0] rounded-full inline-block" />
+                  About this vehicle
                 </h2>
-                <p className="text-gray-700 whitespace-pre-line leading-relaxed">{vehicle.description}</p>
+                <p className="text-gray-700 leading-relaxed whitespace-pre-line text-sm">{vehicle.description}</p>
               </div>
             )}
 
             {/* Features */}
             {vehicle.features && vehicle.features.length > 0 && (
-              <div className="glass-card rounded-2xl p-6">
-                <h2 className="text-xl font-bold text-gray-900 mb-6 flex items-center">
-                  <span className="w-1 h-6 bg-gradient-to-b from-[#118df0] to-[#0a6bc4] rounded-full mr-3"></span>
-                  Features & Equipment
+              <div className="border border-gray-100 rounded-xl p-6">
+                <h2 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
+                  <span className="w-1 h-5 bg-[#118df0] rounded-full inline-block" />
+                  Features
                 </h2>
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                  {vehicle.features.map((feature, index) => (
-                    <div key={index} className="flex items-center gap-2 py-2">
-                      <div className="w-6 h-6 bg-green-100 rounded-full flex items-center justify-center flex-shrink-0">
-                        <svg className="w-3.5 h-3.5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
-                        </svg>
-                      </div>
-                      <span className="text-gray-700">{feature}</span>
+                <div className="grid grid-cols-2 gap-y-2.5 gap-x-4">
+                  {vehicle.features.map((feature, i) => (
+                    <div key={i} className="flex items-center gap-2">
+                      <svg className="w-4 h-4 text-green-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                      </svg>
+                      <span className="text-sm text-gray-700">{feature}</span>
                     </div>
                   ))}
                 </div>
               </div>
             )}
+
+            {/* Financing FAQ */}
+            <div className="border border-gray-100 rounded-xl p-6">
+              <h2 className="text-lg font-bold text-gray-900 mb-1 flex items-center gap-2">
+                <span className="w-1 h-5 bg-[#118df0] rounded-full inline-block" />
+                Financing — frequently asked
+              </h2>
+              <p className="text-sm text-gray-500 mb-4">
+                Quick answers about how financing works on this vehicle. For the full list see our{' '}
+                <Link href="/financing" className="text-[#118df0] hover:underline">financing page</Link>.
+              </p>
+              <div className="divide-y divide-gray-100">
+                {[
+                  { q: 'Will I get approved for a car loan?', a: 'We work with a wide network of lenders and help customers with all credit types — good, bad, or no credit history. Approval depends on your income, credit, and the vehicle.' },
+                  { q: 'How do I know what my interest rate will be?', a: "Your rate depends on your credit profile, the loan term, and the lender. Rates typically range from 7.99% to 29.99% APR. We'll find you the best rate available." },
+                  { q: 'Does submitting a financing application impact my credit score?', a: 'A pre-approval soft check does not affect your credit. A full application may result in a hard inquiry, which has a minor and temporary impact.' },
+                  { q: 'Do all loans require a down payment?', a: 'Not always. Some approvals require no down payment. However, putting money down reduces your monthly payments and total interest paid.' },
+                  { q: 'Can I pay off my loan at any time?', a: "Yes — most of our lenders allow early repayment. Some loans may have a small prepayment penalty; we'll make sure you know the details before signing." },
+                  { q: 'How long does a financing approval take?', a: 'Many approvals come back within hours. In most cases, we can have you approved and in your vehicle within 1–2 business days.' },
+                ].map((item, i) => (
+                  <div key={i}>
+                    <button
+                      className="w-full text-left py-4 flex items-center justify-between gap-4"
+                      onClick={() => setOpenFaq(openFaq === i ? null : i)}
+                    >
+                      <span className="text-sm font-medium text-gray-800">{item.q}</span>
+                      <svg className={`w-4 h-4 text-gray-400 flex-shrink-0 transition-transform duration-200 ${openFaq === i ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                      </svg>
+                    </button>
+                    {openFaq === i && (
+                      <p className="pb-4 text-sm text-gray-600 leading-relaxed pr-6">{item.a}</p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+
           </div>
 
-          {/* Right Column - Price & Actions */}
-          <div className="lg:col-span-1">
-            <div className="glass-card rounded-2xl p-6 sticky top-24">
-              {/* Price Header */}
-              <div className="text-center mb-6">
-                <h1 className="text-2xl font-bold text-gray-900 mb-2">
-                  {vehicle.year} {vehicle.make} {vehicle.model}
-                </h1>
-                {(vehicle.city || vehicle.province) && (
-                  <p className="text-gray-500 flex items-center justify-center gap-1 mb-4">
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          {/* RIGHT COLUMN — Sticky */}
+          <div className="lg:col-span-2">
+            <div className="sticky top-24 space-y-4">
+
+              {/* Main Info Card */}
+              <div className="border border-gray-100 rounded-xl p-6 shadow-sm">
+                <h1 className="text-2xl font-bold text-gray-900">{vehicle.year} {vehicle.make} {vehicle.model}</h1>
+                {formatLocation(vehicle.city, vehicle.province) && (
+                  <p className="text-sm text-gray-500 flex items-center gap-1 mt-1">
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
                     </svg>
                     {formatLocation(vehicle.city, vehicle.province)}
                   </p>
                 )}
-                <div className="inline-block bg-gradient-to-r from-[#118df0] to-[#0a6bc4] text-white text-3xl font-bold px-6 py-3 rounded-xl shadow-lg shadow-[#118df0]/25">
-                  {formatPrice(vehicle.price)}
+                {vehicle.category && (
+                  <span className={`inline-block mt-2 px-3 py-1 rounded-full text-xs font-bold tracking-wide ${
+                    vehicle.category === 'premier' ? 'bg-[#118df0] text-white' :
+                    vehicle.category === 'fleet' ? 'bg-gray-700 text-white' :
+                    vehicle.category === 'private' ? 'bg-yellow-400 text-gray-900' :
+                    'bg-[#8b5cf6] text-white'
+                  }`}>
+                    {vehicle.category === 'premier' ? 'EDC PREMIER' :
+                     vehicle.category === 'fleet' ? 'FLEET SELECT' :
+                     vehicle.category === 'private' ? 'PRIVATE SELLER' : 'DEALER SELECT'}
+                  </span>
+                )}
+
+                {/* Price + Status */}
+                <div className="flex items-center gap-3 mt-4">
+                  <div className="bg-[#118df0] text-white text-2xl font-bold px-5 py-2.5 rounded-xl">
+                    {formatPrice(vehicle.price)}
+                  </div>
+                  {vehicle.status && (() => {
+                    const s = vehicle.status.toLowerCase()
+                    const isSold = s === 'sold'
+                    const isHeld = s === 'on hold' || s === 'on_hold' || s === 'hold'
+                    return (
+                      <span className={`flex items-center gap-1.5 text-sm font-medium ${isSold ? 'text-red-600' : isHeld ? 'text-amber-600' : 'text-green-600'}`}>
+                        <span className={`w-2 h-2 rounded-full ${isSold ? 'bg-red-500' : isHeld ? 'bg-amber-500' : 'bg-green-500'}`} />
+                        {isSold ? 'Sold' : isHeld ? 'On Hold' : 'In Stock'}
+                      </span>
+                    )
+                  })()}
                 </div>
 
-                {vehicle.status && (() => {
-                  const s = vehicle.status.toLowerCase()
-                  const isSold = s === 'sold'
-                  const isOnHold = s === 'on hold' || s === 'on_hold' || s === 'hold'
-                  const isAvailable = s === 'available' || s === 'active' || s === 'for sale'
-                  return (
-                    <span className={`inline-flex items-center gap-1.5 self-start px-3 py-1.5 rounded-full text-sm font-semibold ${
-                      isSold ? 'bg-red-100 text-red-700' :
-                      isOnHold ? 'bg-yellow-100 text-yellow-700' :
-                      isAvailable ? 'bg-green-100 text-green-700' :
-                      'bg-gray-100 text-gray-700'
-                    }`}>
-                      <span className={`w-2 h-2 rounded-full ${
-                        isSold ? 'bg-red-500' :
-                        isOnHold ? 'bg-yellow-500' :
-                        isAvailable ? 'bg-green-500' :
-                        'bg-gray-500'
-                      }`} />
-                      {vehicle.status.charAt(0).toUpperCase() + vehicle.status.slice(1)}
-                    </span>
-                  )
-                })()}
-              </div>
-
-              <div className="border-t border-gray-200/60 my-6"></div>
-
-              {/* Action Buttons */}
-              <div className="space-y-3">
-                {isVerified ? (
+                {/* Action Buttons */}
+                <div className="mt-5 space-y-2.5">
                   <button
                     type="button"
                     onClick={() => router.push(`/purchase/${vehicle.id}`)}
-                    disabled={onHoldByOther}
-                    className={`btn-primary w-full flex items-center justify-center ${onHoldByOther ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    disabled={vehicle.status?.toLowerCase() === 'reserved' || vehicle.status?.toLowerCase() === 'sold'}
+                    className={`w-full py-3 rounded-xl font-semibold text-sm transition-colors ${
+                      vehicle.status?.toLowerCase() === 'sold'
+                        ? 'bg-red-100 text-red-400 cursor-not-allowed'
+                        : vehicle.status?.toLowerCase() === 'reserved'
+                        ? 'bg-amber-100 text-amber-700 cursor-not-allowed'
+                        : 'bg-gray-900 hover:bg-gray-800 text-white'
+                    }`}
                   >
-                    {onHoldByOther ? 'On Hold by another customer' : isOnHold ? 'View Hold Details' : 'Place on Hold'}
+                    {vehicle.status?.toLowerCase() === 'sold'
+                      ? 'This vehicle has been sold'
+                      : vehicle.status?.toLowerCase() === 'reserved'
+                      ? '🔒 Reserved — Purchase Pending'
+                      : 'Buy Online — $1,000 Deposit'}
                   </button>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => router.push('/account/verification')}
-                    className="w-full flex items-center justify-center gap-2 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-800 font-semibold px-4 py-3 rounded-xl transition-colors"
-                  >
-                    Verify Account to Continue
-                  </button>
-                )}
 
-                {/* View CARFAX Report — only show if available */}
-                {carfaxAvailable && (
-                  <button
-                    type="button"
-                    onClick={() => openCarfaxModal(vehicle.vehicleId || vehicle.id)}
-                    className="w-full flex items-center justify-center gap-2 bg-red-50 hover:bg-red-100 border border-red-300 text-red-700 font-semibold px-4 py-3 rounded-xl transition-colors"
-                  >
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                    </svg>
-                    View CARFAX Report
-                  </button>
-                )}
+                  {carfaxAvailable && (
+                    <button
+                      type="button"
+                      onClick={() => openCarfaxModal(vehicle.vehicleId || vehicle.id)}
+                      className="w-full py-3 rounded-xl font-semibold text-sm border border-red-300 bg-red-50 hover:bg-red-100 text-red-700 flex items-center justify-center gap-2 transition-colors"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                      View CARFAX Report
+                    </button>
+                  )}
 
-                {/* View Certificate — only show if available */}
-                {certAvailable && (
-                  <button
-                    type="button"
-                    onClick={() => openCertModal(vehicle.vehicleId || vehicle.id)}
-                    className="w-full flex items-center justify-center gap-2 bg-blue-50 hover:bg-blue-100 border border-blue-300 text-blue-700 font-semibold px-4 py-3 rounded-xl transition-colors"
-                  >
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" />
-                    </svg>
-                    Safety Certificate
-                  </button>
-                )}
+                  {certAvailable && (
+                    <button
+                      type="button"
+                      onClick={() => openCertModal(vehicle.vehicleId || vehicle.id)}
+                      className="w-full py-3 rounded-xl font-semibold text-sm border border-blue-300 bg-blue-50 hover:bg-blue-100 text-blue-700 flex items-center justify-center gap-2 transition-colors"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" /></svg>
+                      Safety Certificate
+                    </button>
+                  )}
 
-                {/* View Important Disclosure — category-aware */}
-                <button
-                  onClick={() => {
+                  {(() => {
                     const cat = String(vehicle.category || 'premier').toLowerCase()
-                    if (cat === 'fleet') setDisclosureModal('fleet')
-                    else if (cat === 'private') setDisclosureModal('private')
-                    else if (cat === 'dealership') setDisclosureModal('dealership')
-                    else setDisclosureModal('premier')
-                  }}
-                  className="w-full flex items-center justify-center gap-2 bg-amber-50 hover:bg-amber-100 border border-amber-300 text-amber-800 font-semibold px-4 py-3 rounded-xl transition-colors"
-                >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                  </svg>
-                  View Important Disclosure
-                </button>
-
-
-                <button
-                  onClick={() => setShowInquiryForm(!showInquiryForm)}
-                  className="btn-outline w-full flex items-center justify-center"
-                >
-                  <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-                  </svg>
-                  Ask a Question
-                </button>
-
-                <a
-                  href="tel:+16137772395"
-                  className="btn-secondary w-full flex items-center justify-center"
-                >
-                  <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
-                  </svg>
-                  Call Us (613) 777-2395
-                </a>
-              </div>
-
-              {/* Inquiry Form */}
-              {showInquiryForm && (
-                <form onSubmit={handleInquirySubmit} className="mt-6 space-y-4 pt-6 border-t border-gray-200/60">
-                  <h3 className="font-semibold text-gray-900">Send an Inquiry</h3>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
-                    <input
-                      type="text"
-                      required
-                      value={inquiryForm.name}
-                      onChange={(e) => setInquiryForm({ ...inquiryForm, name: e.target.value })}
-                      className="input-field"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-                    <input
-                      type="email"
-                      required
-                      value={inquiryForm.email}
-                      onChange={(e) => setInquiryForm({ ...inquiryForm, email: e.target.value })}
-                      className="input-field"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
-                    <input
-                      type="tel"
-                      required
-                      value={inquiryForm.phone}
-                      onChange={(e) => setInquiryForm({ ...inquiryForm, phone: e.target.value })}
-                      className="input-field"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Message</label>
-                    <textarea
-                      rows={3}
-                      value={inquiryForm.message}
-                      onChange={(e) => setInquiryForm({ ...inquiryForm, message: e.target.value })}
-                      placeholder={`I'm interested in the ${vehicle.year} ${vehicle.make} ${vehicle.model}...`}
-                      className="input-field resize-none"
-                    ></textarea>
-                  </div>
+                    const styles =
+                      cat === 'fleet' ? 'border-gray-300 bg-gray-50 hover:bg-gray-100 text-gray-800' :
+                      cat === 'private' ? 'border-amber-300 bg-amber-50 hover:bg-amber-100 text-amber-800' :
+                      cat === 'dealership' || cat === 'dealer' ? 'border-violet-300 bg-violet-50 hover:bg-violet-100 text-violet-800' :
+                      'border-blue-300 bg-blue-50 hover:bg-blue-100 text-[#118df0]'
+                    return (
                   <button
-                    type="submit"
-                    disabled={submitting}
-                    className="btn-primary w-full disabled:opacity-50"
+                    onClick={() => {
+                      if (cat === 'fleet') setDisclosureModal('fleet')
+                      else if (cat === 'private') setDisclosureModal('private')
+                      else if (cat === 'dealership' || cat === 'dealer') setDisclosureModal('dealership')
+                      else setDisclosureModal('premier')
+                    }}
+                    className={`w-full py-3 rounded-xl font-semibold text-sm border flex items-center justify-center gap-2 transition-colors ${styles}`}
                   >
-                    {submitting ? 'Sending...' : 'Send Inquiry'}
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+                    View Important Disclosure
                   </button>
-                </form>
-              )}
+                    )
+                  })()}
 
-              {/* Success Message */}
-              {submitted && (
-                <div className="mt-4 p-4 bg-green-50 border border-green-200 rounded-xl">
-                  <div className="flex items-start gap-3">
-                    <div className="w-6 h-6 bg-green-100 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
-                      <svg className="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                      </svg>
-                    </div>
-                    <div>
-                      <p className="text-green-800 font-semibold">Thank you!</p>
-                      <p className="text-green-700 text-sm">We&apos;ll be in touch soon.</p>
-                    </div>
-                  </div>
+                  <button
+                    onClick={() => setShowInquiryForm(!showInquiryForm)}
+                    className="w-full py-3 rounded-xl font-semibold text-sm border border-gray-200 hover:bg-gray-50 text-gray-700 flex items-center justify-center gap-2 transition-colors"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" /></svg>
+                    Ask a Question
+                  </button>
+
+                  <a
+                    href="tel:+16137772395"
+                    className="w-full py-3 rounded-xl font-semibold text-sm border border-gray-200 hover:bg-gray-50 text-gray-700 flex items-center justify-center gap-2 transition-colors"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" /></svg>
+                    Call Us (613) 777-2395
+                  </a>
                 </div>
-              )}
 
-              {/* Trust Badges */}
-              <div className="mt-6 pt-6 border-t border-gray-200/60">
-                {carfaxAvailable && (
-                  <div className="flex items-center gap-2 text-sm text-gray-600 mb-3">
-                    <svg className="w-5 h-5 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
-                    </svg>
-                    CARFAX Report Available
+                {/* Inquiry Form */}
+                {showInquiryForm && (
+                  <form onSubmit={handleInquirySubmit} className="mt-5 pt-5 border-t border-gray-100 space-y-3">
+                    <h3 className="text-sm font-semibold text-gray-900">Send an Inquiry</h3>
+                    {(['name', 'email', 'phone'] as const).map((key) => (
+                      <div key={key}>
+                        <label className="block text-xs font-medium text-gray-600 mb-1 capitalize">{key}</label>
+                        <input
+                          type={key === 'email' ? 'email' : key === 'phone' ? 'tel' : 'text'}
+                          required
+                          value={inquiryForm[key]}
+                          onChange={(e) => setInquiryForm({ ...inquiryForm, [key]: e.target.value })}
+                          className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#118df0]/30"
+                        />
+                      </div>
+                    ))}
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Message</label>
+                      <textarea
+                        rows={3}
+                        value={inquiryForm.message}
+                        onChange={(e) => setInquiryForm({ ...inquiryForm, message: e.target.value })}
+                        placeholder={`I'm interested in the ${vehicle.year} ${vehicle.make} ${vehicle.model}...`}
+                        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#118df0]/30 resize-none"
+                      />
+                    </div>
+                    <button type="submit" disabled={submitting} className="w-full bg-[#118df0] hover:bg-[#0a7dd4] text-white py-2.5 rounded-lg text-sm font-semibold disabled:opacity-50 transition-colors">
+                      {submitting ? 'Sending...' : 'Send Inquiry'}
+                    </button>
+                  </form>
+                )}
+                {submitted && (
+                  <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded-lg text-sm text-green-700 flex items-center gap-2">
+                    <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                    Thank you! We&apos;ll be in touch soon.
                   </div>
                 )}
-                <div className="flex items-center gap-2 text-sm text-gray-600 mb-3">
-                  <svg className="w-5 h-5 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                  Safety Inspected
-                </div>
-                <div className="flex items-center gap-2 text-sm text-gray-600">
-                  <svg className="w-5 h-5 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
-                  </svg>
-                  Financing Available
+
+                {/* Trust Badges */}
+                <div className="mt-5 pt-5 border-t border-gray-100 space-y-2">
+                  {carfaxAvailable && (
+                    <div className="flex items-center gap-2 text-sm text-gray-600">
+                      <svg className="w-4 h-4 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" /></svg>
+                      CARFAX Report Available
+                    </div>
+                  )}
+                  <div className="flex items-center gap-2 text-sm text-gray-600">
+                    <svg className="w-4 h-4 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                    Safety Inspected
+                  </div>
+                  <div className="flex items-center gap-2 text-sm text-gray-600">
+                    <svg className="w-4 h-4 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" /></svg>
+                    Financing Available
+                  </div>
                 </div>
               </div>
+
+              {/* Extended Warranty */}
+              <div className="border border-gray-200 rounded-xl p-5 shadow-sm">
+                <div className="flex items-start gap-3 mb-4">
+                  <div className="w-9 h-9 rounded-full bg-blue-50 flex items-center justify-center flex-shrink-0">
+                    <svg className="w-5 h-5 text-[#118df0]" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
+                      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                      <polyline points="9 12 11 14 15 10"/>
+                    </svg>
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-gray-900">Extended warranty available</h3>
+                    <p className="text-xs text-gray-500 mt-0.5">12 A-Protect plans qualify for this vehicle.</p>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => router.push('/warranty')}
+                    className="py-2.5 rounded-full text-sm font-semibold border border-gray-300 text-gray-800 hover:bg-gray-50 transition-colors"
+                  >
+                    View plans
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => router.push(`/purchase/${vehicle.id}`)}
+                    className="py-2.5 rounded-full text-sm font-semibold bg-[#118df0] hover:bg-[#0a7dd4] text-white transition-colors"
+                  >
+                    Add at checkout
+                  </button>
+                </div>
+              </div>
+
+              {/* Payment Calculator */}
+              <div className="border border-gray-100 rounded-xl p-6 shadow-sm">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-sm font-bold text-gray-900">Payment calculator</h3>
+                  <span className="text-xs text-gray-400">Est. 7.99% APR OAC</span>
+                </div>
+                <div className="mb-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Down Payment</label>
+                    <div className="flex items-center gap-1 border border-gray-200 rounded-lg px-2 py-1">
+                      <span className="text-sm text-gray-500">$</span>
+                      <input
+                        type="number"
+                        min={0}
+                        max={Math.min(Math.round(vehicle.price * 0.5), 50000)}
+                        step={100}
+                        value={downPayment}
+                        onChange={(e) => {
+                          const v = Number(e.target.value) || 0
+                          const cap = Math.min(Math.round(vehicle.price * 0.5), 50000)
+                          setDownPayment(Math.max(0, Math.min(v, cap)))
+                        }}
+                        className="w-20 text-sm font-semibold text-gray-900 text-right focus:outline-none bg-transparent"
+                      />
+                    </div>
+                  </div>
+                  <input
+                    type="range"
+                    min={0}
+                    max={Math.min(Math.round(vehicle.price * 0.5), 50000)}
+                    step={500}
+                    value={downPayment}
+                    onChange={(e) => setDownPayment(Number(e.target.value))}
+                    className="w-full accent-gray-900"
+                  />
+                  <div className="flex flex-wrap gap-1.5 mt-2">
+                    {[0, 1000, 2500, 5000, 10000].map((amt) => {
+                      const cap = Math.min(Math.round(vehicle.price * 0.5), 50000)
+                      if (amt > cap) return null
+                      return (
+                        <button
+                          key={amt}
+                          onClick={() => setDownPayment(amt)}
+                          className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors ${
+                            downPayment === amt
+                              ? 'bg-gray-900 text-white'
+                              : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                          }`}
+                        >
+                          ${amt.toLocaleString()}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+                <div className="mb-5">
+                  <label className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2 block">Term Length</label>
+                  <div className="flex gap-1.5 flex-wrap">
+                    {[36, 48, 60, 72, 84].map((t) => (
+                      <button
+                        key={t}
+                        onClick={() => setTermLength(t)}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${termLength === t ? 'bg-[#118df0] text-white' : 'border border-gray-200 text-gray-600 hover:bg-gray-50'}`}
+                      >
+                        {t} mo
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                {(() => {
+                  const loan = Math.max(0, vehicle.price - downPayment)
+                  const r = 0.0799 / 12
+                  const n = termLength
+                  const monthly = loan > 0 ? (loan * r * Math.pow(1 + r, n)) / (Math.pow(1 + r, n) - 1) : 0
+                  const biweekly = monthly * 12 / 26
+                  return (
+                    <div className="grid grid-cols-2 gap-3 mb-4">
+                      <div className="bg-[#118df0]/5 rounded-xl p-4 text-center">
+                        <p className="text-2xl font-bold text-[#118df0]">${Math.round(monthly).toLocaleString()}</p>
+                        <p className="text-xs text-gray-500 mt-0.5">/ month</p>
+                        <p className="text-[10px] text-gray-400">over {termLength} mo</p>
+                      </div>
+                      <div className="bg-gray-50 rounded-xl p-4 text-center">
+                        <p className="text-2xl font-bold text-gray-700">${Math.round(biweekly).toLocaleString()}</p>
+                        <p className="text-xs text-gray-500 mt-0.5">/ biweekly</p>
+                        <p className="text-[10px] text-gray-400">26 payments / yr</p>
+                      </div>
+                    </div>
+                  )
+                })()}
+                <button
+                  onClick={() => router.push('/financing')}
+                  className="w-full py-2.5 bg-white border border-gray-300 hover:bg-gray-50 text-gray-900 rounded-xl text-sm font-semibold transition-colors"
+                >
+                  Get pre-approved
+                </button>
+                <p className="text-[10px] text-gray-400 text-center mt-2">Estimate only. Final rate &amp; terms depend on lender approval.</p>
+              </div>
+
+              {/* Listing Type */}
+              <div className="border border-gray-100 rounded-xl p-5 shadow-sm">
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">Listing Type</p>
+                  <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full ${
+                    vehicle.category === 'premier' ? 'bg-[#118df0] text-white' :
+                    vehicle.category === 'fleet' ? 'bg-gray-700 text-white' :
+                    vehicle.category === 'private' ? 'bg-yellow-400 text-gray-900' :
+                    'bg-[#8b5cf6] text-white'
+                  }`}>
+                    {vehicle.category === 'premier' ? 'EDC PREMIER' :
+                     vehicle.category === 'fleet' ? 'FLEET SELECT' :
+                     vehicle.category === 'private' ? 'PRIVATE SELLER' : 'DEALER SELECT'}
+                  </span>
+                </div>
+                <p className="text-sm text-gray-600">Sold by <span className="font-medium text-gray-900">EasyDrive Canada</span></p>
+              </div>
+
             </div>
           </div>
+
         </div>
       </div>
 
@@ -1105,10 +1066,10 @@ export default function VehicleDetailPage() {
       {/* Unified Disclosure Modal — 4 categories */}
       {disclosureModal && (() => {
         const cfg = {
-          premier:     { accent: 'purple', label: 'EDC Premier',     badge: 'bg-purple-100 text-purple-700',  header: 'border-purple-200 bg-purple-50', title: 'text-purple-800', sub: 'text-purple-700', hover: 'hover:bg-purple-100', icon: 'text-purple-600', btn: 'bg-purple-500 hover:bg-purple-600' },
-          private:     { accent: 'blue',   label: 'EDC Private',     badge: 'bg-blue-100 text-blue-700',      header: 'border-blue-200 bg-blue-50',     title: 'text-blue-800',   sub: 'text-blue-700',   hover: 'hover:bg-blue-100',   icon: 'text-blue-600',   btn: 'bg-blue-500 hover:bg-blue-600' },
-          fleet:       { accent: 'amber',  label: 'EDC Fleet Select', badge: 'bg-amber-100 text-amber-700',  header: 'border-amber-200 bg-amber-50',   title: 'text-amber-800',  sub: 'text-amber-700',  hover: 'hover:bg-amber-100',  icon: 'text-amber-600',  btn: 'bg-amber-500 hover:bg-amber-600' },
-          dealership:  { accent: 'gray',   label: 'EDC Dealership',  badge: 'bg-gray-100 text-gray-700',      header: 'border-gray-200 bg-gray-50',     title: 'text-gray-800',   sub: 'text-gray-600',   hover: 'hover:bg-gray-100',   icon: 'text-gray-600',   btn: 'bg-gray-700 hover:bg-gray-800' },
+          premier:     { accent: 'blue',   label: 'EDC Premier',      badge: 'bg-blue-100 text-blue-700',     header: 'border-blue-200 bg-blue-50',     title: 'text-blue-800',   sub: 'text-blue-700',   hover: 'hover:bg-blue-100',   icon: 'text-blue-600',   btn: 'bg-blue-500 hover:bg-blue-600' },
+          private:     { accent: 'amber',  label: 'EDC Private',      badge: 'bg-amber-100 text-amber-700',   header: 'border-amber-200 bg-amber-50',   title: 'text-amber-800',  sub: 'text-amber-700',  hover: 'hover:bg-amber-100',  icon: 'text-amber-600',  btn: 'bg-amber-500 hover:bg-amber-600' },
+          fleet:       { accent: 'gray',   label: 'EDC Fleet Select', badge: 'bg-gray-100 text-gray-700',     header: 'border-gray-200 bg-gray-50',     title: 'text-gray-800',   sub: 'text-gray-600',   hover: 'hover:bg-gray-100',   icon: 'text-gray-600',   btn: 'bg-gray-700 hover:bg-gray-800' },
+          dealership:  { accent: 'violet', label: 'EDC Dealer Select', badge: 'bg-violet-100 text-violet-700', header: 'border-violet-200 bg-violet-50', title: 'text-violet-800', sub: 'text-violet-700', hover: 'hover:bg-violet-100', icon: 'text-violet-600', btn: 'bg-violet-500 hover:bg-violet-600' },
         }[disclosureModal]
 
         return (

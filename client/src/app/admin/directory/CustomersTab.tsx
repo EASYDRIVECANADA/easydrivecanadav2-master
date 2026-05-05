@@ -2,10 +2,10 @@
 
 import { useEffect, useState, useMemo } from 'react'
 import { supabase } from '@/lib/supabaseClient'
-import CustomerInformationTab from '../costumer/CustomerInformationTab'
-import CreditAppTab from '../costumer/CreditAppTab'
-import HistoryTab from '../costumer/HistoryTab'
-import type { CustomerForm, CreditForm } from '../costumer/types'
+import CustomerInformationTab from '../customer/CustomerInformationTab'
+import CreditAppTab from '../customer/CreditAppTab'
+import HistoryTab from '../customer/HistoryTab'
+import type { CustomerForm, CreditForm } from '../customer/types'
 
 type CustomerRow = {
   id: string

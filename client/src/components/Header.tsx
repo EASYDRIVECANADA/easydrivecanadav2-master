@@ -16,7 +16,7 @@ export default function Header() {
   const [showAdminSignOutModal, setShowAdminSignOutModal] = useState(false)
   const [showUserSignOutModal, setShowUserSignOutModal] = useState(false)
 
-  const hideHeader = pathname.startsWith('/admin')
+  const hideHeader = pathname.startsWith('/admin') || pathname.startsWith('/account')
 
   useEffect(() => {
     const refreshVerified = () => {
@@ -179,78 +179,71 @@ export default function Header() {
         Skip to main content
       </a>
       
-      <header className="bg-white/80 backdrop-blur-xl border-b border-white/50 shadow-soft z-50" role="banner">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center h-18 py-3">
+      <header className="relative sticky top-0 z-50 border-b border-gray-200/60 bg-white/85 backdrop-blur supports-[backdrop-filter]:bg-white/70" role="banner">
+        <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
           {/* Logo */}
-          <Link href="/" className="flex items-center">
+          <Link href="/" className="flex items-center shrink-0">
             <Image
               src="/images/logo.png"
               alt="Easy Drive Canada"
               width={180}
               height={48}
-              className="h-10 w-auto"
+              className="h-9 w-auto"
               priority
             />
           </Link>
 
           {/* Desktop Navigation */}
-          <nav className="hidden md:flex space-x-8 ml-10" aria-label="Main navigation">
+          <nav className="hidden md:flex items-center gap-1" aria-label="Main navigation">
             {isAdmin ? (
-              <>
-                <Link href="/admin" className="text-gray-600 hover:text-primary-600 focus-visible:text-primary-600 transition-all duration-300 font-medium relative group focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary-600 rounded">
-                  Admin Dashboard
-                  <span className="absolute -bottom-1 left-0 w-0 h-0.5 bg-gradient-to-r from-primary-600 to-primary-700 group-hover:w-full transition-all duration-300"></span>
-                </Link>
-              </>
+              <Link href="/admin" className={`rounded-full px-4 py-2 text-sm font-medium transition hover:text-gray-900 ${pathname === '/admin' ? 'bg-gray-100 text-gray-900' : 'text-gray-500'}`}>
+                Admin Dashboard
+              </Link>
             ) : userEmail && isVerified ? (
               <>
-                <Link href="/inventory" className="text-gray-600 hover:text-primary-600 focus-visible:text-primary-600 transition-all duration-300 font-medium relative group focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary-600 rounded">
+                <Link href="/inventory" className={`rounded-full px-4 py-2 text-sm font-medium transition hover:text-gray-900 ${pathname === '/inventory' ? 'bg-gray-100 text-gray-900' : 'text-gray-500'}`}>
                   Dashboard
-                  <span className="absolute -bottom-1 left-0 w-0 h-0.5 bg-gradient-to-r from-primary-600 to-primary-700 group-hover:w-full transition-all duration-300"></span>
                 </Link>
-                <Link href="/admin/account" className="text-gray-600 hover:text-primary-600 focus-visible:text-primary-600 transition-all duration-300 font-medium relative group focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary-600 rounded">
+                <Link href="/admin/account" className={`rounded-full px-4 py-2 text-sm font-medium transition hover:text-gray-900 ${pathname === '/admin/account' ? 'bg-gray-100 text-gray-900' : 'text-gray-500'}`}>
                   Account
-                  <span className="absolute -bottom-1 left-0 w-0 h-0.5 bg-gradient-to-r from-primary-600 to-primary-700 group-hover:w-full transition-all duration-300"></span>
                 </Link>
               </>
             ) : (
               <>
-                <Link href="/" className="text-gray-600 hover:text-primary-600 focus-visible:text-primary-600 transition-all duration-300 font-medium relative group focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary-600 rounded">
+                <Link href="/" className={`rounded-full px-4 py-2 text-sm font-medium transition hover:text-gray-900 ${pathname === '/' ? 'bg-gray-100 text-gray-900' : 'text-gray-500'}`}>
                   Home
-                  <span className="absolute -bottom-1 left-0 w-0 h-0.5 bg-gradient-to-r from-primary-600 to-primary-700 group-hover:w-full transition-all duration-300"></span>
                 </Link>
-                <Link href="/inventory" className="text-gray-600 hover:text-primary-600 focus-visible:text-primary-600 transition-all duration-300 font-medium relative group focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary-600 rounded">
+                <Link href="/inventory" className={`rounded-full px-4 py-2 text-sm font-medium transition hover:text-gray-900 ${pathname.startsWith('/inventory') ? 'bg-gray-100 text-gray-900' : 'text-gray-500'}`}>
                   Shop Cars
-                  <span className="absolute -bottom-1 left-0 w-0 h-0.5 bg-gradient-to-r from-primary-600 to-primary-700 group-hover:w-full transition-all duration-300"></span>
                 </Link>
-                <Link href="/financing" className="text-gray-600 hover:text-primary-600 focus-visible:text-primary-600 transition-all duration-300 font-medium relative group focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary-600 rounded">
+                <Link href="/financing" className={`rounded-full px-4 py-2 text-sm font-medium transition hover:text-gray-900 ${pathname === '/financing' ? 'bg-gray-100 text-gray-900' : 'text-gray-500'}`}>
                   Financing
-                  <span className="absolute -bottom-1 left-0 w-0 h-0.5 bg-gradient-to-r from-primary-600 to-primary-700 group-hover:w-full transition-all duration-300"></span>
                 </Link>
-                <Link href="/contact" className="text-gray-600 hover:text-primary-600 focus-visible:text-primary-600 transition-all duration-300 font-medium relative group focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary-600 rounded">
+                <Link href="/warranty" className={`rounded-full px-4 py-2 text-sm font-medium transition hover:text-gray-900 ${pathname === '/warranty' ? 'bg-gray-100 text-gray-900' : 'text-gray-500'}`}>
+                  Warranty
+                </Link>
+                <Link href="/sell" className={`rounded-full px-4 py-2 text-sm font-medium transition hover:text-gray-900 ${pathname === '/sell' ? 'bg-gray-100 text-gray-900' : 'text-gray-500'}`}>
+                  Sell Your Car
+                </Link>
+                <Link href="/contact" className={`rounded-full px-4 py-2 text-sm font-medium transition hover:text-gray-900 ${pathname === '/contact' ? 'bg-gray-100 text-gray-900' : 'text-gray-500'}`}>
                   Contact
-                  <span className="absolute -bottom-1 left-0 w-0 h-0.5 bg-gradient-to-r from-primary-600 to-primary-700 group-hover:w-full transition-all duration-300"></span>
                 </Link>
               </>
             )}
           </nav>
 
-          {/* Spacer to push CTA to the right */}
-          <div className="flex-1"></div>
-
           {/* CTA Buttons */}
-          <div className="hidden md:flex items-center gap-3">
+          <div className="hidden md:flex items-center gap-2">
             {userEmail ? (
-              <button type="button" onClick={() => setShowUserSignOutModal(true)} className="btn-secondary text-sm px-5 py-2.5">
+              <button type="button" onClick={() => setShowUserSignOutModal(true)} className="rounded-full border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
                 Sign Out
               </button>
             ) : (
               <>
-                <Link href="/account" className="btn-secondary text-sm px-5 py-2.5">
+                <Link href="/account" className="rounded-full px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-100 transition-colors">
                   Login
                 </Link>
-                <Link href="/financing" className="btn-primary text-sm px-5 py-2.5">
+                <Link href="/financing" className="rounded-full bg-[#118df0] px-4 py-2 text-sm font-semibold text-white hover:bg-[#0d7fd8] transition-colors">
                   Get Pre-Approved
                 </Link>
               </>
@@ -259,12 +252,12 @@ export default function Header() {
 
           {/* Mobile menu button */}
           <button
-            className="md:hidden p-2 rounded-lg hover:bg-gray-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600 transition-colors"
+            className="md:hidden rounded-md p-2 text-gray-600 hover:bg-gray-100 transition-colors"
             onClick={() => setIsMenuOpen(!isMenuOpen)}
             aria-expanded={isMenuOpen}
             aria-label="Toggle navigation menu"
           >
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
               {isMenuOpen ? (
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
               ) : (
@@ -274,79 +267,78 @@ export default function Header() {
           </button>
         </div>
 
-        {/* Mobile Navigation */}
-        {isMenuOpen && (
-          <div className="md:hidden py-4 border-t" role="navigation" aria-label="Mobile navigation">
-            <div className="mt-3 space-y-3">
-              {isAdmin ? (
-                <>
-                  <Link href="/admin" className="text-gray-700 hover:text-primary-600 focus-visible:text-primary-600 transition-colors font-medium px-2 py-1 rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600">
-                    Admin Dashboard
-                  </Link>
-                </>
-              ) : userEmail && isVerified ? (
-                <>
-                  <Link href="/inventory" className="text-gray-700 hover:text-primary-600 focus-visible:text-primary-600 transition-colors font-medium px-2 py-1 rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600">
-                    Dashboard
-                  </Link>
-                  <Link href="/admin/account" className="text-gray-700 hover:text-primary-600 focus-visible:text-primary-600 transition-colors font-medium px-2 py-1 rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600">
-                    Account
-                  </Link>
-                </>
-              ) : (
-                <>
-                  <Link href="/" className="text-gray-700 hover:text-primary-600 focus-visible:text-primary-600 transition-colors font-medium px-2 py-1 rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600">
-                    Home
-                  </Link>
-                  <Link href="/inventory" className="text-gray-700 hover:text-primary-600 focus-visible:text-primary-600 transition-colors font-medium px-2 py-1 rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600">
-                    Shop Cars
-                  </Link>
-                  <Link href="/financing" className="text-gray-700 hover:text-primary-600 focus-visible:text-primary-600 transition-colors font-medium px-2 py-1 rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600">
-                    Financing
-                  </Link>
-                  <Link href="/contact" className="text-gray-700 hover:text-primary-600 focus-visible:text-primary-600 transition-colors font-medium px-2 py-1 rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600">
-                    Contact
-                  </Link>
-                </>
-              )}
-              {isAdmin ? null : userEmail ? (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => setShowUserSignOutModal(true)}
-                    className="text-left text-gray-700 hover:text-primary-600 focus-visible:text-primary-600 transition-colors font-medium px-2 py-1 rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600"
-                  >
-                    Sign Out
-                  </button>
-                </>
-              ) : (
-                <>
-                  <Link
-                    href="/account"
-                    className="block text-left text-gray-700 hover:text-primary-600 focus-visible:text-primary-600 transition-colors font-medium px-2 py-1 rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600"
-                  >
-                    Login
-                  </Link>
-                  <Link
-                    href="/financing"
-                    className="block text-left text-gray-700 hover:text-primary-600 focus-visible:text-primary-600 transition-colors font-medium px-2 py-1 rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600"
-                  >
-                    Get Pre-Approved
-                  </Link>
-                </>
-              )}
-              {isAdmin || userEmail ? null : (
-                <Link 
-                  href="/financing" 
-                  className="bg-primary-600 text-white px-6 py-2 rounded-lg font-semibold hover:bg-primary-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600 transition-colors text-center"
-                >
+      {/* Mobile Navigation */}
+      {isMenuOpen && (
+        <div className="absolute left-0 right-0 top-full border-t border-gray-100 bg-white shadow-lg md:hidden" role="navigation" aria-label="Mobile navigation">
+          <nav className="flex flex-col gap-1 px-4 py-3">
+            {isAdmin ? (
+              <Link href="/admin" onClick={() => setIsMenuOpen(false)} className="flex items-center justify-between px-3 py-3 rounded-xl text-gray-700 font-medium hover:bg-gray-50 transition-colors">
+                Admin Dashboard
+                <svg className="w-4 h-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7"/></svg>
+              </Link>
+            ) : userEmail && isVerified ? (
+              <>
+                <Link href="/inventory" onClick={() => setIsMenuOpen(false)} className="flex items-center justify-between px-3 py-3 rounded-xl text-gray-700 font-medium hover:bg-gray-50 transition-colors">
+                  Dashboard
+                  <svg className="w-4 h-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7"/></svg>
+                </Link>
+                <Link href="/admin/account" onClick={() => setIsMenuOpen(false)} className="flex items-center justify-between px-3 py-3 rounded-xl text-gray-700 font-medium hover:bg-gray-50 transition-colors">
+                  Account
+                  <svg className="w-4 h-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7"/></svg>
+                </Link>
+              </>
+            ) : (
+              <>
+                <Link href="/" onClick={() => setIsMenuOpen(false)} className="flex items-center justify-between px-3 py-3 rounded-xl text-gray-700 font-medium hover:bg-gray-50 transition-colors">
+                  Home
+                  <svg className="w-4 h-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7"/></svg>
+                </Link>
+                <Link href="/inventory" onClick={() => setIsMenuOpen(false)} className="flex items-center justify-between px-3 py-3 rounded-xl text-gray-700 font-medium hover:bg-gray-50 transition-colors">
+                  Shop Cars
+                  <svg className="w-4 h-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7"/></svg>
+                </Link>
+                <Link href="/financing" onClick={() => setIsMenuOpen(false)} className="flex items-center justify-between px-3 py-3 rounded-xl text-gray-700 font-medium hover:bg-gray-50 transition-colors">
+                  Financing
+                  <svg className="w-4 h-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7"/></svg>
+                </Link>
+                <Link href="/warranty" onClick={() => setIsMenuOpen(false)} className="flex items-center justify-between px-3 py-3 rounded-xl text-gray-700 font-medium hover:bg-gray-50 transition-colors">
+                  Warranty
+                  <svg className="w-4 h-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7"/></svg>
+                </Link>
+                <Link href="/sell" onClick={() => setIsMenuOpen(false)} className="flex items-center justify-between px-3 py-3 rounded-xl text-gray-700 font-medium hover:bg-gray-50 transition-colors">
+                  Sell Your Car
+                  <svg className="w-4 h-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7"/></svg>
+                </Link>
+                <Link href="/contact" onClick={() => setIsMenuOpen(false)} className="flex items-center justify-between px-3 py-3 rounded-xl text-gray-700 font-medium hover:bg-gray-50 transition-colors">
+                  Contact
+                  <svg className="w-4 h-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7"/></svg>
+                </Link>
+              </>
+            )}
+          </nav>
+          {/* CTA row */}
+          <div className="flex gap-3 border-t border-gray-100 px-4 py-4">
+            {userEmail ? (
+              <button
+                type="button"
+                onClick={() => { setIsMenuOpen(false); setShowUserSignOutModal(true) }}
+                className="flex-1 text-center border border-gray-200 text-gray-700 rounded-full py-2.5 font-semibold text-sm hover:bg-gray-50 transition-colors"
+              >
+                Sign Out
+              </button>
+            ) : (
+              <>
+                <Link href="/account" onClick={() => setIsMenuOpen(false)} className="flex-1 text-center border border-gray-200 text-gray-700 rounded-full py-2.5 font-semibold text-sm hover:bg-gray-50 transition-colors">
+                  Login
+                </Link>
+                <Link href="/financing" onClick={() => setIsMenuOpen(false)} className="flex-1 text-center bg-[#118df0] text-white rounded-full py-2.5 font-semibold text-sm hover:bg-[#0d7fd8] transition-colors">
                   Get Pre-Approved
                 </Link>
-              )}
-            </div>
+              </>
+            )}
           </div>
-        )}
-      </div>
+        </div>
+      )}
       </header>
 
       {showAdminSignOutModal ? (

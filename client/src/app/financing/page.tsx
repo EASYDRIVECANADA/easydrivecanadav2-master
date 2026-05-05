@@ -3,44 +3,89 @@
 import { useState } from 'react'
 import Link from 'next/link'
 
+const WHO_ITS_FOR = [
+  'Have fair or challenged credit',
+  'Are rebuilding credit',
+  'Are self-employed or independent contractors',
+  'Are new to Canada',
+  'Want realistic monthly payments',
+  'Prefer everything handled online',
+]
+
+const TESTIMONIALS = [
+  {
+    name: 'Nathaniel Brooks',
+    quote:
+      'EasyDrive was very helpful with my auto financing. The process was smooth, quick, and easy to understand.',
+  },
+  {
+    name: 'Olivia Fraser',
+    quote:
+      'Super easy to deal with and made getting my car sorted a breeze. Highly recommended.',
+  },
+  {
+    name: 'Grace Campbell',
+    quote:
+      'Really happy with the help I got. They explained everything clearly and made financing way less stressful than I expected.',
+  },
+]
+
+const FINANCING_FAQS = [
+  {
+    q: "Will I get approved for a car loan?",
+    a: "Approval depends on several factors, including your credit profile, income, employment status, residency, down payment (if applicable), application details, and the vehicle being financed. We work with licensed lenders who review your application and help you explore the best available options for your situation.",
+  },
+  {
+    q: "How does submitting an application work?",
+    a: "Applying is simple and fully online. You complete a secure pre-qualification application that asks for basic information about you and your financing goals. Once submitted, your application is reviewed by our finance team and shared with licensed lenders who can assess your options. There's no obligation.",
+  },
+  {
+    q: "How do I know what my interest rate will be?",
+    a: "Your interest rate depends on your credit profile, income, residency status, and the vehicle being financed. Applying gives you a clearer picture of what options may be available before you move forward.",
+  },
+  {
+    q: "Does submitting a financing application impact my credit score?",
+    a: "Our pre-approval tool uses a soft check — no impact to your score. We may submit your information to lenders, which could result in a hard check when you proceed.",
+  },
+  {
+    q: "What is gross income?",
+    a: 'Gross income is your total monthly or yearly income before any taxes are deducted. This amount is higher than your "net pay" or "take-home pay."',
+  },
+  {
+    q: "Can I pay off my loan at any time?",
+    a: "Yes. Auto loans are open-ended loans that can be paid off before the end of term without penalty, subject to any terms imposed by your lender.",
+  },
+  {
+    q: "What do I need when applying for financing?",
+    a: "You'll need a valid piece of Canadian ID. If you have a co-applicant, they must also provide Canadian ID such as a driver's licence, passport, citizenship card, or permanent resident card.",
+  },
+  {
+    q: "How does financing work if I don't have established credit or a fixed income?",
+    a: "For newcomers, certain lenders offer programs that may qualify you for financing (conditions apply). If you don't have a fixed income, we recommend applying with a qualified co-applicant.",
+  },
+]
+
 export default function FinancingPage() {
   const [formData, setFormData] = useState({
-    // Personal Info (Clutch-style)
     firstName: '',
     lastName: '',
     email: '',
     phone: '',
-    dateOfBirth: '',
-    // Financial
     annualIncome: '',
-    monthlyRent: '',
-    // Address
-    streetAddress: '',
-    suiteUnit: '',
-    city: '',
-    province: '',
-    postalCode: '',
+    employmentStatus: '',
+    residencyStatus: '',
+    creditProfile: '',
+    downPayment: '',
+    coApplicant: '',
   })
+  const [openFaq, setOpenFaq] = useState<number | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [submitted, setSubmitted] = useState(false)
   const [error, setError] = useState('')
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
-    const { name, value, type } = e.target
-    
-    // Auto-uppercase postal code
-    if (name === 'postalCode') {
-      setFormData({
-        ...formData,
-        [name]: value.toUpperCase(),
-      })
-      return
-    }
-    
-    setFormData({
-      ...formData,
-      [name]: type === 'checkbox' ? (e.target as HTMLInputElement).checked : value,
-    })
+    const { name, value } = e.target
+    setFormData({ ...formData, [name]: value })
   }
 
   // Block non-numeric keys for money fields (prevent 'e', '+', '-')
@@ -64,14 +109,12 @@ export default function FinancingPage() {
           lastName: formData.lastName,
           email: formData.email,
           phone: formData.phone,
-          dateOfBirth: formData.dateOfBirth,
           annualIncome: formData.annualIncome ? parseFloat(formData.annualIncome) : null,
-          monthlyRent: formData.monthlyRent ? parseFloat(formData.monthlyRent) : null,
-          streetAddress: formData.streetAddress,
-          suiteUnit: formData.suiteUnit,
-          city: formData.city,
-          province: formData.province,
-          postalCode: formData.postalCode,
+          employmentStatus: formData.employmentStatus || null,
+          residencyStatus: formData.residencyStatus || null,
+          creditProfile: formData.creditProfile || null,
+          downPayment: formData.downPayment ? parseFloat(formData.downPayment) : null,
+          coApplicant: formData.coApplicant || null,
           source: 'financing_application',
         }),
       })
@@ -91,22 +134,35 @@ export default function FinancingPage() {
   if (submitted) {
     return (
       <div className="min-h-screen flex items-center justify-center py-12 px-4">
-        <div className="glass-card rounded-3xl p-12 text-center max-w-lg">
+        <div className="glass-card rounded-3xl p-12 text-center max-w-lg w-full">
           <div className="w-20 h-20 bg-gradient-to-br from-green-400 to-green-500 rounded-full flex items-center justify-center mx-auto mb-6 shadow-lg shadow-green-500/25 animate-success-check">
             <svg className="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
             </svg>
           </div>
-          <h2 className="text-3xl font-extrabold text-gray-900 mb-4 tracking-tight">Application Submitted!</h2>
-          <p className="text-gray-600 mb-8 leading-relaxed">
-            Thank you for your financing application. One of our finance specialists will review your information and contact you within <span className="font-semibold text-[#118df0]">24 hours</span>.
+          <h2 className="text-3xl font-extrabold text-slate-900 mb-4 tracking-tight">Application Submitted!</h2>
+          <p className="text-slate-500 mb-8 leading-relaxed">
+            Thank you for your financing application. One of our finance specialists will review your information and contact you within{' '}
+            <span className="font-semibold" style={{ color: '#1aa6ff' }}>24 hours</span>.
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <Link href="/inventory" className="inline-flex items-center justify-center gap-2 bg-[#118df0] text-white px-7 py-3.5 rounded-full font-semibold hover:bg-[#0a7dd4] transition-all shadow-lg shadow-[#118df0]/20 hover:shadow-xl hover:-translate-y-0.5">
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+            <Link
+              href="/inventory"
+              className="inline-flex items-center justify-center gap-2 text-white px-7 py-3.5 rounded-full font-semibold transition-all shadow-lg hover:shadow-xl hover:-translate-y-0.5 hover:opacity-90"
+              style={{ backgroundColor: '#1aa6ff' }}
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
               Browse Vehicles
             </Link>
-            <Link href="/" className="inline-flex items-center justify-center gap-2 bg-transparent text-[#118df0] px-7 py-3.5 rounded-full font-semibold border-2 border-[#118df0] hover:bg-[#118df0] hover:text-white transition-all">
+            <Link
+              href="/"
+              className="inline-flex items-center justify-center gap-2 bg-transparent px-7 py-3.5 rounded-full font-semibold border-2 transition-all hover:text-white"
+              style={{ color: '#1aa6ff', borderColor: '#1aa6ff' }}
+              onMouseEnter={e => { (e.currentTarget as HTMLAnchorElement).style.backgroundColor = '#1aa6ff'; (e.currentTarget as HTMLAnchorElement).style.color = 'white'; }}
+              onMouseLeave={e => { (e.currentTarget as HTMLAnchorElement).style.backgroundColor = 'transparent'; (e.currentTarget as HTMLAnchorElement).style.color = '#1aa6ff'; }}
+            >
               Return Home
             </Link>
           </div>
@@ -116,67 +172,55 @@ export default function FinancingPage() {
   }
 
   return (
-    <div className="min-h-screen">
-      {/* Hero Header */}
+    <div className="min-h-screen bg-slate-50">
+
+      {/* ── Hero ── */}
       <section className="relative overflow-hidden py-16 lg:py-20">
-        <div className="absolute inset-0 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900"></div>
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-[#118df0]/20 via-transparent to-transparent"></div>
-        <div className="absolute top-10 right-10 w-72 h-72 bg-[#118df0]/10 rounded-full blur-3xl"></div>
-        
+        <div className="absolute inset-0" style={{ backgroundColor: '#0d182b' }} />
+
         <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center">
-            <span className="badge mb-4 bg-white/10 border-white/20 text-white/90">
-              <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
-              </svg>
-              Secure Application
-            </span>
-            <h1 className="text-3xl md:text-4xl lg:text-5xl font-extrabold text-white mb-4 tracking-tight">
-              Flexible <span className="bg-gradient-to-r from-[#38bdf8] to-[#0ea5e9] bg-clip-text text-transparent">Financing</span> Made Simple
-            </h1>
-            <p className="text-slate-300 text-lg max-w-2xl mx-auto">
-              All credit situations welcome! Fill out our secure application and get a response within 24 hours.
-            </p>
+          <div className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs font-semibold uppercase tracking-wider text-white/90 mb-4">
+            <svg className="w-3.5 h-3.5" style={{ color: '#1aa6ff' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+            </svg>
+            All credit profiles welcome
           </div>
+          <h1 className="mt-2 max-w-2xl text-4xl font-extrabold tracking-tight text-white md:text-5xl">
+            Get pre-qualified for auto financing in{' '}
+            <span style={{ color: '#1aa6ff' }}>5 minutes</span>.
+          </h1>
+          <p className="mt-3 max-w-xl text-slate-300">
+            One secure application. No obligation. Built for all credit profiles. Connect with licensed lenders who understand your situation.
+          </p>
+          <ul className="mt-5 flex flex-wrap gap-x-6 gap-y-2 text-sm text-white/80">
+            {[
+              'One secure application',
+              'No obligation',
+              'Soft credit check first',
+            ].map((item) => (
+              <li key={item} className="flex items-center gap-1.5">
+                <svg className="h-4 w-4" style={{ color: '#1aa6ff' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                {item}
+              </li>
+            ))}
+          </ul>
         </div>
       </section>
 
-      <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-        {/* Benefits */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
-          <div className="glass-card rounded-xl p-6 text-center group hover:shadow-lg transition-shadow">
-            <div className="icon-container mx-auto mb-4 group-hover:scale-110 transition-transform">
-              <svg className="w-6 h-6 text-[#118df0]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-            </div>
-            <h3 className="font-semibold text-gray-900 mb-2">Quick Response</h3>
-            <p className="text-gray-500 text-sm">Get a decision within 24 hours</p>
-          </div>
-          <div className="glass-card rounded-xl p-6 text-center group hover:shadow-lg transition-shadow">
-            <div className="icon-container mx-auto mb-4 group-hover:scale-110 transition-transform">
-              <svg className="w-6 h-6 text-[#118df0]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
-              </svg>
-            </div>
-            <h3 className="font-semibold text-gray-900 mb-2">Secure Application</h3>
-            <p className="text-gray-500 text-sm">Your information is protected</p>
-          </div>
-          <div className="glass-card rounded-xl p-6 text-center group hover:shadow-lg transition-shadow">
-            <div className="icon-container mx-auto mb-4 group-hover:scale-110 transition-transform">
-              <svg className="w-6 h-6 text-[#118df0]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 10h4.764a2 2 0 011.789 2.894l-3.5 7A2 2 0 0115.263 21h-4.017c-.163 0-.326-.02-.485-.06L7 20m7-10V5a2 2 0 00-2-2h-.095c-.5 0-.905.405-.905.905 0 .714-.211 1.412-.608 2.006L7 11v9m7-10h-2M7 20H5a2 2 0 01-2-2v-6a2 2 0 012-2h2.5" />
-              </svg>
-            </div>
-            <h3 className="font-semibold text-gray-900 mb-2">All Credit Welcome</h3>
-            <p className="text-gray-500 text-sm">We work with all credit types</p>
-          </div>
-        </div>
+      {/* ── Form + Aside ── */}
+      <div className="mx-auto grid max-w-7xl gap-10 px-4 py-12 sm:px-6 lg:grid-cols-[1fr_340px] lg:px-8">
 
-        {/* Application Form */}
-        <form onSubmit={handleSubmit} className="glass-card rounded-2xl p-8">
+        {/* Form */}
+        <form onSubmit={handleSubmit} className="rounded-3xl border border-slate-200 bg-card p-8 shadow-sm">
+          <h2 className="text-xl font-semibold text-slate-900">Tell us about you</h2>
+          <p className="mt-1 text-sm text-slate-500">
+            We'll review your profile and share it with licensed lenders who can explain your options.
+          </p>
+
           {error && (
-            <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl text-red-700 flex items-center gap-3">
+            <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-xl text-red-700 flex items-center gap-3 text-sm">
               <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
@@ -184,244 +228,260 @@ export default function FinancingPage() {
             </div>
           )}
 
-          {/* Section 1: Personal Information */}
-          <div className="mb-8">
-            <div className="flex items-center gap-3 mb-6">
-              <div className="w-8 h-8 rounded-full bg-[#118df0] text-white flex items-center justify-center text-sm font-semibold">1</div>
-              <h2 className="text-lg font-semibold text-gray-900">Personal Information</h2>
+          <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 gap-5">
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1.5">First name</label>
+              <input type="text" name="firstName" required value={formData.firstName} onChange={handleChange} className="input-field" />
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">First Name *</label>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1.5">Last name</label>
+              <input type="text" name="lastName" required value={formData.lastName} onChange={handleChange} className="input-field" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1.5">Email</label>
+              <input type="email" name="email" required value={formData.email} onChange={handleChange} className="input-field" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1.5">Phone</label>
+              <input type="tel" name="phone" required value={formData.phone} onChange={handleChange} className="input-field" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1.5">Gross annual income (CAD)</label>
+              <input
+                type="number" name="annualIncome" required min="0" step="1"
+                value={formData.annualIncome} onChange={handleChange} onKeyDown={handleMoneyKeyDown}
+                className="input-field"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1.5">Employment status</label>
+              <select name="employmentStatus" value={formData.employmentStatus} onChange={handleChange} className="select-field">
+                <option value="">Choose...</option>
+                <option value="ft">Full-time</option>
+                <option value="pt">Part-time</option>
+                <option value="self">Self-employed</option>
+                <option value="contract">Contract / Gig</option>
+                <option value="retired">Retired</option>
+                <option value="other">Other</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1.5">Residency status</label>
+              <select name="residencyStatus" value={formData.residencyStatus} onChange={handleChange} className="select-field">
+                <option value="">Choose...</option>
+                <option value="citizen">Canadian citizen</option>
+                <option value="pr">Permanent resident</option>
+                <option value="work">Work permit</option>
+                <option value="study">Study permit</option>
+                <option value="newcomer">New to Canada</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1.5">Credit profile</label>
+              <select name="creditProfile" value={formData.creditProfile} onChange={handleChange} className="select-field">
+                <option value="">Choose...</option>
+                <option value="excellent">Excellent (750+)</option>
+                <option value="good">Good (700–749)</option>
+                <option value="fair">Fair (600–699)</option>
+                <option value="poor">Poor / Building</option>
+                <option value="new">New to credit</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1.5">Desired down payment (CAD)</label>
+              <div className="relative">
+                <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-medium pointer-events-none z-10">$</span>
                 <input
-                  type="text"
-                  name="firstName"
-                  required
-                  value={formData.firstName}
-                  onChange={handleChange}
-                  className="input-field"
-                  placeholder="John"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Last Name *</label>
-                <input
-                  type="text"
-                  name="lastName"
-                  required
-                  value={formData.lastName}
-                  onChange={handleChange}
-                  className="input-field"
-                  placeholder="Smith"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Email *</label>
-                <input
-                  type="email"
-                  name="email"
-                  required
-                  value={formData.email}
-                  onChange={handleChange}
-                  className="input-field"
-                  placeholder="john@example.com"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Phone *</label>
-                <input
-                  type="tel"
-                  name="phone"
-                  required
-                  value={formData.phone}
-                  onChange={handleChange}
-                  className="input-field"
-                  placeholder="(416) 555-0123"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Date of Birth *</label>
-                <input
-                  type="date"
-                  name="dateOfBirth"
-                  required
-                  value={formData.dateOfBirth}
-                  onChange={handleChange}
-                  className="input-field"
+                  type="number" name="downPayment" min="0" step="1"
+                  value={formData.downPayment} onChange={handleChange} onKeyDown={handleMoneyKeyDown}
+                  className="input-field !pl-8"
                 />
               </div>
             </div>
-          </div>
-
-          {/* Divider */}
-          <div className="border-t border-gray-200 my-8"></div>
-
-          {/* Section 2: Financial Information */}
-          <div className="mb-8">
-            <div className="flex items-center gap-3 mb-6">
-              <div className="w-8 h-8 rounded-full bg-[#118df0] text-white flex items-center justify-center text-sm font-semibold">2</div>
-              <h2 className="text-lg font-semibold text-gray-900">Financial Information</h2>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Total Gross Annual Income (before tax) *</label>
-                <div className="relative">
-                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500 font-medium z-10 pointer-events-none">$</span>
-                  <input
-                    type="number"
-                    name="annualIncome"
-                    required
-                    min="0"
-                    step="1"
-                    value={formData.annualIncome}
-                    onChange={handleChange}
-                    onKeyDown={handleMoneyKeyDown}
-                    placeholder="50000"
-                    className="input-field !pl-8"
-                  />
-                </div>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Monthly Rent/Mortgage *</label>
-                <div className="relative">
-                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500 font-medium z-10 pointer-events-none">$</span>
-                  <input
-                    type="number"
-                    name="monthlyRent"
-                    required
-                    min="0"
-                    step="1"
-                    value={formData.monthlyRent}
-                    onChange={handleChange}
-                    onKeyDown={handleMoneyKeyDown}
-                    placeholder="1500"
-                    className="input-field !pl-8"
-                  />
-                </div>
-              </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1.5">Co-applicant?</label>
+              <select name="coApplicant" value={formData.coApplicant} onChange={handleChange} className="select-field">
+                <option value="">Choose...</option>
+                <option value="no">Just me</option>
+                <option value="yes">Yes — adding co-applicant</option>
+              </select>
             </div>
           </div>
 
-          {/* Divider */}
-          <div className="border-t border-gray-200 my-8"></div>
+          <button
+            type="submit"
+            disabled={submitting}
+            className="mt-8 w-full rounded-full py-4 font-semibold text-white text-base shadow-lg transition-all duration-300 hover:opacity-90 hover:shadow-xl hover:-translate-y-0.5 disabled:opacity-50 disabled:pointer-events-none"
+            style={{ backgroundColor: '#1aa6ff' }}
+          >
+            {submitting ? (
+              <span className="inline-flex items-center justify-center gap-2">
+                <div className="loading-ring" style={{ width: '20px', height: '20px', borderWidth: '2px' }} />
+                Submitting securely…
+              </span>
+            ) : (
+              'Get my pre-qualification'
+            )}
+          </button>
+          <p className="mt-3 text-center text-xs text-slate-400">
+            By submitting, you agree to our terms. Soft credit check only — no impact on your score.
+          </p>
+        </form>
 
-          {/* Section 3: Address Information */}
-          <div className="mb-8">
-            <div className="flex items-center gap-3 mb-6">
-              <div className="w-8 h-8 rounded-full bg-[#118df0] text-white flex items-center justify-center text-sm font-semibold">3</div>
-              <h2 className="text-lg font-semibold text-gray-900">Address Information</h2>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-              <div className="md:col-span-2">
-                <label className="block text-sm font-medium text-gray-700 mb-2">Street Address *</label>
-                <input
-                  type="text"
-                  name="streetAddress"
-                  required
-                  value={formData.streetAddress}
-                  onChange={handleChange}
-                  className="input-field"
-                  placeholder="123 Main Street"
-                />
+        {/* Aside — benefits */}
+        <aside className="space-y-4 lg:pt-2">
+          {[
+            {
+              icon: (
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+              ),
+              title: 'No credit impact',
+              sub: 'Soft check only — no surprises',
+            },
+            {
+              icon: (
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+              ),
+              title: 'Fast decisions',
+              sub: 'Most approvals within 24 hours',
+            },
+            {
+              icon: (
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+              ),
+              title: 'All credit accepted',
+              sub: 'Build, rebuild, or excellent — all welcome',
+            },
+            {
+              icon: (
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+              ),
+              title: 'Best available rates',
+              sub: 'From 5.99% APR OAC',
+            },
+            {
+              icon: (
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
+              ),
+              title: 'Co-applicants supported',
+              sub: 'Add a co-applicant to strengthen approval',
+            },
+          ].map((b) => (
+            <div key={b.title} className="flex items-start gap-3 rounded-2xl border border-slate-200/70 bg-white p-5 shadow-sm">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl flex-shrink-0" style={{ backgroundColor: '#1aa6ff1a', color: '#1aa6ff' }}>
+                <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">{b.icon}</svg>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Suite/Unit (optional)</label>
-                <input
-                  type="text"
-                  name="suiteUnit"
-                  value={formData.suiteUnit}
-                  onChange={handleChange}
-                  className="input-field"
-                  placeholder="Unit 4B"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">City *</label>
-                <input
-                  type="text"
-                  name="city"
-                  required
-                  value={formData.city}
-                  onChange={handleChange}
-                  className="input-field"
-                  placeholder="Toronto"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Province *</label>
-                <select
-                  name="province"
-                  required
-                  value={formData.province}
-                  onChange={handleChange}
-                  className="select-field"
-                >
-                  <option value="">Select Province</option>
-                  <option value="AB">Alberta</option>
-                  <option value="BC">British Columbia</option>
-                  <option value="MB">Manitoba</option>
-                  <option value="NB">New Brunswick</option>
-                  <option value="NL">Newfoundland and Labrador</option>
-                  <option value="NS">Nova Scotia</option>
-                  <option value="ON">Ontario</option>
-                  <option value="PE">Prince Edward Island</option>
-                  <option value="QC">Quebec</option>
-                  <option value="SK">Saskatchewan</option>
-                  <option value="NT">Northwest Territories</option>
-                  <option value="NU">Nunavut</option>
-                  <option value="YT">Yukon</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Postal Code *</label>
-                <input
-                  type="text"
-                  name="postalCode"
-                  required
-                  value={formData.postalCode}
-                  onChange={handleChange}
-                  className="input-field"
-                  placeholder="M5V 2T6"
-                  pattern="[A-Za-z][0-9][A-Za-z] ?[0-9][A-Za-z][0-9]"
-                />
+                <div className="font-semibold text-slate-900 text-sm">{b.title}</div>
+                <div className="text-xs text-slate-500 mt-0.5">{b.sub}</div>
               </div>
             </div>
-          </div>
+          ))}
+        </aside>
+      </div>
 
-          {/* Privacy Notice */}
-          <div className="bg-[#118df0]/5 border border-[#118df0]/20 rounded-xl p-4 mb-6 mt-8">
-            <p className="text-sm text-gray-600 flex items-start gap-2">
-              <svg className="w-5 h-5 text-[#118df0] flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-              By submitting this application, you agree to be contacted by Easy Drive Canada regarding financing options. Your information will be kept confidential.
+      {/* ── What we believe / How we do it / Who it's for ── */}
+      <section className="border-t border-slate-200 bg-slate-100/60">
+        <div className="mx-auto grid max-w-7xl gap-10 px-4 py-16 sm:px-6 lg:grid-cols-3 lg:px-8">
+          <div>
+            <div className="text-xs font-semibold uppercase tracking-wider" style={{ color: '#1aa6ff' }}>What we believe</div>
+            <h2 className="mt-2 text-2xl font-bold text-slate-900">Car financing shouldn't be confusing or intimidating.</h2>
+            <p className="mt-3 text-sm text-slate-500 leading-relaxed">
+              Traditional auto financing hasn't changed in decades. People are still expected to jump through hoops before they understand their options. We believe there's a better way — one secure online application, then real options explained in plain language.
             </p>
           </div>
-
-          {/* Submit Button */}
-          <div className="flex justify-end pt-6 border-t border-gray-200/60">
-            <button
-              type="submit"
-              disabled={submitting}
-              className="inline-flex items-center justify-center gap-2.5 bg-[#118df0] text-white px-8 py-4 rounded-full font-semibold text-lg shadow-lg shadow-[#118df0]/25 transition-all duration-300 hover:bg-[#0a7dd4] hover:shadow-xl hover:-translate-y-0.5 disabled:opacity-50 disabled:hover:translate-y-0 w-full md:w-auto"
-            >
-              {submitting ? (
-                <>
-                  <div className="loading-ring" style={{width: '20px', height: '20px', borderWidth: '2px'}} />
-                  Submitting securely…
-                </>
-              ) : (
-                <>
-                  Submit Application
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                  </svg>
-                </>
-              )}
-            </button>
+          <div>
+            <div className="text-xs font-semibold uppercase tracking-wider" style={{ color: '#1aa6ff' }}>How we do it</div>
+            <h2 className="mt-2 text-2xl font-bold text-slate-900">One application. Multiple lender options.</h2>
+            <p className="mt-3 text-sm text-slate-500 leading-relaxed">
+              Complete one online application. Your information is reviewed by our finance team and shared with licensed lenders that specialize in approvals like yours. No dealership hopping. No repeated explanations. No pressure before clarity.
+            </p>
           </div>
-        </form>
-      </div>
+          <div>
+            <div className="text-xs font-semibold uppercase tracking-wider" style={{ color: '#1aa6ff' }}>Who it's for</div>
+            <h2 className="mt-2 text-2xl font-bold text-slate-900">Built for people who want clarity before commitment.</h2>
+            <ul className="mt-3 space-y-2 text-sm text-slate-500">
+              {WHO_ITS_FOR.map((item) => (
+                <li key={item} className="flex items-start gap-2">
+                  <svg className="mt-0.5 h-4 w-4 shrink-0" style={{ color: '#1aa6ff' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  {item}
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      {/* ── Testimonials ── */}
+      <section className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8">
+        <div className="text-center">
+          <h2 className="text-3xl font-bold text-slate-900">What our customers say</h2>
+          <p className="mt-2 text-slate-500">Real people. Real approvals. Real cars in the driveway.</p>
+        </div>
+        <div className="mt-8 grid gap-5 md:grid-cols-3">
+          {TESTIMONIALS.map((t) => (
+            <figure key={t.name} className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+              <svg className="h-6 w-6" style={{ color: '#1aa6ff' }} fill="currentColor" viewBox="0 0 24 24">
+                <path d="M14.017 21v-7.391c0-5.704 3.731-9.57 8.983-10.609l.995 2.151c-2.432.917-3.995 3.638-3.995 5.849h4v10h-9.983zm-14.017 0v-7.391c0-5.704 3.748-9.57 9-10.609l.996 2.151c-2.433.917-3.996 3.638-3.996 5.849h3.983v10h-9.983z" />
+              </svg>
+              <blockquote className="mt-3 text-sm leading-relaxed text-slate-600">&ldquo;{t.quote}&rdquo;</blockquote>
+              <figcaption className="mt-4 text-sm font-semibold text-slate-900">— {t.name}</figcaption>
+            </figure>
+          ))}
+        </div>
+      </section>
+
+      {/* ── FAQ ── */}
+      <section className="border-t border-slate-200 bg-slate-100/60">
+        <div className="mx-auto max-w-4xl px-4 py-16 sm:px-6 lg:px-8">
+          <div className="text-center">
+            <div className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-wider" style={{ color: '#1aa6ff' }}>
+              <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              Frequently asked
+            </div>
+            <h2 className="mt-2 text-3xl font-bold text-slate-900">Everything you need to know about financing</h2>
+            <p className="mt-2 text-slate-500">Honest answers about applications, rates, credit, and approvals.</p>
+          </div>
+
+          <div className="mt-8 rounded-3xl border border-slate-200 bg-white overflow-hidden">
+            {FINANCING_FAQS.map((faq, i) => (
+              <div key={i} className="border-b border-slate-100 last:border-b-0">
+                <button
+                  type="button"
+                  onClick={() => setOpenFaq(openFaq === i ? null : i)}
+                  className="w-full flex items-center justify-between px-6 py-4 text-left text-sm font-semibold text-slate-900 hover:bg-slate-50 transition-colors"
+                >
+                  <span>{faq.q}</span>
+                  <svg
+                    className={`h-4 w-4 text-slate-400 flex-shrink-0 ml-4 transition-transform duration-200 ${openFaq === i ? 'rotate-180' : ''}`}
+                    fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
+                {openFaq === i && (
+                  <div className="px-6 pb-5 text-sm text-slate-500 leading-relaxed">{faq.a}</div>
+                )}
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-8 text-center">
+            <p className="text-sm text-slate-500">Still have questions? Our finance team is one click away.</p>
+            <Link
+              href="/contact"
+              className="mt-3 inline-flex items-center justify-center gap-2 rounded-full border border-slate-200 bg-white px-6 py-2.5 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 hover:border-slate-300 transition-all"
+            >
+              Contact our finance team
+            </Link>
+          </div>
+        </div>
+      </section>
+
     </div>
   )
 }

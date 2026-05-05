@@ -934,35 +934,31 @@ export default function AdminCostumerPage() {
           </div>
         </div>
       ) : (
-        <div className="px-6 py-6">
-          <div className="bg-white rounded-2xl border border-slate-200/60 overflow-hidden" style={{ boxShadow: '0 1px 3px rgba(0,0,0,.04)' }}>
-            <div className="px-4 py-3 border-b border-slate-100 flex items-center gap-3">
-              <div className="flex-1">
-                <div className="relative">
-                  <input
-                    value={query}
-                    onChange={(e) => setQuery(e.target.value)}
-                    placeholder="Search customers..."
-                    className="w-full h-10 pl-10 pr-4 rounded-xl border border-slate-200 bg-white text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#1EA7FF]/30 focus:border-[#1EA7FF]/40 transition-all"
-                  />
-                  <svg
-                    className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35m1.35-5.65a7 7 0 11-14 0 7 7 0 0114 0z" />
-                  </svg>
-                </div>
+        <div className="w-full">
+          {/* Page header */}
+          <div className="px-6 lg:px-8 py-6 flex flex-col gap-4 border-b border-slate-200 bg-white sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h1 className="text-2xl font-bold text-[#0B1F3A]">Customers</h1>
+              <p className="mt-0.5 text-sm text-slate-500">{rows.length} total customer{rows.length !== 1 ? 's' : ''}</p>
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="relative">
+                <input
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Search customers..."
+                  className="h-10 w-64 max-w-full pl-9 pr-4 rounded-xl border border-slate-200 bg-white text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#1EA7FF]/30 focus:border-[#1EA7FF]/40 transition-all"
+                />
+                <svg className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35m1.35-5.65a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
               </div>
-
               {Object.values(checked).some(Boolean) ? (
                 <button
                   type="button"
                   onClick={() => void handleBulkDelete()}
                   disabled={bulkDeleting}
-                  className="h-10 px-4 rounded-xl bg-red-600 text-white text-sm font-semibold flex items-center gap-2 hover:bg-red-700 disabled:opacity-50 transition-colors"
-                  title="Delete selected"
+                  className="inline-flex h-10 items-center gap-2 px-4 rounded-full bg-red-600 text-white text-sm font-semibold hover:bg-red-700 disabled:opacity-50 transition-colors"
                 >
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7" />
@@ -975,122 +971,122 @@ export default function AdminCostumerPage() {
                 <button
                   type="button"
                   onClick={handleOpenCreate}
-                  className="w-10 h-10 rounded-xl bg-[#1EA7FF] text-white flex items-center justify-center hover:bg-[#0B1F3A] transition-colors"
-                  aria-label="Add new costumer"
-                  title="Add new costumer"
+                  className="inline-flex h-10 items-center gap-2 px-4 rounded-full bg-[#0B1F3A] text-white text-sm font-semibold hover:bg-[#1EA7FF] transition-colors"
                 >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                   </svg>
+                  Add customer
                 </button>
               )}
-
-              <div className="w-20">
-                <select
-                  value={pageSize}
-                  onChange={(e) => {
-                    const v = Number(e.target.value)
-                    setPageSize(Number.isFinite(v) ? v : 5)
-                    setChecked({})
-                    setCheckedAll(false)
-                  }}
-                  className="h-10 rounded-xl border border-slate-200 bg-white text-sm text-slate-700 px-2 focus:outline-none focus:ring-2 focus:ring-[#1EA7FF]/30 transition-all"
-                >
-                  <option value={5}>5</option>
-                  <option value={10}>10</option>
-                  <option value={25}>25</option>
-                </select>
-              </div>
             </div>
+          </div>
 
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="bg-slate-50/80">
-                    <th className="w-10"></th>
-                    <th className="w-10 text-center">
-                      <input
-                        type="checkbox"
-                        className="h-4 w-4"
-                        checked={checkedAll && pageRows.length > 0}
-                        onChange={(e) => toggleAll(e.target.checked)}
-                        aria-label="Select all"
-                      />
-                    </th>
-                    <th>Name</th>
-                    <th>Phone</th>
-                    <th>Mobile</th>
-                    <th>Email</th>
-                    <th>DL</th>
-                    <th>DOB</th>
-                  </tr>
-                </thead>
-
-                <tbody>
-                  {pageRows.map((r) => (
-                    <tr key={r.id}>
-                      <td className="px-3 py-3">
-                        <button type="button" className="text-slate-400 hover:text-slate-600 transition-colors" aria-label="Edit" onClick={() => handleEdit(r.id)}>
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth={2}
-                              d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"
-                            />
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth={2}
-                              d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"
-                            />
-                          </svg>
-                        </button>
-                      </td>
-                      <td className="px-3 py-3">
+          {/* Table card */}
+          <div className="p-6 lg:p-8">
+            <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden" style={{ boxShadow: '0 1px 3px rgba(0,0,0,.04)' }}>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-50/80 text-xs uppercase tracking-wider text-slate-500">
+                    <tr>
+                      <th className="w-10 px-4 py-3 text-center">
                         <input
                           type="checkbox"
-                          className="h-4 w-4"
-                          checked={!!checked[r.id]}
-                          onChange={(e) => {
-                            const next = e.target.checked
-                            setChecked((prev) => ({ ...prev, [r.id]: next }))
-                          }}
-                          aria-label={`Select ${r.name}`}
+                          className="h-4 w-4 accent-[#1EA7FF]"
+                          checked={checkedAll && pageRows.length > 0}
+                          onChange={(e) => toggleAll(e.target.checked)}
+                          aria-label="Select all"
                         />
-                      </td>
-                      <td className="px-6 py-3 text-sm font-medium text-slate-800 whitespace-nowrap">{r.name}</td>
-                      <td className="px-6 py-3 text-sm text-[#1EA7FF] whitespace-nowrap">{r.phone}</td>
-                      <td className="px-6 py-3 text-sm text-slate-600 whitespace-nowrap">{r.mobile}</td>
-                      <td className="px-6 py-3 text-sm text-cyan-700 whitespace-nowrap">{r.email}</td>
-                      <td className="px-6 py-3 text-sm text-slate-600 whitespace-nowrap">{r.dl || r.rin || '—'}</td>
-                      <td className="px-6 py-3 text-sm text-slate-600 whitespace-nowrap">{r.dob}</td>
+                      </th>
+                      <th className="px-4 py-3 text-left font-semibold">Customer</th>
+                      <th className="px-4 py-3 text-left font-semibold">Phone</th>
+                      <th className="px-4 py-3 text-left font-semibold">Mobile</th>
+                      <th className="px-4 py-3 text-left font-semibold">DL / RIN</th>
+                      <th className="px-4 py-3 text-left font-semibold">Date of Birth</th>
+                      <th className="px-4 py-3 text-right font-semibold">
+                        <select
+                          value={pageSize}
+                          onChange={(e) => {
+                            const v = Number(e.target.value)
+                            setPageSize(Number.isFinite(v) ? v : 5)
+                            setChecked({})
+                            setCheckedAll(false)
+                          }}
+                          className="h-8 rounded-lg border border-slate-200 bg-white text-xs text-slate-700 px-2 focus:outline-none focus:ring-2 focus:ring-[#1EA7FF]/30 transition-all normal-case tracking-normal font-normal"
+                          aria-label="Rows per page"
+                        >
+                          <option value={5}>5 rows</option>
+                          <option value={10}>10 rows</option>
+                          <option value={25}>25 rows</option>
+                        </select>
+                      </th>
                     </tr>
-                  ))}
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {pageRows.length === 0 ? (
+                      <tr>
+                        <td className="px-4 py-12 text-center text-sm text-slate-400" colSpan={7}>
+                          No customers found.
+                        </td>
+                      </tr>
+                    ) : (
+                      pageRows.map((r) => (
+                        <tr key={r.id} className="hover:bg-slate-50/60 transition-colors">
+                          <td className="px-4 py-3 text-center">
+                            <input
+                              type="checkbox"
+                              className="h-4 w-4 accent-[#1EA7FF]"
+                              checked={!!checked[r.id]}
+                              onChange={(e) => setChecked((prev) => ({ ...prev, [r.id]: e.target.checked }))}
+                              aria-label={`Select ${r.name}`}
+                            />
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="font-medium text-[#0B1F3A]">{r.name || <span className="text-slate-400 italic">Unnamed</span>}</div>
+                            <div className="text-xs text-slate-500">{r.email}</div>
+                          </td>
+                          <td className="px-4 py-3 text-slate-700 whitespace-nowrap">{r.phone || '—'}</td>
+                          <td className="px-4 py-3 text-slate-500 whitespace-nowrap">{r.mobile || '—'}</td>
+                          <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{r.dl || r.rin || '—'}</td>
+                          <td className="px-4 py-3 text-slate-500 whitespace-nowrap">{r.dob || '—'}</td>
+                          <td className="px-4 py-3 text-right">
+                            <button
+                              type="button"
+                              onClick={() => handleEdit(r.id)}
+                              className="h-8 px-3 rounded-lg text-xs font-medium text-slate-600 bg-slate-100 hover:bg-[#0B1F3A] hover:text-white transition-colors"
+                            >
+                              View
+                            </button>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
 
-                  {pageRows.length === 0 ? (
-                    <tr>
-                      <td className="px-6 py-10 text-center text-sm text-slate-400" colSpan={8}>
-                        No results.
-                      </td>
-                    </tr>
-                  ) : null}
-                </tbody>
-              </table>
-            </div>
-
-            <div className="px-4 py-3 flex items-center gap-3">
-              <button type="button" className="text-cyan-600 hover:text-cyan-700 transition-colors" aria-label="Previous">
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                </svg>
-              </button>
-              <div className="text-sm text-slate-600">{rangeLabel}</div>
-              <button type="button" className="text-cyan-600 hover:text-cyan-700 transition-colors" aria-label="Next">
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                </svg>
-              </button>
+              {/* Pagination */}
+              {filtered.length > pageSize && (
+                <div className="px-4 py-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
+                  <div>Showing {rangeLabel} of {filtered.length}</div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setPageSize((s) => Math.max(s - pageSize, pageSize))}
+                      className="h-8 px-3 rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 transition-colors"
+                    >
+                      ← Prev
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPageSize((s) => s + pageSize)}
+                      className="h-8 px-3 rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 transition-colors"
+                    >
+                      Next →
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>

@@ -123,28 +123,22 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
   useEffect(() => {
     const userId = String(session?.user_id ?? '').trim()
     const email = String(session?.email ?? '').trim().toLowerCase()
-    console.log('[admin-layout] Expiry check triggered:', { userId, email, hasSession: !!session })
-    
+
     if (!userId) {
-      console.log('[admin-layout] No user_id, skipping expiry check')
       return
     }
 
     const checkExpiry = async () => {
       try {
-        console.log('[admin-layout] Calling simple-expiry API...')
         const res = await fetch('/api/simple-expiry', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ user_id: userId, email }),
         })
-        console.log('[admin-layout] Check-expiry response:', { ok: res.ok, status: res.status })
-        
+
         const json = await res.json().catch(() => null)
-        console.log('[admin-layout] Check-expiry data:', json)
-        
+
         if (json?.callerStatus === 'disable') {
-          console.log('[admin-layout] User disabled, logging out...')
           // User's account is disabled – log them out
           if (typeof window !== 'undefined') {
             window.localStorage.removeItem('edc_admin_session')
@@ -152,8 +146,6 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
             window.dispatchEvent(new Event('edc_admin_session_changed'))
             window.location.replace('/account')
           }
-        } else {
-          console.log('[admin-layout] User still enabled, continuing...')
         }
       } catch (e: any) {
         console.error('[admin-layout] Expiry check error:', e?.message)
@@ -264,7 +256,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
     const items = [
       { href: '/admin', label: 'Home', icon: 'home', disabled: false },
       { href: '/admin/leads', label: 'Leads', icon: 'phone', disabled: !isVerified },
-      { href: '/admin/costumer?view=list', label: 'Customers', icon: 'users', disabled: !isVerified },
+      { href: '/admin/customer?view=list', label: 'Customers', icon: 'users', disabled: !isVerified },
       { href: '/admin/vendors', label: 'Vendors', icon: 'briefcase', disabled: !isVerified },
       { href: '/admin/marketplace', label: 'Market Place', icon: 'market', disabled: !isVerified },
       { href: '/admin/inventory', label: 'Inventory', icon: 'car', disabled: !isVerified },
@@ -276,6 +268,11 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
 
     if (isAdminAccount) {
       items.push({ href: '/admin/directory', label: 'Directory', icon: 'users', disabled: false })
+    }
+
+    const isMasterAccount = String(session?.email || '').trim().toLowerCase() === 'info@easydrivecanada.com'
+    if (isMasterAccount) {
+      items.push({ href: '/admin/configuration', label: 'Configuration', icon: 'config', disabled: !isVerified })
     }
 
     return items
@@ -353,115 +350,23 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
               boxShadow: '4px 0 24px rgba(0,0,0,.3)',
             }}
           >
-            <div
-              className={
-                collapsed
-                  ? 'pt-2 pb-2 px-1 flex flex-col items-center gap-2 overflow-visible'
-                  : 'px-4 pt-3 pb-3 flex items-center justify-between overflow-visible'
-              }
-            >
+            <div className={collapsed ? 'py-3 px-2 flex items-center justify-center border-b border-white/[.06]' : 'py-2 px-4 flex items-center border-b border-white/[.06]'}>
               {collapsed ? (
-                <Link href="/admin" className="flex items-center justify-center w-full overflow-visible">
-                  <div className="relative h-14 w-14 shrink-0">
+                <Link href="/admin" className="flex items-center justify-center">
+                  <div className="relative h-10 w-10 shrink-0">
                     <Image src="/images/logo.png" alt="EDC" fill className="object-contain" />
                   </div>
                 </Link>
               ) : (
-                <div className="flex-1 flex justify-center overflow-visible">
-                  <Link href="/admin" className="flex items-center overflow-visible">
-                    <div className="relative h-20 w-20 shrink-0">
-                      <Image src="/images/logo.png" alt="EDC" fill className="object-contain" />
-                    </div>
-                  </Link>
-                </div>
-              )}
-
-              <div
-                ref={accountMenuRef}
-                className={collapsed ? 'relative flex justify-end overflow-visible w-full' : 'relative flex items-center justify-end overflow-visible'}
-              >
-                <button
-                  type="button"
-                  onClick={() => setAccountMenuOpen((v) => !v)}
-                  className={
-                    collapsed
-                      ? 'h-9 w-9 mx-auto rounded-full bg-transparent border-0 flex items-center justify-center transition-opacity hover:opacity-90 outline-none focus:outline-none focus:ring-0 ring-0'
-                      : 'h-9 w-9 rounded-full bg-transparent border-0 inline-flex items-center justify-center transition-opacity hover:opacity-90 outline-none focus:outline-none focus:ring-0 ring-0'
-                  }
-                  aria-haspopup="menu"
-                  aria-expanded={accountMenuOpen}
-                  title="Account"
-                >
-                  {collapsed ? (
-                    profileImgSrc ? (
-                      <img src={profileImgSrc} alt="Profile" className="h-9 w-9 rounded-full object-cover" />
-                    ) : (
-                      <span className="text-white/90">
-                        <Icon name="account" />
-                      </span>
-                    )
-                  ) : (
-                    <>
-                      {profileImgSrc ? (
-                        <img src={profileImgSrc} alt="Profile" className="h-9 w-9 rounded-full object-cover" />
-                      ) : (
-                        <span className="text-white/90">
-                          <Icon name="account" />
-                        </span>
-                      )}
-                    </>
-                  )}
-                </button>
-
-                {accountMenuOpen ? (
-                  <div
-                    role="menu"
-                    className={`absolute z-[9999] pointer-events-auto ${collapsed ? 'left-1/2 -translate-x-1/2' : 'right-0'} top-full mt-1.5 w-48 rounded-xl border border-white/[.08] shadow-2xl overflow-hidden animate-slide-down`}
-                    style={{ background: 'linear-gradient(180deg, #0B1F3A 0%, #081726 100%)', boxShadow: '0 8px 32px rgba(0,0,0,.4)' }}
-                  >
-                    <Link
-                      href="/admin/account"
-                      role="menuitem"
-                      className="block px-4 py-2.5 text-[13px] text-white/80 hover:bg-white/[.07] hover:text-white transition-colors"
-                      onClick={() => setAccountMenuOpen(false)}
-                    >
-                      My Profile
-                    </Link>
-                    {isVerified ? (
-                      <Link
-                        href="/admin/settings/dealership"
-                        role="menuitem"
-                        className="block px-4 py-2.5 text-[13px] text-white/80 hover:bg-white/[.07] hover:text-white transition-colors"
-                        onClick={() => setAccountMenuOpen(false)}
-                      >
-                        Settings
-                      </Link>
-                    ) : (
-                      <button
-                        type="button"
-                        role="menuitem"
-                        className="w-full text-left px-4 py-2.5 text-[13px] text-white/30 cursor-not-allowed"
-                        disabled
-                        onClick={() => setAccountMenuOpen(false)}
-                      >
-                        Settings
-                      </button>
-                    )}
-                    <div className="border-t border-white/[.06]" />
-                    <button
-                      type="button"
-                      role="menuitem"
-                      className="w-full text-left px-4 py-2.5 text-[13px] text-white/80 hover:bg-white/[.07] hover:text-white transition-colors"
-                      onClick={() => {
-                        setAccountMenuOpen(false)
-                        setShowSignOutModal(true)
-                      }}
-                    >
-                      Log Out
-                    </button>
+                <Link href="/admin" className="flex items-center gap-2">
+                  <div className="relative h-14 w-14 shrink-0">
+                    <Image src="/images/logo.png" alt="EDC" fill className="object-contain" />
                   </div>
-                ) : null}
-              </div>
+                  <div className="leading-tight">
+                    <div className="text-[10px] font-semibold uppercase tracking-widest text-white/60">Dealer Portal</div>
+                  </div>
+                </Link>
+              )}
             </div>
 
             <nav className={`${collapsed ? 'px-2' : 'px-3'} py-4 flex-1 overflow-y-auto min-h-0`} aria-label="Admin navigation" style={{ scrollbarWidth: 'none' }}>
@@ -715,27 +620,129 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
               </ul>
             </nav>
 
-            <div className={`${collapsed ? 'px-2' : 'px-4'} py-3 border-t border-white/[.06]`}>
+            <div className={`${collapsed ? 'px-2' : 'px-3'} py-3 border-t border-white/[.06]`}>
               <button
                 type="button"
-                onClick={toggleCollapsed}
-                className="w-full flex items-center justify-center h-9 rounded-xl text-white/35 hover:text-[#1EA7FF] hover:bg-[#1EA7FF]/5 transition-all duration-300"
-                title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+                onClick={() => setShowSignOutModal(true)}
+                className={`relative flex items-center ${collapsed ? 'justify-center gap-0 px-2' : 'gap-3 px-3'} py-2.5 rounded-xl text-[13px] font-medium text-white/55 hover:bg-white/[.04] hover:text-white transition-all duration-300 ease-out w-full`}
+                title="Sign out"
               >
-                <svg className={`w-4 h-4 transition-transform duration-300 ${collapsed ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M11 19l-7-7 7-7m8 14l-7-7 7-7" />
+                <svg className="w-[18px] h-[18px] shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
                 </svg>
+                {collapsed ? null : <span>Sign out</span>}
               </button>
             </div>
           </aside>
         ) : null}
 
-        <main
-          className={`flex-1 min-w-0 ${isAuthed && !hideSidebar ? (collapsed ? 'ml-[72px]' : 'ml-60') : ''} transition-[margin] duration-300 ease-out`}
-          style={{ backgroundColor: '#F5F7FB', minHeight: '100vh' }}
+        <div
+          className={`flex flex-1 flex-col min-w-0 ${isAuthed && !hideSidebar ? (collapsed ? 'ml-[72px]' : 'ml-60') : ''} transition-[margin] duration-300 ease-out`}
         >
-          {children}
-        </main>
+          {isAuthed && !hideSidebar ? (
+            <header className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b border-gray-200 bg-white px-4">
+              <button
+                type="button"
+                onClick={toggleCollapsed}
+                className="rounded-lg p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-700 transition-colors"
+                title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <rect x="3" y="3" width="18" height="18" rx="2" strokeWidth={1.5} />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 3v18" />
+                </svg>
+              </button>
+              <div className="hidden flex-1 md:flex">
+                <div className="relative w-full max-w-sm">
+                  <svg className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                  </svg>
+                  <input
+                    type="search"
+                    placeholder="Search vehicles, leads, customers..."
+                    className="w-full rounded-lg border border-gray-200 bg-gray-50 py-2 pl-9 pr-3 text-sm text-gray-900 placeholder-gray-400 focus:border-[#1EA7FF] focus:outline-none focus:ring-1 focus:ring-[#1EA7FF]"
+                  />
+                </div>
+              </div>
+              <div className="ml-auto flex items-center gap-3">
+                <button
+                  type="button"
+                  className="relative rounded-full p-2 text-gray-500 hover:bg-gray-100 transition-colors"
+                  aria-label="Notifications"
+                >
+                  <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+                  </svg>
+                </button>
+                <div ref={accountMenuRef} className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setAccountMenuOpen((v) => !v)}
+                    className="flex h-8 w-8 items-center justify-center rounded-full bg-[#1EA7FF] text-xs font-semibold text-white transition hover:opacity-90 focus:outline-none overflow-hidden"
+                    aria-haspopup="menu"
+                    aria-expanded={accountMenuOpen}
+                    title="Account"
+                  >
+                    {profileImgSrc ? (
+                      <img src={profileImgSrc} alt="Profile" className="h-8 w-8 rounded-full object-cover" />
+                    ) : (
+                      <span>{accountInitial}</span>
+                    )}
+                  </button>
+                  {accountMenuOpen ? (
+                    <div
+                      role="menu"
+                      className="absolute right-0 top-full mt-1.5 w-48 rounded-xl border border-gray-200 bg-white shadow-lg z-[9999] overflow-hidden"
+                    >
+                      <Link
+                        href="/admin/account"
+                        role="menuitem"
+                        className="block px-4 py-2.5 text-[13px] text-gray-700 hover:bg-gray-50 transition-colors"
+                        onClick={() => setAccountMenuOpen(false)}
+                      >
+                        My Profile
+                      </Link>
+                      {isVerified ? (
+                        <Link
+                          href="/admin/settings/dealership"
+                          role="menuitem"
+                          className="block px-4 py-2.5 text-[13px] text-gray-700 hover:bg-gray-50 transition-colors"
+                          onClick={() => setAccountMenuOpen(false)}
+                        >
+                          Settings
+                        </Link>
+                      ) : (
+                        <button
+                          type="button"
+                          role="menuitem"
+                          className="w-full text-left px-4 py-2.5 text-[13px] text-gray-300 cursor-not-allowed"
+                          disabled
+                        >
+                          Settings
+                        </button>
+                      )}
+                      <div className="border-t border-gray-100" />
+                      <button
+                        type="button"
+                        role="menuitem"
+                        className="w-full text-left px-4 py-2.5 text-[13px] text-gray-700 hover:bg-gray-50 transition-colors"
+                        onClick={() => {
+                          setAccountMenuOpen(false)
+                          setShowSignOutModal(true)
+                        }}
+                      >
+                        Log Out
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            </header>
+          ) : null}
+          <main style={{ backgroundColor: '#ffffff', minHeight: '100vh' }}>
+            {children}
+          </main>
+        </div>
       </div>
 
       {showSignOutModal ? (
@@ -837,6 +844,14 @@ function Icon({ name }: { name: string }) {
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 10h18" />
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 15h2" />
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M6 6h12a3 3 0 013 3v6a3 3 0 01-3 3H6a3 3 0 01-3-3V9a3 3 0 013-3z" />
+      </svg>
+    )
+  }
+  if (name === 'config') {
+    return (
+      <svg className={cls} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
       </svg>
     )
   }

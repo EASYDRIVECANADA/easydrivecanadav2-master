@@ -1,77 +1,61 @@
 'use client'
 
-import { useState } from 'react'
-import UsersTab from './UsersTab'
+import { useRef, useState } from 'react'
+import UsersTab, { type UsersTabHandle } from './UsersTab'
 import CustomersTab from './CustomersTab'
 import VendorsTab from './VendorsTab'
 import InventoryTab from './InventoryTab'
 
 export default function DirectoryPage() {
   const [activeTab, setActiveTab] = useState<'users' | 'customers' | 'vendors' | 'inventory'>('users')
+  const usersTabRef = useRef<UsersTabHandle>(null)
 
   return (
-    <div className="min-h-screen bg-[#F5F7FB]">
-      <div className="px-6 py-6">
-        <div className="mb-6">
-          <h1 className="text-2xl font-bold text-[#0B1F3A]">Directory Management</h1>
-          <p className="text-sm text-slate-600 mt-1">Manage all system data from one place</p>
+    <div className="min-h-screen bg-white">
+      {/* Header */}
+      <div className="px-6 lg:px-8 pt-8 pb-4 border-b border-slate-100 flex items-start justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">Directory</h1>
+          <p className="text-sm text-slate-400 mt-0.5">Manage all team members and contacts</p>
         </div>
+        {activeTab === 'users' && (
+          <button
+            type="button"
+            onClick={() => usersTabRef.current?.openAdd()}
+            className="h-10 px-5 rounded-full bg-[#0B1F3A] text-white text-sm font-semibold hover:bg-[#1EA7FF] transition-colors inline-flex items-center gap-1.5"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+            </svg>
+            Add employee
+          </button>
+        )}
+      </div>
 
-        <div className="bg-white rounded-2xl border border-slate-200/60 overflow-hidden" style={{ boxShadow: '0 1px 3px rgba(0,0,0,.04)' }}>
-          <div className="flex items-center gap-2 px-6 py-4 border-b border-slate-100">
-            <button
-              type="button"
-              className={
-                activeTab === 'users'
-                  ? 'h-10 px-6 rounded-xl bg-[#0B1F3A] text-white text-sm font-semibold transition-all'
-                  : 'h-10 px-6 rounded-xl bg-slate-50 text-slate-600 text-sm font-semibold hover:bg-slate-100 transition-all'
-              }
-              onClick={() => setActiveTab('users')}
-            >
-              Users
-            </button>
-            <button
-              type="button"
-              className={
-                activeTab === 'customers'
-                  ? 'h-10 px-6 rounded-xl bg-[#0B1F3A] text-white text-sm font-semibold transition-all'
-                  : 'h-10 px-6 rounded-xl bg-slate-50 text-slate-600 text-sm font-semibold hover:bg-slate-100 transition-all'
-              }
-              onClick={() => setActiveTab('customers')}
-            >
-              Customers
-            </button>
-            <button
-              type="button"
-              className={
-                activeTab === 'vendors'
-                  ? 'h-10 px-6 rounded-xl bg-[#0B1F3A] text-white text-sm font-semibold transition-all'
-                  : 'h-10 px-6 rounded-xl bg-slate-50 text-slate-600 text-sm font-semibold hover:bg-slate-100 transition-all'
-              }
-              onClick={() => setActiveTab('vendors')}
-            >
-              Vendors
-            </button>
-            <button
-              type="button"
-              className={
-                activeTab === 'inventory'
-                  ? 'h-10 px-6 rounded-xl bg-[#0B1F3A] text-white text-sm font-semibold transition-all'
-                  : 'h-10 px-6 rounded-xl bg-slate-50 text-slate-600 text-sm font-semibold hover:bg-slate-100 transition-all'
-              }
-              onClick={() => setActiveTab('inventory')}
-            >
-              Inventory
-            </button>
-          </div>
+      {/* Tabs */}
+      <div className="px-6 lg:px-8 pt-5 flex items-center gap-2">
+        {(['users', 'customers', 'vendors', 'inventory'] as const).map((tab) => (
+          <button
+            key={tab}
+            type="button"
+            onClick={() => setActiveTab(tab)}
+            className={`px-4 py-1.5 rounded-full text-sm font-medium border transition-all capitalize ${
+              activeTab === tab
+                ? 'bg-[#0B1F3A] text-white border-[#0B1F3A]'
+                : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+            }`}
+          >
+            {tab.charAt(0).toUpperCase() + tab.slice(1)}
+          </button>
+        ))}
+      </div>
 
-          <div className="p-6">
-            {activeTab === 'users' && <UsersTab />}
-            {activeTab === 'customers' && <CustomersTab />}
-            {activeTab === 'vendors' && <VendorsTab />}
-            {activeTab === 'inventory' && <InventoryTab />}
-          </div>
-        </div>
+      {/* Content */}
+      <div className="px-6 lg:px-8 py-6">
+        {activeTab === 'users' && <UsersTab ref={usersTabRef} />}
+        {activeTab === 'customers' && <CustomersTab />}
+        {activeTab === 'vendors' && <VendorsTab />}
+        {activeTab === 'inventory' && <InventoryTab />}
       </div>
     </div>
   )

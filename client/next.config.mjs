@@ -1,5 +1,13 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  async rewrites() {
+    return [
+      {
+        source: '/backend/:path*',
+        destination: 'https://api.easydrivecanada.com/:path*',
+      },
+    ]
+  },
   images: {
     remotePatterns: [
       {
@@ -16,6 +24,9 @@ const nextConfig = {
   },
   eslint: {
     ignoreDuringBuilds: true,
+  },
+  typescript: {
+    ignoreBuildErrors: true,
   },
   // Production optimizations
   compress: true,

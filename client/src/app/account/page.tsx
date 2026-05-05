@@ -334,7 +334,14 @@ function AccountPageInner() {
       }))
 
       if (!signInError && (signInData as any)?.session) {
-        router.push('/inventory')
+        const returnUrl = typeof window !== 'undefined'
+          ? new URLSearchParams(window.location.search).get('returnUrl')
+          : null
+        if (returnUrl && returnUrl.startsWith('/')) {
+          router.push(returnUrl)
+        } else {
+          router.push('/inventory')
+        }
         return
       }
 
@@ -609,6 +616,241 @@ function AccountPageInner() {
     setEditingLicenseNumber(originalLicenseNumber)
     setSaveSuccess(false)
     setIsEditingProfile(false)
+  }
+
+  // Unauthenticated → split-screen Lovable login layout
+  if (!userEmail) {
+    return (
+      <>
+        <div className="min-h-screen flex bg-white">
+          {/* Left — form panel */}
+          <div className="relative flex flex-col justify-center w-full lg:max-w-md px-8 sm:px-10 py-12 bg-white">
+            {/* Top-left back link */}
+            <Link
+              href="/"
+              className="absolute top-6 left-6 inline-flex items-center gap-1.5 text-sm font-medium text-gray-500 hover:text-gray-900 transition-colors"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+              </svg>
+              Back to site
+            </Link>
+
+            <div className="mb-10">
+              <span className="text-sm font-bold tracking-widest uppercase" style={{ color: '#1aa6ff' }}>EDC</span>
+            </div>
+
+            <h1 className="text-3xl font-bold text-gray-900 mb-1">Welcome back</h1>
+            <p className="text-sm text-gray-500 mb-8">Sign in to your account.</p>
+
+            {error && (
+              <div className="bg-red-50 text-red-700 border border-red-200 rounded-lg px-4 py-3 text-sm mb-5">
+                {error}
+              </div>
+            )}
+            {notice && (
+              <div className="bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-lg px-4 py-3 text-sm mb-5">
+                {notice}
+              </div>
+            )}
+
+            <form onSubmit={handleUnifiedSignIn} className="space-y-5">
+              <div>
+                <label htmlFor="unifiedEmail" className="block text-sm font-medium text-gray-700 mb-1.5">Email</label>
+                <input
+                  id="unifiedEmail"
+                  type="email"
+                  value={customerAuthEmail}
+                  onChange={(e) => setCustomerAuthEmail(e.target.value)}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:border-transparent transition-all"
+                  style={{ ['--tw-ring-color' as string]: '#1aa6ff' }}
+                  placeholder="you@example.com"
+                  autoComplete="email"
+                  required
+                />
+              </div>
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label htmlFor="unifiedPassword" className="block text-sm font-medium text-gray-700">Password</label>
+                  <button
+                    type="button"
+                    onClick={openForgotModal}
+                    className="text-xs hover:underline"
+                    style={{ color: '#1aa6ff' }}
+                  >
+                    Forgot?
+                  </button>
+                </div>
+                <input
+                  id="unifiedPassword"
+                  type="password"
+                  value={customerAuthPassword}
+                  onChange={(e) => setCustomerAuthPassword(e.target.value)}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:border-transparent transition-all"
+                  style={{ ['--tw-ring-color' as string]: '#1aa6ff' }}
+                  placeholder="••••••••"
+                  autoComplete="current-password"
+                  required
+                />
+              </div>
+
+              <label className="flex items-center gap-2 text-sm text-gray-600">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 rounded border-gray-300"
+                  checked={rememberMe}
+                  onChange={(e) => setRememberMe(e.target.checked)}
+                />
+                Remember me
+              </label>
+
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full flex items-center justify-center gap-2 text-white font-semibold py-2.5 rounded-full transition-opacity hover:opacity-90 disabled:opacity-60"
+                style={{ background: '#1aa6ff' }}
+              >
+                {loading ? 'Signing in…' : <>Sign in <span aria-hidden>→</span></>}
+              </button>
+            </form>
+
+<div className="hidden">
+            <div className="my-6 flex items-center gap-3">
+              <div className="h-px flex-1 bg-gray-200" />
+              <div className="text-xs font-semibold text-gray-400">OR</div>
+              <div className="h-px flex-1 bg-gray-200" />
+            </div>
+
+            <button
+              type="button"
+              onClick={handleGoogleAuth}
+              disabled={loading}
+              className="w-full flex items-center justify-center gap-3 bg-white text-gray-900 px-6 py-2.5 rounded-full font-semibold border border-gray-300 hover:bg-gray-50 transition-colors disabled:opacity-50"
+            >
+              <svg width="18" height="18" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
+                <path fill="#EA4335" d="M24 9.5c3.54 0 6.73 1.22 9.24 3.6l6.9-6.9C35.9 2.38 30.26 0 24 0 14.62 0 6.51 5.38 2.56 13.22l8.02 6.22C12.5 13.02 17.8 9.5 24 9.5z"/>
+                <path fill="#4285F4" d="M46.98 24.55c0-1.6-.14-3.13-.4-4.6H24v9.02h12.94c-.58 2.98-2.26 5.5-4.86 7.18l7.47 5.8c4.37-4.03 6.43-9.97 6.43-17.4z"/>
+                <path fill="#FBBC05" d="M10.58 28.94c-.48-1.44-.76-2.98-.76-4.54s.28-3.1.76-4.54l-8.02-6.22C.92 16.3 0 20.06 0 24.4c0 4.34.92 8.1 2.56 11.76l8.02-7.22z"/>
+                <path fill="#34A853" d="M24 48c6.26 0 11.54-2.06 15.39-5.6l-7.47-5.8c-2.07 1.39-4.73 2.21-7.92 2.21-6.2 0-11.5-3.52-13.42-8.44l-8.02 7.22C6.51 42.62 14.62 48 24 48z"/>
+              </svg>
+              <span>{loading ? 'Redirecting…' : 'Continue with Google'}</span>
+            </button>
+            </div>
+          </div>
+
+          {/* Right — image panel */}
+          <div
+            className="hidden lg:flex flex-1 relative flex-col justify-end p-12 overflow-hidden"
+            style={{ background: '#0d182b' }}
+          >
+            <div
+              className="absolute inset-0 bg-cover bg-center"
+              style={{ backgroundImage: "url('/images/login-cars.jpg')" }}
+            />
+            <div className="absolute inset-0 bg-gradient-to-t from-[#0d182b] via-[#0d182b]/40 to-transparent" />
+            <div className="absolute inset-0 bg-[#0d182b]/30" />
+
+            <div className="relative z-10">
+              <span
+                className="inline-block text-xs font-bold tracking-widest uppercase mb-4 px-3 py-1 rounded-full"
+                style={{ color: '#1aa6ff', background: '#1aa6ff1a', border: '1px solid #1aa6ff40' }}
+              >
+                EasyDrive Canada
+              </span>
+              <h2 className="text-3xl font-extrabold text-white leading-snug max-w-md">
+                Verified vehicles. Trusted dealers.<br/>All in one place.
+              </h2>
+            </div>
+          </div>
+        </div>
+
+        {/* Forgot password modal */}
+        {forgotOpen ? (
+          <div
+            className="fixed inset-0 z-[9999] flex items-center justify-center p-4"
+            role="dialog"
+            aria-modal="true"
+            onMouseDown={(e) => {
+              if (e.target === e.currentTarget) setForgotOpen(false)
+            }}
+          >
+            <div className="absolute inset-0 bg-black/60" onMouseDown={() => setForgotOpen(false)} />
+            <div className="relative z-10 w-full max-w-md bg-white rounded-2xl shadow-xl border border-gray-200 overflow-hidden">
+              <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+                <div className="text-sm font-semibold text-gray-900">Forgot Password</div>
+                <button
+                  type="button"
+                  className="w-9 h-9 rounded-lg hover:bg-gray-50 flex items-center justify-center"
+                  onClick={() => setForgotOpen(false)}
+                  aria-label="Close"
+                >
+                  <svg className="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
+              {forgotStage === 'form' ? (
+                <div className="p-5 space-y-4">
+                  <div className="text-sm text-gray-600">Enter your email address and we will send a reset link.</div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1.5" htmlFor="forgotEmailLogin">Email</label>
+                    <input
+                      id="forgotEmailLogin"
+                      type="email"
+                      value={forgotEmail}
+                      onChange={(e) => setForgotEmail(e.target.value)}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:border-transparent"
+                      style={{ ['--tw-ring-color' as string]: '#1aa6ff' }}
+                      placeholder="you@example.com"
+                      autoComplete="email"
+                      disabled={forgotSending}
+                    />
+                  </div>
+                  <div className="flex items-center justify-end gap-3 pt-2">
+                    <button
+                      type="button"
+                      className="px-5 py-2 rounded-full border border-gray-300 text-gray-700 text-sm hover:bg-gray-50"
+                      onClick={() => setForgotOpen(false)}
+                      disabled={forgotSending}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      className="px-6 py-2 rounded-full text-white text-sm font-semibold disabled:opacity-50"
+                      style={{ background: '#1aa6ff' }}
+                      onClick={handleSendForgot}
+                      disabled={forgotSending}
+                    >
+                      {forgotSending ? 'Sending…' : 'Send'}
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="p-5 space-y-4">
+                  <div className="text-sm text-gray-700 whitespace-pre-wrap">{forgotResult || 'Done.'}</div>
+                  <div className="flex items-center justify-end pt-2">
+                    <button
+                      type="button"
+                      className="px-8 py-2 rounded-full text-white text-sm font-semibold"
+                      style={{ background: '#1aa6ff' }}
+                      onClick={() => {
+                        setForgotOpen(false)
+                        setForgotStage('form')
+                        setForgotResult('')
+                      }}
+                    >
+                      OK
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        ) : null}
+      </>
+    )
   }
 
   return (
@@ -898,6 +1140,7 @@ function AccountPageInner() {
                 </button>
               </form>
 
+<div className="hidden">
               <div className="my-7 flex items-center gap-3">
                 <div className="h-px flex-1 bg-gray-200/70" />
                 <div className="text-xs font-semibold text-gray-500">Or login with</div>
@@ -923,6 +1166,7 @@ function AccountPageInner() {
                   <span>{loading ? 'Redirecting…' : 'Continue with Google'}</span>
                 </span>
               </button>
+              </div>
             </div>
           )}
 

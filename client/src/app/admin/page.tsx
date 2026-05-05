@@ -195,6 +195,17 @@ type Kpi = {
   sublabel?: string
 }
 
+type RecentDeal = {
+  dealId: string
+  customer: string
+  vehicle: string
+  bosNumber: string
+  salesperson: string
+  salePrice: number | null
+  status: string
+  dateIso: string
+}
+
 export default function AdminPage() {
   const router = useRouter()
   const [isAuthenticated, setIsAuthenticated] = useState(false)
@@ -211,6 +222,8 @@ export default function AdminPage() {
   const [dealsTotal, setDealsTotal] = useState<number | null>(null)
   const [dealsOpen, setDealsOpen] = useState<number | null>(null)
   const [dealsClosed, setDealsClosed] = useState<number | null>(null)
+  const [visitorsToday, setVisitorsToday] = useState<number | null>(null)
+  const [visitorsWeek, setVisitorsWeek] = useState<number | null>(null)
   const [salesSeries, setSalesSeries] = useState<{ iso: string; label: string; value: number }[]>([])
   const [salesDealsByDate, setSalesDealsByDate] = useState<
     Record<string, { dealId: string; customer: string; vehicle: string; salesperson: string }[]>
@@ -227,7 +240,7 @@ export default function AdminPage() {
   const [selectedInventoryWeek, setSelectedInventoryWeek] = useState<number>(0)
   const [statsError, setStatsError] = useState<string | null>(null)
   const [statsLoading, setStatsLoading] = useState(false)
-  // const router = useRouter(); // Uncomment if needed for navigation
+  const [recentActivity, setRecentActivity] = useState<RecentDeal[]>([])
 
   useEffect(() => {
     checkAuth()
@@ -250,11 +263,7 @@ export default function AdminPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  useEffect(() => {
-    if (checkingAuth) return
-    if (isAuthenticated) return
-    router.replace('/account')
-  }, [checkingAuth, isAuthenticated, router])
+  // No redirect — unauthenticated users see the login form below
 
   const checkAuth = async () => {
     const sessionStr = localStorage.getItem('edc_admin_session')
@@ -620,6 +629,47 @@ export default function AdminPage() {
         setSalesDealsByDate(byDate)
         setSelectedSalesIso((prev) => (prev && prev in byDate ? prev : ''))
 
+        // Recent activity — last 8 deals from all deals (not just closed), sorted by date desc
+        const recent: RecentDeal[] = scopedDeals
+          .map((deal: any) => {
+            const customer = deal?.customer ?? {}
+            const worksheet = deal?.worksheet ?? {}
+            const delivery = deal?.delivery ?? {}
+            const custName = String(deal?.primaryCustomer ?? '').trim() ||
+              [customer?.firstname, customer?.lastname].filter(Boolean).join(' ')
+            const vehicle = String(deal?.vehicle ?? '').trim()
+            const bosNumber = String(deal?.dealId ?? worksheet?.deal_number ?? '').trim()
+            const salesperson = String(delivery?.salesperson ?? deal?.primarySalesperson ?? '').trim()
+            const rawPrice = worksheet?.sale_price ?? worksheet?.salePrice ?? deal?.salePrice ?? worksheet?.total ?? null
+            const salePrice = rawPrice !== null && rawPrice !== '' ? Number(rawPrice) : null
+            const statusRaw = String(
+              customer?.deal_state ?? customer?.dealState ?? customer?.dealstate ??
+              customer?.state ?? worksheet?.deal_state ?? worksheet?.dealState ??
+              delivery?.deal_state ?? delivery?.dealState ?? deal?.state ?? ''
+            ).trim()
+            const dateRaw = String(
+              worksheet?.close_date ?? deal?.closeDate ?? customer?.dealdate ??
+              worksheet?.deal_date ?? deal?.dealDate ?? deal?.created_at ?? ''
+            ).trim()
+            return {
+              dealId: String(deal?.dealId ?? '').trim(),
+              customer: custName || 'N/A',
+              vehicle: vehicle || 'N/A',
+              bosNumber,
+              salesperson: salesperson || 'N/A',
+              salePrice: !isNaN(salePrice as number) && salePrice !== null ? salePrice : null,
+              status: statusRaw || 'Open',
+              dateIso: dateRaw,
+            } satisfies RecentDeal
+          })
+          .sort((a: { dateIso: string | null }, b: { dateIso: string | null }) => {
+            const da = a.dateIso ? new Date(a.dateIso).getTime() : 0
+            const db = b.dateIso ? new Date(b.dateIso).getTime() : 0
+            return db - da
+          })
+          .slice(0, 8)
+        setRecentActivity(recent)
+
       } catch (e: any) {
         setStatsError(e?.message || 'Failed to load analytics')
         setInventoryTotal(null)
@@ -637,8 +687,31 @@ export default function AdminPage() {
     void loadStats()
   }, [isAdminRole, isAuthenticated, scopedUserId])
 
+  // Fetch visitor stats independently
+  useEffect(() => {
+    if (!isAuthenticated) return
+    fetch('/api/analytics')
+      .then(r => r.ok ? r.json() : null)
+      .then(d => {
+        if (d) {
+          setVisitorsToday(d.todayVisitors ?? 0)
+          setVisitorsWeek(d.weekVisitors ?? 0)
+        }
+      })
+      .catch(() => {})
+  }, [isAuthenticated])
+
+  const accountFirstName = useMemo(() => {
+    const base = user?.email?.toString().trim() || ''
+    if (!base || !base.includes('@')) return 'there'
+    const local = base.split('@')[0] || ''
+    const part = local.split(/[._-]/).filter(Boolean)[0]
+    return part ? `${part[0].toUpperCase()}${part.slice(1)}` : 'there'
+  }, [user?.email])
+
   const kpis = useMemo<Kpi[]>(() => {
     const fmt = (n: number | null) => (typeof n === 'number' ? n.toLocaleString() : statsLoading ? '—' : '—')
+    const fmtV = (n: number | null) => (typeof n === 'number' ? n.toLocaleString() : '—')
 
     return [
       {
@@ -661,8 +734,13 @@ export default function AdminPage() {
         value: fmt(vendorsTotal),
         sublabel: 'Saved contacts',
       },
+      {
+        label: 'Visitors Today',
+        value: fmtV(visitorsToday),
+        sublabel: `${visitorsWeek !== null ? visitorsWeek.toLocaleString() : '—'} this week`,
+      },
     ]
-  }, [dealsClosed, dealsOpen, inventoryTotal, statsLoading, vendorsTotal])
+  }, [dealsClosed, dealsOpen, inventoryTotal, statsLoading, vendorsTotal, visitorsToday, visitorsWeek])
 
   if (checkingAuth) {
     return (
@@ -677,64 +755,93 @@ export default function AdminPage() {
 
   if (!isAuthenticated) {
     return (
-      <div className="min-h-screen flex items-center justify-center px-4"
-        style={{ background: 'linear-gradient(135deg, #0B1C2D 0%, #1a2e44 50%, #0B1C2D 100%)' }}
-      >
-        <div className="w-full max-w-md animate-scale-in">
-          <div className="text-center mb-8">
-            <h1 className="text-2xl font-bold text-white tracking-tight">Welcome Back</h1>
-            <p className="text-sm text-white/50 mt-1">Sign in to your dealership portal</p>
+      <div className="min-h-screen flex">
+        {/* Left — form panel */}
+        <div className="flex flex-col justify-center w-full max-w-md px-10 py-12 bg-white">
+          {/* Logo */}
+          <div className="mb-10">
+            <span className="text-sm font-bold tracking-widest uppercase" style={{ color: '#1aa6ff' }}>EDC</span>
           </div>
 
-          <div className="bg-white/[.06] backdrop-blur-xl rounded-2xl border border-white/[.08] p-8 shadow-2xl">
-            {error && (
-              <div className="bg-danger-500/10 text-danger-400 border border-danger-500/20 p-3 rounded-xl mb-5 text-sm font-medium">
-                {error}
-              </div>
-            )}
+          <h1 className="text-2xl font-bold text-gray-900 mb-1">Welcome back</h1>
+          <p className="text-sm text-gray-500 mb-8">Sign in to your account.</p>
 
-            <form onSubmit={handleEmailLogin}>
-              <div className="mb-5">
-                <label htmlFor="email" className="block text-[13px] font-medium text-white/70 mb-1.5">Email</label>
-                <input
-                  id="email"
-                  name="email"
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="w-full bg-white/[.07] border border-white/[.1] rounded-xl px-4 py-2.5 text-sm text-white placeholder-white/30 focus:outline-none focus:ring-2 focus:ring-cyan-500/30 focus:border-cyan-500/40 transition-all"
-                  placeholder="your@email.com"
-                  autoComplete="email"
-                  required
-                />
-              </div>
-              <div className="mb-5">
-                <label htmlFor="password" className="block text-[13px] font-medium text-white/70 mb-1.5">Password</label>
-                <input
-                  id="password"
-                  name="password"
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="w-full bg-white/[.07] border border-white/[.1] rounded-xl px-4 py-2.5 text-sm text-white placeholder-white/30 focus:outline-none focus:ring-2 focus:ring-cyan-500/30 focus:border-cyan-500/40 transition-all"
-                  placeholder="Enter access code"
-                  autoComplete="current-password"
-                  required
-                />
-              </div>
-              <div className="mb-6 text-right">
-                <Link href="/forgot-password" className="text-[13px] text-cyan-400 hover:text-cyan-300 transition-colors">
-                  Forgot Password?
-                </Link>
-              </div>
-              <button
-                type="submit"
-                disabled={loading}
-                className="edc-btn-cyan w-full py-3 text-sm"
-              >
-                {loading ? 'Signing in...' : 'Sign In'}
-              </button>
-            </form>
+          {error && (
+            <div className="bg-red-50 text-red-700 border border-red-200 rounded-lg px-4 py-3 text-sm mb-6">
+              {error}
+            </div>
+          )}
+
+          <form onSubmit={handleEmailLogin} className="space-y-5">
+            <div>
+              <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1.5">Email</label>
+              <input
+                id="email"
+                name="email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:border-transparent transition-all"
+                style={{ ['--tw-ring-color' as string]: '#1aa6ff' }}
+                placeholder="you@example.com"
+                autoComplete="email"
+                required
+              />
+            </div>
+            <div>
+              <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1.5">Password</label>
+              <input
+                id="password"
+                name="password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:border-transparent transition-all"
+                style={{ ['--tw-ring-color' as string]: '#1aa6ff' }}
+                placeholder="••••••••"
+                autoComplete="current-password"
+                required
+              />
+            </div>
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full flex items-center justify-center gap-2 text-white font-semibold py-2.5 rounded-full transition-opacity hover:opacity-90 disabled:opacity-60"
+              style={{ background: '#1aa6ff' }}
+            >
+              {loading ? 'Signing in…' : <>Sign in <span aria-hidden>→</span></>}
+            </button>
+          </form>
+
+          <p className="mt-6 text-xs text-gray-400 text-center">
+            <Link href="/" className="hover:underline">Back to site</Link>
+          </p>
+        </div>
+
+        {/* Right — image panel */}
+        <div
+          className="hidden lg:flex flex-1 relative flex-col justify-end p-12 overflow-hidden"
+          style={{ background: '#0d182b' }}
+        >
+          {/* Car background image */}
+          <div
+            className="absolute inset-0 bg-cover bg-center"
+            style={{ backgroundImage: "url('/images/login-cars.jpg')" }}
+          />
+          <div className="absolute inset-0 bg-gradient-to-t from-[#0d182b] via-[#0d182b]/40 to-transparent" />
+          <div className="absolute inset-0 bg-[#0d182b]/30" />
+
+          {/* Text */}
+          <div className="relative z-10">
+            <span
+              className="inline-block text-xs font-bold tracking-widest uppercase mb-4 px-3 py-1 rounded-full"
+              style={{ color: '#1aa6ff', background: '#1aa6ff1a', border: '1px solid #1aa6ff40' }}
+            >
+              Dealer Portal
+            </span>
+            <h2 className="text-3xl font-extrabold text-white leading-snug max-w-xs">
+              Manage your inventory, leads, and sales — all in one place.
+            </h2>
           </div>
         </div>
       </div>
@@ -754,6 +861,9 @@ export default function AdminPage() {
     'Vendors': (
       <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0H5m14 0h2m-16 0H3m5-12h4m-4 4h4" /></svg>
     ),
+    'Visitors Today': (
+      <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
+    ),
   }
 
   const kpiColors: Record<string, string> = {
@@ -761,13 +871,14 @@ export default function AdminPage() {
     'Deals Open': '#f59e0b',
     'Deals Closed': '#10b981',
     'Vendors': '#8b5cf6',
+    'Visitors Today': '#ef4444',
   }
 
   return (
     <div className="min-h-screen">
       <div className="px-6 lg:px-8 pt-8 pb-2">
-        <h1 className="text-2xl font-bold text-[#0B1F3A]">Dashboard</h1>
-        <p className="text-sm text-slate-500 mt-0.5">Welcome back, {user?.email}</p>
+        <h1 className="text-2xl font-bold text-[#0B1F3A]">Welcome back, {accountFirstName}</h1>
+        <p className="text-sm text-slate-500 mt-0.5">Here&apos;s what&apos;s happening today.</p>
       </div>
 
       <div className="px-6 lg:px-8 py-6">
@@ -778,7 +889,7 @@ export default function AdminPage() {
           </div>
         ) : null}
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 mb-8">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-5 mb-8">
           {kpis.map((k) => {
             const color = kpiColors[k.label] || '#1EA7FF'
             return (
@@ -881,6 +992,61 @@ export default function AdminPage() {
             </div>
           </div>
         </div>
+
+        {/* Recent Activity */}
+        <div className="mt-6 bg-white rounded-2xl border border-slate-200/60 p-6" style={{ boxShadow: '0 1px 3px rgba(0,0,0,.04)' }}>
+          <div className="flex items-center justify-between mb-4">
+            <div className="text-sm font-bold text-[#0B1F3A]">Recent activity</div>
+            <Link href="/admin/sales/deals" className="text-xs font-semibold text-[#1EA7FF] hover:text-[#0B1F3A] transition-colors px-3 py-1.5 rounded-lg hover:bg-[#1EA7FF]/5">
+              View all deals
+            </Link>
+          </div>
+          {statsLoading ? (
+            <div className="space-y-3">
+              {[1,2,3].map(i => (
+                <div key={i} className="h-12 rounded-lg bg-slate-50 animate-pulse" />
+              ))}
+            </div>
+          ) : recentActivity.length === 0 ? (
+            <div className="py-8 text-center text-sm text-slate-400">No recent deals found.</div>
+          ) : (
+            <ul className="divide-y divide-slate-100">
+              {recentActivity.map((d, i) => {
+                const statusColor = (() => {
+                  const s = d.status.toLowerCase()
+                  if (s.includes('closed') || s.includes('delivered') || s.includes('sold')) return 'text-emerald-600'
+                  if (s.includes('funded')) return 'text-[#1EA7FF]'
+                  if (s.includes('signature') || s.includes('pending')) return 'text-amber-500'
+                  if (s.includes('open') || s.includes('new')) return 'text-slate-500'
+                  return 'text-slate-500'
+                })()
+                const displayStatus = d.status
+                  ? `${d.status.charAt(0).toUpperCase()}${d.status.slice(1)}`
+                  : 'Open'
+                return (
+                  <li key={d.dealId || i} className="flex items-center justify-between py-3 text-sm">
+                    <div className="min-w-0">
+                      <div className="font-medium text-[#0B1F3A] truncate">
+                        {d.customer} — {d.vehicle}
+                      </div>
+                      <div className="text-xs text-slate-400 mt-0.5 truncate">
+                        {d.bosNumber ? <span className="text-[#1EA7FF] font-medium">{d.bosNumber}</span> : null}
+                        {d.bosNumber && d.salesperson ? ' · ' : ''}
+                        {d.salesperson}
+                      </div>
+                    </div>
+                    <div className="text-right ml-6 shrink-0">
+                      <div className="font-semibold text-[#0B1F3A]">
+                        {d.salePrice !== null ? `$${d.salePrice.toLocaleString()}` : '—'}
+                      </div>
+                      <div className={`text-xs mt-0.5 ${statusColor}`}>{displayStatus}</div>
+                    </div>
+                  </li>
+                )
+              })}
+            </ul>
+          )}
+        </div>
       </div>
     </div>
   )
@@ -897,47 +1063,140 @@ function BarChart({
   selectedIso: string
   onSelectIso: (iso: string) => void
 }) {
-  const max = Math.max(1, ...data.map((d) => d.value))
   const safe = data.slice(-14)
+  const max = Math.max(1, ...safe.map((d) => d.value))
+
+  // Chart dimensions
+  const W = 500
+  const H = 160
+  const padL = 8
+  const padR = 8
+  const padT = 12
+  const padB = 28
+
+  const chartW = W - padL - padR
+  const chartH = H - padT - padB
+
+  const toX = (i: number) => padL + (i / Math.max(safe.length - 1, 1)) * chartW
+  const toY = (v: number) => padT + chartH - (v / max) * chartH
+
+  const points = safe.map((d, i) => ({ x: toX(i), y: toY(d.value), ...d }))
+  const polyline = points.map((p) => `${p.x},${p.y}`).join(' ')
 
   if (loading) {
-    return <div className="h-36 rounded-xl bg-slate-50 border border-slate-200/60" />
+    return <div className="h-44 rounded-xl bg-slate-50 border border-slate-200/60" />
   }
 
   if (!safe.length) {
     return (
-      <div className="h-36 rounded-xl bg-slate-50 border border-slate-200/60 flex items-center justify-center text-sm text-slate-500">
+      <div className="h-44 rounded-xl bg-slate-50 border border-slate-200/60 flex items-center justify-center text-sm text-slate-500">
         No data
       </div>
     )
   }
 
+  // Show ~4 evenly spaced x-axis labels
+  const labelIndices = safe.length <= 4
+    ? safe.map((_, i) => i)
+    : [0, Math.floor(safe.length / 3), Math.floor((2 * safe.length) / 3), safe.length - 1]
+
   return (
-    <div className="h-36 rounded-xl bg-slate-50 border border-slate-200/60 px-4 py-3">
-      <div className="h-full flex items-end gap-2">
-        {safe.map((d) => {
-          const hPct = Math.max(4, Math.round((d.value / max) * 100))
-          const isActive = selectedIso && d.iso === selectedIso
+    <div className="rounded-xl border border-slate-200/60 bg-white overflow-hidden">
+      <svg
+        viewBox={`0 0 ${W} ${H}`}
+        className="w-full"
+        style={{ height: 176 }}
+        aria-label="Sales line chart"
+      >
+        {/* Horizontal grid lines */}
+        {[0, 0.25, 0.5, 0.75, 1].map((t) => {
+          const y = padT + chartH * (1 - t)
           return (
-            <button
-              key={d.iso}
-              type="button"
-              className={
-                isActive
-                  ? 'flex-1 rounded-lg bg-[#1EA7FF] cursor-pointer ring-2 ring-[#1EA7FF]/30'
-                  : 'flex-1 rounded-lg bg-[#0B1F3A]/70 cursor-pointer hover:bg-[#0B1F3A] transition-colors'
-              }
-              style={{ height: `${hPct}%` }}
-              title={`${d.label}: ${d.value}`}
-              onClick={() => onSelectIso(d.iso)}
+            <line
+              key={t}
+              x1={padL}
+              x2={W - padR}
+              y1={y}
+              y2={y}
+              stroke="#e2e8f0"
+              strokeWidth={1}
+              strokeDasharray={t === 0 ? undefined : '4 3'}
             />
           )
         })}
-      </div>
-      <div className="mt-2 flex justify-between text-[10px] text-slate-500">
-        <span>{safe[0]?.label}</span>
-        <span>{safe[safe.length - 1]?.label}</span>
-      </div>
+
+        {/* Area fill under the line */}
+        <defs>
+          <linearGradient id="salesGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#1EA7FF" stopOpacity="0.15" />
+            <stop offset="100%" stopColor="#1EA7FF" stopOpacity="0" />
+          </linearGradient>
+        </defs>
+        {points.length > 1 && (
+          <polygon
+            points={`${points[0].x},${padT + chartH} ${polyline} ${points[points.length - 1].x},${padT + chartH}`}
+            fill="url(#salesGrad)"
+          />
+        )}
+
+        {/* Line */}
+        {points.length > 1 && (
+          <polyline
+            points={polyline}
+            fill="none"
+            stroke="#1EA7FF"
+            strokeWidth={2.5}
+            strokeLinejoin="round"
+            strokeLinecap="round"
+          />
+        )}
+
+        {/* Dots & hit targets */}
+        {points.map((p) => {
+          const isActive = p.iso === selectedIso
+          return (
+            <g key={p.iso}>
+              <circle
+                cx={p.x}
+                cy={p.y}
+                r={isActive ? 5 : 3.5}
+                fill="white"
+                stroke="#1EA7FF"
+                strokeWidth={isActive ? 2.5 : 2}
+              />
+              {/* Invisible larger hit area */}
+              <circle
+                cx={p.x}
+                cy={p.y}
+                r={12}
+                fill="transparent"
+                className="cursor-pointer"
+                onClick={() => onSelectIso(p.iso)}
+              >
+                <title>{`${p.label}: ${p.value} deal${p.value !== 1 ? 's' : ''}`}</title>
+              </circle>
+            </g>
+          )
+        })}
+
+        {/* X-axis labels */}
+        {labelIndices.map((i) => {
+          const p = points[i]
+          if (!p) return null
+          return (
+            <text
+              key={i}
+              x={p.x}
+              y={H - 6}
+              textAnchor="middle"
+              fontSize={10}
+              fill="#94a3b8"
+            >
+              {p.label}
+            </text>
+          )
+        })}
+      </svg>
     </div>
   )
 }
