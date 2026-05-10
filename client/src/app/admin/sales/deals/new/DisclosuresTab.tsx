@@ -292,7 +292,11 @@ export default function DisclosuresTab({
           <div className="flex flex-wrap gap-3">
             {subCarfax && renderSigCard(
               'CARFAX Review', 'text-purple-600',
-              subCarfax.typedInitials ? { typedName: subCarfax.typedInitials, signedAt: subCarfax.acknowledgedAt ?? undefined } : null,
+              subCarfax.typedInitials
+                ? { typedName: subCarfax.typedInitials, signedAt: subCarfax.acknowledgedAt ?? undefined }
+                : subCarfax.initialDataUrl
+                ? { drawnDataUrl: subCarfax.initialDataUrl, signedAt: subCarfax.acknowledgedAt ?? undefined }
+                : null,
               subCarfax.typedInitials,
               subCarfax.acknowledgedAt,
             )}
