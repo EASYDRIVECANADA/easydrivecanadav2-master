@@ -44,6 +44,7 @@ export interface BillOfSaleData {
   licenseFee: string
   feesTotal: string
   accessoriesTotal: string
+  accessoriesLineItems?: Array<{ name: string; price: number }>
   warrantiesTotal: string
   insurancesTotal: string
   paymentsTotal: string
@@ -60,7 +61,9 @@ export interface BillOfSaleData {
     description: string
     duration: string
     distance: string
-    cost: string
+    cost: string        // total (base + add-ons)
+    basePrice?: string  // base plan price before add-ons
+    addOns?: Array<{ label: string; price: number }>
   } | null
 
   // Comments & Disclosures
@@ -406,8 +409,31 @@ export function renderBillOfSalePdf(
     const headerRowH = 14
     const descLineH  = 5.5
     const descPadV   = 9   // top padding inside data row
+    const addOnRows  = Array.isArray(ew.addOns) ? ew.addOns : []
+    const addOnRowH  = 12  // height per add-on sub-row
+    const totalRowH  = 13  // height for the "Total" footer row (only when add-ons exist)
 
-    // Pre-measure description to size the data row
+    // Determine the price to show in the main plan row:
+    // If add-ons exist, show the base plan price; otherwise show the full cost.
+    let planRowCostStr = ''
+    if (ew.cost) {
+      if (addOnRows.length > 0 && ew.basePrice) {
+        // Use explicit basePrice from order_data.warranty.baseTotal
+        const bpNum = Number(ew.basePrice)
+        planRowCostStr = !isNaN(bpNum) ? `$${bpNum.toLocaleString('en-CA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : ew.basePrice
+      } else if (addOnRows.length > 0) {
+        // Compute base price as total - sum(addOns)
+        const addOnSum = addOnRows.reduce((s, a) => s + (a.price || 0), 0)
+        const totalNum = Number(ew.cost)
+        const baseNum  = isNaN(totalNum) ? 0 : totalNum - addOnSum
+        planRowCostStr = baseNum > 0 ? `$${baseNum.toLocaleString('en-CA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : ''
+      } else {
+        const costNum = Number(ew.cost)
+        planRowCostStr = ew.cost.startsWith('$') ? ew.cost : !isNaN(costNum) ? `$${costNum.toLocaleString('en-CA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : ew.cost
+      }
+    }
+
+    // Pre-measure description to size the main data row
     const descMaxW = colDescW - 8
     doc.setFontSize(6.5)
     doc.setFont('helvetica', 'normal')
@@ -430,7 +456,7 @@ export function renderBillOfSalePdf(
     doc.text('distance',     colDistX + colDistW / 2, ewBodyStartY + 9, { align: 'center' })
     doc.text('retail value', colRetX + colRetW / 2,   ewBodyStartY + 9, { align: 'center' })
 
-    // ── Data row border + column dividers ────────────────────────────
+    // ── Main data row (base plan price) ──────────────────────────────
     const dataRowY = ewBodyStartY + headerRowH
     doc.setDrawColor(GRAY_LINE)
     doc.setLineWidth(0.4)
@@ -446,15 +472,65 @@ export function renderBillOfSalePdf(
     const dataTextY = dataRowY + descPadV
     doc.text(descLines, ML + 4, dataTextY)
 
-    // Duration / distance / retail value — top-aligned in data row
+    // Duration / distance / base plan price — top-aligned in data row
     doc.setFont('helvetica', 'bold')
     doc.setFontSize(7)
     if (ew.duration) doc.text(fmt(ew.duration), colDurX + colDurW / 2,  dataTextY, { align: 'center' })
     if (ew.distance) doc.text(fmt(ew.distance), colDistX + colDistW / 2, dataTextY, { align: 'center' })
-    if (ew.cost) {
-      const costNum = Number(ew.cost)
-      const costStr = ew.cost.startsWith('$') ? ew.cost : !isNaN(costNum) ? `$${costNum.toLocaleString('en-CA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : ew.cost
-      doc.text(costStr, colRetX + colRetW - 2, dataTextY, { align: 'right' })
+    if (planRowCostStr) {
+      doc.text(planRowCostStr, colRetX + colRetW - 2, dataTextY, { align: 'right' })
+    }
+
+    // ── Add-on sub-rows (Zero Deductible, Hi-Tech Components, etc.) ──
+    if (addOnRows.length > 0) {
+      let addOnY = dataRowY + dataRowH
+      for (const ao of addOnRows) {
+        // light grey background for add-on rows
+        doc.setFillColor(245, 247, 250)
+        doc.rect(ML, addOnY, leftColW, addOnRowH, 'F')
+        doc.setDrawColor(GRAY_LINE)
+        doc.setLineWidth(0.3)
+        doc.rect(ML, addOnY, leftColW, addOnRowH)
+        doc.line(colRetX, addOnY, colRetX, addOnY + addOnRowH)
+
+        // bullet + label
+        doc.setFontSize(6.5)
+        doc.setFont('helvetica', 'normal')
+        doc.setTextColor(DARK)
+        doc.text(`• ${ao.label}`, ML + 6, addOnY + 8)
+
+        // price (right-aligned in the retail value column)
+        if (ao.price > 0) {
+          const priceStr = `$${ao.price.toLocaleString('en-CA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+          doc.setFont('helvetica', 'bold')
+          doc.setFontSize(6.5)
+          doc.text(priceStr, colRetX + colRetW - 2, addOnY + 8, { align: 'right' })
+        }
+
+        addOnY += addOnRowH
+      }
+
+      // ── Total row ────────────────────────────────────────────────
+      // White background with slightly darker border to stand out
+      doc.setFillColor(255, 255, 255)
+      doc.rect(ML, addOnY, leftColW, totalRowH, 'F')
+      doc.setDrawColor(GRAY_LINE)
+      doc.setLineWidth(0.4)
+      doc.rect(ML, addOnY, leftColW, totalRowH)
+      doc.line(colRetX, addOnY, colRetX, addOnY + totalRowH)
+
+      // "Total" label
+      doc.setFontSize(7)
+      doc.setFont('helvetica', 'bold')
+      doc.setTextColor(DARK)
+      doc.text('Total', ML + 6, addOnY + 9)
+
+      // Total amount
+      if (ew.cost) {
+        const totalNum = Number(ew.cost)
+        const totalStr = ew.cost.startsWith('$') ? ew.cost : !isNaN(totalNum) ? `$${totalNum.toLocaleString('en-CA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : ew.cost
+        doc.text(totalStr, colRetX + colRetW - 2, addOnY + 9, { align: 'right' })
+      }
     }
     // privacy drawn below after section height is known
   } else {
@@ -465,6 +541,27 @@ export function renderBillOfSalePdf(
     doc.text('DECLINED', ML + leftColW / 2, ewBodyStartY + 12, { align: 'center' })
     // privacy drawn below after section height is known
   }
+
+  // Pre-calculate the minimum height the left column needs (warranty rows + privacy + initial line)
+  // so the section is always tall enough regardless of how many settlement rows are on the right.
+  let leftColWarrantyRowsH = 0
+  if (ew && ew.has_extended) {
+    const descMaxW2 = colDescW - 8
+    doc.setFontSize(6.5)
+    doc.setFont('helvetica', 'normal')
+    const descLines2 = doc.splitTextToSize(fmt(ew.description), descMaxW2)
+    const dataRowH2 = Math.max(24, 9 + descLines2.length * 5.5 + 6)
+    const ewAddOnCount2 = Array.isArray(ew.addOns) ? ew.addOns.length : 0
+    leftColWarrantyRowsH = 14 /* column header */ + dataRowH2 + ewAddOnCount2 * 12 + (ewAddOnCount2 > 0 ? 13 : 0)
+  } else {
+    leftColWarrantyRowsH = 24 // DECLINED minimal
+  }
+  doc.setFontSize(5)
+  doc.setFont('helvetica', 'normal')
+  const privacyLines = doc.splitTextToSize(privacyText, leftColW - 8)
+  const privacyLineH = 5.5
+  const initLineH = 14
+  const leftColMinH = 14 /* ew section header */ + leftColWarrantyRowsH + privacyLines.length * privacyLineH + initLineH + 8
 
   // Right: Settlement terms rows
   const stX = ML + leftColW
@@ -480,12 +577,26 @@ export function renderBillOfSalePdf(
     return Number.isFinite(n) && Math.abs(n) > 0.0001
   }
 
-  const settlementRows: [string, string][] = [
+  const settlementRows: [string, string, boolean?][] = [
     ['Vehicle Price', fmtMoneyNoSign(data.vehiclePrice)],
     ...(hasVal(data.discount) ? [['Discount', '-' + fmtMoneyNoSign(data.discount)] as [string, string]] : []),
     ...(includeOmvic ? [['OMVIC FEE', fmtMoneyNoSign(data.omvicFee)] as [string, string]] : []),
     ...(hasVal(data.feesTotal) ? [['Fees', fmtMoneyNoSign(data.feesTotal)] as [string, string]] : []),
-    ...(hasVal(data.accessoriesTotal) ? [['Accessories', fmtMoneyNoSign(data.accessoriesTotal)] as [string, string]] : []),
+    // Accessories: if we have line items, show each as an indented sub-row then a bold total row
+    ...(() => {
+      const items = data.accessoriesLineItems || []
+      if (!hasVal(data.accessoriesTotal)) return []
+      if (items.length <= 1) {
+        return [['Accessories', fmtMoneyNoSign(data.accessoriesTotal)] as [string, string, boolean?]]
+      }
+      const subRows: [string, string, boolean?][] = items.map(item => [
+        `  • ${item.name}`,
+        item.price > 0 ? fmtMoneyNoSign(String(item.price)) : '',
+        true, // isSubRow
+      ])
+      subRows.push(['Accessories Total', fmtMoneyNoSign(data.accessoriesTotal)])
+      return subRows
+    })(),
     ...(hasVal(data.warrantiesTotal) ? [['Warranties', fmtMoneyNoSign(data.warrantiesTotal)] as [string, string]] : []),
     ...(hasVal(data.insurancesTotal) ? [['Insurances', fmtMoneyNoSign(data.insurancesTotal)] as [string, string]] : []),
     ['Subtotal', fmtMoneyNoSign(data.subtotal1)],
@@ -501,8 +612,23 @@ export function renderBillOfSalePdf(
   ]
 
   doc.setFontSize(7)
-  for (const [label, value] of settlementRows) {
-    // Label (right-aligned to label column)
+  for (const [label, value, isSubRow] of settlementRows) {
+    if (isSubRow) {
+      // Accessory sub-row: smaller, grey label, no dotted separator, compact height
+      doc.setFontSize(6)
+      doc.setFont('helvetica', 'normal')
+      doc.setTextColor(100, 100, 100)
+      doc.text(label, stLabelEnd, stY + 9, { align: 'right' })
+      if (value) {
+        doc.setTextColor(DARK)
+        doc.text('$' + value, stValueEnd, stY + 9, { align: 'right' })
+      }
+      doc.setFontSize(7)
+      stY += 10
+      continue
+    }
+
+    // Normal row
     doc.setFont('helvetica', 'normal')
     doc.setTextColor(DARK)
     doc.text(label, stLabelEnd, stY + 11, { align: 'right' })
@@ -532,20 +658,17 @@ export function renderBillOfSalePdf(
   doc.text('$' + fmtMoneyNoSign(data.totalBalanceDue), stValueEnd, stY + 11, { align: 'right' })
 
   // Draw border around the extended warranty + settlement section
-  const ewHeight = stY + 18 - ewStartY
+  // Use max of right-column height and left-column minimum (warranty rows + privacy text + initial line)
+  const ewHeight = Math.max(stY + 18 - ewStartY, leftColMinH)
   doc.setDrawColor(GRAY_LINE)
   doc.setLineWidth(0.5)
   doc.rect(ML, ewStartY + 14, leftColW, ewHeight - 14)
   doc.rect(ML + leftColW, ewStartY + 14, rightColW, ewHeight - 14)
 
   // Privacy statement pinned to bottom of left box, above the Initial line
-  // Pre-calculate privacy text height so we can place it flush to the bottom
   doc.setFontSize(5)
   doc.setFont('helvetica', 'normal')
   doc.setTextColor(DARK)
-  const privacyLines = doc.splitTextToSize(privacyText, leftColW - 8)
-  const privacyLineH = 5.5
-  const initLineH = 14 // space for "Initial:" line at bottom
   const privacyBottomY = ewStartY + ewHeight - initLineH
   const privacyTopY = privacyBottomY - privacyLines.length * privacyLineH
   doc.text(privacyLines, ML + 4, privacyTopY)

@@ -293,7 +293,7 @@ function PlansList({ provider, onPick }: { provider: string; onPick: (slug: stri
                 </div>
                 <div className="flex-1">
                   <div className="font-semibold text-slate-900">{p.name}</div>
-                  <div className="text-xs text-slate-400">Vehicle Service Contract</div>
+
                   {p.pricingTiers.length > 0 && (
                     <span className="mt-1 inline-block text-[10px] font-semibold bg-slate-100 text-slate-500 px-2 py-0.5 rounded">
                       {p.pricingTiers.length} tier{p.pricingTiers.length === 1 ? '' : 's'}
@@ -372,7 +372,7 @@ function PlanEditor({ plan, onBack }: { plan: WarrantyPlan; onBack: () => void }
           </div>
           <div>
             <div className="text-lg font-bold text-slate-900">{plan.name}</div>
-            <div className="text-sm text-slate-400">Vehicle Service Contract • {plan.provider}</div>
+            <div className="text-sm text-slate-400">{plan.provider}</div>
             <span className="mt-1 inline-block text-[10px] font-semibold border border-slate-200 text-slate-500 px-2 py-0.5 rounded-full">
               {plan.pricingTiers.length} tier{plan.pricingTiers.length === 1 ? '' : 's'}
             </span>
@@ -457,35 +457,120 @@ function PlanEditor({ plan, onBack }: { plan: WarrantyPlan; onBack: () => void }
               </tr>
             </thead>
             <tbody>
-              {tier.rows.map((row) => {
-                const isBase = row.label === 'Base Price'
-                const isPremium = row.label === 'Premium Vehicle Fee'
-                return (
-                  <tr key={row.label} className="border-b border-slate-100 last:border-b-0">
-                    <td className="px-3 py-4">
-                      {isBase && (
-                        <span className="mr-2 text-[10px] font-bold uppercase bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded">Base</span>
-                      )}
-                      {isPremium && (
-                        <span className="mr-2 text-[10px] font-bold uppercase bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">Fee</span>
-                      )}
-                      <span className="font-semibold text-slate-900">{row.label}</span>
+              {/* Mileage band base pricing rows */}
+              {tier.mileageBands && tier.mileageBands.length > 0 && (
+                <>
+                  <tr className="bg-slate-50/60">
+                    <td colSpan={tier.terms.length + 1} className="px-3 py-2">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Base Price (by mileage)</span>
                     </td>
-                    {row.values.map((v, termIdx) => (
-                      <td key={termIdx} className="px-3 py-4 align-top">
-                        <PriceCell
-                          plan={plan}
-                          tierIndex={tierIndex}
-                          termIndex={termIdx}
-                          rowLabel={row.label}
-                          rawValue={v}
-                          markupPct={cfg.warrantyMarkupPct}
-                        />
-                      </td>
-                    ))}
                   </tr>
+                  {tier.mileageBands.map((band) => (
+                    <tr key={band.label} className="border-b border-slate-100">
+                      <td className="px-3 py-4">
+                        <span className="mr-2 text-[10px] font-bold uppercase bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded">Base</span>
+                        <span className="font-semibold text-slate-900">{band.label}</span>
+                      </td>
+                      {band.values.map((v, termIdx) => (
+                        <td key={termIdx} className="px-3 py-4 align-top">
+                          <PriceCell
+                            plan={plan}
+                            tierIndex={tierIndex}
+                            termIndex={termIdx}
+                            rowLabel={band.label}
+                            rawValue={v}
+                            markupPct={cfg.warrantyMarkupPct}
+                          />
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                  {tier.rows.length > 0 && (
+                    <tr className="bg-slate-50/60">
+                      <td colSpan={tier.terms.length + 1} className="px-3 py-2">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Add-ons</span>
+                      </td>
+                    </tr>
+                  )}
+                </>
+              )}
+              {/* Add-on rows — split Base Price from add-ons if no mileageBands */}
+              {(() => {
+                const baseRows = tier.rows.filter(r => r.label === 'Base Price')
+                const addonRows = tier.rows.filter(r => r.label !== 'Base Price')
+                const hasMileageBands = tier.mileageBands && tier.mileageBands.length > 0
+                // If mileageBands already rendered base pricing, skip baseRows here
+                const rowsToRender = hasMileageBands ? tier.rows : tier.rows
+                const showSections = !hasMileageBands && baseRows.length > 0 && addonRows.length > 0
+
+                return (
+                  <>
+                    {showSections && (
+                      <tr className="bg-slate-50/60">
+                        <td colSpan={tier.terms.length + 1} className="px-3 py-2">
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Base Price</span>
+                        </td>
+                      </tr>
+                    )}
+                    {(showSections ? baseRows : []).map((row) => (
+                      <tr key={row.label} className="border-b border-slate-100">
+                        <td className="px-3 py-4">
+                          <span className="mr-2 text-[10px] font-bold uppercase bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded">Base</span>
+                          <span className="font-semibold text-slate-900">{row.label}</span>
+                        </td>
+                        {row.values.map((v, termIdx) => (
+                          <td key={termIdx} className="px-3 py-4 align-top">
+                            <PriceCell
+                              plan={plan}
+                              tierIndex={tierIndex}
+                              termIndex={termIdx}
+                              rowLabel={row.label}
+                              rawValue={v}
+                              markupPct={cfg.warrantyMarkupPct}
+                            />
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                    {showSections && addonRows.length > 0 && (
+                      <tr className="bg-slate-50/60">
+                        <td colSpan={tier.terms.length + 1} className="px-3 py-2">
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Add-ons</span>
+                        </td>
+                      </tr>
+                    )}
+                    {(showSections ? addonRows : rowsToRender).map((row) => {
+                      const isBase = row.label === 'Base Price'
+                      const isPremium = row.label === 'Premium Vehicle Fee'
+                      return (
+                        <tr key={row.label} className="border-b border-slate-100 last:border-b-0">
+                          <td className="px-3 py-4">
+                            {isBase && !showSections && (
+                              <span className="mr-2 text-[10px] font-bold uppercase bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded">Base</span>
+                            )}
+                            {isPremium && (
+                              <span className="mr-2 text-[10px] font-bold uppercase bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">Fee</span>
+                            )}
+                            <span className="font-semibold text-slate-900">{row.label}</span>
+                          </td>
+                          {row.values.map((v, termIdx) => (
+                            <td key={termIdx} className="px-3 py-4 align-top">
+                              <PriceCell
+                                plan={plan}
+                                tierIndex={tierIndex}
+                                termIndex={termIdx}
+                                rowLabel={row.label}
+                                rawValue={v}
+                                markupPct={cfg.warrantyMarkupPct}
+                              />
+                            </td>
+                          ))}
+                        </tr>
+                      )
+                    })}
+                  </>
                 )
-              })}
+              })()}
             </tbody>
           </table>
         </div>
@@ -511,27 +596,75 @@ function PriceCell({
   const [editingField, setEditingField] = useState<'cost' | 'retail' | null>(null)
   const [draft, setDraft] = useState('')
 
-  if (typeof rawValue !== 'number') {
+  // Check overrides first, before any early returns
+  const costOverride = cfg.warranty[plan.slug]?.tiers?.[tierIndex]?.rows?.[rowLabel]?.[termIndex]?.cost
+  const retailOverride = cfg.warranty[plan.slug]?.tiers?.[tierIndex]?.rows?.[rowLabel]?.[termIndex]?.retail
+
+  if (rawValue === 'Included') {
     return (
       <div className="text-xs text-slate-400">
-        {rawValue === 'Included' ? (
-          <span className="rounded-full bg-green-50 text-green-700 px-2 py-0.5 font-medium">Included</span>
-        ) : (
-          <span>—</span>
-        )}
+        <span className="rounded-full bg-green-50 text-green-700 px-2 py-0.5 font-medium">Included</span>
       </div>
     )
   }
 
-  const costOverride = cfg.warranty[plan.slug]?.tiers?.[tierIndex]?.rows?.[rowLabel]?.[termIndex]?.cost
-  const cost = costOverride ?? getCost(plan, tierIndex, termIndex, rowLabel) ?? rawValue
-  const retailOverride = cfg.warranty[plan.slug]?.tiers?.[tierIndex]?.rows?.[rowLabel]?.[termIndex]?.retail
+  // Blank cell with no override — show — with a + button to add pricing
+  if (typeof rawValue !== 'number' && costOverride == null) {
+    if (editingField === 'cost') {
+      return (
+        <div className="space-y-1">
+          <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Set cost</div>
+          <div className="flex items-center gap-1">
+            <span className="text-xs text-slate-400">$</span>
+            <input
+              autoFocus
+              type="number"
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onBlur={() => {
+                const n = Number(draft)
+                if (!isNaN(n) && n >= 0) setCostCell(plan.slug, tierIndex, termIndex, rowLabel, n)
+                setEditingField(null)
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  const n = Number(draft)
+                  if (!isNaN(n) && n >= 0) setCostCell(plan.slug, tierIndex, termIndex, rowLabel, n)
+                  setEditingField(null)
+                } else if (e.key === 'Escape') setEditingField(null)
+              }}
+              className="h-8 w-20 rounded-lg border border-slate-200 px-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1EA7FF]/30"
+            />
+          </div>
+        </div>
+      )
+    }
+    return (
+      <div className="flex items-center gap-1 text-xs text-slate-400">
+        <span>—</span>
+        <button
+          type="button"
+          title="Add price for this term"
+          onClick={() => { setDraft(''); setEditingField('cost') }}
+          className="rounded p-0.5 text-slate-300 hover:bg-[#1EA7FF]/10 hover:text-[#1EA7FF] transition-colors"
+        >
+          <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+          </svg>
+        </button>
+      </div>
+    )
+  }
+
+  // Full cell: rawValue is a number, or costOverride exists
+  const effectiveRaw = typeof rawValue === 'number' ? rawValue : 0
+  const cost = costOverride ?? getCost(plan, tierIndex, termIndex, rowLabel) ?? effectiveRaw
   const retail = retailOverride ?? Math.round(cost * (1 + markupPct / 100))
   const markupDelta = cost > 0 ? Math.round(((retail - cost) / cost) * 100) : 0
 
   function commitEdit(field: 'cost' | 'retail') {
     const n = Number(draft)
-    if (!isNaN(n) && n > 0) {
+    if (!isNaN(n) && n >= 0) {
       if (field === 'cost') setCostCell(plan.slug, tierIndex, termIndex, rowLabel, n)
       else setRetailCell(plan.slug, tierIndex, termIndex, rowLabel, n)
     }
@@ -752,10 +885,12 @@ function ProductCatalogTab() {
 
 function ProductDialog({ product, onClose }: { product: DealerProductConfig | null; onClose: () => void }) {
   const isNew = !product
+  const cfg = useDealerConfig()
+  const existingGroups = Array.from(new Set(cfg.products.map(p => p.group)))
   const [draft, setDraft] = useState<DealerProductConfig>(
     product ?? {
       id: `custom-${Date.now()}`,
-      group: 'ceramic',
+      group: '',
       label: '',
       description: '',
       price: 0,
@@ -765,10 +900,14 @@ function ProductDialog({ product, onClose }: { product: DealerProductConfig | nu
       dealerVisible: true,
     },
   )
+  const [customGroup, setCustomGroup] = useState('')
+  const isCustomGroup = draft.group === '__new__'
+  const effectiveGroup = isCustomGroup ? customGroup.trim().toLowerCase().replace(/\s+/g, '_') : draft.group
 
   const save = () => {
     if (!draft.label.trim()) { alert('Label is required'); return }
-    upsertProduct(draft)
+    if (!effectiveGroup) { alert('Please select or enter a group'); return }
+    upsertProduct({ ...draft, group: effectiveGroup })
     onClose()
   }
 
@@ -785,6 +924,29 @@ function ProductDialog({ product, onClose }: { product: DealerProductConfig | nu
           </button>
         </div>
         <div className="px-6 py-4 max-h-[65vh] overflow-y-auto space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Group</label>
+            <select
+              value={draft.group}
+              onChange={(e) => { setDraft({ ...draft, group: e.target.value }); setCustomGroup('') }}
+              className="w-full h-10 px-3 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-[#1EA7FF]/30 bg-white"
+            >
+              <option value="">— Select a group —</option>
+              {existingGroups.map(g => (
+                <option key={g} value={g}>{g.charAt(0).toUpperCase() + g.slice(1).replace(/_/g, ' ')}</option>
+              ))}
+              <option value="__new__">+ New group…</option>
+            </select>
+            {isCustomGroup && (
+              <input
+                value={customGroup}
+                onChange={(e) => setCustomGroup(e.target.value)}
+                placeholder="e.g. Tinting, Rust Protection"
+                className="mt-2 w-full h-10 px-3 rounded-lg border border-[#1EA7FF] text-sm focus:outline-none focus:ring-2 focus:ring-[#1EA7FF]/30"
+                autoFocus
+              />
+            )}
+          </div>
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">Label</label>
             <input value={draft.label} onChange={(e) => setDraft({ ...draft, label: e.target.value })} placeholder="Nitrogen tire fill" className="w-full h-10 px-3 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-[#1EA7FF]/30" />

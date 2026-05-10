@@ -500,6 +500,8 @@ export default function CustomersTabNew({
 
   initialData,
 
+  submission,
+
 }: {
 
   hideAddButton?: boolean
@@ -515,6 +517,8 @@ export default function CustomersTabNew({
   onSaved?: () => void
 
   initialData?: any
+
+  submission?: any
 
 }) {
 
@@ -2074,6 +2078,8 @@ export default function CustomersTabNew({
 
               <div className="lg:col-span-2">
 
+                <div className="mb-1"><span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-amber-600">DL Expiry</span></div>
+
                 <IconInput
 
                   label=""
@@ -2084,7 +2090,7 @@ export default function CustomersTabNew({
 
                   icon={
 
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className="w-4 h-4 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3M5 11h14M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
 
@@ -2092,7 +2098,7 @@ export default function CustomersTabNew({
 
                   }
 
-                  placeholder="Exp. Date"
+                  placeholder="DL Expiry"
 
                   type="date"
 
@@ -2101,6 +2107,8 @@ export default function CustomersTabNew({
               </div>
 
               <div className="lg:col-span-2">
+
+                <div className="mb-1"><span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-blue-600">Date of Birth</span></div>
 
                 <IconInput
 
@@ -2112,9 +2120,9 @@ export default function CustomersTabNew({
 
                   icon={
 
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className="w-4 h-4 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3M5 11h14M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
 
                     </svg>
 
@@ -2127,6 +2135,36 @@ export default function CustomersTabNew({
                 />
 
               </div>
+
+              {(() => {
+                const docs = submission?.order_data?.documents
+                const front = docs?.licenceFront?.dataUrl as string | undefined
+                const back = docs?.licenceBack?.dataUrl as string | undefined
+                if (!front && !back) return null
+                return (
+                  <div className="lg:col-span-6">
+                    <div className="text-xs font-semibold text-gray-500 mb-2">Driver&apos;s Licence Photos</div>
+                    <div className="flex flex-wrap gap-3">
+                      {front && (
+                        <div className="flex flex-col items-center gap-1">
+                          <span className="text-[10px] text-gray-400 uppercase tracking-wide">Front</span>
+                          <a href={front} target="_blank" rel="noopener noreferrer">
+                            <img src={front} alt="Licence front" className="h-28 w-auto rounded border border-gray-200 object-cover cursor-pointer hover:opacity-80 transition" />
+                          </a>
+                        </div>
+                      )}
+                      {back && (
+                        <div className="flex flex-col items-center gap-1">
+                          <span className="text-[10px] text-gray-400 uppercase tracking-wide">Back</span>
+                          <a href={back} target="_blank" rel="noopener noreferrer">
+                            <img src={back} alt="Licence back" className="h-28 w-auto rounded border border-gray-200 object-cover cursor-pointer hover:opacity-80 transition" />
+                          </a>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )
+              })()}
 
             </>
 

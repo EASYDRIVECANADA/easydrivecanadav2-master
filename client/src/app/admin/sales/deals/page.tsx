@@ -84,10 +84,7 @@ export default function DealsPage() {
   const [decliningId, setDecliningId] = useState<string | null>(null)
   const [declineTarget, setDeclineTarget] = useState<PurchaseSubmission | null>(null)
   const [declineReason, setDeclineReason] = useState('')
-  const [activeWebDeals, setActiveWebDeals] = useState<PurchaseSubmission[]>([])
-  const [activeWebDealsLoading, setActiveWebDealsLoading] = useState(true)
-  const [stagingId, setStagingId] = useState<string | null>(null)
-  const [expandedWebDeal, setExpandedWebDeal] = useState<string | null>(null)
+
 
   const getAdminHeaders = useCallback((): Record<string, string> => {
     try {
@@ -158,7 +155,7 @@ export default function DealsPage() {
     })()
   }, [getIsAdminRole])
 
-  const fetchDeals = useCallback(async () => {
+  const fetchDeals = useCallback(async (): Promise<DealRow[]> => {
     try {
       setLoading(true)
       setFetchError(null)
@@ -167,10 +164,10 @@ export default function DealsPage() {
       setIsAdminRole(admin)
       if (!admin && !scopedUserId) {
         setRows([])
-        return
+        return []
       }
 
-      const res = await fetch('/api/deals')
+      const res = await fetch(`/api/deals?_t=${Date.now()}`)
       if (!res.ok) throw new Error(`Failed to fetch deals (${res.status})`)
       const json = await res.json()
       if (json.error) throw new Error(json.error)
@@ -200,8 +197,10 @@ export default function DealsPage() {
           })
 
       setRows(deals)
+      return deals
     } catch (e: any) {
       setFetchError(e?.message || 'Failed to load deals')
+      return []
     } finally {
       setLoading(false)
     }
@@ -214,17 +213,14 @@ export default function DealsPage() {
   const fetchSubmissions = useCallback(async () => {
     try {
       setSubmissionsLoading(true)
-      setActiveWebDealsLoading(true)
       const res = await fetch('/api/purchase-submissions')
       const json = await res.json()
       const all: PurchaseSubmission[] = json.submissions || []
       setSubmissions(all.filter((s) => s.status === 'pending'))
-      setActiveWebDeals(all.filter((s) => s.status === 'approved' && s.deal_stage !== 'closed'))
     } catch {
       // silent
     } finally {
       setSubmissionsLoading(false)
-      setActiveWebDealsLoading(false)
     }
   }, [])
 
@@ -253,52 +249,27 @@ export default function DealsPage() {
     }
   }
 
-  const STAGE_LABELS: Record<string, string> = {
-    insurance_pending: 'Insurance Pending',
-    delivery_pending: 'Delivery Pending',
-    closed: 'Closed',
-  }
-  const STAGE_ORDER = ['insurance_pending', 'delivery_pending', 'closed']
-
-  const handleAdvanceStage = async (sub: PurchaseSubmission) => {
-    const currentIdx = STAGE_ORDER.indexOf(sub.deal_stage || 'insurance_pending')
-    const nextStage = STAGE_ORDER[currentIdx + 1]
-    if (!nextStage) return
-    setStagingId(sub.id)
-    try {
-      const res = await fetch('/api/purchase-submissions/stage', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ submissionId: sub.id, stage: nextStage }),
-      })
-      const json = await res.json()
-      if (!res.ok || json.error) throw new Error(json.error || 'Stage update failed')
-      if (nextStage === 'closed') {
-        setActiveWebDeals((prev) => prev.filter((s) => s.id !== sub.id))
-        await fetchDeals()
-      } else {
-        setActiveWebDeals((prev) => prev.map((s) => s.id === sub.id ? { ...s, deal_stage: nextStage } : s))
-      }
-    } catch (e: any) {
-      alert(e?.message || 'Failed to update stage')
-    } finally {
-      setStagingId(null)
-    }
-  }
-
   const handleApprove = async (sub: PurchaseSubmission) => {
     setApprovingId(sub.id)
     setApproveError(null)
     try {
+      const userId = await getLoggedInUserId()
       const res = await fetch('/api/purchase-submissions/approve', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ submissionId: sub.id }),
+        body: JSON.stringify({ submissionId: sub.id, userId }),
       })
       const json = await res.json()
       if (!res.ok || json.error) throw new Error(json.error || 'Approval failed')
       setSubmissions((prev) => prev.filter((s) => s.id !== sub.id))
-      await Promise.all([fetchDeals(), fetchSubmissions()])
+      // Small delay to ensure DB write is visible before fetching
+      await new Promise((resolve) => setTimeout(resolve, 600))
+      const [updatedDeals] = await Promise.all([fetchDeals(), fetchSubmissions()])
+      // Auto-open the newly created deal in the detail panel
+      if (json.dealId && updatedDeals) {
+        const newDeal = updatedDeals.find((d) => d.dealId === json.dealId)
+        if (newDeal) setSelectedDeal(newDeal)
+      }
     } catch (e: any) {
       setApproveError(e?.message || 'Failed to approve')
     } finally {
@@ -665,113 +636,7 @@ export default function DealsPage() {
           </div>
         )}
 
-        {/* Active Web Deals Section */}
-        {(activeWebDealsLoading || activeWebDeals.length > 0) && (
-          <div className="mb-8">
-            <div className="flex items-center gap-2 mb-3">
-              <h2 className="text-base font-bold text-slate-900">Active Web Deals</h2>
-              {activeWebDeals.length > 0 && (
-                <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-blue-600 text-white text-xs font-bold">{activeWebDeals.length}</span>
-              )}
-            </div>
-            {activeWebDealsLoading ? (
-              <div className="edc-card p-6 text-sm text-slate-400">Loading active deals...</div>
-            ) : (
-              <div className="space-y-3">
-                {activeWebDeals.map((sub) => {
-                  const vehicleLabel = [sub.vehicle_year, sub.vehicle_make, sub.vehicle_model, sub.vehicle_trim].filter(Boolean).join(' ')
-                  const customerName = [sub.customer_first_name, sub.customer_last_name].filter(Boolean).join(' ')
-                  const currentStage = sub.deal_stage || 'insurance_pending'
-                  const currentIdx = STAGE_ORDER.indexOf(currentStage)
-                  const isAdvancing = stagingId === sub.id
-                  const canAdvance = currentIdx < STAGE_ORDER.length - 1
-                  const isExpanded = expandedWebDeal === sub.id
-                  return (
-                    <div key={sub.id} className="edc-card overflow-hidden">
-                      <div className="flex flex-col sm:flex-row sm:items-center gap-4 px-5 py-4">
-                        {/* Left: vehicle / customer */}
-                        <div className="flex items-center gap-3 min-w-0 flex-1">
-                          <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center shrink-0">
-                            <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                          </div>
-                          <div className="min-w-0">
-                            <div className="text-sm font-semibold text-slate-900 truncate">{vehicleLabel}</div>
-                            <div className="text-xs text-slate-500 truncate">{customerName} &middot; {sub.deal_id || '—'}</div>
-                            <div className="text-xs text-slate-400 mt-0.5">Approved {sub.approved_at ? new Date(sub.approved_at).toLocaleDateString('en-CA', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}</div>
-                          </div>
-                        </div>
-                        {/* Centre: stage pills */}
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          {STAGE_ORDER.map((stage, idx) => {
-                            const isPast = idx < currentIdx
-                            const isCurrent = idx === currentIdx
-                            return (
-                              <span
-                                key={stage}
-                                className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold whitespace-nowrap ${
-                                  isPast
-                                    ? 'bg-green-100 text-green-700'
-                                    : isCurrent
-                                    ? 'bg-amber-100 text-amber-700'
-                                    : 'bg-slate-100 text-slate-400'
-                                }`}
-                              >
-                                {isPast && (
-                                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" /></svg>
-                                )}
-                                {STAGE_LABELS[stage]}
-                              </span>
-                            )
-                          })}
-                        </div>
-                        {/* Right: actions */}
-                        <div className="flex items-center gap-2 shrink-0">
-                          <button
-                            type="button"
-                            onClick={() => setExpandedWebDeal(isExpanded ? null : sub.id)}
-                            className="h-8 px-3 rounded-lg border border-slate-200 text-xs font-medium text-slate-600 hover:bg-slate-50 transition-colors"
-                          >
-                            {isExpanded ? 'Hide' : 'Details'}
-                          </button>
-                          {canAdvance && (
-                            <button
-                              type="button"
-                              onClick={() => handleAdvanceStage(sub)}
-                              disabled={isAdvancing}
-                              className="h-8 px-4 rounded-lg bg-blue-600 text-white text-xs font-semibold hover:bg-blue-700 disabled:opacity-50 flex items-center gap-1.5 transition-colors"
-                            >
-                              {isAdvancing ? (
-                                <svg className="w-3.5 h-3.5 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2a10 10 0 1 0 10 10"/></svg>
-                              ) : (
-                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" /></svg>
-                              )}
-                              {isAdvancing ? 'Updating...' : `Move to ${STAGE_LABELS[STAGE_ORDER[currentIdx + 1]]}`}
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                      {isExpanded && (() => {
-                        const od = sub.order_data || {}
-                        return (
-                          <div className="border-t border-slate-100 px-5 py-4 bg-slate-50 text-sm space-y-3">
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-2">
-                              <div><span className="text-slate-500 font-medium">VIN:</span> <span className="text-slate-800">{sub.vehicle_vin || '—'}</span></div>
-                              <div><span className="text-slate-500 font-medium">Deal ID:</span> <span className="text-slate-800">{sub.deal_id || '—'}</span></div>
-                              <div><span className="text-slate-500 font-medium">Phone:</span> <span className="text-slate-800">{sub.customer_phone || '—'}</span></div>
-                              <div><span className="text-slate-500 font-medium">Email:</span> <span className="text-slate-800">{sub.customer_email || '—'}</span></div>
-                              <div><span className="text-slate-500 font-medium">Total:</span> <span className="text-slate-800">${Number(sub.total_price).toLocaleString('en-CA')}</span></div>
-                              {sub.warranty_name && <div><span className="text-slate-500 font-medium">Warranty:</span> <span className="text-slate-800">{sub.warranty_name}</span></div>}
-                            </div>
-                          </div>
-                        )
-                      })()}
-                    </div>
-                  )
-                })}
-              </div>
-            )}
-          </div>
-        )}
+
 
         <div className="edc-card p-4">
           <div className="flex flex-col lg:flex-row lg:items-center gap-3">
@@ -877,13 +742,11 @@ export default function DealsPage() {
                 {loading ? (
                   <tr>
                     <td className="px-6 py-10 text-center text-sm text-slate-400" colSpan={11}>
-                      Loading deals...
                     </td>
                   </tr>
                 ) : paged.length === 0 ? (
                   <tr>
                     <td className="px-6 py-10 text-center text-sm text-slate-400" colSpan={11}>
-                      No results.
                     </td>
                   </tr>
                 ) : (

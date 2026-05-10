@@ -11,6 +11,7 @@ export default function DisclosuresTab({
   onSaved,
   initialData,
   autoSaved,
+  submission,
 }: {
   dealId?: string
   dealMode?: 'RTL' | 'WHL'
@@ -19,6 +20,7 @@ export default function DisclosuresTab({
   onSaved?: () => void
   initialData?: any
   autoSaved?: boolean
+  submission?: any
 }): JSX.Element {
   const getLoggedInAdminDbUserId = async (): Promise<string | null> => {
     try {
@@ -213,6 +215,32 @@ export default function DisclosuresTab({
     }
   }
 
+  // Build customer signatures panel from online purchase submission
+  const od = submission?.order_data
+  const subCarfax = od?.carfax ?? null
+  const subBoSig = od?.signatures?.billOfSaleCustomer ?? null
+  const subDgSig = od?.signatures?.dealerGuaranteeCustomer ?? null
+  const hasSubSigs = !!(subCarfax || subBoSig || subDgSig)
+
+  const renderSigCard = (label: string, color: string, sig: { typedName?: string; drawnDataUrl?: string; signedAt?: string } | null, initials?: string | null, fallbackAt?: string | null) => (
+    <div key={label} className="flex-1 min-w-[180px] border border-gray-200 rounded-lg p-3 bg-white shadow-sm">
+      <div className={`text-[10px] font-semibold uppercase tracking-wide mb-2 ${color}`}>{label}</div>
+      {sig?.drawnDataUrl ? (
+        <img src={sig.drawnDataUrl} alt={label} className="h-16 w-full object-contain border border-gray-100 rounded bg-gray-50" />
+      ) : sig?.typedName ? (
+        <div className="h-16 flex items-center justify-center text-2xl text-gray-700 border border-gray-100 rounded bg-gray-50 px-2 italic">{sig.typedName}</div>
+      ) : initials ? (
+        <div className="h-16 flex items-center justify-center text-2xl text-gray-700 border border-gray-100 rounded bg-gray-50 px-2 italic">{initials}</div>
+      ) : null}
+      {(sig?.typedName || initials) && (
+        <div className="mt-1 text-[10px] text-gray-400 truncate">{sig?.typedName ?? initials}</div>
+      )}
+      {(sig?.signedAt || fallbackAt) && (
+        <div className="text-[10px] text-gray-400">{new Date((sig?.signedAt ?? fallbackAt)!).toLocaleString('en-CA', { dateStyle: 'medium', timeStyle: 'short' })}</div>
+      )}
+    </div>
+  )
+
   return (
     <div className="w-full">
       {showSavedModal ? (
@@ -254,6 +282,25 @@ export default function DisclosuresTab({
         </div>
       ) : null}
       <div className="text-xs text-gray-700 mb-2">Disclosures</div>
+
+      {hasSubSigs && (
+        <div className="mb-6 p-4 border border-blue-100 rounded-xl bg-blue-50/40">
+          <div className="text-xs font-semibold text-blue-700 mb-3 flex items-center gap-1.5">
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+            Customer Signatures — Online Purchase
+          </div>
+          <div className="flex flex-wrap gap-3">
+            {subCarfax && renderSigCard(
+              'CARFAX Review', 'text-purple-600',
+              subCarfax.typedInitials ? { typedName: subCarfax.typedInitials, signedAt: subCarfax.acknowledgedAt ?? undefined } : null,
+              subCarfax.typedInitials,
+              subCarfax.acknowledgedAt,
+            )}
+            {subBoSig && renderSigCard('Bill of Sale', 'text-green-600', subBoSig, null, null)}
+            {subDgSig && renderSigCard('Dealer Guarantee', 'text-orange-600', subDgSig, null, null)}
+          </div>
+        </div>
+      )}
 
       <div className="border border-gray-200 bg-white shadow-sm">
         <div className="bg-gray-50 px-3 py-2 flex items-center gap-2 text-xs text-gray-600 border-b border-gray-200">

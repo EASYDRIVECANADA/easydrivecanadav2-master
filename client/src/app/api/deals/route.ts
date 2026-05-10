@@ -5,7 +5,7 @@ export const revalidate = 0
 export const fetchCache = 'force-no-store'
 
 const baseUrl = (process.env.NEXT_PUBLIC_SUPABASE_URL || '').replace(/\/+$/, '')
-const apiKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+const apiKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 
 async function queryAll(table: string, extraFilter?: string) {
   const filter = extraFilter ? `&${extraFilter}` : ''

@@ -38,7 +38,7 @@ async function supabasePatch(table: string, filter: string, data: Record<string,
 
 export async function POST(req: Request) {
   try {
-    const { submissionId } = await req.json()
+    const { submissionId, userId } = await req.json()
     if (!submissionId) return NextResponse.json({ error: 'Missing submissionId' }, { status: 400 })
 
     // 1. Fetch the submission
@@ -59,6 +59,84 @@ export async function POST(req: Request) {
     const now = new Date().toISOString()
     const vehicleLabel = [sub.vehicle_year, sub.vehicle_make, sub.vehicle_model, sub.vehicle_trim].filter(Boolean).join(' ')
 
+    // Parse order_data for rich customer details (DOB, licence, etc.)
+    // order_data may be stored as a JSON string (TEXT column) or a parsed object (JSONB)
+    let od: any = sub.order_data || {}
+    if (typeof od === 'string') { try { od = JSON.parse(od) } catch { od = {} } }
+    const odCustomer: any = od.customer || {}
+
+    // Use order_data.warranty as fallback if top-level warranty fields are missing
+    const warrantyName: string | null = sub.warranty_name || od.warranty?.planName || null
+    const warrantyTotal: number = Number(sub.warranty_total ?? od.warranty?.total ?? 0)
+
+    // 3a. Build fees array from the purchase submission line items
+    // The purchase flow sends: hst (number), and standard fees are implicit based on category
+    const fees: any[] = []
+    // HST line
+    if (sub.hst && Number(sub.hst) > 0) {
+      fees.push({
+        id: `fee_hst`,
+        name: 'HST (13%)',
+        desc: 'Harmonized Sales Tax',
+        amount: Number(sub.hst),
+        cost: 0,
+        taxSelected: { 'Default Tax 0 %': true },
+        taxOverride: false,
+      })
+    }
+
+    // 3b. Build accessories from selected add-ons
+    // order_data.pricing.addOns has { id, label, amount, taxable } — use that for full detail
+    const odPricingAddOns: any[] = Array.isArray(od.pricing?.addOns) ? od.pricing.addOns : []
+    const addOnIds: string[] = Array.isArray(sub.add_ons) ? sub.add_ons : []
+    const richAccessories: any[] = odPricingAddOns.length > 0
+      ? odPricingAddOns.map((a: any) => ({
+          id: `acc_${a.id || a.label}`,
+          name: a.label || a.id || 'Add-on',
+          desc: '',
+          price: Number(a.amount || a.price || 0),
+          cost: 0,
+          taxSelected: { 'HST 13 %': true },
+          taxOverride: false,
+        }))
+      : addOnIds.map((id: string) => ({
+          id: `acc_${id}`,
+          name: id,
+          desc: '',
+          price: 0,
+          cost: 0,
+          taxSelected: { 'HST 13 %': true },
+          taxOverride: false,
+        }))
+
+    // 3c. Build warranties from warranty selection
+    const warranties: any[] = []
+    if (warrantyName && warrantyTotal > 0) {
+      warranties.push({
+        id: `war_warranty`,
+        name: warrantyName,
+        desc: 'Vehicle Service Contract selected by customer',
+        amount: warrantyTotal,
+        cost: 0,
+        duration: '',
+        distance: '',
+        isDealerGuaranty: false,
+        taxSelected: { 'Default Tax 0 %': true },
+        taxOverride: false,
+      })
+    }
+
+    // 3d. Deposit payment
+    const payments: any[] = [
+      {
+        id: `pay_deposit`,
+        amount: Number(sub.deposit_amount) || 1000,
+        type: 'E-Transfer',
+        desc: 'Deposit received via Interac E-Transfer',
+        category: 'Deposit',
+      },
+    ]
+
     // 3. Create deal records in all 5 tables
     await supabaseInsert('edc_deals_customers', {
       deal_id: dealId,
@@ -66,13 +144,20 @@ export async function POST(req: Request) {
       lastname: sub.customer_last_name,
       email: sub.customer_email,
       phone: sub.customer_phone,
+      mobile: sub.customer_phone || null,
       streetaddress: sub.customer_address,
       city: sub.customer_city,
       province: sub.customer_province,
       postalcode: sub.customer_postal_code,
+      driverslicense: odCustomer.licenceNumber || null,
+      expdate: odCustomer.licenceExpiry || null,
+      dateofbirth: odCustomer.dob || odCustomer.dateOfBirth || null,
       deal_state: 'Open',
+      dealtype: 'Cash',
+      dealmode: 'RTL',
       dealdate: now,
-      notes: `Auto-created from online purchase submission ${submissionId}`,
+      notes: `Web purchase — submission ID: ${submissionId}`,
+      user_id: userId || null,
       created_at: now,
     })
 
@@ -85,22 +170,17 @@ export async function POST(req: Request) {
       selected_trim: sub.vehicle_trim,
       selected_vin: sub.vehicle_vin,
       selected_stock_number: sub.vehicle_stock_number,
-      selected_status: 'In Stock',
+      selected_status: 'Sold',
       created_at: now,
     })
 
     await supabaseInsert('edc_deals_worksheet', {
       deal_id: dealId,
-      purchase_price: sub.vehicle_price,
-      payments: JSON.stringify([
-        {
-          amount: sub.deposit_amount,
-          type: 'E-Transfer',
-          desc: '$1,000 deposit received via Interac E-Transfer',
-          category: 'Deposit',
-          date: now,
-        },
-      ]),
+      purchase_price: Number(sub.vehicle_price) || 0,
+      fees: JSON.stringify(fees),
+      accessories: JSON.stringify(richAccessories),
+      warranties: JSON.stringify(warranties),
+      payments: JSON.stringify(payments),
       created_at: now,
     })
 

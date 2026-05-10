@@ -451,6 +451,41 @@ function SalesNewDealPageContent() {
       const d = deal?.delivery || {}
       const disc = deal?.disclosures || {}
 
+      // Augment worksheet with submission data if arrays are empty (deals approved before the fix)
+      const sub = deal?.submission
+      const subOrderData = sub?.order_data || {}
+      if (sub && Array.isArray(w.accessories) && w.accessories.length === 0) {
+        const subAddOns: any[] = Array.isArray(subOrderData.pricing?.addOns) ? subOrderData.pricing.addOns : []
+        if (subAddOns.length > 0) {
+          w.accessories = subAddOns.map((a: any) => ({
+            id: `acc_${a.id || a.label}`,
+            name: a.label || a.id || 'Add-on',
+            desc: '',
+            price: Number(a.amount || a.price || 0),
+            cost: 0,
+            taxSelected: {},
+            taxOverride: false,
+          }))
+        }
+      }
+      if (sub && Array.isArray(w.warranties) && w.warranties.length === 0) {
+        const subWarrantyName = sub.warranty_name || subOrderData.warranty?.planName || null
+        const subWarrantyTotal = Number(sub.warranty_total ?? subOrderData.warranty?.total ?? 0)
+        if (subWarrantyName && subWarrantyTotal > 0) {
+          w.warranties = [{
+            id: 'war_sub_warranty',
+            name: subWarrantyName,
+            desc: 'Vehicle Service Contract selected by customer',
+            amount: subWarrantyTotal,
+            cost: 0,
+            duration: subOrderData.warranty?.termLabel || '',
+            distance: '',
+            taxSelected: {},
+            taxOverride: false,
+          }]
+        }
+      }
+
       // Build warrantyData: prefer worksheet warranties array, fall back to edc_warranty table
       let warrantyData: { has_extended: boolean; description: string; duration: string; distance: string; cost: string } | null = null
 
@@ -476,16 +511,38 @@ function SalesNewDealPageContent() {
         const presetMatch = warrantyPresetMap[String(firstWi.name || '').trim()] || {}
         const dur = wsWarranties.find((wi: any) => wi.duration)?.duration || presetMatch.duration || ''
         const dist = wsWarranties.find((wi: any) => wi.distance)?.distance || presetMatch.distance || ''
+        // Pull add-ons from submission if available (e.g. Zero Deductible, Hi-Tech Components)
+        const subOdWarranty = deal?.submission?.order_data?.warranty
+        const wsAddOns: Array<{ label: string; price: number }> = Array.isArray(subOdWarranty?.addOns) ? subOdWarranty.addOns : []
         warrantyData = {
           has_extended: true,
           description: desc,
           duration: String(dur),
           distance: String(dist),
           cost: totalCost > 0 ? String(totalCost) : '',
+          basePrice: subOdWarranty?.baseTotal ? String(subOdWarranty.baseTotal) : '',
+          addOns: wsAddOns,
         }
       }
 
-      // 2. Fallback: edc_warranty table by vehicle_id / stock_number
+      // 2. Fallback: purchase submission's order_data.warranty (for deals approved before worksheet fix)
+      if (!warrantyData) {
+        const sub = deal?.submission
+        const odWarranty = sub?.order_data?.warranty
+        if (odWarranty && !sub?.warrantyDeclined && odWarranty.planName && odWarranty.total > 0) {
+          warrantyData = {
+            has_extended: true,
+            description: odWarranty.planName || '',
+            duration: odWarranty.termLabel || '',
+            distance: '',
+            cost: String(odWarranty.total || ''),
+            basePrice: odWarranty.baseTotal ? String(odWarranty.baseTotal) : '',
+            addOns: Array.isArray(odWarranty.addOns) ? odWarranty.addOns : [],
+          }
+        }
+      }
+
+      // 3. Fallback: edc_warranty table by vehicle_id / stock_number
       if (!warrantyData) {
         const vehicleId = vRaw?.selected_id || vRaw?.id || sv?.selected_id || sv?.id || ''
         const stockNumberForWarranty = v.stock_number || ''
@@ -625,6 +682,7 @@ function SalesNewDealPageContent() {
         licenseFee: String(licenseFee),
         feesTotal: String(feesTotal),
         accessoriesTotal: String(accessoriesTotal),
+        accessoriesLineItems: (w.accessories || []).filter((a: any) => a.name && Number(a.price || 0) > 0).map((a: any) => ({ name: String(a.name), price: Number(a.price || 0) })),
         warrantiesTotal: String(warrantiesTotal),
         insurancesTotal: String(insurancesTotal),
         paymentsTotal: String(paymentsTotal),
@@ -738,6 +796,41 @@ function SalesNewDealPageContent() {
       const d = deal?.delivery || {}
       const disc = deal?.disclosures || {}
 
+      // Augment worksheet with submission data if arrays are empty (deals approved before the fix)
+      const subE = deal?.submission
+      const subOrderDataE = subE?.order_data || {}
+      if (subE && Array.isArray(w.accessories) && w.accessories.length === 0) {
+        const subAddOnsE: any[] = Array.isArray(subOrderDataE.pricing?.addOns) ? subOrderDataE.pricing.addOns : []
+        if (subAddOnsE.length > 0) {
+          w.accessories = subAddOnsE.map((a: any) => ({
+            id: `acc_${a.id || a.label}`,
+            name: a.label || a.id || 'Add-on',
+            desc: '',
+            price: Number(a.amount || a.price || 0),
+            cost: 0,
+            taxSelected: {},
+            taxOverride: false,
+          }))
+        }
+      }
+      if (subE && Array.isArray(w.warranties) && w.warranties.length === 0) {
+        const subWarrantyNameE = subE.warranty_name || subOrderDataE.warranty?.planName || null
+        const subWarrantyTotalE = Number(subE.warranty_total ?? subOrderDataE.warranty?.total ?? 0)
+        if (subWarrantyNameE && subWarrantyTotalE > 0) {
+          w.warranties = [{
+            id: 'war_sub_warranty',
+            name: subWarrantyNameE,
+            desc: 'Vehicle Service Contract selected by customer',
+            amount: subWarrantyTotalE,
+            cost: 0,
+            duration: subOrderDataE.warranty?.termLabel || '',
+            distance: '',
+            taxSelected: {},
+            taxOverride: false,
+          }]
+        }
+      }
+
       // Build warrantyDataE: prefer worksheet warranties, fall back to edc_warranty table
       let warrantyDataE: { has_extended: boolean; description: string; duration: string; distance: string; cost: string } | null = null
 
@@ -761,12 +854,33 @@ function SalesNewDealPageContent() {
         const presetMatchE = warrantyPresetMapE[String(firstWiE.name || '').trim()] || {}
         const dur = wsWarrantiesE.find((wi: any) => wi.duration)?.duration || presetMatchE.duration || ''
         const dist = wsWarrantiesE.find((wi: any) => wi.distance)?.distance || presetMatchE.distance || ''
+        const subOdWarrantyE = deal?.submission?.order_data?.warranty
+        const wsAddOnsE: Array<{ label: string; price: number }> = Array.isArray(subOdWarrantyE?.addOns) ? subOdWarrantyE.addOns : []
         warrantyDataE = {
           has_extended: true,
           description: desc,
           duration: String(dur),
           distance: String(dist),
           cost: totalCost > 0 ? String(totalCost) : '',
+          basePrice: subOdWarrantyE?.baseTotal ? String(subOdWarrantyE.baseTotal) : '',
+          addOns: wsAddOnsE,
+        }
+      }
+
+      if (!warrantyDataE) {
+        // Fallback: submission order_data.warranty (the w.warranties augmentation above handles this,
+        // but in case it still missed, check directly)
+        const odWarrantyE = subOrderDataE.warranty
+        if (odWarrantyE && !subE?.warrantyDeclined && odWarrantyE.planName && odWarrantyE.total > 0) {
+          warrantyDataE = {
+            has_extended: true,
+            description: odWarrantyE.planName || '',
+            duration: odWarrantyE.termLabel || '',
+            distance: '',
+            cost: String(odWarrantyE.total || ''),
+            basePrice: odWarrantyE.baseTotal ? String(odWarrantyE.baseTotal) : '',
+            addOns: Array.isArray(odWarrantyE.addOns) ? odWarrantyE.addOns : [],
+          }
         }
       }
 
@@ -909,6 +1023,7 @@ function SalesNewDealPageContent() {
         licenseFee: String(licenseFee),
         feesTotal: String(feesTotal),
         accessoriesTotal: String(accessoriesTotal),
+        accessoriesLineItems: (w.accessories || []).filter((a: any) => a.name && Number(a.price || 0) > 0).map((a: any) => ({ name: String(a.name), price: Number(a.price || 0) })),
         warrantiesTotal: String(warrantiesTotal),
         insurancesTotal: String(insurancesTotal),
         paymentsTotal: String(paymentsTotal),
@@ -1140,6 +1255,7 @@ function SalesNewDealPageContent() {
                   dealMode={isRetail ? 'RTL' : 'WHL'}
                   onSaved={() => unlockTab('vehicles')}
                   initialData={prefill?.customers?.length ? prefill.customers : (prefill?.customer ? [prefill.customer] : null)}
+                  submission={prefill?.submission ?? null}
                 />
               </div>
               <div style={{ display: activeTab === 'vehicles' ? 'block' : 'none' }}>
@@ -1203,6 +1319,47 @@ function SalesNewDealPageContent() {
                       lien_payout: '0',
                     } : null
                     
+                    // Backfill accessories from submission if worksheet has none
+                    if (worksheetData && !(Array.isArray(worksheetData.accessories) && worksheetData.accessories.length > 0)) {
+                      const sub = prefill?.submission
+                      const od = sub?.order_data || {}
+                      const odAddOns = Array.isArray(od.pricing?.addOns) ? od.pricing.addOns : []
+                      if (odAddOns.length > 0) {
+                        worksheetData.accessories = odAddOns.map((a: any) => ({
+                          id: `acc_${a.id || a.label}`,
+                          name: a.label || a.id || 'Add-on',
+                          desc: '',
+                          price: Number(a.amount || a.price || 0),
+                          cost: 0,
+                          taxSelected: { 'HST 13 %': true },
+                          taxOverride: false,
+                        }))
+                      }
+                    }
+
+                    // Backfill warranties from submission if worksheet has none
+                    if (worksheetData && !(Array.isArray(worksheetData.warranties) && worksheetData.warranties.length > 0)) {
+                      const sub = prefill?.submission
+                      const od = sub?.order_data || {}
+                      const subOdWarranty = od.warranty || null
+                      const warrantyName = sub?.warranty_name || subOdWarranty?.planName || null
+                      const warrantyTotal = Number(sub?.warranty_total ?? subOdWarranty?.total ?? 0)
+                      if (warrantyName && warrantyTotal > 0) {
+                        worksheetData.warranties = [{
+                          id: 'war_sub_warranty',
+                          name: warrantyName,
+                          desc: 'Vehicle Service Contract selected by customer',
+                          amount: warrantyTotal,
+                          cost: 0,
+                          duration: subOdWarranty?.termLabel || '',
+                          distance: '',
+                          isDealerGuaranty: false,
+                          taxSelected: { 'Default Tax 0 %': true },
+                          taxOverride: false,
+                        }]
+                      }
+                    }
+
                     console.log('[page.tsx] WorksheetTab initialData:', {
                       vehiclePrice,
                       worksheetPrice,
@@ -1223,6 +1380,7 @@ function SalesNewDealPageContent() {
                   onSaved={() => unlockTab('delivery')}
                   autoSaved={false}
                   initialData={prefill?.disclosures ?? null}
+                  submission={prefill?.submission ?? null}
                 />
               </div>
               <div style={{ display: activeTab === 'delivery' ? 'block' : 'none' }}>

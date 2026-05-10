@@ -10,7 +10,8 @@ import {
   Package, ShieldAlert, ShieldCheck, Shield,
   Sparkles, User, Upload, FileCheck2, X, Eraser,
 } from 'lucide-react'
-import { warrantyPlans, getGroupedPlans, type WarrantyPlan } from '@/lib/bridgewarranty'
+import { warrantyPlans, getPlansByProvider, type WarrantyPlan } from '@/lib/bridgewarranty'
+import { useDealerConfig, getConfig, type DealerConfig, type DealerProductConfig } from '@/lib/dealer-config'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -33,6 +34,9 @@ interface SignatureRecord {
 
 interface WarrantySelection {
   planSlug: string; planName: string; termLabel: string; total: number
+  tierIndex: number; termIndex: number
+  baseTotal: number
+  addOns: Array<{ label: string; price: number }>
 }
 
 type AddOnId =
@@ -190,10 +194,11 @@ function computePricing(
     lineItems.push({ label: 'Licensing',          amount: STANDARD_LICENSING,  taxable: false })
   }
 
+  const cfgProducts = getConfig().products
   const addOns = selectedAddOnIds
-    .map(id => ADDONS.find(a => a.id === id))
-    .filter((a): a is AddOn => Boolean(a))
-    .map(a => ({ id: a.id, label: a.label, amount: a.price, taxable: a.taxable }))
+    .map(id => cfgProducts.find(p => p.id === id) ?? ADDONS.find(a => a.id === id))
+    .filter(Boolean)
+    .map(p => ({ id: p!.id, label: p!.label, amount: p!.price, taxable: p!.taxable }))
 
   const warrantyLine = warranty
     ? { label: `Vehicle Service Contract - ${warranty.planName}`, amount: warranty.total }
@@ -561,6 +566,7 @@ export default function PurchasePage() {
                     setDeclined={(d) => { setWarrantyDeclined(d); if (d) setWarrantySelection(null) }}
                     termsAck={warrantyTermsAck}
                     setTermsAck={setWarrantyTermsAck}
+                    vehicleMileage={vehicle.mileage}
                   />
                 )}
                 {STEPS[step].key === 'addons' && (
@@ -830,70 +836,186 @@ function StepLicence({
 // Step 3 - Extended Warranty
 // ─────────────────────────────────────────────────────────────────────────────
 
-function lowestPlanPrice(plan: WarrantyPlan): number | null {
-  return plan.pricingTiers.reduce<number | null>((min, t) => {
-    const row = t.rows.find(r => r.label === 'Base Price')
-    const first = row?.values.find(v => typeof v === 'number') as number | undefined
-    if (first === undefined) return min
-    return min === null || first < min ? first : min
+/**
+ * Parse a mileage band label like "60,001 – 100,000 km" into { min, max }.
+ * Returns null if the label can't be parsed.
+ */
+function parseBandLabel(label: string): { min: number; max: number } | null {
+  const nums = label.replace(/,/g, '').match(/\d+/g)
+  if (!nums || nums.length < 2) return null
+  return { min: parseInt(nums[0]), max: parseInt(nums[1]) }
+}
+
+/**
+ * For plans with mileage bands, returns the band index that matches the vehicle's
+ * current mileage, or null if the vehicle is not eligible for any band.
+ * For plans without mileage bands, always returns 'eligible'.
+ */
+function getPlanMileageEligibility(
+  plan: WarrantyPlan,
+  vehicleMileage: number,
+): 'eligible' | { matchingBandIndex: number } | 'ineligible' {
+  const hasBandedTiers = plan.pricingTiers.some(t => t.mileageBands && t.mileageBands.length)
+  if (!hasBandedTiers) return 'eligible'
+  // Check across all tiers — use first tier's bands for the vehicle eligibility check
+  const firstBandedTier = plan.pricingTiers.find(t => t.mileageBands && t.mileageBands.length)
+  if (!firstBandedTier?.mileageBands) return 'eligible'
+  const idx = firstBandedTier.mileageBands.findIndex(band => {
+    const range = parseBandLabel(band.label)
+    if (!range) return false
+    return vehicleMileage >= range.min && vehicleMileage <= range.max
+  })
+  return idx >= 0 ? { matchingBandIndex: idx } : 'ineligible'
+}
+
+function lowestDealerPrice(cfg: DealerConfig, plan: WarrantyPlan): number | null {
+  return plan.pricingTiers.reduce<number | null>((min, tier, tierIndex) => {
+    let tierMin: number | null = null
+    if (tier.mileageBands && tier.mileageBands.length) {
+      for (const band of tier.mileageBands) {
+        for (let ti = 0; ti < tier.terms.length; ti++) {
+          const raw = band.values[ti]
+          if (typeof raw !== 'number') continue
+          const slot = cfg.warranty[plan.slug]?.tiers?.[tierIndex]?.rows?.[band.label]?.[ti]
+          const cost = slot?.cost ?? raw
+          const retail = slot?.retail ?? Math.round(cost * (1 + cfg.warrantyMarkupPct / 100))
+          if (tierMin === null || retail < tierMin) tierMin = retail
+        }
+      }
+    } else {
+      const row = tier.rows.find(r => r.label === 'Base Price')
+      if (row) {
+        for (let ti = 0; ti < tier.terms.length; ti++) {
+          const raw = row.values[ti]
+          if (typeof raw !== 'number') continue
+          const slot = cfg.warranty[plan.slug]?.tiers?.[tierIndex]?.rows?.['Base Price']?.[ti]
+          const cost = slot?.cost ?? raw
+          const retail = slot?.retail ?? Math.round(cost * (1 + cfg.warrantyMarkupPct / 100))
+          if (tierMin === null || retail < tierMin) tierMin = retail
+        }
+      }
+    }
+    if (tierMin === null) return min
+    return min === null || tierMin < min ? tierMin : min
   }, null)
+}
+
+function cellDealerPrice(
+  cfg: DealerConfig, plan: WarrantyPlan, tierIndex: number, termIndex: number, rowLabel: string
+): number | null {
+  const tier = plan.pricingTiers[tierIndex]
+  if (!tier) return null
+  let raw: number | null = null
+  if (tier.mileageBands) {
+    // Try mileage bands first, then fall back to add-on rows
+    const band = tier.mileageBands.find(b => b.label === rowLabel)
+    if (band) {
+      const v = band.values[termIndex]
+      if (typeof v !== 'number') return null
+      raw = v
+    } else {
+      const row = tier.rows.find(r => r.label === rowLabel)
+      if (!row) return null
+      const v = row.values[termIndex]
+      if (typeof v !== 'number') return null
+      raw = v
+    }
+  } else {
+    const row = tier.rows.find(r => r.label === rowLabel)
+    if (!row) return null
+    const v = row.values[termIndex]
+    if (typeof v !== 'number') return null
+    raw = v
+  }
+  const slot = cfg.warranty[plan.slug]?.tiers?.[tierIndex]?.rows?.[rowLabel]?.[termIndex]
+  const cost = slot?.cost ?? raw
+  return slot?.retail ?? Math.round(cost * (1 + cfg.warrantyMarkupPct / 100))
+}
+
+function toggleAddOn(
+  sel: WarrantySelection,
+  setSelection: (s: WarrantySelection | null) => void,
+  label: string,
+  price: number,
+) {
+  const exists = sel.addOns.find(a => a.label === label)
+  const newAddOns = exists
+    ? sel.addOns.filter(a => a.label !== label)
+    : [...sel.addOns, { label, price }]
+  setSelection({ ...sel, addOns: newAddOns, total: sel.baseTotal + newAddOns.reduce((s, a) => s + a.price, 0) })
 }
 
 function WarrantyPlanCard({
   plan,
   selection,
-  setSelection,
   isActive,
   onActivate,
+  cfg,
+  vehicleMileage,
 }: {
   plan: WarrantyPlan
   selection: WarrantySelection | null
-  setSelection: (s: WarrantySelection | null) => void
   isActive: boolean
   onActivate: () => void
+  cfg: DealerConfig
+  vehicleMileage: number
 }) {
-  const tier = plan.pricingTiers[0]
   const isSelected = selection?.planSlug === plan.slug
-  const termLabel = tier?.terms[0]?.label ?? ''
-  const lowestPrice = lowestPlanPrice(plan)
+  const eligibility = getPlanMileageEligibility(plan, vehicleMileage)
+  const isIneligible = eligibility === 'ineligible'
 
   return (
     <div
-      onClick={() => {
-        onActivate()
-        if (isSelected) setSelection(null)
-        else if (lowestPrice !== null) setSelection({ planSlug: plan.slug, planName: plan.name, termLabel, total: lowestPrice })
-      }}
-      className={`rounded-xl border p-3 cursor-pointer transition ${
-        isSelected
-          ? 'border-[#1aa6ff] bg-[#f0f9ff] ring-1 ring-[#1aa6ff]/20'
+      onClick={isIneligible ? undefined : onActivate}
+      className={`rounded-xl border p-3 transition ${
+        isIneligible
+          ? 'border-slate-200 bg-slate-50 opacity-50 cursor-not-allowed'
+          : isSelected
+          ? 'border-[#1aa6ff] bg-[#f0f9ff] ring-1 ring-[#1aa6ff]/20 cursor-pointer'
           : isActive
-          ? 'border-slate-300 bg-slate-50'
-          : 'border-slate-200 bg-white hover:border-slate-300'
+          ? 'border-slate-300 bg-slate-50 cursor-pointer'
+          : 'border-slate-200 bg-white hover:border-slate-300 cursor-pointer'
       }`}
     >
       <div className="flex items-start justify-between gap-1 mb-0.5">
         <span className="font-semibold text-sm text-slate-900 leading-tight">{plan.name}</span>
-        {plan.salesTag && (
+        {plan.salesTag && !isIneligible && (
           <span className="shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold whitespace-nowrap" style={{ background: '#1aa6ff1a', color: '#1aa6ff' }}>
             {plan.salesTag.label}
           </span>
         )}
       </div>
       <div className="text-xs text-slate-400 mb-2">{plan.claimRange}</div>
-      <div className={`w-full text-center rounded-full py-1.5 text-xs font-semibold transition pointer-events-none ${
-        isSelected ? 'bg-[#1aa6ff] text-white' : 'border border-slate-300 text-slate-700'
-      }`}>
-        {isSelected ? '✓ Selected' : lowestPrice !== null ? `Select — $${lowestPrice.toLocaleString()}` : 'Contact us'}
-      </div>
+      {isIneligible ? (
+        <div className="w-full text-center rounded-full py-1.5 text-[10px] font-semibold bg-slate-100 text-slate-400">
+          Not eligible
+        </div>
+      ) : (
+        <div className={`w-full text-center rounded-full py-1.5 text-xs font-semibold transition pointer-events-none ${
+          isSelected ? 'bg-[#1aa6ff] text-white' : 'border border-slate-300 text-slate-700'
+        }`}>
+          {isSelected ? '✓ Selected' : 'Select'}
+        </div>
+      )}
     </div>
   )
 }
 
-function WarrantyDetailPanel({ plan }: { plan: WarrantyPlan }) {
-  const lowestPrice = lowestPlanPrice(plan)
+function WarrantyDetailPanel({
+  plan, selection, setSelection, setDeclined, cfg, vehicleMileage,
+}: {
+  plan: WarrantyPlan
+  selection: WarrantySelection | null
+  setSelection: (s: WarrantySelection | null) => void
+  setDeclined: (b: boolean) => void
+  cfg: DealerConfig
+  vehicleMileage: number
+}) {
+  const eligibility = getPlanMileageEligibility(plan, vehicleMileage)
+  const matchingBandIndex = eligibility !== 'eligible' && eligibility !== 'ineligible' ? eligibility.matchingBandIndex : null
   return (
     <div className="space-y-4">
+      {/* Header */}
       <div>
         <div className="flex items-start justify-between gap-2 mb-0.5">
           <span className="font-bold text-slate-900 text-base leading-tight">{plan.name}</span>
@@ -905,11 +1027,9 @@ function WarrantyDetailPanel({ plan }: { plan: WarrantyPlan }) {
         </div>
         <div className="text-xs text-slate-500 leading-snug mb-1">{plan.eligibility}</div>
         <div className="text-xs text-slate-400">{plan.claimRange} · {plan.deductible} deductible</div>
-        {lowestPrice !== null && (
-          <div className="mt-2 text-sm font-bold" style={{ color: '#1aa6ff' }}>Starting from ${lowestPrice.toLocaleString()}</div>
-        )}
       </div>
 
+      {/* Highlights */}
       <div>
         <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-1.5">Highlights</div>
         <ul className="space-y-1">
@@ -921,6 +1041,7 @@ function WarrantyDetailPanel({ plan }: { plan: WarrantyPlan }) {
         </ul>
       </div>
 
+      {/* Coverage */}
       <div>
         <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-1.5">What&apos;s covered</div>
         <div className="flex flex-wrap gap-1">
@@ -930,6 +1051,202 @@ function WarrantyDetailPanel({ plan }: { plan: WarrantyPlan }) {
         </div>
       </div>
 
+      {/* Pricing table — select a term */}
+      <div>
+        <div className="flex items-center gap-2 mb-3 rounded-lg px-3 py-2.5" style={{ background: '#1aa6ff15', border: '1px solid #1aa6ff40' }}>
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 24 24"
+            fill="currentColor"
+            className="shrink-0"
+            style={{ width: 22, height: 22, color: '#84cc16', animation: 'bounceDown 1s infinite' }}
+          >
+            <path fillRule="evenodd" d="M12 3.75a.75.75 0 0 1 .75.75v13.19l5.47-5.47a.75.75 0 1 1 1.06 1.06l-6.75 6.75a.75.75 0 0 1-1.06 0l-6.75-6.75a.75.75 0 1 1 1.06-1.06l5.47 5.47V4.5a.75.75 0 0 1 .75-.75Z" clipRule="evenodd" />
+          </svg>
+          <style>{`@keyframes bounceDown { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(5px); } }`}</style>
+          <div>
+            <div className="text-sm font-bold" style={{ color: '#1aa6ff' }}>Choose your term below</div>
+            <div className="text-xs text-slate-500 mt-0.5">Click any <span className="font-semibold text-slate-700">blue price button</span> to select it. Scroll the table right to see all terms →</div>
+          </div>
+        </div>
+        <div className="space-y-3">
+          {plan.pricingTiers.map((tier, tierIndex) => {
+            const hasBands = !!(tier.mileageBands && tier.mileageBands.length)
+            return (
+              <div key={tierIndex} className="rounded-lg border border-slate-200 overflow-hidden">
+                {/* Tier header */}
+                <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-100 border-b border-slate-200">
+                  <span className="text-xs font-bold text-slate-700">${tier.perClaimAmount.toLocaleString()} / claim</span>
+                  {tier.deductible === 0 && (
+                    <span className="text-[10px] rounded-full px-2 py-0.5 font-semibold" style={{ background: '#1aa6ff1a', color: '#1aa6ff' }}>$0 deductible</span>
+                  )}
+                </div>
+                <div className="overflow-x-auto relative [&::-webkit-scrollbar]:h-1.5 [&::-webkit-scrollbar-track]:rounded-full [&::-webkit-scrollbar-track]:bg-slate-100 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-[#1aa6ff]">
+                  <div className="absolute right-0 top-0 bottom-0 w-6 pointer-events-none" style={{ background: 'linear-gradient(to right, transparent, rgba(241,245,249,0.8))' }} />
+                  <table className="w-full text-xs border-collapse">
+                    <thead>
+                      <tr className="border-b border-slate-100 bg-slate-50">
+                        <th className="text-left px-3 py-2 text-slate-500 font-medium whitespace-nowrap" style={{ minWidth: '140px' }}>
+                          {hasBands ? 'Mileage at purchase' : ''}
+                        </th>
+                        {tier.terms.map((term, ti) => (
+                          <th key={ti} className="text-center px-2 py-2 text-slate-500 font-medium whitespace-nowrap">{term.label}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {hasBands ? (
+                        // Diamond Plus style: mileage band rows — all cells clickable
+                        <>
+                          {eligibility === 'ineligible' && (
+                            <tr>
+                              <td colSpan={tier.terms.length + 1} className="px-3 py-3 text-center">
+                                <span className="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-medium bg-red-50 text-red-600 border border-red-100">
+                                  ⚠️ This vehicle&apos;s odometer ({vehicleMileage.toLocaleString()} km) exceeds the maximum eligibility of 160,000 km for this plan.
+                                </span>
+                              </td>
+                            </tr>
+                          )}
+                          {tier.mileageBands!.map((band, bi) => {
+                            const bandRange = parseBandLabel(band.label)
+                            const bandMatches = matchingBandIndex === bi
+                            const bandBlocked = eligibility === 'ineligible' || (matchingBandIndex !== null && !bandMatches)
+                            return (
+                            <tr key={bi} className={bi % 2 === 0 ? 'bg-white' : 'bg-slate-50/60'}>
+                              <td className={`px-3 py-2 font-medium whitespace-nowrap ${
+                                bandBlocked ? 'text-slate-300' : bandMatches ? 'text-[#1aa6ff] font-bold' : 'text-slate-700'
+                              }`}>
+                                <span className="flex items-center gap-1.5">
+                                  {band.label}
+                                  {bandMatches && <span className="text-[9px] rounded-full px-1.5 py-0.5 font-semibold" style={{ background: '#1aa6ff20', color: '#1aa6ff' }}>Your vehicle</span>}
+                                </span>
+                              </td>
+                              {tier.terms.map((term, ti) => {
+                                const retail = cellDealerPrice(cfg, plan, tierIndex, ti, band.label)
+                                const isSel = selection?.planSlug === plan.slug && selection?.tierIndex === tierIndex && selection?.termIndex === ti && selection?.termLabel.startsWith(band.label)
+                                return (
+                                  <td key={ti} className="px-2 py-2 text-center">
+                                    {!bandBlocked && retail !== null ? (
+                                      <button
+                                        onClick={() => { setSelection({ planSlug: plan.slug, planName: plan.name, tierIndex, termIndex: ti, termLabel: `${band.label} · ${term.label} ($${tier.perClaimAmount.toLocaleString()}/claim)`, total: retail, baseTotal: retail, addOns: [] }); setDeclined(false) }}
+                                        className={`rounded px-2 py-1 font-semibold transition whitespace-nowrap text-xs ${isSel ? 'bg-[#1aa6ff] text-white' : 'bg-[#f0f9ff] text-[#1aa6ff] hover:bg-[#1aa6ff] hover:text-white'}`}
+                                      >
+                                        ${retail.toLocaleString()}
+                                      </button>
+                                    ) : <span className="text-slate-200">—</span>}
+                                  </td>
+                                )
+                              })}
+                            </tr>
+                            )
+                          })}
+                          {/* Add-on rows for mileage-banded plans */}
+                          {tier.rows.length > 0 && (
+                            <>
+                              <tr>
+                                <td colSpan={tier.terms.length + 1} className="px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400 bg-slate-50 border-t border-slate-100">
+                                  Optional add-ons
+                                </td>
+                              </tr>
+                              {tier.rows.map((row, ri) => (
+                                <tr key={`addon-${ri}`} className={ri % 2 === 0 ? 'bg-white' : 'bg-slate-50/60'}>
+                                  <td className="px-3 py-2 text-slate-500 whitespace-nowrap font-medium">{row.label}</td>
+                                  {tier.terms.map((_, vi) => {
+                                    const v = row.values[vi]
+                                    const isSelTerm = selection?.planSlug === plan.slug && selection?.tierIndex === tierIndex && selection?.termIndex === vi
+                                    if (isSelTerm && typeof v === 'number') {
+                                      const addonPrice = cellDealerPrice(cfg, plan, tierIndex, vi, row.label) ?? v
+                                      const isChecked = !!selection!.addOns.find(a => a.label === row.label)
+                                      return (
+                                        <td key={vi} className="px-2 py-2 text-center">
+                                          <button
+                                            onClick={() => toggleAddOn(selection!, setSelection, row.label, addonPrice)}
+                                            className={`rounded px-2 py-1 font-semibold transition whitespace-nowrap text-xs ${
+                                              isChecked ? 'bg-emerald-500 text-white' : 'bg-slate-100 text-slate-600 hover:bg-emerald-50 hover:text-emerald-700 border border-slate-200'
+                                            }`}
+                                          >
+                                            {isChecked ? `✓ $${addonPrice.toLocaleString()}` : `+ $${addonPrice.toLocaleString()}`}
+                                          </button>
+                                        </td>
+                                      )
+                                    }
+                                    return (
+                                      <td key={vi} className="px-2 py-2 text-center text-slate-400">
+                                        {typeof v === 'number' ? `+$${v.toLocaleString()}` : v === 'Included' ? <span className="text-emerald-500 font-semibold">Incl.</span> : <span className="text-slate-300">—</span>}
+                                      </td>
+                                    )
+                                  })}
+                                </tr>
+                              ))}
+                            </>
+                          )}
+                        </>
+                      ) : (
+                        // Regular plans: Base Price row clickable, add-on rows informational
+                        tier.rows.map((row, ri) => {
+                          const isBase = row.label === 'Base Price'
+                          return (
+                            <tr key={ri} className={ri % 2 === 0 ? 'bg-white' : 'bg-slate-50/60'}>
+                              <td className={`px-3 py-2 whitespace-nowrap ${isBase ? 'text-slate-700 font-medium' : 'text-slate-400'}`}>
+                                {isBase
+                                  ? 'Base Price'
+                                  : <span className="flex items-center gap-1">{row.label} <span className="text-[9px] rounded-full px-1.5 py-0.5 bg-slate-100 text-slate-400 font-normal">add-on</span></span>
+                                }
+                              </td>
+                              {row.values.map((v, vi) => {
+                                if (isBase) {
+                                  const retail = cellDealerPrice(cfg, plan, tierIndex, vi, 'Base Price')
+                                  const isSel = selection?.planSlug === plan.slug && selection?.tierIndex === tierIndex && selection?.termIndex === vi
+                                  return (
+                                    <td key={vi} className="px-2 py-2 text-center">
+                                      {retail !== null ? (
+                                        <button
+                                          onClick={() => { setSelection({ planSlug: plan.slug, planName: plan.name, tierIndex, termIndex: vi, termLabel: `${tier.terms[vi].label} ($${tier.perClaimAmount.toLocaleString()}/claim)`, total: retail, baseTotal: retail, addOns: [] }); setDeclined(false) }}
+                                          className={`rounded px-2 py-1 font-semibold transition whitespace-nowrap text-xs ${isSel ? 'bg-[#1aa6ff] text-white' : 'bg-[#f0f9ff] text-[#1aa6ff] hover:bg-[#1aa6ff] hover:text-white'}`}
+                                        >
+                                          ${retail.toLocaleString()}
+                                        </button>
+                                      ) : <span className="text-slate-300">—</span>}
+                                    </td>
+                                  )
+                                }
+                                const isSelTerm = selection?.planSlug === plan.slug && selection?.tierIndex === tierIndex && selection?.termIndex === vi
+                                if (isSelTerm && typeof v === 'number') {
+                                  const addonPrice = cellDealerPrice(cfg, plan, tierIndex, vi, row.label) ?? v
+                                  const isChecked = !!selection!.addOns.find(a => a.label === row.label)
+                                  return (
+                                    <td key={vi} className="px-2 py-2 text-center">
+                                      <button
+                                        onClick={() => toggleAddOn(selection!, setSelection, row.label, addonPrice)}
+                                        className={`rounded px-2 py-1 font-semibold transition whitespace-nowrap text-xs ${
+                                          isChecked ? 'bg-emerald-500 text-white' : 'bg-slate-100 text-slate-600 hover:bg-emerald-50 hover:text-emerald-700 border border-slate-200'
+                                        }`}
+                                      >
+                                        {isChecked ? `✓ $${addonPrice.toLocaleString()}` : `+ $${addonPrice.toLocaleString()}`}
+                                      </button>
+                                    </td>
+                                  )
+                                }
+                                return (
+                                  <td key={vi} className="px-2 py-2 text-center text-slate-400">
+                                    {typeof v === 'number' ? `+$${v.toLocaleString()}` : v === 'Included' ? <span className="text-emerald-500 font-semibold">Incl.</span> : <span className="text-slate-300">—</span>}
+                                  </td>
+                                )
+                              })}
+                            </tr>
+                          )
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+
+      {/* Benefits */}
       {plan.benefits.length > 0 && (
         <div>
           <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-1.5">Benefits</div>
@@ -944,22 +1261,7 @@ function WarrantyDetailPanel({ plan }: { plan: WarrantyPlan }) {
         </div>
       )}
 
-      <div>
-        <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-1.5">Coverage levels</div>
-        <div className="space-y-1.5">
-          {plan.pricingTiers.map((t, i) => {
-            const row = t.rows.find(r => r.label === 'Base Price')
-            const firstPrice = row?.values.find(v => typeof v === 'number') as number | undefined
-            return firstPrice !== undefined ? (
-              <div key={i} className="flex items-center justify-between text-xs bg-white rounded-lg px-3 py-2 border border-slate-200">
-                <span className="text-slate-500">${t.perClaimAmount.toLocaleString()}/claim</span>
-                <span className="font-semibold text-slate-800">from ${firstPrice.toLocaleString()}</span>
-              </div>
-            ) : null
-          })}
-        </div>
-      </div>
-
+      {/* Important notes */}
       {plan.importantNotes && plan.importantNotes.length > 0 && (
         <div className="rounded-lg bg-amber-50 border border-amber-100 p-3 text-xs text-amber-800">
           <div className="font-semibold mb-1">Important notes</div>
@@ -973,15 +1275,17 @@ function WarrantyDetailPanel({ plan }: { plan: WarrantyPlan }) {
 }
 
 function StepWarranty({
-  selection, setSelection, declined, setDeclined, termsAck, setTermsAck,
+  selection, setSelection, declined, setDeclined, termsAck, setTermsAck, vehicleMileage,
 }: {
   selection: WarrantySelection | null
   setSelection: (s: WarrantySelection | null) => void
   declined: boolean; setDeclined: (b: boolean) => void
   termsAck: boolean; setTermsAck: (b: boolean) => void
+  vehicleMileage: number
 }) {
-  const grouped = getGroupedPlans('A-Protect')
-  const [activePlan, setActivePlan] = useState<WarrantyPlan>(grouped[0])
+  const cfg = useDealerConfig()
+  const plans = getPlansByProvider('A-Protect')
+  const [activePlan, setActivePlan] = useState<WarrantyPlan>(plans[0])
 
   return (
     <div>
@@ -991,30 +1295,31 @@ function StepWarranty({
       </p>
 
       {/* Split panel */}
-      <div className="mt-5 flex gap-4" style={{ height: '480px' }}>
-        {/* Left — scrollable plan list */}
-        <div className="flex flex-col gap-2 overflow-y-auto pr-1 shrink-0 [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-track]:rounded-full [&::-webkit-scrollbar-track]:bg-slate-100 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-300" style={{ width: '200px' }}>
-          {grouped.map(plan => (
+      <div className="mt-5 flex gap-4" style={{ height: '520px' }}>
+        {/* Left — plan list */}
+        <div className="flex flex-col gap-2 overflow-y-auto pr-1 shrink-0 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:rounded-full [&::-webkit-scrollbar-track]:bg-slate-100 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-[#1aa6ff]" style={{ width: '200px' }}>
+          {plans.map(plan => (
             <WarrantyPlanCard
               key={plan.slug}
               plan={plan}
               selection={selection}
-              setSelection={s => { setSelection(s); if (s) setDeclined(false) }}
               isActive={activePlan.slug === plan.slug}
               onActivate={() => setActivePlan(plan)}
+              cfg={cfg}
+              vehicleMileage={vehicleMileage}
             />
           ))}
         </div>
-        {/* Right — detail panel */}
-        <div className="flex-1 overflow-y-auto rounded-2xl border border-slate-200 bg-[#f8fcff] p-5 [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-track]:rounded-full [&::-webkit-scrollbar-track]:bg-slate-100 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-200">
-          <WarrantyDetailPanel plan={activePlan} />
+        {/* Right — detail + pricing table */}
+        <div className="flex-1 overflow-y-auto rounded-2xl border border-slate-200 bg-[#f8fcff] p-5 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:rounded-full [&::-webkit-scrollbar-track]:bg-slate-100 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-[#1aa6ff]">
+          <WarrantyDetailPanel plan={activePlan} selection={selection} setSelection={setSelection} setDeclined={setDeclined} cfg={cfg} vehicleMileage={vehicleMileage} />
         </div>
       </div>
 
       {selection && (
         <div className="mt-4">
           <CheckItem checked={termsAck} onChange={setTermsAck}>
-            I acknowledge the warranty terms and agree to pay <strong>${fmt(selection.total)}</strong> for the {selection.planName} ({selection.termLabel}).
+            I acknowledge the warranty terms and agree to pay <strong>${fmt(selection.total)}</strong> for the {selection.planName} ({selection.termLabel}){selection.addOns.length > 0 && `, including add-ons: ${selection.addOns.map(a => a.label).join(', ')}`}.
           </CheckItem>
         </div>
       )}
@@ -1031,52 +1336,60 @@ function StepWarranty({
 // Step 4 - Add-ons
 // ─────────────────────────────────────────────────────────────────────────────
 
+const ADDON_GROUP_META: Record<string, { title: string; subtitle: string }> = {
+  delivery: { title: 'Home Delivery',               subtitle: 'Skip the trip — we bring the car to you.' },
+  ppf:      { title: 'Paint Protection Film (PPF)',  subtitle: 'Self-healing film that shields your paint from chips and scratches.' },
+  ceramic:  { title: 'Ceramic Coating',              subtitle: 'Hydrophobic, gloss-enhancing paint protection.' },
+}
+
 function StepAddOns({ selected, setSelected }: { selected: AddOnId[]; setSelected: (s: AddOnId[]) => void }) {
-  const toggle = (a: AddOn) => {
-    if (a.group === 'ppf' || a.group === 'ceramic') {
-      const sameGroupIds = ADDONS.filter(x => x.group === a.group).map(x => x.id)
-      const others = selected.filter(id => !sameGroupIds.includes(id))
-      const isOn = selected.includes(a.id)
-      setSelected(isOn ? others : [...others, a.id])
+  const cfg = useDealerConfig()
+  const visibleProducts = cfg.products.filter(p => p.customerVisible)
+
+  const toggle = (p: DealerProductConfig) => {
+    const id = p.id as AddOnId
+    const singleSelectGroups = ['ppf', 'ceramic']
+    if (singleSelectGroups.includes(p.group)) {
+      const sameGroupIds = visibleProducts.filter(x => x.group === p.group).map(x => x.id as AddOnId)
+      const others = selected.filter(sid => !sameGroupIds.includes(sid))
+      const isOn = selected.includes(id)
+      setSelected(isOn ? others : [...others, id])
     } else {
-      setSelected(selected.includes(a.id) ? selected.filter(id => id !== a.id) : [...selected, a.id])
+      setSelected(selected.includes(id) ? selected.filter(sid => sid !== id) : [...selected, id])
     }
   }
 
-  const groups: Array<{ key: AddOn['group']; title: string; subtitle: string }> = [
-    { key: 'delivery', title: 'Home Delivery',              subtitle: 'Skip the trip - we bring the car to you.' },
-    { key: 'ppf',      title: 'Paint Protection Film (PPF)', subtitle: 'Self-healing film that shields your paint from chips and scratches.' },
-    { key: 'ceramic',  title: 'Ceramic Coating',            subtitle: 'Hydrophobic, gloss-enhancing paint protection.' },
-  ]
+  const groups = Array.from(new Set(visibleProducts.map(p => p.group)))
 
   return (
     <div>
       <h2 className="text-2xl font-bold text-gray-900">Customize your purchase</h2>
-      <p className="mt-1 text-sm text-gray-500">Optional add-ons - select at most one tier per category.</p>
+      <p className="mt-1 text-sm text-gray-500">Optional add-ons — select at most one tier per category.</p>
       <div className="mt-6 space-y-6">
-        {groups.map(g => {
-          const items = ADDONS.filter(a => a.group === g.key)
+        {groups.map(gKey => {
+          const meta = ADDON_GROUP_META[gKey] ?? { title: gKey.charAt(0).toUpperCase() + gKey.slice(1), subtitle: '' }
+          const items = visibleProducts.filter(p => p.group === gKey)
           return (
-            <section key={g.key}>
+            <section key={gKey}>
               <div className="mb-3">
-                <h3 className="text-sm font-semibold text-gray-900">{g.title}</h3>
-                <p className="text-xs text-gray-500">{g.subtitle}</p>
+                <h3 className="text-sm font-semibold text-gray-900">{meta.title}</h3>
+                <p className="text-xs text-gray-500">{meta.subtitle}</p>
               </div>
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                {items.map(a => {
-                  const on = selected.includes(a.id)
+                {items.map(p => {
+                  const on = selected.includes(p.id as AddOnId)
                   return (
                     <button
-                      key={a.id}
+                      key={p.id}
                       type="button"
-                      onClick={() => toggle(a)}
+                      onClick={() => toggle(p)}
                       className={`rounded-2xl border p-4 text-left transition ${on ? 'border-[#118df0] bg-blue-50 ring-2 ring-blue-200' : 'border-gray-200 bg-white hover:border-gray-300'}`}
                     >
                       <div className="flex items-start justify-between gap-2">
-                        <div className="font-semibold text-sm text-gray-900">{a.label}</div>
-                        <div className="text-sm font-bold tabular-nums text-gray-900">${fmt(a.price)}</div>
+                        <div className="font-semibold text-sm text-gray-900">{p.label}</div>
+                        <div className="text-sm font-bold tabular-nums text-gray-900">${fmt(p.price)}</div>
                       </div>
-                      <p className="mt-1 text-xs text-gray-500">{a.description}</p>
+                      <p className="mt-1 text-xs text-gray-500">{p.description}</p>
                       <div className={`mt-3 inline-flex items-center gap-1 text-xs font-semibold ${on ? 'text-[#118df0]' : 'text-gray-400'}`}>
                         {on ? <><CheckCircle2 className="h-3.5 w-3.5" /> Added</> : 'Tap to add'}
                       </div>

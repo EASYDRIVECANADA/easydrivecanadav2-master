@@ -28,14 +28,15 @@ export async function POST(req: Request) {
   try {
     const body = await req.json()
 
-    // Check if this vehicle already has a pending or approved submission
+    // Check vehicle status — only allow purchase if the vehicle is currently In Stock
     if (body.vehicle_id) {
-      const checkRes = await fetch(
-        `${supabaseUrl}/rest/v1/edc_purchase_submissions?vehicle_id=eq.${encodeURIComponent(body.vehicle_id)}&status=in.(pending,approved)&limit=1`,
+      const vRes = await fetch(
+        `${supabaseUrl}/rest/v1/edc_vehicles?id=eq.${encodeURIComponent(body.vehicle_id)}&select=status&limit=1`,
         { headers: { apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` }, cache: 'no-store' }
       )
-      const existing: any[] = await checkRes.json()
-      if (existing?.length > 0) {
+      const vRows: any[] = await vRes.json()
+      const vehicleStatus = String(vRows?.[0]?.status ?? '').trim().toLowerCase()
+      if (vehicleStatus === 'deal pending' || vehicleStatus === 'sold') {
         return NextResponse.json({ error: 'This vehicle is already reserved by another customer.' }, { status: 409 })
       }
     }
@@ -55,7 +56,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: text }, { status: res.status })
     }
 
-    // Mark vehicle as Reserved in edc_vehicles
+    // Mark vehicle as Deal Pending — blocks further online purchases until declined or sold
     if (body.vehicle_id) {
       await fetch(`${supabaseUrl}/rest/v1/edc_vehicles?id=eq.${encodeURIComponent(body.vehicle_id)}`, {
         method: 'PATCH',
@@ -65,7 +66,7 @@ export async function POST(req: Request) {
           Authorization: `Bearer ${supabaseKey}`,
           Prefer: 'return=minimal',
         },
-        body: JSON.stringify({ status: 'Reserved' }),
+        body: JSON.stringify({ status: 'Deal Pending' }),
       })
     }
 

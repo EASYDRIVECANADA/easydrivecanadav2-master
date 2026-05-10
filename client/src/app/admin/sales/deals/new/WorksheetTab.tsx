@@ -1651,7 +1651,7 @@ const WorksheetTab = forwardRef<WorksheetTabHandle, {
           <svg className="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 7h6M9 12h6m-7 5h8"/></svg>
           Accessories
         </div>
-        <div className="h-6 px-2 rounded bg-green-600 text-white text-xs font-semibold flex items-center">Total: ${fmtMoney(accessoriesTotal + accessoriesTaxTotal)}</div>
+        <div className="h-6 px-2 rounded bg-green-600 text-white text-xs font-semibold flex items-center">Total: ${fmtMoney(accessoriesTotal)}</div>
       </div>
       <div className="p-3">
         <div className="relative flex items-center">

@@ -5,7 +5,7 @@ export const revalidate = 0
 export const fetchCache = 'force-no-store'
 
 const baseUrl = (process.env.NEXT_PUBLIC_SUPABASE_URL || '').replace(/\/+$/, '')
-const apiKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+const apiKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 
 async function query(table: string, filter: string) {
   const res = await fetch(`${baseUrl}/rest/v1/${table}?${filter}`, {
@@ -34,20 +34,39 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
       if (Array.isArray(byDealId) && byDealId.length > 0) customers = byDealId
     } catch { /* ignore */ }
 
-    const [vehicles, worksheet, disclosures, delivery] = await Promise.all([
+    const [vehicles, worksheet, disclosures, delivery, submissionRows] = await Promise.all([
       query('edc_deals_vehicles', `${dealFilter}&order=created_at.asc`).catch(() => []),
       query('edc_deals_worksheet', `${dealFilter}&limit=1`).catch(() => []),
       query('edc_deals_disclosures', `${dealFilter}&limit=1`).catch(() => []),
       query('edc_deals_delivery', `${dealFilter}&limit=1`).catch(() => []),
+      query('edc_purchase_submissions', `deal_id=eq.${encodeURIComponent(dealId)}&limit=1`).catch(() => []),
     ])
+
+    // Parse JSON string fields in worksheet so the BOS page gets real arrays
+    const ws = worksheet?.[0] || null
+    if (ws) {
+      const jsonFields = ['fees', 'accessories', 'warranties', 'insurances', 'payments']
+      for (const f of jsonFields) {
+        if (typeof ws[f] === 'string') {
+          try { ws[f] = JSON.parse(ws[f]) } catch { ws[f] = [] }
+        }
+      }
+    }
+
+    // Parse order_data from submission if it's a string
+    const submission = submissionRows?.[0] || null
+    if (submission?.order_data && typeof submission.order_data === 'string') {
+      try { submission.order_data = JSON.parse(submission.order_data) } catch { submission.order_data = {} }
+    }
 
     return NextResponse.json({
       customers: customers || [],
       customer: customers?.[0] || null,
       vehicles: vehicles || [],
-      worksheet: worksheet?.[0] || null,
+      worksheet: ws,
       disclosures: disclosures?.[0] || null,
       delivery: delivery?.[0] || null,
+      submission,
     }, {
       headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0' },
     })
