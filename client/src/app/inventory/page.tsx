@@ -73,7 +73,8 @@ type SortOption =
 const isFleetVehicle = (vehicle: Partial<Vehicle> & { inventory_type?: unknown }) => {
   const category = String(vehicle.categories || '').trim().toLowerCase()
   const inventoryType = String(vehicle.inventoryType || vehicle.inventory_type || '').trim().toLowerCase()
-  return category.includes('fleet') || inventoryType === 'fleet'
+  if (category) return category.includes('fleet')
+  return inventoryType === 'fleet'
 }
 
 export default function InventoryPage() {
