@@ -1206,21 +1206,22 @@ export default function VehicleDetailPage() {
                     <div>
                       <h4 className="font-semibold text-gray-900 mb-2 flex items-center gap-2">
                         <span className={`w-6 h-6 ${cfg.badge} rounded-full flex items-center justify-center text-xs font-bold`}>1</span>
-                        Fleet Disclosure
+                        Fleet & Consignment Disclosure
                       </h4>
                       <ul className="list-disc list-inside space-y-1 text-gray-600 ml-8">
                         <li>This vehicle was previously registered as a fleet vehicle.</li>
+                        <li>This vehicle is being sold by EasyDrive Canada as a consignment sale on behalf of the vehicle owner.</li>
                       </ul>
                     </div>
                     <div>
                       <h4 className="font-semibold text-gray-900 mb-2 flex items-center gap-2">
                         <span className={`w-6 h-6 ${cfg.badge} rounded-full flex items-center justify-center text-xs font-bold`}>2</span>
-                        Purchase Process – EDC Fleet Select
+                        Purchase Process - EDC Fleet Select
                       </h4>
                       <ul className="list-disc list-inside space-y-1 text-gray-600 ml-8">
                         <li>No test drives are available.</li>
                         <li>No appointments or viewings are available.</li>
-                        <li>This vehicle is offered under a streamlined, wholesale-style purchase option, reflected in its pricing.</li>
+                        <li>This vehicle is offered under a streamlined, wholesale-style purchase option, which is reflected in the pricing.</li>
                       </ul>
                     </div>
                     <div>
@@ -1238,11 +1239,11 @@ export default function VehicleDetailPage() {
                     <div>
                       <h4 className="font-semibold text-gray-900 mb-2 flex items-center gap-2">
                         <span className={`w-6 h-6 ${cfg.badge} rounded-full flex items-center justify-center text-xs font-bold`}>4</span>
-                        Fees & Licensing
+                        Fees & Licensing (Mandatory)
                       </h4>
                       <ul className="list-disc list-inside space-y-1 text-gray-600 ml-8">
                         <li>All transactions are subject to the mandatory OMVIC fee of <strong>$22 + HST</strong> per transaction, shown separately on the Bill of Sale.</li>
-                        <li>A licensing fee of <strong>$59</strong> applies to every transaction and will be shown separately on the Bill of Sale.</li>
+                        <li>Licensing fee of <strong>$59</strong> applies to every transaction and will be shown separately on the Bill of Sale.</li>
                       </ul>
                     </div>
                     <div>
@@ -1252,6 +1253,15 @@ export default function VehicleDetailPage() {
                       </h4>
                       <ul className="list-disc list-inside space-y-1 text-gray-600 ml-8">
                         <li>A CARFAX report will be provided to the client prior to completion of the sale.</li>
+                      </ul>
+                    </div>
+                    <div>
+                      <h4 className="font-semibold text-gray-900 mb-2 flex items-center gap-2">
+                        <span className={`w-6 h-6 ${cfg.badge} rounded-full flex items-center justify-center text-xs font-bold`}>6</span>
+                        No Other Promises
+                      </h4>
+                      <ul className="list-disc list-inside space-y-1 text-gray-600 ml-8">
+                        <li>No other promises, representations, or guarantees have been made, written or verbal, other than what is disclosed above and on the Bill of Sale.</li>
                       </ul>
                     </div>
                   </>}
@@ -1309,9 +1319,11 @@ export default function VehicleDetailPage() {
                     </div>
                   </>}
 
-                  <div className="pt-4 mt-4 border-t border-gray-200">
-                    <p className="text-gray-500 italic text-xs">No other promises, representations, or guarantees have been made, written or verbal, other than what is disclosed above and on the Bill of Sale.</p>
-                  </div>
+                  {disclosureModal !== 'fleet' && (
+                    <div className="pt-4 mt-4 border-t border-gray-200">
+                      <p className="text-gray-500 italic text-xs">No other promises, representations, or guarantees have been made, written or verbal, other than what is disclosed above and on the Bill of Sale.</p>
+                    </div>
+                  )}
                 </div>
               </div>
 

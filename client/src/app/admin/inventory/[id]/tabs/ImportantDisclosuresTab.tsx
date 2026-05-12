@@ -20,6 +20,11 @@ type AdminSession = {
   role?: string
 }
 
+type VehicleDisclosureSource = {
+  categories?: string | null
+  inventory_type?: string | null
+}
+
 const getRoleKey = (role: string | null | undefined): 'premier' | 'private' | 'fleet' | 'dealership' => {
   const raw = String(role || '').toLowerCase()
   if (raw.includes('private')) return 'private'
@@ -57,29 +62,34 @@ No other promises, representations, or guarantees have been made, written or ver
   }
 
   if (key === 'fleet') {
-    return `This vehicle is offered by EasyDrive Canada (EDC) as an EDC Fleet Select vehicle.
+    return `IMPORTANT DISCLOSURE - PLEASE READ CAREFULLY
 
-1. Fleet Disclosure
+This vehicle is offered by EasyDrive Canada (EDC) as an EDC Fleet Select vehicle.
+
+1. Fleet & Consignment Disclosure
 - This vehicle was previously registered as a fleet vehicle.
+- This vehicle is being sold by EasyDrive Canada as a consignment sale on behalf of the vehicle owner.
 
-2. Purchase Process – EDC Fleet Select
+2. Purchase Process - EDC Fleet Select
 - No test drives are available.
 - No appointments or viewings are available.
-- This vehicle is offered under a streamlined, wholesale-style purchase option, reflected in its pricing.
+- This vehicle is offered under a streamlined, wholesale-style purchase option, which is reflected in the pricing.
 
 3. Safety & Reconditioning
 - Safety and reconditioning are not included in the listed price.
-- Safety and reconditioning may be added through EasyDrive Canada starting at $999.
+- Safety and reconditioning may be added through EasyDrive Canada starting at $999, which includes the Ontario Safety Standards Certificate.
+- If safety is purchased, the vehicle will be delivered with a valid Ontario Safety Standards Certificate.
 - Where permitted by law, the vehicle may also be purchased without safety.
 
-4. Fees & Licensing
-- All transactions are subject to the mandatory OMVIC fee of $22 + HST per transaction.
-- A licensing fee of $59 applies to every transaction.
+4. Fees & Licensing (Mandatory)
+- All transactions are subject to the mandatory OMVIC fee of $22 + HST per transaction, shown separately on the Bill of Sale.
+- Licensing fee of $59 applies to every transaction and will be shown separately on the Bill of Sale.
 
 5. CARFAX Disclosure
 - A CARFAX report will be provided to the client prior to completion of the sale.
 
-No other promises, representations, or guarantees have been made, written or verbal, other than what is disclosed above and on the Bill of Sale.`
+6. No Other Promises
+- No other promises, representations, or guarantees have been made, written or verbal, other than what is disclosed above and on the Bill of Sale.`
   }
 
   if (key === 'dealership') {
@@ -123,6 +133,24 @@ No other promises, representations, or guarantees have been made, written or ver
 - A CARFAX report will be provided to the client prior to completion of the sale.
 
 No other promises, representations, or guarantees have been made, written or verbal, other than what is disclosed above and on the Bill of Sale.`
+}
+
+const getVehicleDisclosureRole = async (vehicleId: string) => {
+  const { data } = await supabase
+    .from('edc_vehicles')
+    .select('categories, inventory_type')
+    .eq('id', vehicleId)
+    .maybeSingle()
+
+  const row = data as VehicleDisclosureSource | null
+  const category = String(row?.categories || '').trim()
+  if (category) return category
+
+  const inventoryType = String(row?.inventory_type || '').trim().toLowerCase()
+  if (inventoryType.includes('fleet')) return 'fleet'
+  if (inventoryType.includes('premier') || inventoryType.includes('premiere')) return 'premier'
+
+  return null
 }
 
 const ImportantDisclosuresTab = ({ vehicleId }: ImportantDisclosuresTabProps) => {
@@ -172,14 +200,16 @@ const ImportantDisclosuresTab = ({ vehicleId }: ImportantDisclosuresTabProps) =>
           const row = data as unknown as ImportantDisclosureRow
           setExistingId(String(row.id))
           const current = String(row.disclosures || '').trim()
-          const roleForDefault = String(row.categories || '').trim() || sessionRole
+          const vehicleRole = await getVehicleDisclosureRole(id)
+          const roleForDefault = String(row.categories || '').trim() || vehicleRole || sessionRole
           setText(current || getDefaultDisclosureText(roleForDefault))
         } else if (!cancelled) {
-          setText(getDefaultDisclosureText(sessionRole))
+          const vehicleRole = await getVehicleDisclosureRole(id)
+          setText(getDefaultDisclosureText(vehicleRole || sessionRole))
         }
-      } catch (e: any) {
+      } catch (e: unknown) {
         if (!cancelled) {
-          setError(e?.message || 'Failed to load important disclosures.')
+          setError(e instanceof Error ? e.message : 'Failed to load important disclosures.')
         }
       } finally {
         if (!cancelled) setLoading(false)
@@ -220,11 +250,12 @@ const ImportantDisclosuresTab = ({ vehicleId }: ImportantDisclosuresTabProps) =>
         }
       }
 
+      const vehicleRole = await getVehicleDisclosureRole(id)
       const payload = {
         user_id: currentUserId,
         vehicleId: id,
         disclosures: text || null,
-        categories: currentUserRole,
+        categories: vehicleRole || currentUserRole,
       }
 
       if (existingId) {
@@ -246,8 +277,8 @@ const ImportantDisclosuresTab = ({ vehicleId }: ImportantDisclosuresTabProps) =>
         if (data?.id) setExistingId(String(data.id))
         setSuccess('Important disclosure saved.')
       }
-    } catch (e: any) {
-      setError(e?.message || 'Failed to save important disclosure.')
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Failed to save important disclosure.')
     } finally {
       setSaving(false)
     }

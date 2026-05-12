@@ -1169,12 +1169,15 @@ export default function AdminInventoryPage() {
     setImporting(true)
     try {
       let email = ''
+      let token = ''
       try {
         const raw = typeof window !== 'undefined' ? window.localStorage.getItem('edc_admin_session') : null
-        const parsed = raw ? (JSON.parse(raw) as any) : null
+        const parsed = raw ? (JSON.parse(raw) as { email?: string; session_token?: string; token?: string }) : null
         email = String(parsed?.email || '').trim().toLowerCase()
+        token = String(parsed?.session_token || parsed?.token || '').trim()
       } catch {
         email = ''
+        token = ''
       }
 
       const form = new FormData()
@@ -1183,6 +1186,10 @@ export default function AdminInventoryPage() {
 
       const res = await fetch('/api/import', {
         method: 'POST',
+        headers: {
+          'x-admin-email': email,
+          'x-admin-token': token || 'no-token',
+        },
         body: form,
       })
       const json = await res.json().catch(() => null)
@@ -1193,7 +1200,18 @@ export default function AdminInventoryPage() {
         throw new Error(details ? `${msg}: ${details}` : msg)
       }
 
-      openAlert('Import successful', 'Done')
+      await fetchVehicles(scopedUserId)
+      await checkCanAddVehicle(scopedUserId)
+
+      const imported = Number(json?.imported ?? 0)
+      const inserted = Number(json?.inserted ?? 0)
+      const updated = Number(json?.updated ?? 0)
+      const removed = Number(json?.removed ?? 0)
+      const skipped = Array.isArray(json?.skipped) ? json.skipped.length : 0
+      openAlert(
+        'Import successful',
+        `Imported ${imported} vehicle(s). Added ${inserted}, updated ${updated}, removed ${removed}${skipped ? `, skipped ${skipped}` : ''}.`
+      )
     } catch (err: any) {
       openAlert('Import failed', String(err?.message || 'Failed to upload file'))
     } finally {
@@ -1214,6 +1232,7 @@ export default function AdminInventoryPage() {
             <input
               ref={importInputRef}
               type="file"
+              accept=".xlsx,.xls"
               className="hidden"
               onChange={handleImportSelected}
             />
@@ -1224,7 +1243,7 @@ export default function AdminInventoryPage() {
               className={`h-10 px-5 rounded-full border border-slate-200 bg-white text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors inline-flex items-center gap-1.5 ${importing ? 'opacity-50 cursor-not-allowed' : ''}`}
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
-              {importing ? 'Importing…' : 'Import file'}
+              {importing ? 'Importing...' : 'Import file'}
             </button>
             <button
               type="button"
@@ -1518,7 +1537,7 @@ export default function AdminInventoryPage() {
               </svg>
             </div>
             <h3 className="text-lg font-bold text-[#0B1F3A] mb-1">No Vehicles</h3>
-            <p className="text-sm text-slate-500 mb-5">Start by adding your first vehicle or importing a CSV file.</p>
+            <p className="text-sm text-slate-500 mb-5">Start by adding your first vehicle or importing an Excel file.</p>
             <div className="flex justify-center gap-3">
               <button
                 type="button"
@@ -1533,7 +1552,7 @@ export default function AdminInventoryPage() {
                 href="/admin/import"
                 className="edc-btn-ghost text-sm"
               >
-                Import CSV
+                Import Excel
               </Link>
             </div>
           </div>
