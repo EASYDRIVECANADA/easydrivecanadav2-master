@@ -1982,133 +1982,7 @@ export default function CustomersTabNew({
 
               <div className="lg:col-span-2">
 
-                <div className="flex items-end gap-3">
-
-                  <button
-
-                    type="button"
-
-                    onClick={() => setIdType((v) => (v === 'DL' ? 'RIN' : 'DL'))}
-
-                    aria-label="Toggle DL/RIN"
-
-                    className="h-6 w-[58px] px-2 rounded-full border border-[#118df0] bg-white flex items-center justify-between mb-[2px]"
-
-                  >
-
-                    {idType === 'DL' ? (
-
-                      <>
-
-                        <div className="text-[10px] font-semibold text-[#118df0] leading-none">DL</div>
-
-                        <div className="h-3 w-3 rounded-full bg-[#118df0]" />
-
-                      </>
-
-                    ) : (
-
-                      <>
-
-                        <div className="h-3 w-3 rounded-full bg-[#118df0]" />
-
-                        <div className="text-[10px] font-semibold text-[#118df0] leading-none">RIN</div>
-
-                      </>
-
-                    )}
-
-                  </button>
-
-
-
-                  <div className="flex-1">
-
-                    <IconInput
-
-                      label=""
-
-                      value={idType === 'DL' ? form.driversLicense : form.rin}
-
-                      onChange={(v) =>
-
-                        setForm((p) =>
-
-                          idType === 'DL'
-
-                            ? { ...p, driversLicense: v }
-
-                            : { ...p, rin: v }
-
-                        )
-
-                      }
-
-                      icon={
-
-                        idType === 'DL' ? (
-
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7h16M4 17h16M7 11h3" />
-
-                          </svg>
-
-                        ) : (
-
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h10M7 11h10M7 15h6" />
-
-                          </svg>
-
-                        )
-
-                      }
-
-                      placeholder={idType === 'DL' ? 'Drivers license' : 'RIN'}
-
-                    />
-
-                  </div>
-
-                </div>
-
-              </div>
-
-              <div className="lg:col-span-2">
-
-                <div className="mb-1"><span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-amber-600">DL Expiry</span></div>
-
-                <IconInput
-
-                  label=""
-
-                  value={form.expDate}
-
-                  onChange={(v) => setForm((p) => ({ ...p, expDate: v }))}
-
-                  icon={
-
-                    <svg className="w-4 h-4 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3M5 11h14M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-
-                    </svg>
-
-                  }
-
-                  placeholder="DL Expiry"
-
-                  type="date"
-
-                />
-
-              </div>
-
-              <div className="lg:col-span-2">
-
-                <div className="mb-1"><span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-blue-600">Date of Birth</span></div>
+                <div className="mb-1"><span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-gray-700">Date of Birth</span></div>
 
                 <IconInput
 
@@ -2120,7 +1994,7 @@ export default function CustomersTabNew({
 
                   icon={
 
-                    <svg className="w-4 h-4 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
 
@@ -2136,35 +2010,7 @@ export default function CustomersTabNew({
 
               </div>
 
-              {(() => {
-                const docs = submission?.order_data?.documents
-                const front = docs?.licenceFront?.dataUrl as string | undefined
-                const back = docs?.licenceBack?.dataUrl as string | undefined
-                if (!front && !back) return null
-                return (
-                  <div className="lg:col-span-6">
-                    <div className="text-xs font-semibold text-gray-500 mb-2">Driver&apos;s Licence Photos</div>
-                    <div className="flex flex-wrap gap-3">
-                      {front && (
-                        <div className="flex flex-col items-center gap-1">
-                          <span className="text-[10px] text-gray-400 uppercase tracking-wide">Front</span>
-                          <a href={front} target="_blank" rel="noopener noreferrer">
-                            <img src={front} alt="Licence front" className="h-28 w-auto rounded border border-gray-200 object-cover cursor-pointer hover:opacity-80 transition" />
-                          </a>
-                        </div>
-                      )}
-                      {back && (
-                        <div className="flex flex-col items-center gap-1">
-                          <span className="text-[10px] text-gray-400 uppercase tracking-wide">Back</span>
-                          <a href={back} target="_blank" rel="noopener noreferrer">
-                            <img src={back} alt="Licence back" className="h-28 w-auto rounded border border-gray-200 object-cover cursor-pointer hover:opacity-80 transition" />
-                          </a>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )
-              })()}
+
 
             </>
 

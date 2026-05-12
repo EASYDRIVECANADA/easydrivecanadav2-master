@@ -13,7 +13,7 @@ import { renderBillOfSalePdf, type BillOfSaleData } from './billOfSalePdf'
 import { renderDisclosureFormPdf } from './disclosureFormPdf'
 import { supabase } from '@/lib/supabaseClient'
 
-type DealTab = 'customers' | 'vehicles' | 'worksheet' | 'disclosures' | 'delivery'
+type DealTab = 'customers' | 'drivers-license' | 'vehicles' | 'worksheet' | 'disclosures' | 'delivery'
 
 function SalesNewDealPageContent() {
   const router = useRouter()
@@ -27,7 +27,7 @@ function SalesNewDealPageContent() {
   const [initialVehicleId] = useState(vehicleId)
   const [activeTab, setActiveTab] = useState<DealTab>('customers')
   const [unlockedTabs, setUnlockedTabs] = useState<Set<DealTab>>(() =>
-    new Set<DealTab>(['customers', 'vehicles', 'worksheet', 'disclosures', 'delivery'])
+    new Set<DealTab>(['customers', 'drivers-license', 'vehicles', 'worksheet', 'disclosures', 'delivery'])
   )
   const unlockTab = (tab: DealTab) => {
     setUnlockedTabs(prev => new Set(Array.from(prev).concat(tab)))
@@ -1118,6 +1118,17 @@ function SalesNewDealPageContent() {
           </div>
         ) : null}
 
+        <div className="mb-4">
+          <button
+            type="button"
+            onClick={() => router.push('/admin/sales/deals')}
+            className="flex items-center gap-1.5 text-sm font-medium text-gray-500 hover:text-gray-800 transition-colors"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
+            Back to Deals
+          </button>
+        </div>
+
         <div className="flex items-start justify-between gap-4">
           <div>
             <div className="text-sm font-semibold text-gray-900">Retail/Wholesale</div>
@@ -1216,6 +1227,7 @@ function SalesNewDealPageContent() {
           {(
             [
               { key: 'customers', label: 'Customers' },
+              { key: 'drivers-license', label: "Driver's License" },
               { key: 'vehicles', label: 'Vehicles' },
               { key: 'worksheet', label: 'Worksheet' },
               { key: 'disclosures', label: 'Disclosures' },
@@ -1245,6 +1257,62 @@ function SalesNewDealPageContent() {
             <div className="bg-white rounded-xl shadow p-8 text-center text-gray-500 text-sm">Loading deal data...</div>
           ) : (
             <>
+              <div style={{ display: activeTab === 'drivers-license' ? 'block' : 'none' }}>
+                {(() => {
+                  const c = prefill?.customers?.[0] ?? prefill?.customer
+                  const docs = prefill?.submission?.order_data?.documents
+                  const licFront = docs?.licenceFront?.dataUrl as string | undefined
+                  const licBack = docs?.licenceBack?.dataUrl as string | undefined
+                  const dlNumber = c?.driverslicense || c?.driversLicense || ''
+                  const dlExpiry = c?.expdate || c?.expDate || ''
+                  const dob = c?.dateofbirth || c?.dateOfBirth || ''
+                  return (
+                    <div className="bg-white rounded-xl shadow p-6 space-y-6">
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                        <div>
+                          <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">ID Number</div>
+                          <div className="text-base font-semibold text-gray-900">{dlNumber || <span className="text-gray-300">—</span>}</div>
+                        </div>
+                        <div>
+                          <div className="text-xs font-semibold text-amber-500 uppercase tracking-wide mb-1">DL Expiry</div>
+                          <div className="text-base font-semibold text-gray-900">{dlExpiry || <span className="text-gray-300">—</span>}</div>
+                        </div>
+                        <div>
+                          <div className="text-xs font-semibold text-blue-500 uppercase tracking-wide mb-1">Date of Birth</div>
+                          <div className="text-base font-semibold text-gray-900">{dob || <span className="text-gray-300">—</span>}</div>
+                        </div>
+                      </div>
+
+                      <div>
+                        <div className="text-sm font-semibold text-gray-700 mb-3">Photos</div>
+                        {(licFront || licBack) ? (
+                          <div className="flex flex-wrap gap-6">
+                            {licFront && (
+                              <div className="flex flex-col items-center gap-2">
+                                <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Front</span>
+                                <a href={licFront} target="_blank" rel="noopener noreferrer">
+                                  <img src={licFront} alt="Licence front" className="h-44 w-auto rounded-lg border border-gray-200 object-cover cursor-pointer hover:opacity-80 transition shadow-sm" />
+                                </a>
+                              </div>
+                            )}
+                            {licBack && (
+                              <div className="flex flex-col items-center gap-2">
+                                <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Back</span>
+                                <a href={licBack} target="_blank" rel="noopener noreferrer">
+                                  <img src={licBack} alt="Licence back" className="h-44 w-auto rounded-lg border border-gray-200 object-cover cursor-pointer hover:opacity-80 transition shadow-sm" />
+                                </a>
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <div className="text-sm text-gray-400">No licence photos submitted.</div>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })()}
+              </div>
+
               <div style={{ display: activeTab === 'customers' ? 'block' : 'none' }}>
                 <CustomersTabNew
                   key={editDealId ? `edit-${editDealId}-${prefill?.customers?.[0]?.id ?? prefill?.customer?.id ?? '0'}` : 'new'}

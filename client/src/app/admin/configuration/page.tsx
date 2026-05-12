@@ -13,6 +13,10 @@ import {
   fillEmptyOnTier,
   resetTierOverrides,
   getCost,
+  useGuarantee,
+  saveGuarantee,
+  DEFAULT_GUARANTEE,
+  type GuaranteeSection,
   getAllProviders,
   getAllPlansByProvider,
   getPlanBySlug,
@@ -83,12 +87,13 @@ function Crumbs({ items }: { items: { label: string; onClick?: () => void }[] })
 
 export default function ConfigurationPage() {
   const cfg = useDealerConfig()
-  const [tab, setTab] = useState<'warranty' | 'products' | 'defaults'>('warranty')
+  const [tab, setTab] = useState<'warranty' | 'products' | 'defaults' | 'guarantee'>('warranty')
 
   const tabs: { key: typeof tab; label: string }[] = [
-    { key: 'warranty', label: 'Warranty plans' },
-    { key: 'products', label: 'Add-on products' },
-    { key: 'defaults', label: 'Defaults' },
+    { key: 'warranty',  label: 'Warranty plans' },
+    { key: 'products',  label: 'Add-on products' },
+    { key: 'defaults',  label: 'Defaults' },
+    { key: 'guarantee', label: '30-Day Guarantee' },
   ]
 
   return (
@@ -141,9 +146,10 @@ export default function ConfigurationPage() {
 
       {/* Content */}
       <div className="px-6 lg:px-8 py-6">
-        {tab === 'warranty' && <WarrantyConfigTab />}
-        {tab === 'products' && <ProductCatalogTab />}
-        {tab === 'defaults' && <DefaultsTab />}
+        {tab === 'warranty'  && <WarrantyConfigTab />}
+        {tab === 'products'  && <ProductCatalogTab />}
+        {tab === 'defaults'  && <DefaultsTab />}
+        {tab === 'guarantee' && <GuaranteeTab />}
       </div>
     </div>
   )
@@ -1199,6 +1205,190 @@ function CustomPlanDialog({ onClose, onSaved }: { onClose: () => void; onSaved: 
           <button type="button" onClick={onClose} className="h-10 px-4 rounded-full border border-slate-200 text-sm text-slate-600 hover:bg-slate-50 transition-colors">Cancel</button>
           <button type="button" onClick={save} className="h-10 px-5 rounded-full bg-[#0B1F3A] text-sm font-semibold text-white hover:bg-[#1EA7FF] transition-colors">Create plan</button>
         </div>
+      </div>
+    </div>
+  )
+}
+
+// ── 30-Day Guarantee tab ─────────────────────────────────────────
+
+function GuaranteeTab() {
+  const stored = useGuarantee()
+  const [draft, setDraft] = useState(() => JSON.parse(JSON.stringify(stored)) as typeof stored)
+  const [saved, setSaved] = useState(false)
+
+  function updateSection(i: number, patch: Partial<GuaranteeSection>) {
+    setDraft(d => {
+      const sections = d.sections.map((s, idx) => idx === i ? { ...s, ...patch } : s)
+      return { ...d, sections }
+    })
+    setSaved(false)
+  }
+
+  function addSection() {
+    setDraft(d => ({
+      ...d,
+      sections: [...d.sections, { title: `${d.sections.length + 1}. New Section`, body: '' }],
+    }))
+    setSaved(false)
+  }
+
+  function removeSection(i: number) {
+    setDraft(d => ({ ...d, sections: d.sections.filter((_, idx) => idx !== i) }))
+    setSaved(false)
+  }
+
+  function moveSection(i: number, dir: -1 | 1) {
+    setDraft(d => {
+      const sections = [...d.sections]
+      const j = i + dir
+      if (j < 0 || j >= sections.length) return d;
+      [sections[i], sections[j]] = [sections[j], sections[i]]
+      return { ...d, sections }
+    })
+    setSaved(false)
+  }
+
+  function handleSave() {
+    saveGuarantee(draft)
+    setSaved(true)
+    setTimeout(() => setSaved(false), 2500)
+  }
+
+  function handleReset() {
+    const fresh = JSON.parse(JSON.stringify(DEFAULT_GUARANTEE))
+    setDraft(fresh)
+    setSaved(false)
+  }
+
+  return (
+    <div className="max-w-3xl space-y-6">
+      {/* Header card */}
+      <div className="rounded-2xl border border-slate-200 bg-white p-5">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <div className="font-semibold text-slate-900">30-Day Dealer Guarantee</div>
+            <div className="text-xs text-slate-400 mt-0.5">This text is shown to customers during checkout and must be signed before purchase.</div>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={handleReset}
+              className="h-9 px-4 rounded-full border border-slate-200 text-sm text-slate-600 hover:bg-slate-50 transition-colors whitespace-nowrap"
+            >
+              Reset to default
+            </button>
+            <button
+              type="button"
+              onClick={handleSave}
+              className={`h-9 px-5 rounded-full text-sm font-semibold transition-colors whitespace-nowrap ${saved ? 'bg-green-600 text-white' : 'bg-[#0B1F3A] text-white hover:bg-[#1EA7FF]'}`}
+            >
+              {saved ? '✓ Saved' : 'Save changes'}
+            </button>
+          </div>
+        </div>
+
+        {/* Heading */}
+        <div className="space-y-1">
+          <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wider">Document heading</label>
+          <input
+            value={draft.heading}
+            onChange={e => { setDraft(d => ({ ...d, heading: e.target.value })); setSaved(false) }}
+            className="w-full h-10 px-3 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-[#1EA7FF]/30"
+          />
+        </div>
+      </div>
+
+      {/* Sections */}
+      <div className="space-y-3">
+        {draft.sections.map((section, i) => (
+          <div key={i} className="rounded-2xl border border-slate-200 bg-white p-5">
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">Section {i + 1}</span>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => moveSection(i, -1)}
+                  disabled={i === 0}
+                  className="h-7 w-7 flex items-center justify-center rounded-lg border border-slate-200 text-slate-400 hover:bg-slate-50 disabled:opacity-30 transition"
+                  title="Move up"
+                >
+                  <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" /></svg>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => moveSection(i, 1)}
+                  disabled={i === draft.sections.length - 1}
+                  className="h-7 w-7 flex items-center justify-center rounded-lg border border-slate-200 text-slate-400 hover:bg-slate-50 disabled:opacity-30 transition"
+                  title="Move down"
+                >
+                  <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => removeSection(i)}
+                  className="h-7 w-7 flex items-center justify-center rounded-lg border border-red-100 text-red-400 hover:bg-red-50 transition ml-1"
+                  title="Remove section"
+                >
+                  <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                </button>
+              </div>
+            </div>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Section title</label>
+                <input
+                  value={section.title}
+                  onChange={e => updateSection(i, { title: e.target.value })}
+                  className="w-full h-10 px-3 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-[#1EA7FF]/30"
+                  placeholder="e.g. 1. Vehicle Accuracy Guarantee"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Body text</label>
+                <textarea
+                  value={section.body}
+                  onChange={e => updateSection(i, { body: e.target.value })}
+                  rows={4}
+                  className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-[#1EA7FF]/30 resize-y"
+                  placeholder="Describe this guarantee clause…"
+                />
+              </div>
+            </div>
+          </div>
+        ))}
+
+        <button
+          type="button"
+          onClick={addSection}
+          className="w-full h-11 rounded-2xl border-2 border-dashed border-slate-200 text-sm text-slate-400 hover:border-[#1EA7FF] hover:text-[#1EA7FF] transition-colors flex items-center justify-center gap-2"
+        >
+          <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+          Add section
+        </button>
+      </div>
+
+      {/* Footer note */}
+      <div className="rounded-2xl border border-slate-200 bg-white p-5">
+        <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wider mb-2">Footer / legal note</label>
+        <textarea
+          value={draft.footer}
+          onChange={e => { setDraft(d => ({ ...d, footer: e.target.value })); setSaved(false) }}
+          rows={3}
+          className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-[#1EA7FF]/30 resize-y"
+          placeholder="Small print shown at the bottom of the guarantee…"
+        />
+      </div>
+
+      {/* Save bar */}
+      <div className="flex justify-end pb-8">
+        <button
+          type="button"
+          onClick={handleSave}
+          className={`h-10 px-6 rounded-full text-sm font-semibold transition-colors ${saved ? 'bg-green-600 text-white' : 'bg-[#0B1F3A] text-white hover:bg-[#1EA7FF]'}`}
+        >
+          {saved ? '✓ Saved' : 'Save changes'}
+        </button>
       </div>
     </div>
   )

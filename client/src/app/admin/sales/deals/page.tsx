@@ -558,7 +558,7 @@ export default function DealsPage() {
                                       <div className="text-xs text-slate-400 mb-1">Bill of Sale</div>
                                       {sigBoS.drawnDataUrl
                                         ? <img src={sigBoS.drawnDataUrl} alt="Bill of Sale signature" className="h-14 rounded border border-slate-200 bg-white object-contain px-2" />
-                                        : <div className="text-slate-700 italic text-sm border border-slate-200 rounded px-3 py-1 bg-white">{sigBoS.typedName}</div>
+                                        : <div className="flex items-center justify-center h-14 rounded border border-slate-200 bg-white px-4" style={{ fontFamily: '"Brush Script MT","Segoe Script",cursive', fontSize: '1.4rem', color: '#1e293b' }}>{sigBoS.typedName}</div>
                                       }
                                       <div className="text-xs text-slate-400 mt-1">{sigBoS.signedAt ? new Date(sigBoS.signedAt).toLocaleString('en-CA', { dateStyle: 'medium', timeStyle: 'short' }) : ''}</div>
                                     </div>
@@ -568,7 +568,7 @@ export default function DealsPage() {
                                       <div className="text-xs text-slate-400 mb-1">Dealer Guarantee</div>
                                       {sigDG.drawnDataUrl
                                         ? <img src={sigDG.drawnDataUrl} alt="Dealer guarantee signature" className="h-14 rounded border border-slate-200 bg-white object-contain px-2" />
-                                        : <div className="text-slate-700 italic text-sm border border-slate-200 rounded px-3 py-1 bg-white">{sigDG.typedName}</div>
+                                        : <div className="flex items-center justify-center h-14 rounded border border-slate-200 bg-white px-4" style={{ fontFamily: '"Brush Script MT","Segoe Script",cursive', fontSize: '1.4rem', color: '#1e293b' }}>{sigDG.typedName}</div>
                                       }
                                       <div className="text-xs text-slate-400 mt-1">{sigDG.signedAt ? new Date(sigDG.signedAt).toLocaleString('en-CA', { dateStyle: 'medium', timeStyle: 'short' }) : ''}</div>
                                     </div>

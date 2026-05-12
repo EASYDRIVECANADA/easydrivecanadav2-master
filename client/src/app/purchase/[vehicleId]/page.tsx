@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useMemo } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabaseClient'
+import { useGuarantee } from '@/lib/dealer-config'
 import {
   ArrowLeft, ArrowRight, CheckCircle2, ChevronDown, Copy, CreditCard,
   FileSignature, FileText, IdCard, Mail,
@@ -66,7 +67,7 @@ interface PricingBreakdown {
   salePrice: number
   lineItems: PricingLineItem[]
   addOns: Array<{ id: string; label: string; amount: number; taxable: boolean }>
-  warrantyLine: { label: string; amount: number } | null
+  warrantyLine: { label: string; amount: number; baseAmount: number; addOns: Array<{ label: string; amount: number }> } | null
   hst: number; total: number; deposit: number; balanceDue: number
 }
 
@@ -201,7 +202,12 @@ function computePricing(
     .map(p => ({ id: p!.id, label: p!.label, amount: p!.price, taxable: p!.taxable }))
 
   const warrantyLine = warranty
-    ? { label: `Vehicle Service Contract - ${warranty.planName}`, amount: warranty.total }
+    ? {
+        label: `${warranty.planName} - ${warranty.termLabel}`,
+        amount: warranty.total,
+        baseAmount: warranty.baseTotal,
+        addOns: warranty.addOns.map(a => ({ label: a.label, amount: a.price })),
+      }
     : null
 
   const warrantyAmount = warranty?.total ?? 0
@@ -350,17 +356,17 @@ export default function PurchasePage() {
   const [carfaxInitial,  setCarfaxInitial]  = useState<string | null>(null)
   const [carfaxAck,      setCarfaxAck]      = useState(false)
   const [carfaxTyped,    setCarfaxTyped]    = useState('')
-  const [carfaxUseTyped, setCarfaxUseTyped] = useState(false)
+  const [carfaxUseTyped, setCarfaxUseTyped] = useState(true)
 
   const [bosTyped,     setBosTyped]     = useState('')
   const [bosDrawn,     setBosDrawn]     = useState<string | null>(null)
   const [bosAgree,     setBosAgree]     = useState(false)
-  const [bosUseTyped,  setBosUseTyped]  = useState(false)
+  const [bosUseTyped,  setBosUseTyped]  = useState(true)
 
   const [dgTyped,    setDgTyped]    = useState('')
   const [dgDrawn,    setDgDrawn]    = useState<string | null>(null)
   const [dgAgree,    setDgAgree]    = useState(false)
-  const [dgUseTyped, setDgUseTyped] = useState(false)
+  const [dgUseTyped, setDgUseTyped] = useState(true)
 
   const [agreeDeposit,    setAgreeDeposit]    = useState(false)
   const [agreeDiscretion, setAgreeDiscretion] = useState(false)
@@ -580,6 +586,7 @@ export default function PurchasePage() {
                     ack={carfaxAck} setAck={setCarfaxAck}
                     typed={carfaxTyped} setTyped={setCarfaxTyped}
                     useTyped={carfaxUseTyped} setUseTyped={setCarfaxUseTyped}
+                    customerName={`${customer.firstName} ${customer.lastName}`.trim()}
                   />
                 )}
                 {STEPS[step].key === 'bos' && pricing && (
@@ -1411,12 +1418,18 @@ function StepAddOns({ selected, setSelected }: { selected: AddOnId[]; setSelecte
 
 function StepCarfax({
   vehicleId, vin, initial, setInitial, ack, setAck,
-  typed, setTyped, useTyped, setUseTyped,
+  typed, setTyped, useTyped, setUseTyped, customerName,
 }: {
   vehicleId: string; vin: string; initial: string | null; setInitial: (s: string | null) => void; ack: boolean; setAck: (b: boolean) => void
   typed: string; setTyped: (s: string) => void
   useTyped: boolean; setUseTyped: (b: boolean) => void
+  customerName?: string
 }) {
+  useEffect(() => {
+    if (customerName && !typed) setTyped(customerName)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [customerName])
+
   const [carfaxModal, setCarfaxModal] = useState<{
     open: boolean; loading: boolean
     files: { name: string; publicUrl: string }[]; activeIndex: number
@@ -1520,17 +1533,17 @@ function StepCarfax({
             <div className="flex rounded-lg border border-gray-200 overflow-hidden text-xs font-medium">
               <button
                 type="button"
-                onClick={() => setUseTyped(false)}
-                className={`px-3 py-1 transition ${!useTyped ? 'bg-gray-900 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
-              >
-                Draw
-              </button>
-              <button
-                type="button"
                 onClick={() => { setUseTyped(true); setInitial(null) }}
                 className={`px-3 py-1 transition ${useTyped ? 'bg-gray-900 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
               >
                 Type
+              </button>
+              <button
+                type="button"
+                onClick={() => setUseTyped(false)}
+                className={`px-3 py-1 transition ${!useTyped ? 'bg-gray-900 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+              >
+                Draw
               </button>
             </div>
           </div>
@@ -1582,6 +1595,11 @@ function StepSign({
   customerName?: string
   useTyped: boolean; setUseTyped: (b: boolean) => void
 }) {
+  useEffect(() => {
+    if (customerName && !typed) setTyped(customerName)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [customerName])
+
   return (
     <div>
       <h2 className="text-2xl font-bold text-gray-900">{title}</h2>
@@ -1611,17 +1629,17 @@ function StepSign({
             <div className="flex rounded-lg border border-gray-200 overflow-hidden text-xs font-medium">
               <button
                 type="button"
-                onClick={() => setUseTyped(false)}
-                className={`px-3 py-1 transition ${!useTyped ? 'bg-gray-900 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
-              >
-                Draw
-              </button>
-              <button
-                type="button"
                 onClick={() => { setUseTyped(true); setDrawn(null) }}
                 className={`px-3 py-1 transition ${useTyped ? 'bg-gray-900 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
               >
                 Type
+              </button>
+              <button
+                type="button"
+                onClick={() => setUseTyped(false)}
+                className={`px-3 py-1 transition ${!useTyped ? 'bg-gray-900 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+              >
+                Draw
               </button>
             </div>
           </div>
@@ -1813,17 +1831,28 @@ function SummarySidebar({ vehicle, pricing, orderId, step }: { vehicle: Vehicle;
                   : <span className="tabular-nums">${fmt(li.amount)}</span>}
               </div>
             ))}
-            {(pricing.addOns.length > 0 || pricing.warrantyLine) && (
+            {pricing.warrantyLine && (
+              <div className="mt-2 border-t border-gray-100 pt-2">
+                <div className="mb-1.5 flex items-center gap-1 text-xs font-semibold uppercase tracking-wider text-gray-400">
+                  <Shield className="h-3 w-3" /> Extended Warranty
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-500 truncate pr-2 text-xs">{pricing.warrantyLine.label}</span>
+                  <span className="tabular-nums shrink-0">${fmt(pricing.warrantyLine.baseAmount)}</span>
+                </div>
+                {pricing.warrantyLine.addOns.map((a, i) => (
+                  <div key={i} className="flex justify-between">
+                    <span className="text-gray-400 truncate pr-2 text-xs pl-3">↳ {a.label}</span>
+                    <span className="tabular-nums shrink-0 text-gray-400">${fmt(a.amount)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            {pricing.addOns.length > 0 && (
               <div className="mt-2 border-t border-gray-100 pt-2">
                 <div className="mb-1.5 flex items-center gap-1 text-xs font-semibold uppercase tracking-wider text-gray-400">
                   <Package className="h-3 w-3" /> Add-ons
                 </div>
-                {pricing.warrantyLine && (
-                  <div className="flex justify-between">
-                    <span className="text-gray-500 truncate pr-2 text-xs">{pricing.warrantyLine.label}</span>
-                    <span className="tabular-nums shrink-0">${fmt(pricing.warrantyLine.amount)}</span>
-                  </div>
-                )}
                 {pricing.addOns.map(a => (
                   <div key={a.id} className="flex justify-between">
                     <span className="text-gray-500 truncate pr-2 text-xs">{a.label}</span>
@@ -1900,7 +1929,12 @@ function BillOfSaleContent({ vehicle, customer, pricing, orderId }: { vehicle: V
             <div key={i} className="flex justify-between"><span>{li.label}</span><span>{li.waived ? 'WAIVED' : `$${fmt(li.amount)}`}</span></div>
           ))}
           {pricing.warrantyLine && (
-            <div className="flex justify-between"><span>{pricing.warrantyLine.label}</span><span>${fmt(pricing.warrantyLine.amount)}</span></div>
+            <>
+              <div className="flex justify-between"><span>{pricing.warrantyLine.label}</span><span>${fmt(pricing.warrantyLine.baseAmount)}</span></div>
+              {pricing.warrantyLine.addOns.map((a, i) => (
+                <div key={i} className="flex justify-between"><span className="pl-3 text-gray-500">↳ {a.label}</span><span>${fmt(a.amount)}</span></div>
+              ))}
+            </>
           )}
           {pricing.addOns.map(a => (
             <div key={a.id} className="flex justify-between"><span>{a.label}</span><span>${fmt(a.amount)}</span></div>
@@ -1928,35 +1962,23 @@ function BillOfSaleContent({ vehicle, customer, pricing, orderId }: { vehicle: V
 // ─────────────────────────────────────────────────────────────────────────────
 
 function DealerGuaranteeContent() {
+  const g = useGuarantee()
   return (
     <div className="space-y-4 text-xs leading-relaxed text-gray-700">
       <div className="border-b border-gray-200 pb-3">
         <div className="text-base font-bold text-gray-900">30-DAY DEALER GUARANTEE</div>
         <div className="text-gray-500">EasyDrive Canada Inc.</div>
       </div>
-      <p className="font-semibold text-gray-900">EasyDrive Canada 30-Day Guarantee Policy</p>
-      <p>EasyDrive Canada stands behind every vehicle in our inventory. This guarantee outlines your rights and our commitments as your trusted dealer.</p>
-      <div>
-        <div className="font-semibold mb-1">1. Vehicle Accuracy Guarantee</div>
-        <p>All vehicle descriptions, odometer readings, and condition disclosures are accurate to the best of our knowledge. If a material misrepresentation is discovered within 30 days of purchase, we will work with you to find an equitable resolution.</p>
-      </div>
-      <div>
-        <div className="font-semibold mb-1">2. Mechanical Disclosure</div>
-        <p>Any known mechanical defects have been disclosed prior to sale. Vehicles are sold in their disclosed condition. We encourage buyers to perform an independent inspection prior to finalizing the purchase.</p>
-      </div>
-      <div>
-        <div className="font-semibold mb-1">3. Title and Lien Guarantee</div>
-        <p>EasyDrive Canada guarantees that the vehicle will be delivered free and clear of any undisclosed liens or encumbrances. Title will be transferred to the buyer promptly upon receipt of full payment.</p>
-      </div>
-      <div>
-        <div className="font-semibold mb-1">4. Dispute Resolution</div>
-        <p>Any disputes arising from this sale will first be addressed through direct negotiation. If unresolved, disputes will be submitted to Ontario Mandatory Mediation. Ontario law governs this agreement.</p>
-      </div>
-      <div>
-        <div className="font-semibold mb-1">5. Contact</div>
-        <p>EasyDrive Canada Inc. - info@easydrivecanada.com</p>
-      </div>
-      <p className="text-gray-500 text-[10px]">This guarantee is provided in addition to your statutory rights under Ontario consumer protection legislation, including the Motor Vehicle Dealers Act (MVDA). OMVIC registration ensures all transactions adhere to provincial standards.</p>
+      <p className="font-semibold text-gray-900">{g.heading}</p>
+      {g.sections.map((s, i) => (
+        <div key={i}>
+          <div className="font-semibold mb-1">{s.title}</div>
+          <p>{s.body}</p>
+        </div>
+      ))}
+      {g.footer && (
+        <p className="text-gray-500 text-[10px]">{g.footer}</p>
+      )}
     </div>
   )
 }
@@ -1973,11 +1995,24 @@ function FileUpload({ label, accept = 'image/*,application/pdf', value, onChange
     setError(null)
     if (file.size > 10 * 1024 * 1024) { setError('File too large (max 10 MB)'); return }
     let dataUrl: string | null = null
-    if (file.type.startsWith('image/') && file.size < 1024 * 1024) {
+    if (file.type.startsWith('image/')) {
+      // Always compress to canvas so large phone photos (2-5 MB) still produce a dataUrl
       dataUrl = await new Promise<string>(resolve => {
-        const r = new FileReader()
-        r.onload = () => resolve(r.result as string)
-        r.readAsDataURL(file)
+        const reader = new FileReader()
+        reader.onload = () => {
+          const img = new Image()
+          img.onload = () => {
+            const MAX = 1200
+            const scale = Math.min(1, MAX / Math.max(img.width, img.height))
+            const canvas = document.createElement('canvas')
+            canvas.width  = Math.round(img.width  * scale)
+            canvas.height = Math.round(img.height * scale)
+            canvas.getContext('2d')!.drawImage(img, 0, 0, canvas.width, canvas.height)
+            resolve(canvas.toDataURL('image/jpeg', 0.82))
+          }
+          img.src = reader.result as string
+        }
+        reader.readAsDataURL(file)
       })
     }
     onChange({ name: file.name, size: file.size, type: file.type, dataUrl, uploadedAt: new Date().toISOString() })

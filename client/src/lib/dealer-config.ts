@@ -346,3 +346,105 @@ export function getCustomerProducts(cfg?: DealerConfig): DealerProductConfig[] {
 export function getDealerProducts(cfg?: DealerConfig): DealerProductConfig[] {
   return (cfg ?? read()).products.filter((p) => p.dealerVisible)
 }
+
+// ── Dealer Guarantee store ───────────────────────────────────────
+
+export type GuaranteeSection = {
+  title: string
+  body: string
+}
+
+export type GuaranteeConfig = {
+  heading: string
+  sections: GuaranteeSection[]
+  footer: string
+}
+
+const GUARANTEE_STORAGE_KEY = 'edc.guarantee.v1'
+const GUARANTEE_EVT = 'edc.guarantee.updated'
+
+export const DEFAULT_GUARANTEE: GuaranteeConfig = {
+  heading: 'EasyDrive Canada 30-Day Guarantee Policy',
+  sections: [
+    {
+      title: '1. Vehicle Accuracy Guarantee',
+      body: 'All vehicle descriptions, odometer readings, and condition disclosures are accurate to the best of our knowledge. If a material misrepresentation is discovered within 30 days of purchase, we will work with you to find an equitable resolution.',
+    },
+    {
+      title: '2. Mechanical Disclosure',
+      body: 'Any known mechanical defects have been disclosed prior to sale. Vehicles are sold in their disclosed condition. We encourage buyers to perform an independent inspection prior to finalizing the purchase.',
+    },
+    {
+      title: '3. Title and Lien Guarantee',
+      body: 'EasyDrive Canada guarantees that the vehicle will be delivered free and clear of any undisclosed liens or encumbrances. Title will be transferred to the buyer promptly upon receipt of full payment.',
+    },
+    {
+      title: '4. Dispute Resolution',
+      body: 'Any disputes arising from this sale will first be addressed through direct negotiation. If unresolved, disputes will be submitted to Ontario Mandatory Mediation. Ontario law governs this agreement.',
+    },
+    {
+      title: '5. Contact',
+      body: 'EasyDrive Canada Inc. - info@easydrivecanada.com',
+    },
+  ],
+  footer: 'This guarantee is provided in addition to your statutory rights under Ontario consumer protection legislation, including the Motor Vehicle Dealers Act (MVDA). OMVIC registration ensures all transactions adhere to provincial standards.',
+}
+
+function readGuarantee(): GuaranteeConfig {
+  if (typeof window === 'undefined') return DEFAULT_GUARANTEE
+  try {
+    const raw = localStorage.getItem(GUARANTEE_STORAGE_KEY)
+    if (!raw) return DEFAULT_GUARANTEE
+    const parsed = JSON.parse(raw) as Partial<GuaranteeConfig>
+    return {
+      ...DEFAULT_GUARANTEE,
+      ...parsed,
+      sections: parsed.sections?.length ? parsed.sections : DEFAULT_GUARANTEE.sections,
+    }
+  } catch {
+    return DEFAULT_GUARANTEE
+  }
+}
+
+function writeGuarantee(cfg: GuaranteeConfig) {
+  if (typeof window === 'undefined') return
+  localStorage.setItem(GUARANTEE_STORAGE_KEY, JSON.stringify(cfg))
+  window.dispatchEvent(new Event(GUARANTEE_EVT))
+}
+
+export function getGuarantee(): GuaranteeConfig {
+  return readGuarantee()
+}
+
+export function saveGuarantee(cfg: GuaranteeConfig) {
+  writeGuarantee(cfg)
+}
+
+let cachedGuarantee: GuaranteeConfig = DEFAULT_GUARANTEE
+let cachedGuaranteeRaw: string | null = '__init__'
+
+function getGuaranteeSnapshot(): GuaranteeConfig {
+  if (typeof window === 'undefined') return DEFAULT_GUARANTEE
+  const raw = localStorage.getItem(GUARANTEE_STORAGE_KEY)
+  if (raw !== cachedGuaranteeRaw) {
+    cachedGuaranteeRaw = raw
+    cachedGuarantee = readGuarantee()
+  }
+  return cachedGuarantee
+}
+
+export function useGuarantee(): GuaranteeConfig {
+  return useSyncExternalStore(
+    (cb) => {
+      const handler = () => cb()
+      window.addEventListener(GUARANTEE_EVT, handler)
+      window.addEventListener('storage', handler)
+      return () => {
+        window.removeEventListener(GUARANTEE_EVT, handler)
+        window.removeEventListener('storage', handler)
+      }
+    },
+    getGuaranteeSnapshot,
+    () => DEFAULT_GUARANTEE,
+  )
+}
