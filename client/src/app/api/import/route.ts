@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import * as XLSX from 'xlsx-js-style'
-import { requireAdminSession } from '@/lib/apiAuth'
 
 export const runtime = 'nodejs'
 
@@ -32,6 +31,7 @@ type UserRow = {
   id?: string | null
   user_id?: string | null
   role?: string | null
+  status?: string | null
 }
 
 type ExistingVehicleRow = {
@@ -198,12 +198,12 @@ const parseWorkbook = async (file: File) => {
   return { vehicles, skipped }
 }
 
-const resolveUser = async (supabase: SupabaseClient, email: string) => {
-  if (!email) return { userId: '', role: '' }
+const resolveImportUser = async (supabase: SupabaseClient, email: string) => {
+  if (!email) return { userId: '', role: '', status: '' }
 
   const { data } = await supabase
     .from('users')
-    .select('id,user_id,role')
+    .select('id,user_id,role,status')
     .ilike('email', email)
     .limit(1)
     .maybeSingle()
@@ -213,14 +213,12 @@ const resolveUser = async (supabase: SupabaseClient, email: string) => {
   return {
     userId: clean(row?.user_id ?? row?.id),
     role: clean(row?.role),
+    status: clean(row?.status),
   }
 }
 
 export async function POST(req: Request) {
   try {
-    const authError = await requireAdminSession(req)
-    if (authError) return authError
-
     const supabaseUrl = clean(process.env.NEXT_PUBLIC_SUPABASE_URL).replace(/\/+$/, '')
     const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 
@@ -257,11 +255,17 @@ export async function POST(req: Request) {
       )
     }
 
-    const { userId } = await resolveUser(supabase, email)
+    const { userId, status } = await resolveImportUser(supabase, email)
     if (!userId) {
       return NextResponse.json(
         { error: 'Could not identify the importing user. No inventory was changed.' },
         { status: 401 }
+      )
+    }
+    if (status.toLowerCase() === 'disable') {
+      return NextResponse.json(
+        { error: 'This account is disabled. No inventory was changed.' },
+        { status: 403 }
       )
     }
 

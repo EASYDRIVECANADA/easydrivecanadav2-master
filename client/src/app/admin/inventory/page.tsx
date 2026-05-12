@@ -1169,15 +1169,12 @@ export default function AdminInventoryPage() {
     setImporting(true)
     try {
       let email = ''
-      let token = ''
       try {
         const raw = typeof window !== 'undefined' ? window.localStorage.getItem('edc_admin_session') : null
-        const parsed = raw ? (JSON.parse(raw) as { email?: string; session_token?: string; token?: string }) : null
+        const parsed = raw ? (JSON.parse(raw) as { email?: string }) : null
         email = String(parsed?.email || '').trim().toLowerCase()
-        token = String(parsed?.session_token || parsed?.token || '').trim()
       } catch {
         email = ''
-        token = ''
       }
 
       const form = new FormData()
@@ -1188,7 +1185,6 @@ export default function AdminInventoryPage() {
         method: 'POST',
         headers: {
           'x-admin-email': email,
-          'x-admin-token': token || 'no-token',
         },
         body: form,
       })
