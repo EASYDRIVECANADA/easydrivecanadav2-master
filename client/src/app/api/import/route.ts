@@ -8,6 +8,7 @@ export const maxDuration = 60
 const IMPORT_MARKER = 'Imported from weekly inventory feed'
 const IMPORT_CATEGORY = 'fleet'
 const IMPORT_INVENTORY_TYPE = 'FLEET'
+const FLEET_PRICE_MARKUP = 2500
 
 type ParsedVehicle = {
   sourceRow: number
@@ -324,7 +325,7 @@ export async function POST(req: Request) {
         series: vehicle.series,
         equipment: vehicle.equipment,
         vin: vehicle.vin,
-        price: vehicle.price,
+        price: vehicle.price + FLEET_PRICE_MARKUP,
         mileage: vehicle.mileage,
         odometer: vehicle.odometer,
         odometer_unit: vehicle.odometer_unit,
