@@ -27,6 +27,36 @@ interface Vehicle {
   status: string
   inventoryType?: string
   categories?: string
+  lotLocation?: string
+  createdAt?: string
+  dealOfWeek?: boolean
+  featured?: boolean
+  sellerName?: string
+  dealerName?: string
+}
+
+interface SupabaseVehicleRow {
+  id: string
+  stock_number?: string | null
+  make?: string | null
+  model?: string | null
+  series?: string | null
+  year?: number | string | null
+  price?: number | string | null
+  mileage?: number | string | null
+  odometer?: number | string | null
+  odometer_unit?: string | null
+  fuel_type?: string | null
+  transmission?: string | null
+  body_style?: string | null
+  exterior_color?: string | null
+  city?: string | null
+  province?: string | null
+  lot_location?: string | null
+  status?: string | null
+  inventory_type?: string | null
+  features?: unknown
+  categories?: string | null
 }
 
 type SortOption =
@@ -40,12 +70,18 @@ type SortOption =
   | 'features-most'
   | 'features-least'
 
+const isFleetVehicle = (vehicle: Partial<Vehicle> & { inventory_type?: unknown }) => {
+  const category = String(vehicle.categories || '').trim().toLowerCase()
+  const inventoryType = String(vehicle.inventoryType || vehicle.inventory_type || '').trim().toLowerCase()
+  return category.includes('fleet') || inventoryType === 'fleet'
+}
+
 export default function InventoryPage() {
   const [vehicles, setVehicles] = useState<Vehicle[]>([])
   const [loading, setLoading] = useState(true)
+  const [activeView, setActiveView] = useState<'inventory' | 'fleet'>('inventory')
   const [searchQuery, setSearchQuery] = useState('')
   const [showMobileFilters, setShowMobileFilters] = useState(false)
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [sortBy, setSortBy] = useState<SortOption>('newest')
   const [currentPage, setCurrentPage] = useState(1)
   const itemsPerPage = 12
@@ -78,34 +114,7 @@ export default function InventoryPage() {
     }))
   }
 
-  const toggleQuickFilter = (key: keyof typeof quickFilters, value?: any) => {
-    setQuickFilters(prev => ({
-      ...prev,
-      [key]: key === 'priceUnder' ? (prev.priceUnder === value ? null : value) : !prev[key]
-    }))
-  }
-
   const [bucketImageCache] = useState(() => new Map<string, string[]>())
-
-  const normalizeImages = (raw: any): string[] => {
-    if (!raw) return []
-    if (Array.isArray(raw)) return raw.map(String).filter(Boolean)
-    if (typeof raw === 'string') {
-      const s = raw.trim()
-      if (!s) return []
-      try {
-        const parsed = JSON.parse(s)
-        if (Array.isArray(parsed)) return parsed.map(String).filter(Boolean)
-      } catch {
-        // ignore
-      }
-      return s
-        .split(',')
-        .map(x => x.trim())
-        .filter(Boolean)
-    }
-    return []
-  }
 
   const toImageSrc = (value: string) => {
     const v = String(value || '').trim()
@@ -119,7 +128,7 @@ export default function InventoryPage() {
     return `data:${mime};base64,${v}`
   }
 
-  const normalizeFeatures = (raw: any): string[] => {
+  const normalizeFeatures = (raw: unknown): string[] => {
     if (!raw) return []
     if (Array.isArray(raw)) return raw.map(String).map((s) => s.trim()).filter(Boolean)
     if (typeof raw === 'string') {
@@ -152,12 +161,31 @@ export default function InventoryPage() {
     fetchVehicles()
   }, [])
 
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    setActiveView(params.get('view') === 'fleet' ? 'fleet' : 'inventory')
+  }, [])
+
+  const handleViewChange = (view: 'inventory' | 'fleet') => {
+    setActiveView(view)
+    setCurrentPage(1)
+    setFilters((prev) => ({ ...prev, inventoryType: '' }))
+    setQuickFilters((prev) => ({ ...prev, sellerTypes: [] }))
+    const url = new URL(window.location.href)
+    if (view === 'fleet') {
+      url.searchParams.set('view', 'fleet')
+    } else {
+      url.searchParams.set('view', 'inventory')
+    }
+    window.history.pushState({}, '', `${url.pathname}?${url.searchParams.toString()}`)
+  }
+
   const fetchVehicles = async () => {
     try {
       const { data, error } = await supabase
         .from('edc_vehicles')
         .select(
-          'id, stock_number, make, model, series, year, price, mileage, odometer, odometer_unit, fuel_type, transmission, body_style, exterior_color, city, province, status, inventory_type, features, categories'
+          'id, stock_number, make, model, series, year, price, mileage, odometer, odometer_unit, fuel_type, transmission, body_style, exterior_color, city, province, lot_location, status, inventory_type, features, categories'
         )
         .order('created_at', { ascending: false })
 
@@ -198,7 +226,7 @@ export default function InventoryPage() {
             const { data: signed } = await supabase.storage
               .from('vehicle-photos')
               .createSignedUrl(path, 60 * 60)
-            const signedUrl = String((signed as any)?.signedUrl || '').trim()
+            const signedUrl = String((signed as { signedUrl?: string } | null)?.signedUrl || '').trim()
             if (signedUrl) urls.push(signedUrl)
           }
 
@@ -211,29 +239,36 @@ export default function InventoryPage() {
       }
 
       const mapped: Vehicle[] = await Promise.all(
-        (data || []).map(async (v: any) => ({
-          id: v.id,
-          stockNumber: v.stock_number || undefined,
-          make: v.make,
-          model: v.model,
-          series: v.series || '',
-          year: v.year,
-          price: Number(v.price || 0),
-          mileage: Number((v.odometer ?? v.mileage) || 0),
-          odometer: v.odometer === null || v.odometer === undefined ? undefined : Number(v.odometer || 0),
-          odometerUnit: v.odometer_unit || '',
-          fuelType: v.fuel_type || '',
-          transmission: v.transmission || '',
-          bodyStyle: v.body_style || '',
-          exteriorColor: v.exterior_color || '',
-          city: v.city || '',
-          province: v.province || '',
-          features: normalizeFeatures(v.features),
-          images: await loadBucketImages(String(v.id)),
-          status: v.status,
-          inventoryType: v.inventory_type || '',
-          categories: v.categories || '',
-        }))
+        ((data || []) as SupabaseVehicleRow[]).map(async (v) => {
+          const baseVehicle: Omit<Vehicle, 'images'> = {
+            id: v.id,
+            stockNumber: v.stock_number || undefined,
+            make: String(v.make || ''),
+            model: String(v.model || ''),
+            series: v.series || '',
+            year: Number(v.year || 0),
+            price: Number(v.price || 0),
+            mileage: Number((v.odometer ?? v.mileage) || 0),
+            odometer: v.odometer === null || v.odometer === undefined ? undefined : Number(v.odometer || 0),
+            odometerUnit: v.odometer_unit || '',
+            fuelType: v.fuel_type || '',
+            transmission: v.transmission || '',
+            bodyStyle: v.body_style || '',
+            exteriorColor: v.exterior_color || '',
+            city: v.city || '',
+            province: v.province || '',
+            lotLocation: v.lot_location || '',
+            features: normalizeFeatures(v.features),
+            status: v.status || '',
+            inventoryType: v.inventory_type || '',
+            categories: v.categories || '',
+          }
+
+          return {
+            ...baseVehicle,
+            images: isFleetVehicle(baseVehicle) ? [] : await loadBucketImages(String(v.id)),
+          }
+        })
       )
 
       setVehicles(mapped)
@@ -259,32 +294,42 @@ export default function InventoryPage() {
     return `${value.toLocaleString()} ${unit}`
   }
 
+  const viewVehicles = useMemo(() => {
+    return vehicles.filter((vehicle) => {
+      const isFleet = isFleetVehicle(vehicle)
+      return activeView === 'fleet' ? isFleet : !isFleet
+    })
+  }, [vehicles, activeView])
+
+  const inventoryCount = useMemo(() => vehicles.filter((vehicle) => !isFleetVehicle(vehicle)).length, [vehicles])
+  const fleetCount = useMemo(() => vehicles.filter((vehicle) => isFleetVehicle(vehicle)).length, [vehicles])
+
   // Get unique values from vehicles dynamically
   const uniqueMakes = useMemo(() => {
-    const makes = Array.from(new Set(vehicles.map((v) => v.make).filter(Boolean)))
+    const makes = Array.from(new Set(viewVehicles.map((v) => v.make).filter(Boolean)))
     return makes.sort()
-  }, [vehicles])
+  }, [viewVehicles])
   
   const uniqueBodyStyles = useMemo(() => {
-    const styles = Array.from(new Set(vehicles.map((v) => v.bodyStyle).filter(Boolean)))
+    const styles = Array.from(new Set(viewVehicles.map((v) => v.bodyStyle).filter(Boolean)))
     return styles.sort()
-  }, [vehicles])
+  }, [viewVehicles])
   
   const uniqueColors = useMemo(() => {
-    const colors = Array.from(new Set(vehicles.map((v) => v.exteriorColor).filter(Boolean)))
+    const colors = Array.from(new Set(viewVehicles.map((v) => v.exteriorColor).filter(Boolean)))
     return colors.sort()
-  }, [vehicles])
+  }, [viewVehicles])
 
   const uniqueFeatures = useMemo(() => {
-    const all = vehicles.flatMap((v) => (Array.isArray(v.features) ? v.features : []))
+    const all = viewVehicles.flatMap((v) => (Array.isArray(v.features) ? v.features : []))
     const uniq = Array.from(new Set(all.map((f) => String(f).trim()).filter(Boolean)))
     return uniq.sort((a, b) => a.localeCompare(b))
-  }, [vehicles])
+  }, [viewVehicles])
 
   // Get year range from actual vehicle data
   const yearRange = useMemo(() => {
-    if (vehicles.length === 0) return []
-    const years = vehicles.map((v) => v.year).filter(Boolean)
+    if (viewVehicles.length === 0) return []
+    const years = viewVehicles.map((v) => v.year).filter(Boolean)
     const minYear = Math.min(...years)
     const maxYear = Math.max(...years)
     const range = []
@@ -292,11 +337,11 @@ export default function InventoryPage() {
       range.push(y)
     }
     return range
-  }, [vehicles])
+  }, [viewVehicles])
 
   // Filter and search vehicles
   const filteredVehicles = useMemo(() => {
-    const result = vehicles.filter((vehicle) => {
+    const result = viewVehicles.filter((vehicle) => {
       // Search query - searches make, model, year
       if (searchQuery) {
         const query = searchQuery.toLowerCase()
@@ -324,12 +369,11 @@ export default function InventoryPage() {
       if (filters.maxYear && vehicle.year > parseInt(filters.maxYear)) return false
 
       // Quick filters
-      if (quickFilters.sellerTypes.length > 0) {
-        const cat = String((vehicle as any)?.categories || '').toLowerCase()
+      if (activeView !== 'fleet' && quickFilters.sellerTypes.length > 0) {
+        const cat = String(vehicle.categories || '').toLowerCase()
         const match = quickFilters.sellerTypes.some(type =>
           (type === 'private' && cat.includes('private')) ||
           (type === 'dealer' && (cat.includes('dealer') || cat.includes('dealership'))) ||
-          (type === 'fleet' && cat.includes('fleet')) ||
           (type === 'premier' && cat.includes('premier'))
         )
         if (!match) return false
@@ -337,11 +381,11 @@ export default function InventoryPage() {
       if (quickFilters.newListings) {
         const sevenDaysAgo = new Date()
         sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
-        const createdAt = (vehicle as any)?.created_at || (vehicle as any)?.createdAt
+        const createdAt = vehicle.createdAt
         if (!createdAt || new Date(createdAt) < sevenDaysAgo) return false
       }
-      if (quickFilters.dealOfWeek && !(vehicle as any)?.deal_of_week) return false
-      if (quickFilters.featured && !(vehicle as any)?.featured) return false
+      if (quickFilters.dealOfWeek && !vehicle.dealOfWeek) return false
+      if (quickFilters.featured && !vehicle.featured) return false
       if (quickFilters.priceUnder !== null && vehicle.price > quickFilters.priceUnder) return false
 
       return true
@@ -382,18 +426,20 @@ export default function InventoryPage() {
     }
 
     return result
-  }, [vehicles, searchQuery, filters, sortBy, quickFilters])
+  }, [viewVehicles, activeView, searchQuery, filters, sortBy, quickFilters])
 
   // Pagination
   const totalPages = Math.ceil(filteredVehicles.length / itemsPerPage)
   const startIndex = (currentPage - 1) * itemsPerPage
   const endIndex = startIndex + itemsPerPage
   const paginatedVehicles = filteredVehicles.slice(startIndex, endIndex)
+  const displayStart = filteredVehicles.length === 0 ? 0 : startIndex + 1
+  const activeViewLabel = activeView === 'fleet' ? 'Fleet Select vehicles' : 'vehicles'
 
   // Reset to page 1 when filters change
   useEffect(() => {
     setCurrentPage(1)
-  }, [searchQuery, filters, sortBy])
+  }, [searchQuery, filters, sortBy, quickFilters, activeView])
 
   const clearFilters = () => {
     setFilters({
@@ -457,6 +503,7 @@ export default function InventoryPage() {
         </div>
 
         {/* Inventory Type Filter */}
+        {activeView !== 'fleet' && (
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">Collection</label>
           <select
@@ -465,10 +512,10 @@ export default function InventoryPage() {
             className="select-field"
           >
             <option value="">All Vehicles</option>
-            <option value="FLEET">Fleet Cars</option>
             <option value="PREMIERE">Premiere Cars</option>
           </select>
         </div>
+        )}
 
         {/* Body Style Filter */}
         <div>
@@ -603,12 +650,36 @@ export default function InventoryPage() {
       {/* Page Header */}
       <section className="px-4 sm:px-6 lg:px-8 pt-8 pb-6 max-w-7xl mx-auto">
         <h1 className="text-3xl font-bold text-gray-900 mb-1">Shop our inventory</h1>
-        <div className="flex items-center justify-between gap-4">
-          <p className="text-[#118df0] font-medium text-sm">{vehicles.length} vehicles available</p>
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <p className="text-[#118df0] font-medium text-sm">{viewVehicles.length} {activeViewLabel} available</p>
+            <div className="mt-4 inline-flex rounded-xl border border-gray-200 bg-white p-1 shadow-sm">
+              {[
+                { key: 'inventory' as const, label: 'Photo Inventory', count: inventoryCount },
+                { key: 'fleet' as const, label: 'Fleet Select', count: fleetCount },
+              ].map((tab) => (
+                <button
+                  key={tab.key}
+                  type="button"
+                  onClick={() => handleViewChange(tab.key)}
+                  className={`min-w-[132px] rounded-lg px-4 py-2 text-sm font-semibold transition-colors ${
+                    activeView === tab.key
+                      ? 'bg-gray-900 text-white'
+                      : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                  }`}
+                >
+                  {tab.label}
+                  <span className={`ml-2 text-xs ${activeView === tab.key ? 'text-white/70' : 'text-gray-400'}`}>
+                    {tab.count}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
           {!loading && filteredVehicles.length > 0 && (
             <p className="hidden lg:block text-sm text-gray-500">
-              Showing {startIndex + 1}–{Math.min(endIndex, filteredVehicles.length)} of{' '}
-              <span className="font-semibold text-gray-900">{filteredVehicles.length}</span> vehicles
+              Showing {displayStart}–{Math.min(endIndex, filteredVehicles.length)} of{' '}
+              <span className="font-semibold text-gray-900">{filteredVehicles.length}</span> {activeViewLabel}
             </p>
           )}
         </div>
@@ -707,13 +778,13 @@ export default function InventoryPage() {
               </div>
 
               {/* Listing Type */}
+              {activeView !== 'fleet' && (
               <div>
                 <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Listing Type</p>
                 <div className="space-y-1.5">
                   {[
                     { key: 'premier', label: 'EDC Premier', color: '#118df0' },
                     { key: 'dealer', label: 'Dealer Select', color: '#8b5cf6' },
-                    { key: 'fleet', label: 'Fleet Select', color: '#374151' },
                     { key: 'private', label: 'Private Seller', color: '#f59e0b' },
                   ].map(({ key, label, color }) => (
                     <label key={key} className="flex items-center gap-2 cursor-pointer">
@@ -732,6 +803,7 @@ export default function InventoryPage() {
                   ))}
                 </div>
               </div>
+              )}
 
               {/* Sort By */}
               <div>
@@ -782,8 +854,8 @@ export default function InventoryPage() {
                   )}
                 </button>
                 <p className="lg:hidden text-sm text-gray-500">
-                  Showing {startIndex + 1}–{Math.min(endIndex, filteredVehicles.length)} of{' '}
-                  <span className="font-semibold text-gray-900">{filteredVehicles.length}</span> vehicles
+                  Showing {displayStart}–{Math.min(endIndex, filteredVehicles.length)} of{' '}
+                  <span className="font-semibold text-gray-900">{filteredVehicles.length}</span> {activeViewLabel}
                 </p>
               </div>
 
@@ -822,9 +894,89 @@ export default function InventoryPage() {
               </div>
             ) : filteredVehicles.length > 0 ? (
               <>
+              {activeView === 'fleet' ? (
+                <div className="space-y-4">
+                  <div className="rounded-xl border border-gray-200 bg-white p-4 text-sm text-gray-600">
+                    <p className="font-semibold text-gray-900">Fleet Select purchase notes</p>
+                    <p className="mt-1">
+                      No test drives, appointments, or viewings are available. Safety and reconditioning are not included in the listed price. A CARFAX report will be provided before completion of sale.
+                    </p>
+                  </div>
+
+                  <div className="hidden overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm lg:block">
+                    <table className="w-full table-fixed text-left text-sm">
+                      <thead className="border-b border-gray-200 bg-gray-50 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                        <tr>
+                          <th className="w-20 px-4 py-3">Year</th>
+                          <th className="px-4 py-3">Make / Model</th>
+                          <th className="px-4 py-3">Trim</th>
+                          <th className="w-28 px-4 py-3">Price</th>
+                          <th className="w-28 px-4 py-3">Odometer</th>
+                          <th className="w-28 px-4 py-3">Stock #</th>
+                          <th className="w-32 px-4 py-3">Location</th>
+                          <th className="w-28 px-4 py-3 text-right">Action</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                        {paginatedVehicles.map((vehicle) => (
+                          <tr key={vehicle.id} className="hover:bg-gray-50">
+                            <td className="px-4 py-3 font-medium text-gray-900">{vehicle.year}</td>
+                            <td className="px-4 py-3">
+                              <Link href={`/inventory/${vehicle.id}`} className="font-semibold text-gray-900 hover:text-[#118df0]">
+                                {vehicle.make} {vehicle.model}
+                              </Link>
+                            </td>
+                            <td className="px-4 py-3 text-gray-600">{vehicle.series || '—'}</td>
+                            <td className="px-4 py-3 font-semibold text-gray-900">{formatPrice(vehicle.price)}</td>
+                            <td className="px-4 py-3 text-gray-600">{formatOdometer(vehicle)}</td>
+                            <td className="px-4 py-3 text-gray-600">{vehicle.stockNumber || '—'}</td>
+                            <td className="px-4 py-3 text-gray-600">{vehicle.lotLocation || formatLocation(vehicle.city, vehicle.province) || '—'}</td>
+                            <td className="px-4 py-3 text-right">
+                              <Link href={`/inventory/${vehicle.id}`} className="inline-flex rounded-full bg-gray-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-gray-700">
+                                View
+                              </Link>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <div className="grid gap-3 lg:hidden">
+                    {paginatedVehicles.map((vehicle) => (
+                      <Link key={vehicle.id} href={`/inventory/${vehicle.id}`} className="block rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Fleet Select</p>
+                            <h3 className="mt-1 truncate text-base font-semibold text-gray-900">
+                              {vehicle.year} {vehicle.make} {vehicle.model}
+                            </h3>
+                            {vehicle.series && <p className="mt-0.5 truncate text-sm text-[#118df0]">{vehicle.series}</p>}
+                          </div>
+                          <p className="shrink-0 text-base font-bold text-gray-900">{formatPrice(vehicle.price)}</p>
+                        </div>
+                        <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-gray-600">
+                          <div>
+                            <span className="block font-semibold text-gray-500">Odometer</span>
+                            {formatOdometer(vehicle)}
+                          </div>
+                          <div>
+                            <span className="block font-semibold text-gray-500">Stock #</span>
+                            {vehicle.stockNumber || '—'}
+                          </div>
+                          <div className="col-span-2">
+                            <span className="block font-semibold text-gray-500">Location</span>
+                            {vehicle.lotLocation || formatLocation(vehicle.city, vehicle.province) || '—'}
+                          </div>
+                        </div>
+                      </Link>
+                    ))}
+                  </div>
+                </div>
+              ) : (
               <div className="grid grid-cols-2 md:grid-cols-2 xl:grid-cols-3 gap-3 md:gap-5">
                 {paginatedVehicles.map((vehicle) => {
-                  const raw = String((vehicle as any)?.categories ?? '').trim().toLowerCase()
+                  const raw = String(vehicle.categories ?? '').trim().toLowerCase()
                   let badgeLabel = ''
                   let badgeBg = '#118df0'
                   if (raw.includes('premier') || raw.includes('premiere')) {
@@ -837,7 +989,7 @@ export default function InventoryPage() {
                     badgeLabel = 'PRIVATE SELLER'; badgeBg = '#f59e0b'
                   }
 
-                  const sellerName = (vehicle as any)?.sellerName || (vehicle as any)?.dealer_name || ''
+                  const sellerName = vehicle.sellerName || vehicle.dealerName || ''
 
                   return (
                     <Link key={vehicle.id} href={`/inventory/${vehicle.id}`} className="block h-full">
@@ -936,6 +1088,7 @@ export default function InventoryPage() {
                   )
                 })}
               </div>
+              )}
 
               {/* Pagination */}
               {totalPages > 1 && (
