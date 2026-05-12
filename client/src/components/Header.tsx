@@ -3,11 +3,12 @@
 import Link from 'next/link'
 import Image from 'next/image'
 import { useEffect, useState } from 'react'
-import { usePathname, useRouter } from 'next/navigation'
+import { usePathname } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
 
+const INSURANCE_URL = 'https://insurance.easydrivecanada.com'
+
 export default function Header() {
-  const router = useRouter()
   const pathname = usePathname()
   const [isMenuOpen, setIsMenuOpen] = useState(false)
   const [userEmail, setUserEmail] = useState<string | null>(null)
@@ -219,6 +220,9 @@ export default function Header() {
                 <Link href="/financing" className={`rounded-full px-4 py-2 text-sm font-medium transition hover:text-gray-900 ${pathname === '/financing' ? 'bg-gray-100 text-gray-900' : 'text-gray-500'}`}>
                   Financing
                 </Link>
+                <a href={INSURANCE_URL} className="rounded-full px-4 py-2 text-sm font-medium text-gray-500 transition hover:text-gray-900">
+                  Insurance
+                </a>
                 <Link href="/warranty" className={`rounded-full px-4 py-2 text-sm font-medium transition hover:text-gray-900 ${pathname === '/warranty' ? 'bg-gray-100 text-gray-900' : 'text-gray-500'}`}>
                   Warranty
                 </Link>
@@ -301,6 +305,10 @@ export default function Header() {
                   Financing
                   <svg className="w-4 h-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7"/></svg>
                 </Link>
+                <a href={INSURANCE_URL} onClick={() => setIsMenuOpen(false)} className="flex items-center justify-between px-3 py-3 rounded-xl text-gray-700 font-medium hover:bg-gray-50 transition-colors">
+                  Insurance
+                  <svg className="w-4 h-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7"/></svg>
+                </a>
                 <Link href="/warranty" onClick={() => setIsMenuOpen(false)} className="flex items-center justify-between px-3 py-3 rounded-xl text-gray-700 font-medium hover:bg-gray-50 transition-colors">
                   Warranty
                   <svg className="w-4 h-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7"/></svg>
