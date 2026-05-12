@@ -39,11 +39,21 @@ type ExistingVehicleRow = {
   id: string
   stock_number?: string | null
   vin?: string | null
-  vehicleId?: string | null
-  vehicle_id?: string | null
 }
 
 const clean = (value: unknown) => String(value ?? '').trim()
+
+const getErrorMessage = (error: unknown) => {
+  if (error instanceof Error) return error.message
+  if (error && typeof error === 'object') {
+    const maybe = error as { message?: unknown; details?: unknown; hint?: unknown; code?: unknown }
+    return [maybe.message, maybe.details, maybe.hint, maybe.code]
+      .map((part) => clean(part))
+      .filter(Boolean)
+      .join(' | ') || 'Failed to import inventory file'
+  }
+  return 'Failed to import inventory file'
+}
 
 const chunkList = <T,>(items: T[], size = 100) => {
   const chunks: T[][] = []
@@ -277,12 +287,10 @@ export async function POST(req: Request) {
     }
 
     const now = new Date().toISOString()
-    const incomingStocks = vehicles.map((vehicle) => vehicle.stock_number)
-    const incomingVins = vehicles.map((vehicle) => vehicle.vin)
 
     let previousQuery = supabase
       .from('edc_vehicles')
-      .select('id, vehicleId, vehicle_id, stock_number, vin, notes')
+      .select('id, stock_number, vin, notes')
       .eq('notes', IMPORT_MARKER)
 
     if (userId) previousQuery = previousQuery.eq('user_id', userId)
@@ -290,50 +298,23 @@ export async function POST(req: Request) {
     const { data: previousRows, error: previousError } = await previousQuery
     if (previousError) throw previousError
 
-    let matchingByStockQuery = supabase
-      .from('edc_vehicles')
-      .select('id, vehicleId, vehicle_id, stock_number, vin')
-      .in('stock_number', incomingStocks)
-
-    if (userId) matchingByStockQuery = matchingByStockQuery.eq('user_id', userId)
-
-    const { data: matchingByStockRows, error: matchingByStockError } = await matchingByStockQuery
-    if (matchingByStockError) throw matchingByStockError
-
-    let matchingByVinQuery = supabase
-      .from('edc_vehicles')
-      .select('id, vehicleId, vehicle_id, stock_number, vin')
-      .in('vin', incomingVins)
-
-    if (userId) matchingByVinQuery = matchingByVinQuery.eq('user_id', userId)
-
-    const { data: matchingByVinRows, error: matchingByVinError } = await matchingByVinQuery
-    if (matchingByVinError) throw matchingByVinError
-
     const previousVehicles = (previousRows || []) as ExistingVehicleRow[]
-    const matchingVehicles = [
-      ...((matchingByStockRows || []) as ExistingVehicleRow[]),
-      ...((matchingByVinRows || []) as ExistingVehicleRow[]),
-    ]
-    const byStock = new Map<string, ExistingVehicleRow>()
-    const byVin = new Map<string, ExistingVehicleRow>()
-    ;[...previousVehicles, ...matchingVehicles].forEach((row) => {
-      const stock = normalizeStock(row?.stock_number)
-      const vin = normalizeVin(row?.vin)
-      if (stock) byStock.set(stock, row)
-      if (vin) byVin.set(vin, row)
-    })
+    const previousIds = previousVehicles.map((row) => String(row?.id || '')).filter(Boolean)
+    let removed = 0
 
-    const keptIds = new Set<string>()
-    const updateRows: Array<Record<string, unknown>> = []
-    const insertRows: Array<Record<string, unknown>> = []
+    if (previousIds.length > 0) {
+      for (const chunk of chunkList(previousIds)) {
+        const { error: deleteError } = await supabase
+          .from('edc_vehicles')
+          .delete()
+          .in('id', chunk)
 
-    vehicles.forEach((vehicle) => {
-      const existing = byStock.get(vehicle.stock_number) || byVin.get(vehicle.vin)
-      const id = existing?.id ? String(existing.id) : crypto.randomUUID()
-      keptIds.add(id)
+        if (deleteError) throw deleteError
+      }
+      removed = previousIds.length
+    }
 
-      const payload: Record<string, unknown> = {
+    const insertRows = vehicles.map((vehicle) => ({
         user_id: userId || null,
         make: vehicle.make,
         model: vehicle.model,
@@ -357,20 +338,6 @@ export async function POST(req: Request) {
         lot_location: vehicle.lot_location,
         notes: IMPORT_MARKER,
         updated_at: now,
-      }
-
-      if (existing?.id) {
-        updateRows.push({
-          id,
-          vehicleId: clean(existing.vehicleId ?? existing.vehicle_id) || crypto.randomUUID(),
-          ...payload,
-        })
-        return
-      }
-
-      insertRows.push({
-        id,
-        ...payload,
         vehicleId: crypto.randomUUID(),
         fuel_type: null,
         transmission: null,
@@ -381,33 +348,7 @@ export async function POST(req: Request) {
         city: null,
         province: 'ON',
         created_at: now,
-      })
-    })
-
-    const updated = vehicles.filter((vehicle) => {
-      const existing = byStock.get(vehicle.stock_number) || byVin.get(vehicle.vin)
-      return !!existing?.id
-    }).length
-    const inserted = vehicles.length - updated
-
-    for (const chunk of chunkList(updateRows)) {
-      const { error } = await supabase
-        .from('edc_vehicles')
-        .upsert(chunk, { onConflict: 'id' })
-
-      if (error) {
-        return NextResponse.json(
-          {
-            error: 'Import failed while saving vehicles. Old weekly-feed vehicles were not removed.',
-            details: error.message,
-            inserted: 0,
-            updated: 0,
-            skipped,
-          },
-          { status: 422 }
-        )
-      }
-    }
+    }))
 
     for (const chunk of chunkList(insertRows)) {
       const { error } = await supabase
@@ -417,10 +358,11 @@ export async function POST(req: Request) {
       if (error) {
         return NextResponse.json(
           {
-            error: 'Import failed while adding new vehicles. Old weekly-feed vehicles were not removed.',
+            error: 'Import failed while adding new vehicles.',
             details: error.message,
             inserted: 0,
             updated: 0,
+            removed,
             skipped,
           },
           { status: 422 }
@@ -428,33 +370,17 @@ export async function POST(req: Request) {
       }
     }
 
-    const previousIds = previousVehicles.map((row) => String(row?.id || '')).filter(Boolean)
-    const staleIds = previousIds.filter((id) => !keptIds.has(id))
-    let removed = 0
-
-    if (staleIds.length > 0) {
-      for (const chunk of chunkList(staleIds)) {
-        const { error: deleteError } = await supabase
-          .from('edc_vehicles')
-          .delete()
-          .in('id', chunk)
-
-        if (deleteError) throw deleteError
-      }
-      removed = staleIds.length
-    }
-
     return NextResponse.json({
       ok: true,
       details: 'Done',
       imported: vehicles.length,
-      inserted,
-      updated,
+      inserted: insertRows.length,
+      updated: 0,
       removed,
       skipped,
     })
   } catch (e: unknown) {
-    const message = e instanceof Error ? e.message : 'Failed to import inventory file'
+    const message = getErrorMessage(e)
     return NextResponse.json({ error: message }, { status: 500 })
   }
 }
