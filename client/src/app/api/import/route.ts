@@ -3,6 +3,7 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import * as XLSX from 'xlsx-js-style'
 
 export const runtime = 'nodejs'
+export const maxDuration = 60
 
 const IMPORT_MARKER = 'Imported from weekly inventory feed'
 const IMPORT_CATEGORY = 'fleet'
@@ -40,11 +41,15 @@ type ExistingVehicleRow = {
   vin?: string | null
 }
 
-type InsertedVehicleRow = {
-  id?: string | null
-}
-
 const clean = (value: unknown) => String(value ?? '').trim()
+
+const chunkList = <T,>(items: T[], size = 100) => {
+  const chunks: T[][] = []
+  for (let i = 0; i < items.length; i += size) {
+    chunks.push(items.slice(i, i + size))
+  }
+  return chunks
+}
 
 const toNumber = (value: unknown) => {
   const raw = clean(value).replace(/[$,\s]/g, '')
@@ -317,14 +322,16 @@ export async function POST(req: Request) {
       if (vin) byVin.set(vin, row)
     })
 
-    let inserted = 0
-    let updated = 0
     const keptIds = new Set<string>()
-    const rowErrors: Array<{ row: number; stock_number: string; error: string }> = []
+    const updateRows: Array<Record<string, unknown>> = []
+    const insertRows: Array<Record<string, unknown>> = []
 
-    for (const vehicle of vehicles) {
+    vehicles.forEach((vehicle) => {
       const existing = byStock.get(vehicle.stock_number) || byVin.get(vehicle.vin)
-      const payload = {
+      const id = existing?.id ? String(existing.id) : crypto.randomUUID()
+      keptIds.add(id)
+
+      const payload: Record<string, unknown> = {
         user_id: userId || null,
         make: vehicle.make,
         model: vehicle.model,
@@ -351,66 +358,68 @@ export async function POST(req: Request) {
       }
 
       if (existing?.id) {
-        const { error } = await supabase
-          .from('edc_vehicles')
-          .update(payload)
-          .eq('id', existing.id)
-
-        if (error) {
-          rowErrors.push({ row: vehicle.sourceRow, stock_number: vehicle.stock_number, error: error.message })
-          continue
-        }
-
-        keptIds.add(String(existing.id))
-        updated += 1
-        continue
+        updateRows.push({ id, ...payload })
+        return
       }
 
-      const { data, error } = await supabase
+      insertRows.push({
+        id,
+        ...payload,
+        vehicleId: crypto.randomUUID(),
+        fuel_type: null,
+        transmission: null,
+        body_style: null,
+        drivetrain: null,
+        interior_color: null,
+        features: [],
+        city: null,
+        province: 'ON',
+        created_at: now,
+      })
+    })
+
+    const updated = vehicles.filter((vehicle) => {
+      const existing = byStock.get(vehicle.stock_number) || byVin.get(vehicle.vin)
+      return !!existing?.id
+    }).length
+    const inserted = vehicles.length - updated
+
+    for (const chunk of chunkList(updateRows)) {
+      const { error } = await supabase
         .from('edc_vehicles')
-        .insert({
-          ...payload,
-          vehicleId: crypto.randomUUID(),
-          fuel_type: null,
-          transmission: null,
-          body_style: null,
-          drivetrain: null,
-          interior_color: null,
-          features: [],
-          city: null,
-          province: 'ON',
-          created_at: now,
-        })
-        .select('id')
-        .single()
+        .upsert(chunk, { onConflict: 'id' })
 
       if (error) {
-        rowErrors.push({ row: vehicle.sourceRow, stock_number: vehicle.stock_number, error: error.message })
-        continue
+        return NextResponse.json(
+          {
+            error: 'Import failed while saving vehicles. Old weekly-feed vehicles were not removed.',
+            details: error.message,
+            inserted: 0,
+            updated: 0,
+            skipped,
+          },
+          { status: 422 }
+        )
       }
-
-      const insertedRow = data as InsertedVehicleRow | null
-      if (insertedRow?.id) keptIds.add(String(insertedRow.id))
-      inserted += 1
     }
 
-    if (rowErrors.length > 0) {
-      const details = rowErrors
-        .slice(0, 5)
-        .map((row) => `Row ${row.row} (${row.stock_number}): ${row.error}`)
-        .join('; ')
+    for (const chunk of chunkList(insertRows)) {
+      const { error } = await supabase
+        .from('edc_vehicles')
+        .insert(chunk)
 
-      return NextResponse.json(
-        {
-          error: 'Some rows failed to import. Old weekly-feed vehicles were not removed.',
-          details,
-          inserted,
-          updated,
-          skipped,
-          rowErrors,
-        },
-        { status: 422 }
-      )
+      if (error) {
+        return NextResponse.json(
+          {
+            error: 'Import failed while adding new vehicles. Old weekly-feed vehicles were not removed.',
+            details: error.message,
+            inserted: 0,
+            updated: 0,
+            skipped,
+          },
+          { status: 422 }
+        )
+      }
     }
 
     const previousIds = previousVehicles.map((row) => String(row?.id || '')).filter(Boolean)
@@ -418,12 +427,14 @@ export async function POST(req: Request) {
     let removed = 0
 
     if (staleIds.length > 0) {
-      const { error: deleteError } = await supabase
-        .from('edc_vehicles')
-        .delete()
-        .in('id', staleIds)
+      for (const chunk of chunkList(staleIds)) {
+        const { error: deleteError } = await supabase
+          .from('edc_vehicles')
+          .delete()
+          .in('id', chunk)
 
-      if (deleteError) throw deleteError
+        if (deleteError) throw deleteError
+      }
       removed = staleIds.length
     }
 
