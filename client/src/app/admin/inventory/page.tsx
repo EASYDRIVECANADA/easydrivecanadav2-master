@@ -992,11 +992,17 @@ export default function AdminInventoryPage() {
       `Delete ${selected.length} selected vehicle(s) and all related records?`,
       async () => {
         setModalBusy(true)
+        setModalMessage(`Deleting ${selected.length} selected vehicle(s). This may take a moment.`)
         try {
-          for (const v of selected) {
-            await performDelete(v)
-          }
-          closeModal()
+          const { deletedCount } = await performBulkDelete(selected)
+          setModalBusy(false)
+          closeModal(true)
+          openAlert('Vehicles deleted', `Deleted ${deletedCount} selected vehicle(s).`)
+        } catch (error) {
+          console.error('Error deleting selected vehicles:', error)
+          setModalBusy(false)
+          closeModal(true)
+          openAlert('Delete failed', 'Failed to delete selected vehicles: ' + (error instanceof Error ? error.message : String(error)))
         } finally {
           setModalBusy(false)
         }
@@ -1004,8 +1010,9 @@ export default function AdminInventoryPage() {
     )
   }
 
-  const closeModal = () => {
-    if (modalBusy) return
+  const closeModal = (forceOrEvent: unknown = false) => {
+    const force = forceOrEvent === true
+    if (modalBusy && !force) return
     setModalOpen(false)
     setModalOnConfirm(null)
     setModalTitle('')
@@ -1029,7 +1036,54 @@ export default function AdminInventoryPage() {
     setModalOpen(true)
   }
 
-  const performDelete = async (vehicle: Vehicle) => {
+  const performBulkDelete = async (selectedVehicles: Vehicle[]) => {
+    const ids = Array.from(new Set(selectedVehicles.map((vehicle) => String(vehicle.id || '').trim()).filter(Boolean)))
+    if (ids.length === 0) return { deletedCount: 0, failed: false }
+
+    const carfaxFolderIds = Array.from(new Set(selectedVehicles
+      .map((vehicle) => String(vehicle.raw?.vehicleId || vehicle.raw?.vehicle_id || vehicle.id || '').trim())
+      .filter(Boolean)
+    ))
+
+    let email = ''
+    try {
+      const raw = typeof window !== 'undefined' ? window.localStorage.getItem('edc_admin_session') : null
+      const parsed = raw ? (JSON.parse(raw) as { email?: string }) : null
+      email = String(parsed?.email || '').trim().toLowerCase()
+    } catch {
+      email = ''
+    }
+
+    const res = await fetch('/api/inventory/bulk-delete', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-admin-email': email,
+      },
+      body: JSON.stringify({ vehicleIds: ids, carfaxFolderIds, email }),
+    })
+    const json = await res.json().catch(() => null)
+
+    if (!res.ok) {
+      const message = String(json?.details || json?.error || 'Bulk delete failed')
+      throw new Error(message)
+    }
+
+    const deletedIdSet = new Set(ids)
+    setVehicles((prev) => prev.filter((vehicle) => !deletedIdSet.has(vehicle.id)))
+    setFilteredVehicles((prev) => prev.filter((vehicle) => !deletedIdSet.has(vehicle.id)))
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      ids.forEach((id) => next.delete(id))
+      return next
+    })
+
+    if (drawerVehicle?.id && deletedIdSet.has(drawerVehicle.id)) closeDrawer()
+
+    return { deletedCount: Number(json?.deletedCount ?? ids.length), failed: false }
+  }
+
+  const performDelete = async (vehicle: Vehicle, showError = true): Promise<boolean> => {
     setDeleting(vehicle.id)
     try {
       // Delete related DB records
@@ -1102,10 +1156,13 @@ export default function AdminInventoryPage() {
       })
       if (drawerVehicle?.id === vehicle.id) closeDrawer()
 
-      alert('Vehicle deleted successfully!')
+      return true
     } catch (error) {
       console.error('Error deleting vehicle:', error)
-      openAlert('Delete failed', 'Failed to delete vehicle: ' + (error instanceof Error ? error.message : String(error)))
+      if (showError) {
+        openAlert('Delete failed', 'Failed to delete vehicle: ' + (error instanceof Error ? error.message : String(error)))
+      }
+      return false
     } finally {
       setDeleting(null)
     }
@@ -1115,8 +1172,14 @@ export default function AdminInventoryPage() {
     openConfirm('Confirm delete', 'Are you sure you want to delete this vehicle and all related records?', async () => {
       setModalBusy(true)
       try {
-        await performDelete(vehicle)
-        closeModal()
+        const deleted = await performDelete(vehicle, false)
+        setModalBusy(false)
+        closeModal(true)
+        if (deleted) {
+          openAlert('Vehicle deleted', 'Vehicle deleted successfully.')
+        } else {
+          openAlert('Delete failed', 'Failed to delete vehicle. Please try again.')
+        }
       } finally {
         setModalBusy(false)
       }
@@ -1881,7 +1944,7 @@ export default function AdminInventoryPage() {
                     }}
                     disabled={modalBusy}
                   >
-                    {modalBusy ? 'Deleting…' : 'Yes'}
+                    {modalBusy ? 'Deleting...' : 'Yes'}
                   </button>
                 </>
               ) : (
