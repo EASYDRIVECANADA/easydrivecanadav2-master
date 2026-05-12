@@ -1036,14 +1036,17 @@ export default function AdminInventoryPage() {
     setModalOpen(true)
   }
 
+  const chunkList = <T,>(items: T[], size = 50) => {
+    const chunks: T[][] = []
+    for (let i = 0; i < items.length; i += size) {
+      chunks.push(items.slice(i, i + size))
+    }
+    return chunks
+  }
+
   const performBulkDelete = async (selectedVehicles: Vehicle[]) => {
     const ids = Array.from(new Set(selectedVehicles.map((vehicle) => String(vehicle.id || '').trim()).filter(Boolean)))
     if (ids.length === 0) return { deletedCount: 0, failed: false }
-
-    const carfaxFolderIds = Array.from(new Set(selectedVehicles
-      .map((vehicle) => String(vehicle.raw?.vehicleId || vehicle.raw?.vehicle_id || vehicle.id || '').trim())
-      .filter(Boolean)
-    ))
 
     let email = ''
     try {
@@ -1054,19 +1057,39 @@ export default function AdminInventoryPage() {
       email = ''
     }
 
-    const res = await fetch('/api/inventory/bulk-delete', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-admin-email': email,
-      },
-      body: JSON.stringify({ vehicleIds: ids, carfaxFolderIds, email }),
-    })
-    const json = await res.json().catch(() => null)
+    let deletedCount = 0
+    const vehicleById = new Map(selectedVehicles.map((vehicle) => [String(vehicle.id || '').trim(), vehicle]))
 
-    if (!res.ok) {
-      const message = String(json?.details || json?.error || 'Bulk delete failed')
-      throw new Error(message)
+    for (const idChunk of chunkList(ids)) {
+      const carfaxFolderIds = Array.from(new Set(idChunk
+        .map((id) => {
+          const vehicle = vehicleById.get(id)
+          return String(vehicle?.raw?.vehicleId || vehicle?.raw?.vehicle_id || id).trim()
+        })
+        .filter(Boolean)
+      ))
+
+      const res = await fetch('/api/inventory/bulk-delete', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-admin-email': email,
+        },
+        body: JSON.stringify({
+          vehicleIds: idChunk,
+          carfaxFolderIds,
+          email,
+          includeStorage: false,
+        }),
+      })
+      const json = await res.json().catch(() => null)
+
+      if (!res.ok) {
+        const message = String(json?.details || json?.error || 'Bulk delete failed')
+        throw new Error(message)
+      }
+
+      deletedCount += Number(json?.deletedCount ?? idChunk.length)
     }
 
     const deletedIdSet = new Set(ids)
@@ -1080,7 +1103,7 @@ export default function AdminInventoryPage() {
 
     if (drawerVehicle?.id && deletedIdSet.has(drawerVehicle.id)) closeDrawer()
 
-    return { deletedCount: Number(json?.deletedCount ?? ids.length), failed: false }
+    return { deletedCount, failed: false }
   }
 
   const performDelete = async (vehicle: Vehicle, showError = true): Promise<boolean> => {

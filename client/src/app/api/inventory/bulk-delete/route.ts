@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 
 export const runtime = 'nodejs'
+export const maxDuration = 60
 
 type UserRow = {
   id?: string | null
@@ -113,6 +114,7 @@ export async function POST(req: Request) {
     const email = clean(req.headers.get('x-admin-email') || body?.email).toLowerCase()
     const vehicleIds = uniqueCleanIds(Array.isArray(body?.vehicleIds) ? body.vehicleIds : [])
     const carfaxFolderIds = uniqueCleanIds(Array.isArray(body?.carfaxFolderIds) ? body.carfaxFolderIds : vehicleIds)
+    const includeStorage = body?.includeStorage === true
 
     if (vehicleIds.length === 0) {
       return NextResponse.json({ error: 'No vehicles selected' }, { status: 400 })
@@ -143,14 +145,16 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Failed to delete related records', details: relatedError.message }, { status: 500 })
     }
 
-    const storageDeletes = await Promise.all([
-      deleteStorageFolders(supabase, 'vehicle-photos', vehicleIds),
-      deleteStorageFolders(supabase, 'Carfax', carfaxFolderIds),
-    ])
+    if (includeStorage) {
+      const storageDeletes = await Promise.all([
+        deleteStorageFolders(supabase, 'vehicle-photos', vehicleIds),
+        deleteStorageFolders(supabase, 'Carfax', carfaxFolderIds),
+      ])
 
-    const storageError = storageDeletes.find(Boolean)
-    if (storageError) {
-      return NextResponse.json({ error: 'Failed to delete stored files', details: storageError.message }, { status: 500 })
+      const storageError = storageDeletes.find(Boolean)
+      if (storageError) {
+        return NextResponse.json({ error: 'Failed to delete stored files', details: storageError.message }, { status: 500 })
+      }
     }
 
     const vehicleError = await deleteRowsByIds(supabase, 'edc_vehicles', 'id', vehicleIds)
