@@ -6,6 +6,8 @@ import { useEffect, useState } from 'react'
 import { usePathname } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
 
+const INSURANCE_URL = 'https://insurance.easydrivecanada.com'
+
 export default function Footer() {
   const pathname = usePathname()
   const [userEmail, setUserEmail] = useState<string | null>(null)
@@ -59,6 +61,7 @@ export default function Footer() {
               {[
                 { label: 'Shop Cars', href: '/inventory' },
                 { label: 'Apply for Financing', href: '/financing' },
+                { label: 'Insurance', href: INSURANCE_URL },
                 { label: 'Sell Your Car', href: '/sell' },
                 { label: 'Contact Us', href: '/contact' },
                 { label: 'Warranty', href: '/warranty' },
