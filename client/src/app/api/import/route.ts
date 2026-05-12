@@ -39,6 +39,8 @@ type ExistingVehicleRow = {
   id: string
   stock_number?: string | null
   vin?: string | null
+  vehicleId?: string | null
+  vehicle_id?: string | null
 }
 
 const clean = (value: unknown) => String(value ?? '').trim()
@@ -280,7 +282,7 @@ export async function POST(req: Request) {
 
     let previousQuery = supabase
       .from('edc_vehicles')
-      .select('id, stock_number, vin, notes')
+      .select('id, vehicleId, vehicle_id, stock_number, vin, notes')
       .eq('notes', IMPORT_MARKER)
 
     if (userId) previousQuery = previousQuery.eq('user_id', userId)
@@ -290,7 +292,7 @@ export async function POST(req: Request) {
 
     let matchingByStockQuery = supabase
       .from('edc_vehicles')
-      .select('id, stock_number, vin')
+      .select('id, vehicleId, vehicle_id, stock_number, vin')
       .in('stock_number', incomingStocks)
 
     if (userId) matchingByStockQuery = matchingByStockQuery.eq('user_id', userId)
@@ -300,7 +302,7 @@ export async function POST(req: Request) {
 
     let matchingByVinQuery = supabase
       .from('edc_vehicles')
-      .select('id, stock_number, vin')
+      .select('id, vehicleId, vehicle_id, stock_number, vin')
       .in('vin', incomingVins)
 
     if (userId) matchingByVinQuery = matchingByVinQuery.eq('user_id', userId)
@@ -358,7 +360,11 @@ export async function POST(req: Request) {
       }
 
       if (existing?.id) {
-        updateRows.push({ id, ...payload })
+        updateRows.push({
+          id,
+          vehicleId: clean(existing.vehicleId ?? existing.vehicle_id) || crypto.randomUUID(),
+          ...payload,
+        })
         return
       }
 
