@@ -47,7 +47,7 @@ export default function VehicleDetailPage() {
   const [selectedImage, setSelectedImage] = useState(0)
   const [showInquiryForm, setShowInquiryForm] = useState(false)
   const [showTestDriveModal, setShowTestDriveModal] = useState(false)
-  const [downPayment, setDownPayment] = useState(2000)
+  const [downPayment, setDownPayment] = useState(0)
   const [termLength, setTermLength] = useState(60)
   const [openFaq, setOpenFaq] = useState<number | null>(null)
   const [disclosureModal, setDisclosureModal] = useState<'premier' | 'private' | 'fleet' | 'dealership' | null>(null)
@@ -248,6 +248,7 @@ export default function VehicleDetailPage() {
 
   useEffect(() => {
     if (params.id) {
+      setDownPayment(0)
       fetchVehicle()
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -855,10 +856,12 @@ export default function VehicleDetailPage() {
                       CARFAX Report Available
                     </div>
                   )}
-                  <div className="flex items-center gap-2 text-sm text-gray-600">
-                    <svg className="w-4 h-4 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                    Safety Inspected
-                  </div>
+                  {vehicle.category !== 'fleet' && (
+                    <div className="flex items-center gap-2 text-sm text-gray-600">
+                      <svg className="w-4 h-4 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                      Safety Inspected
+                    </div>
+                  )}
                   <div className="flex items-center gap-2 text-sm text-gray-600">
                     <svg className="w-4 h-4 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" /></svg>
                     Financing Available
@@ -903,6 +906,10 @@ export default function VehicleDetailPage() {
                 <div className="flex items-center justify-between mb-4">
                   <h3 className="text-sm font-bold text-gray-900">Payment calculator</h3>
                   <span className="text-xs text-gray-400">Est. 7.99% APR OAC</span>
+                </div>
+                <div className="mb-4 rounded-xl bg-gray-50 px-4 py-3 flex items-center justify-between">
+                  <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Vehicle Price</span>
+                  <span className="text-base font-bold text-gray-900">{formatPrice(vehicle.price)}</span>
                 </div>
                 <div className="mb-4">
                   <div className="flex items-center justify-between mb-2">
@@ -976,14 +983,14 @@ export default function VehicleDetailPage() {
                   return (
                     <div className="grid grid-cols-2 gap-3 mb-4">
                       <div className="bg-[#118df0]/5 rounded-xl p-4 text-center">
-                        <p className="text-2xl font-bold text-[#118df0]">${Math.round(monthly).toLocaleString()}</p>
-                        <p className="text-xs text-gray-500 mt-0.5">/ month</p>
-                        <p className="text-[10px] text-gray-400">over {termLength} mo</p>
-                      </div>
-                      <div className="bg-gray-50 rounded-xl p-4 text-center">
-                        <p className="text-2xl font-bold text-gray-700">${Math.round(biweekly).toLocaleString()}</p>
+                        <p className="text-2xl font-bold text-[#118df0]">${Math.round(biweekly).toLocaleString()}</p>
                         <p className="text-xs text-gray-500 mt-0.5">/ biweekly</p>
                         <p className="text-[10px] text-gray-400">26 payments / yr</p>
+                      </div>
+                      <div className="bg-gray-50 rounded-xl p-4 text-center">
+                        <p className="text-2xl font-bold text-gray-700">${Math.round(monthly).toLocaleString()}</p>
+                        <p className="text-xs text-gray-500 mt-0.5">/ month</p>
+                        <p className="text-[10px] text-gray-400">over {termLength} mo</p>
                       </div>
                     </div>
                   )
