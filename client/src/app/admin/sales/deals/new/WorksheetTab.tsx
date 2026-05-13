@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState, forwardRef, useImperativeHandle }
 import { supabase } from '@/lib/supabaseClient'
 
 const DEFAULT_FEE_TAX_LABEL = 'Default Tax 0 %'
+const roundMoney = (n: number) => Math.round((Number(n) || 0) * 100) / 100
 
 // Normalize old-format tax keys (e.g. 'HST 13 %', 'HST 13.00 %') to full-precision format ('HST 13 %')
 // This prevents doubling when both old and new format keys are present
@@ -644,10 +645,10 @@ const WorksheetTab = forwardRef<WorksheetTabHandle, {
   }
 
   const subtotal = useMemo(() => {
-    return Math.max(0, parseMoney(purchasePrice) - parseMoney(discount))
+    return roundMoney(Math.max(0, parseMoney(purchasePrice) - parseMoney(discount)))
   }, [purchasePrice, discount])
 
-  const tradeEquity = useMemo(() => parseMoney(actualCashValue) - parseMoney(tradeValue), [actualCashValue, tradeValue])
+  const tradeEquity = useMemo(() => roundMoney(parseMoney(actualCashValue) - parseMoney(tradeValue)), [actualCashValue, tradeValue])
 
   const periodsPerYear = useMemo(() => {
     switch (paymentType) {
@@ -665,18 +666,18 @@ const WorksheetTab = forwardRef<WorksheetTabHandle, {
 
   const computeItemTax = (amount: number, taxSelected: Record<string, boolean>, taxOverride: boolean, taxValues: Record<string, string>) => {
     if (taxOverride) {
-      return Object.keys(taxSelected)
+      return roundMoney(Object.keys(taxSelected)
         .filter((k) => taxSelected[k])
-        .reduce((sum, k) => sum + parseMoney(taxValues[k] || '0'), 0)
+        .reduce((sum, k) => sum + parseMoney(taxValues[k] || '0'), 0))
     }
-    return Object.keys(taxSelected)
+    return roundMoney(Object.keys(taxSelected)
       .filter((k) => taxSelected[k])
-      .reduce((sum, k) => sum + amount * getFeeTaxRate(k), 0)
+      .reduce((sum, k) => sum + amount * getFeeTaxRate(k), 0))
   }
 
-  const feesTotal = useMemo(() => fees.reduce((s, f) => s + (Number(f.amount) || 0), 0), [fees])
-  const feesTaxTotal = useMemo(() => fees.reduce((s, f) => s + computeItemTax(Number(f.amount) || 0, f.taxSelected || {}, f.taxOverride || false, f.taxValues || {}), 0), [fees])
-  const paymentsTotal = useMemo(() => payments.reduce((s, p) => s + (Number(p.amount) || 0), 0), [payments])
+  const feesTotal = useMemo(() => roundMoney(fees.reduce((s, f) => s + (Number(f.amount) || 0), 0)), [fees])
+  const feesTaxTotal = useMemo(() => roundMoney(fees.reduce((s, f) => s + computeItemTax(Number(f.amount) || 0, f.taxSelected || {}, f.taxOverride || false, f.taxValues || {}), 0)), [fees])
+  const paymentsTotal = useMemo(() => roundMoney(payments.reduce((s, p) => s + (Number(p.amount) || 0), 0)), [payments])
   // Amount of each category that has its own tax (to exclude from vehicle HST base)
   const feesSelfTaxedBase = useMemo(() => fees.reduce((s, f) => { const t = computeItemTax(Number(f.amount)||0, f.taxSelected||{}, f.taxOverride||false, f.taxValues||{}); return t > 0 ? s + (Number(f.amount)||0) : s }, 0), [fees])
   const accessoriesSelfTaxedBase = useMemo(() => accessories.reduce((s, a) => { const t = computeItemTax(Number(a.price)||0, a.taxSelected||{}, a.taxOverride||false, a.taxValues||{}); return t > 0 ? s + (Number(a.price)||0) : s }, 0), [accessories])
@@ -714,34 +715,39 @@ const WorksheetTab = forwardRef<WorksheetTabHandle, {
     setEditingFeeId(null)
     setEditingDraft(null)
   }
-  const accessoriesTotal = useMemo(() => accessories.reduce((s, a) => s + (Number(a.price) || 0), 0), [accessories])
-  const accessoriesTaxTotal = useMemo(() => accessories.reduce((s, a) => s + computeItemTax(Number(a.price) || 0, a.taxSelected || {}, a.taxOverride || false, a.taxValues || {}), 0), [accessories])
-  const warrantiesTotal = useMemo(() => warranties.reduce((s, w) => s + (Number(w.amount) || 0), 0), [warranties])
-  const warrantiesTaxTotal = useMemo(() => warranties.reduce((s, w) => s + computeItemTax(Number(w.amount) || 0, w.taxSelected || {}, w.taxOverride || false, w.taxValues || {}), 0), [warranties])
-  const insurancesTotal = useMemo(() => insurances.reduce((s, i) => s + (Number(i.amount) || 0), 0), [insurances])
-  const insurancesTaxTotal = useMemo(() => insurances.reduce((s, i) => s + computeItemTax(Number(i.amount) || 0, i.taxSelected || {}, i.taxOverride || false, i.taxValues || {}), 0), [insurances])
+  const accessoriesTotal = useMemo(() => roundMoney(accessories.reduce((s, a) => s + (Number(a.price) || 0), 0)), [accessories])
+  const accessoriesTaxTotal = useMemo(() => roundMoney(accessories.reduce((s, a) => s + computeItemTax(Number(a.price) || 0, a.taxSelected || {}, a.taxOverride || false, a.taxValues || {}), 0)), [accessories])
+  const warrantiesTotal = useMemo(() => roundMoney(warranties.reduce((s, w) => s + (Number(w.amount) || 0), 0)), [warranties])
+  const warrantiesTaxTotal = useMemo(() => roundMoney(warranties.reduce((s, w) => s + computeItemTax(Number(w.amount) || 0, w.taxSelected || {}, w.taxOverride || false, w.taxValues || {}), 0)), [warranties])
+  const insurancesTotal = useMemo(() => roundMoney(insurances.reduce((s, i) => s + (Number(i.amount) || 0), 0)), [insurances])
+  const insurancesTaxTotal = useMemo(() => roundMoney(insurances.reduce((s, i) => s + computeItemTax(Number(i.amount) || 0, i.taxSelected || {}, i.taxOverride || false, i.taxValues || {}), 0)), [insurances])
+  const dealSubtotal = useMemo(() => {
+    return roundMoney(subtotal + feesTotal + accessoriesTotal + warrantiesTotal + insurancesTotal)
+  }, [subtotal, feesTotal, accessoriesTotal, warrantiesTotal, insurancesTotal])
   
   const netDifference = useMemo(() => {
-    // Net Difference = vehicle subtotal + all item amounts (for display)
-    const baseAmount = subtotal - parseMoney(tradeValue) + feesTotal + accessoriesTotal + warrantiesTotal + insurancesTotal
-    return Math.max(0, baseAmount)
-  }, [subtotal, tradeValue, feesTotal, accessoriesTotal, warrantiesTotal, insurancesTotal])
+    return roundMoney(Math.max(0, dealSubtotal - parseMoney(tradeValue)))
+  }, [dealSubtotal, tradeValue])
+
+  const taxOnNetDifference = useMemo(() => {
+    const selfTaxedItemsBase = feesSelfTaxedBase + accessoriesSelfTaxedBase + warrantiesSelfTaxedBase + insurancesSelfTaxedBase
+    return roundMoney(Math.max(0, netDifference - selfTaxedItemsBase) * (taxRate / 100))
+  }, [netDifference, taxRate, feesSelfTaxedBase, accessoriesSelfTaxedBase, warrantiesSelfTaxedBase, insurancesSelfTaxedBase])
 
   const computedTax = useMemo(() => {
-    // Items that have their own tax rate are excluded from vehicle HST base to avoid double-taxing
-    const selfTaxedItemsBase = feesSelfTaxedBase + accessoriesSelfTaxedBase + warrantiesSelfTaxedBase + insurancesSelfTaxedBase
-    const vehicleHSTBase = Math.max(0, netDifference - selfTaxedItemsBase)
-    const vehicleHST = vehicleHSTBase * (taxRate / 100)
     const itemsTax = feesTaxTotal + accessoriesTaxTotal + warrantiesTaxTotal + insurancesTaxTotal
-    return vehicleHST + itemsTax
-  }, [netDifference, taxRate, feesSelfTaxedBase, accessoriesSelfTaxedBase, warrantiesSelfTaxedBase, insurancesSelfTaxedBase, feesTaxTotal, accessoriesTaxTotal, warrantiesTaxTotal, insurancesTaxTotal])
-  const totalTax = taxOverride ? parseMoney(taxManual) : computedTax
+    return roundMoney(taxOnNetDifference + itemsTax)
+  }, [taxOnNetDifference, feesTaxTotal, accessoriesTaxTotal, warrantiesTaxTotal, insurancesTaxTotal])
+  const totalTax = taxOverride ? roundMoney(parseMoney(taxManual)) : computedTax
+
+  const totalBeforePayments = useMemo(() => {
+    const licenseAmount = licenseFee && licenseFee.trim() ? parseMoney(licenseFee) : 0
+    return roundMoney(netDifference + totalTax + licenseAmount + parseMoney(lienPayout) - tradeEquity)
+  }, [netDifference, totalTax, licenseFee, lienPayout, tradeEquity])
 
   const totalBalanceDue = useMemo(() => {
-    const licenseAmount = licenseFee && licenseFee.trim() ? parseMoney(licenseFee) : 0
-    // Total = Net Difference (vehicle + items) + Total Tax (vehicle HST + item taxes) + License + Lien - Trade Equity - Payments
-    return netDifference + totalTax + licenseAmount + parseMoney(lienPayout) - tradeEquity - paymentsTotal
-  }, [netDifference, totalTax, licenseFee, lienPayout, tradeEquity, paymentsTotal])
+    return roundMoney(totalBeforePayments - paymentsTotal)
+  }, [totalBeforePayments, paymentsTotal])
 
   const financedAmount = useMemo(() => totalBalanceDue, [totalBalanceDue])
 
@@ -2011,10 +2017,18 @@ const WorksheetTab = forwardRef<WorksheetTabHandle, {
           </div>
         </div>
       ) : null}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="border border-gray-200 bg-white">
-          <div className="h-10 px-3 border-b border-gray-200 flex items-center justify-between">
-            <div className="text-sm font-semibold text-gray-700">Deal Breakdown</div>
+      <div className="grid grid-cols-1 xl:grid-cols-[620px_minmax(0,1fr)] gap-5 items-start">
+        <div className="border border-gray-200 bg-white h-fit">
+          <div className="min-h-[56px] px-3 py-2 border-b border-gray-200 flex items-center justify-between gap-3">
+            <div>
+              <div className="text-sm font-semibold text-gray-800">Deal Breakdown</div>
+              <div className="text-[11px] text-gray-500">Amounts update as fees, warranties, taxes, and payments change.</div>
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="text-right">
+                <div className="text-[10px] uppercase tracking-wide text-gray-500">Remaining</div>
+                <div className={`text-sm font-bold ${totalBalanceDue > 0 ? 'text-[#118df0]' : 'text-green-700'}`}>${fmtMoney(totalBalanceDue)}</div>
+              </div>
             <button type="button" className="text-xs text-gray-500" onClick={resetWorksheet}>
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <circle cx="12" cy="12" r="9" strokeWidth={2} />
@@ -2022,40 +2036,69 @@ const WorksheetTab = forwardRef<WorksheetTabHandle, {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8h.01" />
               </svg>
             </button>
+            </div>
           </div>
 
-          <div className="p-4 space-y-4">
-            <div>
+          <div className="p-4 space-y-5">
+            <div className="rounded border border-gray-200 bg-gray-50 px-3 py-2 grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div>
+                <div className="text-[10px] uppercase tracking-wide text-gray-500">Subtotal</div>
+                <div className="text-sm font-semibold text-gray-900">${fmtMoney(dealSubtotal)}</div>
+              </div>
+              <div>
+                <div className="text-[10px] uppercase tracking-wide text-gray-500">Payments</div>
+                <div className="text-sm font-semibold text-gray-900">-${fmtMoney(paymentsTotal)}</div>
+              </div>
+              <div>
+                <div className="text-[10px] uppercase tracking-wide text-gray-500">Before Payments</div>
+                <div className="text-sm font-semibold text-gray-900">${fmtMoney(totalBeforePayments)}</div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
               <div className="text-xs text-gray-700 mb-1">Purchase Price</div>
-              <div className="flex items-stretch border border-gray-200 rounded bg-white shadow-sm overflow-hidden w-60">
+              <div className="flex items-stretch border border-gray-200 rounded bg-white shadow-sm overflow-hidden w-full">
                 <div className="w-10 flex items-center justify-center bg-gray-100 text-gray-600 border-r border-gray-200">$
                 </div>
                 <input className="flex-1 h-10 px-3 text-sm outline-none" value={purchasePrice} onChange={(e) => setPurchasePrice(stripLeadingZeros(e.target.value))} />
               </div>
             </div>
 
-            <div>
+              <div>
               <div className="text-xs text-gray-700 mb-1">Discount</div>
-              <div className="flex items-stretch border border-gray-200 rounded bg-white shadow-sm overflow-hidden w-60">
+              <div className="flex items-stretch border border-gray-200 rounded bg-white shadow-sm overflow-hidden w-full">
                 <div className="w-10 flex items-center justify-center bg-gray-100 text-gray-600 border-r border-gray-200">$
                 </div>
                 <input className="flex-1 h-10 px-3 text-sm outline-none" value={discount} onChange={(e) => setDiscount(stripLeadingZeros(e.target.value))} />
               </div>
             </div>
+            </div>
 
-            <div>
-              <div className="text-xs text-gray-700 mb-1">Subtotal</div>
-              <div className="flex items-stretch border border-gray-200 rounded bg-gray-100 overflow-hidden w-60">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+              <div className="text-xs text-gray-700 mb-1">Vehicle Subtotal</div>
+              <div className="flex items-stretch border border-gray-200 rounded bg-gray-100 overflow-hidden w-full">
                 <div className="w-10 flex items-center justify-center text-gray-600 border-r border-gray-200">$
                 </div>
                 <input className="flex-1 h-10 px-3 text-sm outline-none bg-gray-100" value={fmtMoney(subtotal)} readOnly />
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-6">
+              <div>
+              <div className="text-xs text-gray-700 mb-1">Subtotal</div>
+              <div className="flex items-stretch border border-gray-200 rounded bg-gray-100 overflow-hidden w-full">
+                <div className="w-10 flex items-center justify-center text-gray-600 border-r border-gray-200">$
+                </div>
+                <input className="flex-1 h-10 px-3 text-sm outline-none bg-gray-100" value={fmtMoney(dealSubtotal)} readOnly />
+              </div>
+            </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <div className="text-xs text-gray-700 mb-1">Trade Value</div>
-                <div className="flex items-stretch border border-gray-200 rounded bg-white overflow-hidden w-60">
+                <div className="flex items-stretch border border-gray-200 rounded bg-white overflow-hidden w-full">
                   <div className="w-10 flex items-center justify-center bg-gray-100 text-gray-600 border-r border-gray-200">$
                   </div>
                   <input className="flex-1 h-10 px-3 text-sm outline-none" value={tradeValue} onChange={(e) => setTradeValue(stripLeadingZeros(e.target.value))} />
@@ -2063,7 +2106,7 @@ const WorksheetTab = forwardRef<WorksheetTabHandle, {
               </div>
               <div>
                 <div className="text-xs text-gray-700 mb-1">Actual Cash Value</div>
-                <div className="flex items-stretch border border-gray-200 rounded bg-white overflow-hidden w-60">
+                <div className="flex items-stretch border border-gray-200 rounded bg-white overflow-hidden w-full">
                   <div className="w-10 flex items-center justify-center bg-gray-100 text-gray-600 border-r border-gray-200">$
                   </div>
                   <input className="flex-1 h-10 px-3 text-sm outline-none" value={actualCashValue} onChange={(e) => setActualCashValue(stripLeadingZeros(e.target.value))} />
@@ -2073,69 +2116,57 @@ const WorksheetTab = forwardRef<WorksheetTabHandle, {
 
             <div>
               <div className="text-xs text-gray-700 mb-1">Net Difference</div>
-              <div className="flex items-stretch border border-gray-200 rounded bg-gray-100 overflow-hidden w-60">
+              <div className="flex items-stretch border border-gray-200 rounded bg-gray-100 overflow-hidden w-full">
                 <div className="w-10 flex items-center justify-center text-gray-600 border-r border-gray-200">$
                 </div>
                 <input className="flex-1 h-10 px-3 text-sm outline-none bg-gray-100" value={fmtMoney(netDifference)} readOnly />
               </div>
             </div>
 
-            <div className="relative">
-              <div className="text-xs text-gray-700 mb-1">Select Tax Rates</div>
-              <div className="flex items-center gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="relative">
+                <div className="text-xs text-gray-700 mb-1">Tax</div>
                 <button
                   type="button"
                   onClick={() => setTaxMenuOpen((v) => !v)}
-                  className="h-9 px-3 border border-gray-200 rounded bg-white text-sm"
+                  className="h-10 w-full px-3 border border-gray-200 rounded bg-white text-sm text-left flex items-center justify-between"
                 >
-                  {taxCode} {formatTaxRatePercent(taxRate)}%
+                  <span>{taxCode} {formatTaxRatePercent(taxRate)}%</span>
+                  <span className="text-gray-400">v</span>
                 </button>
-                <div className="text-xs text-gray-600">Rate: {formatTaxRatePercent(taxRate)}%</div>
-              </div>
-              {taxMenuOpen ? (
-                <div className="absolute z-10 mt-2 w-44 rounded border border-gray-200 bg-white shadow">
-                  {taxPresetsLoading ? <div className="px-3 py-2 text-xs text-gray-500">Loading…</div> : null}
-                  {!taxPresetsLoading && taxPresets.length === 0 ? <div className="px-3 py-2 text-xs text-gray-500">No tax presets</div> : null}
-                  {taxPresets.map((opt) => (
-                    <label key={opt.id} className="flex items-center gap-2 px-3 py-2 text-sm hover:bg-gray-50 cursor-pointer">
-                      <input
-                        type="radio"
-                        name="tax-code"
-                        checked={String(taxCode).toLowerCase() === String(opt.name).toLowerCase()}
-                        onChange={() => {
+                {taxMenuOpen ? (
+                  <div className="absolute z-10 mt-2 w-full rounded border border-gray-200 bg-white shadow">
+                    {taxPresetsLoading ? <div className="px-3 py-2 text-xs text-gray-500">Loading…</div> : null}
+                    {!taxPresetsLoading && taxPresets.length === 0 ? <div className="px-3 py-2 text-xs text-gray-500">No tax presets</div> : null}
+                    {taxPresets.map((opt) => (
+                      <button
+                        type="button"
+                        key={opt.id}
+                        className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50"
+                        onClick={() => {
                           setTaxCode(opt.name)
                           if (Number.isFinite(opt.rate) && opt.rate >= 0) setTaxRate(opt.rate)
                           setTaxMenuOpen(false)
                         }}
-                      />
-                      <span>{opt.name} {formatTaxRatePercent(Number(opt.rate || 0))}%</span>
-                    </label>
-                  ))}
-                  <div className="p-2">
-                    <button type="button" className="w-full h-8 bg-[#118df0] text-white text-xs rounded" onClick={() => setTaxMenuOpen(false)}>
-                      Close
-                    </button>
+                      >
+                        {opt.name} {formatTaxRatePercent(Number(opt.rate || 0))}%
+                      </button>
+                    ))}
                   </div>
-                </div>
-              ) : null}
-            </div>
-
-            <div className="flex items-center gap-3">
-              <div>
-                <div className="text-xs text-gray-700 mb-1">Tax Rate</div>
-                <div className="flex items-stretch border border-gray-200 rounded bg-gray-100 overflow-hidden w-60">
-                  <input className="flex-1 h-10 px-3 text-sm outline-none bg-gray-100" value={`${formatTaxRatePercent(taxRate)}%`} readOnly />
-                </div>
+                ) : null}
               </div>
-              <label className="flex items-center gap-2 text-xs text-gray-700 mt-5">
+
+              <label className="flex items-center gap-2 text-xs text-gray-700 mt-6">
                 <input type="checkbox" className="h-4 w-4" checked={taxOverride} onChange={(e) => setTaxOverride(e.target.checked)} />
-                Tax Override
+                Override tax amount
               </label>
             </div>
 
             <div>
-              <div className="text-xs text-gray-700 mb-1">Total Tax</div>
-              <div className="flex items-stretch border border-gray-200 rounded bg-white shadow-sm overflow-hidden w-60">
+              <div className="text-xs text-gray-700 mb-1">
+                {taxOverride ? 'Manual Tax Amount' : `Calculated Tax on Net Difference @ ${formatTaxRatePercent(taxRate)}%`}
+              </div>
+              <div className="flex items-stretch border border-gray-200 rounded bg-white shadow-sm overflow-hidden w-full">
                 <div className="w-10 flex items-center justify-center bg-gray-100 text-gray-600 border-r border-gray-200">$
                 </div>
                 <input
@@ -2144,20 +2175,13 @@ const WorksheetTab = forwardRef<WorksheetTabHandle, {
                   onChange={(e) => setTaxManual(stripLeadingZeros(e.target.value))}
                   readOnly={!taxOverride}
                 />
-                <div className="w-10 flex items-center justify-center bg-gray-100 text-gray-600 border-l border-gray-200">
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <circle cx="12" cy="12" r="9" strokeWidth={2} />
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 11v5" />
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8h.01" />
-                  </svg>
-                </div>
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <div className="text-xs text-gray-700 mb-1">Lien Payout</div>
-                <div className="flex items-stretch border border-gray-200 rounded bg-white shadow-sm overflow-hidden w-60">
+                <div className="flex items-stretch border border-gray-200 rounded bg-white shadow-sm overflow-hidden w-full">
                   <div className="w-10 flex items-center justify-center bg-gray-100 text-gray-600 border-r border-gray-200">$
                   </div>
                   <input className="flex-1 h-10 px-3 text-sm outline-none" value={lienPayout} onChange={(e) => setLienPayout(stripLeadingZeros(e.target.value))} />
@@ -2165,7 +2189,7 @@ const WorksheetTab = forwardRef<WorksheetTabHandle, {
               </div>
               <div>
                 <div className="text-xs text-gray-700 mb-1">Trade Equity</div>
-                <div className="flex items-stretch border border-gray-200 rounded bg-gray-100 overflow-hidden w-60">
+                <div className="flex items-stretch border border-gray-200 rounded bg-gray-100 overflow-hidden w-full">
                   <div className="w-10 flex items-center justify-center text-gray-600 border-r border-gray-200">$
                   </div>
                   <input className="flex-1 h-10 px-3 text-sm outline-none bg-gray-100" value={fmtMoney(tradeEquity)} readOnly />
@@ -2173,16 +2197,16 @@ const WorksheetTab = forwardRef<WorksheetTabHandle, {
               </div>
             </div>
 
-            <div className="flex items-center gap-3 mt-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-2">
               <div>
                 <div className="text-xs text-gray-700 mb-1">License Fee</div>
-                <div className="flex items-stretch border border-gray-200 rounded bg-white shadow-sm overflow-hidden w-60">
+                <div className="flex items-stretch border border-gray-200 rounded bg-white shadow-sm overflow-hidden w-full">
                   <div className="w-10 flex items-center justify-center bg-gray-100 text-gray-600 border-r border-gray-200">$
                   </div>
                   <input className="flex-1 h-10 px-3 text-sm outline-none" value={licenseFee} onChange={(e) => setLicenseFee(stripLeadingZeros(e.target.value))} />
                 </div>
               </div>
-              <div className="flex items-center gap-6 mt-5">
+              <div className="flex flex-wrap items-center gap-6 sm:mt-6">
                 <label className="flex items-center gap-2 text-xs text-gray-700">
                   <input type="checkbox" className="h-4 w-4" checked={newPlates} onChange={(e) => setNewPlates(e.target.checked)} />
                   New Plates
@@ -2194,12 +2218,22 @@ const WorksheetTab = forwardRef<WorksheetTabHandle, {
               </div>
             </div>
 
-            <div>
-              <div className="text-xs text-gray-700 mb-1">Total Balance Due</div>
-              <div className="flex items-stretch border border-gray-200 rounded bg-gray-100 overflow-hidden w-60">
-                <div className="w-10 flex items-center justify-center text-gray-600 border-r border-gray-200">$
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 border-t border-gray-200 pt-4">
+              <div>
+                <div className="text-xs text-gray-700 mb-1">Total Before Payments</div>
+                <div className="flex items-stretch border border-gray-200 rounded bg-gray-100 overflow-hidden w-full">
+                  <div className="w-10 flex items-center justify-center text-gray-600 border-r border-gray-200">$
+                  </div>
+                  <input className="flex-1 h-10 px-3 text-sm outline-none bg-gray-100" value={fmtMoney(totalBeforePayments)} readOnly />
                 </div>
-                <input className="flex-1 h-10 px-3 text-sm outline-none bg-gray-100" value={fmtMoney(totalBalanceDue)} readOnly />
+              </div>
+              <div>
+                <div className="text-xs text-gray-700 mb-1">Remaining Balance Due</div>
+                <div className="flex items-stretch border border-[#118df0]/30 rounded bg-[#118df0]/5 overflow-hidden w-full">
+                  <div className="w-10 flex items-center justify-center text-gray-600 border-r border-gray-200">$
+                  </div>
+                  <input className="flex-1 h-10 px-3 text-sm font-semibold text-[#0d6ebd] outline-none bg-transparent" value={fmtMoney(totalBalanceDue)} readOnly />
+                </div>
               </div>
             </div>
             {/* Financing */}

@@ -19,6 +19,19 @@ interface Vehicle {
   status?: string
 }
 
+type VehicleRow = {
+  id?: string | number | null
+  make?: string | null
+  model?: string | null
+  year?: number | string | null
+  price?: number | string | null
+  odometer?: number | string | null
+  fuel_type?: string | null
+  transmission?: string | null
+  categories?: string | null
+  status?: string | null
+}
+
 function formatPrice(p: number) {
   return new Intl.NumberFormat('en-CA', { style: 'currency', currency: 'CAD', maximumFractionDigits: 0 }).format(p)
 }
@@ -46,12 +59,12 @@ export default function HomePage() {
         .from('edc_vehicles')
         .select('id, make, model, year, price, odometer, fuel_type, transmission, categories, status')
         .order('created_at', { ascending: false })
-        .limit(8)
+        .limit(24)
 
       if (error || !data) return
 
       const withImages = await Promise.all(
-        data.map(async (v: any) => {
+        (data as VehicleRow[]).map(async (v) => {
           const id = String(v.id || '').trim()
           let imageUrl = ''
           try {
@@ -65,20 +78,24 @@ export default function HomePage() {
           } catch { /* no image */ }
           return {
             id,
-            make: v.make,
-            model: v.model,
-            year: v.year,
+            make: String(v.make || ''),
+            model: String(v.model || ''),
+            year: Number(v.year || 0),
             price: Number(v.price || 0),
             odometer: Number(v.odometer || 0),
             fuelType: v.fuel_type || null,
             transmission: v.transmission || null,
             category: v.categories || null,
-            status: v.status,
+            status: v.status || '',
             imageUrl,
           }
         })
       )
-      setVehicles(withImages)
+      const imageFirst = withImages
+        .sort((a, b) => Number(Boolean(b.imageUrl)) - Number(Boolean(a.imageUrl)))
+        .slice(0, 8)
+
+      setVehicles(imageFirst)
     }
     loadVehicles()
   }, [])

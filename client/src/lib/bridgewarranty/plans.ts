@@ -949,7 +949,7 @@ export const warrantyPlans: WarrantyPlan[] = [
 ];
 
 export const getProviders = () => {
-  const providers = [...new Set(warrantyPlans.map(p => p.provider))];
+  const providers = Array.from(new Set(warrantyPlans.map(p => p.provider)));
   return providers;
 };
 

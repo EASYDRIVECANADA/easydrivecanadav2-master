@@ -42,6 +42,8 @@ export interface BillOfSaleData {
   hstOnNetDifference: string
   totalTax: string
   licenseFee: string
+  lienPayout?: string
+  tradeEquity?: string
   feesTotal: string
   accessoriesTotal: string
   accessoriesLineItems?: Array<{ name: string; price: number }>
@@ -601,10 +603,12 @@ export function renderBillOfSalePdf(
     ...(hasVal(data.insurancesTotal) ? [['Insurances', fmtMoneyNoSign(data.insurancesTotal)] as [string, string]] : []),
     ['Subtotal', fmtMoneyNoSign(data.subtotal1)],
     ['Net Difference', fmtMoneyNoSign(data.netDifference)],
-    ['HST on Net Difference', fmtMoneyNoSign(data.hstOnNetDifference)],
+    ['Tax on Net Difference', fmtMoneyNoSign(data.hstOnNetDifference)],
     ['Total Tax', fmtMoneyNoSign(data.totalTax)],
     ...(hasVal(data.licenseFee) ? [['License Fee', fmtMoneyNoSign(data.licenseFee)] as [string, string]] : []),
-    ['Subtotal', fmtMoneyNoSign(data.subtotal2)],
+    ...(hasVal(data.lienPayout) ? [['Lien Payout', fmtMoneyNoSign(data.lienPayout)] as [string, string]] : []),
+    ...(hasVal(data.tradeEquity) ? [['Trade Equity', '-' + fmtMoneyNoSign(data.tradeEquity)] as [string, string]] : []),
+    ['Total Before Payments', fmtMoneyNoSign(data.subtotal2)],
     ...(hasVal(data.deposit) ? [['Deposit(s)', '-' + fmtMoneyNoSign(data.deposit)] as [string, string]] : []),
     ...(hasVal(data.downPayment) ? [['Down Payment (Payable on Delivery)', '-' + fmtMoneyNoSign(data.downPayment)] as [string, string]] : []),
     ...(hasVal(data.paymentsTotal) ? [['Payments', '-' + fmtMoneyNoSign(data.paymentsTotal)] as [string, string]] : []),
@@ -649,12 +653,12 @@ export function renderBillOfSalePdf(
     stY += 14
   }
 
-  // Total Balance Due (bold, larger)
+  // Remaining Balance Due (bold, larger)
   stY += 2
   doc.setFontSize(8)
   doc.setFont('helvetica', 'bold')
   doc.setTextColor(DARK)
-  doc.text('Total Balance Due', stLabelEnd, stY + 11, { align: 'right' })
+  doc.text('Remaining Balance Due', stLabelEnd, stY + 11, { align: 'right' })
   doc.text('$' + fmtMoneyNoSign(data.totalBalanceDue), stValueEnd, stY + 11, { align: 'right' })
 
   // Draw border around the extended warranty + settlement section

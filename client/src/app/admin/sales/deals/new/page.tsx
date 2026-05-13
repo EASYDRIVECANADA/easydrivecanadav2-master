@@ -10,10 +10,12 @@ import DisclosuresTab from './DisclosuresTab'
 import VehiclesTab, { type VehiclesTabHandle } from './VehiclesTab'
 import WorksheetTab, { type WorksheetTabHandle } from './WorksheetTab'
 import { renderBillOfSalePdf, type BillOfSaleData } from './billOfSalePdf'
+import { buildBillOfSaleSettlement } from './billOfSaleSettlement'
 import { renderDisclosureFormPdf } from './disclosureFormPdf'
 import { supabase } from '@/lib/supabaseClient'
 
 type DealTab = 'customers' | 'drivers-license' | 'vehicles' | 'worksheet' | 'disclosures' | 'delivery'
+type ExtendedWarrantyData = NonNullable<BillOfSaleData['extendedWarrantyData']>
 
 function SalesNewDealPageContent() {
   const router = useRouter()
@@ -487,7 +489,7 @@ function SalesNewDealPageContent() {
       }
 
       // Build warrantyData: prefer worksheet warranties array, fall back to edc_warranty table
-      let warrantyData: { has_extended: boolean; description: string; duration: string; distance: string; cost: string } | null = null
+      let warrantyData: ExtendedWarrantyData | null = null
 
       // 1. Worksheet warranties (added in the deal's Worksheet tab)
       const parseFeeItemsEarly = (raw: any): any[] => {
@@ -572,76 +574,7 @@ function SalesNewDealPageContent() {
         }
       }
 
-      const parseFeeItems = (raw: any): any[] => {
-        if (!raw) return []
-        if (Array.isArray(raw)) return raw
-        if (typeof raw === 'string') {
-          try {
-            const parsed = JSON.parse(raw)
-            return Array.isArray(parsed) ? parsed : []
-          } catch {
-            return []
-          }
-        }
-        return []
-      }
-
-      const price = Number(w.purchase_price ?? v.price ?? 0)
-      const discount = Number(w.discount ?? 0)
-
-      const sumItems = (raw: any, amtKey: string) => {
-        const items = parseFeeItems(raw)
-        return items.reduce((s: number, i: any) => s + (Number(i?.[amtKey] ?? 0) || 0), 0)
-      }
-      const sumItemTaxes = (raw: any) => {
-        const items = parseFeeItems(raw)
-        return items.reduce((s: number, i: any) => s + (Number(i?.taxAmount ?? 0) || 0), 0)
-      }
-      const sumSelfTaxedBase = (raw: any, amtKey: string) => {
-        const items = parseFeeItems(raw)
-        return items.reduce((s: number, i: any) => {
-          const taxAmt = Number(i?.taxAmount ?? 0) || 0
-          return taxAmt > 0 ? s + (Number(i?.[amtKey] ?? 0) || 0) : s
-        }, 0)
-      }
-      const getOmvicFeeItem = (rawFees: any): { amount: number; tax: number } => {
-        const fees = parseFeeItems(rawFees)
-        for (const f of fees) {
-          const name = String(f?.fee_name ?? f?.name ?? f?.label ?? '').toLowerCase()
-          if (name.includes('omvic')) {
-            return { amount: Number(f?.fee_amount ?? f?.amount ?? 0) || 0, tax: Number(f?.taxAmount ?? 0) || 0 }
-          }
-        }
-        return { amount: 0, tax: 0 }
-      }
-
-      const omvicItem = getOmvicFeeItem(w.fees)
-      const omvic = omvicItem.amount + omvicItem.tax
-      const allFeeAmounts = sumItems(w.fees, 'amount')
-      const allFeeTaxes = sumItemTaxes(w.fees)
-      const feesTotal = (allFeeAmounts - omvicItem.amount) + (allFeeTaxes - omvicItem.tax)
-      const accessoriesTotal = sumItems(w.accessories, 'price') + sumItemTaxes(w.accessories)
-      const warrantiesTotal = sumItems(w.warranties, 'amount') + sumItemTaxes(w.warranties)
-      const insurancesTotal = sumItems(w.insurances, 'amount') + sumItemTaxes(w.insurances)
-      const paymentsTotal = sumItems(w.payments, 'amount')
-
-      const selfTaxedBase = sumSelfTaxedBase(w.fees, 'amount') + sumSelfTaxedBase(w.accessories, 'price') + sumSelfTaxedBase(w.warranties, 'amount') + sumSelfTaxedBase(w.insurances, 'amount')
-      const subtotal1 = price - discount + omvic + feesTotal + accessoriesTotal + warrantiesTotal + insurancesTotal
-      const tradeValue = Number(w.trade_value ?? 0)
-      const lienPayout = Number(w.lien_payout ?? 0)
-      const netDiff = subtotal1 - tradeValue + lienPayout
-      const taxRate = Number(w.tax_rate ?? 0.13)
-      const vehicleHSTBase = Math.max(0, netDiff - selfTaxedBase)
-      const hst = vehicleHSTBase * taxRate
-      const itemsTax = allFeeTaxes + sumItemTaxes(w.accessories) + sumItemTaxes(w.warranties) + sumItemTaxes(w.insurances)
-      const totalTax = hst + itemsTax
-      const licenseFee = w.license_fee && String(w.license_fee).trim() ? Number(w.license_fee) : 0
-
-      const subtotal2 = netDiff + totalTax + licenseFee
-      const deposit = Number(w.deposit ?? 0)
-      const downPayment = Number(w.down_payment ?? 0)
-      const taxInsurance = Number(w.tax_on_insurance ?? 0)
-      const totalDue = subtotal2 - deposit - downPayment - paymentsTotal + taxInsurance
+      const settlement = buildBillOfSaleSettlement(w, v.price)
 
       const fullName = [c.firstname, c.lastname].filter(Boolean).join(' ') || [c.first_name, c.last_name].filter(Boolean).join(' ') || ''
 
@@ -672,25 +605,7 @@ function SalesNewDealPageContent() {
         odometer: v.odometer ? `${Number(v.odometer).toLocaleString()} ${v.odometer_unit || 'kms'}` : '',
         serviceDate: '',
         deliveryDate: d.delivery_date ?? '',
-        vehiclePrice: String(price),
-        discount: String(discount),
-        omvicFee: String(omvic),
-        subtotal1: String(subtotal1),
-        netDifference: String(netDiff),
-        hstOnNetDifference: String(hst),
-        totalTax: String(totalTax),
-        licenseFee: String(licenseFee),
-        feesTotal: String(feesTotal),
-        accessoriesTotal: String(accessoriesTotal),
-        accessoriesLineItems: (w.accessories || []).filter((a: any) => a.name && Number(a.price || 0) > 0).map((a: any) => ({ name: String(a.name), price: Number(a.price || 0) })),
-        warrantiesTotal: String(warrantiesTotal),
-        insurancesTotal: String(insurancesTotal),
-        paymentsTotal: String(paymentsTotal),
-        subtotal2: String(subtotal2),
-        deposit: String(deposit),
-        downPayment: String(downPayment),
-        taxOnInsurance: String(taxInsurance),
-        totalBalanceDue: String(totalDue),
+        ...settlement,
         extendedWarranty: warrantyData ? '' : 'DECLINED',
         extendedWarrantyData: warrantyData,
         commentsHtml: disc.disclosures_html ?? '',
@@ -832,7 +747,7 @@ function SalesNewDealPageContent() {
       }
 
       // Build warrantyDataE: prefer worksheet warranties, fall back to edc_warranty table
-      let warrantyDataE: { has_extended: boolean; description: string; duration: string; distance: string; cost: string } | null = null
+      let warrantyDataE: ExtendedWarrantyData | null = null
 
       const parseFeeItemsEarlyE = (raw: any): any[] => {
         if (!raw) return []
@@ -913,76 +828,7 @@ function SalesNewDealPageContent() {
         }
       }
 
-      const parseFeeItems = (raw: any): any[] => {
-        if (!raw) return []
-        if (Array.isArray(raw)) return raw
-        if (typeof raw === 'string') {
-          try {
-            const parsed = JSON.parse(raw)
-            return Array.isArray(parsed) ? parsed : []
-          } catch {
-            return []
-          }
-        }
-        return []
-      }
-
-      const price = Number(w.purchase_price ?? v.price ?? 0)
-      const discount = Number(w.discount ?? 0)
-
-      const sumItems = (raw: any, amtKey: string) => {
-        const items = parseFeeItems(raw)
-        return items.reduce((s: number, i: any) => s + (Number(i?.[amtKey] ?? 0) || 0), 0)
-      }
-      const sumItemTaxes = (raw: any) => {
-        const items = parseFeeItems(raw)
-        return items.reduce((s: number, i: any) => s + (Number(i?.taxAmount ?? 0) || 0), 0)
-      }
-      const sumSelfTaxedBase = (raw: any, amtKey: string) => {
-        const items = parseFeeItems(raw)
-        return items.reduce((s: number, i: any) => {
-          const taxAmt = Number(i?.taxAmount ?? 0) || 0
-          return taxAmt > 0 ? s + (Number(i?.[amtKey] ?? 0) || 0) : s
-        }, 0)
-      }
-      const getOmvicFeeItem2 = (rawFees: any): { amount: number; tax: number } => {
-        const fees = parseFeeItems(rawFees)
-        for (const f of fees) {
-          const name = String(f?.fee_name ?? f?.name ?? f?.label ?? '').toLowerCase()
-          if (name.includes('omvic')) {
-            return { amount: Number(f?.fee_amount ?? f?.amount ?? 0) || 0, tax: Number(f?.taxAmount ?? 0) || 0 }
-          }
-        }
-        return { amount: 0, tax: 0 }
-      }
-
-      const omvicItem2 = getOmvicFeeItem2(w.fees)
-      const omvic = omvicItem2.amount + omvicItem2.tax
-      const allFeeAmounts = sumItems(w.fees, 'amount')
-      const allFeeTaxes = sumItemTaxes(w.fees)
-      const feesTotal = (allFeeAmounts - omvicItem2.amount) + (allFeeTaxes - omvicItem2.tax)
-      const accessoriesTotal = sumItems(w.accessories, 'price') + sumItemTaxes(w.accessories)
-      const warrantiesTotal = sumItems(w.warranties, 'amount') + sumItemTaxes(w.warranties)
-      const insurancesTotal = sumItems(w.insurances, 'amount') + sumItemTaxes(w.insurances)
-      const paymentsTotal = sumItems(w.payments, 'amount')
-
-      const selfTaxedBase2 = sumSelfTaxedBase(w.fees, 'amount') + sumSelfTaxedBase(w.accessories, 'price') + sumSelfTaxedBase(w.warranties, 'amount') + sumSelfTaxedBase(w.insurances, 'amount')
-      const subtotal1 = price - discount + omvic + feesTotal + accessoriesTotal + warrantiesTotal + insurancesTotal
-      const tradeValue = Number(w.trade_value ?? 0)
-      const lienPayout = Number(w.lien_payout ?? 0)
-      const netDiff = subtotal1 - tradeValue + lienPayout
-      const taxRate = Number(w.tax_rate ?? 0.13)
-      const vehicleHSTBase2 = Math.max(0, netDiff - selfTaxedBase2)
-      const hst = vehicleHSTBase2 * taxRate
-      const itemsTax2 = allFeeTaxes + sumItemTaxes(w.accessories) + sumItemTaxes(w.warranties) + sumItemTaxes(w.insurances)
-      const totalTax = hst + itemsTax2
-      const licenseFee = w.license_fee && String(w.license_fee).trim() ? Number(w.license_fee) : 0
-
-      const subtotal2 = netDiff + totalTax + licenseFee
-      const deposit = Number(w.deposit ?? 0)
-      const downPayment = Number(w.down_payment ?? 0)
-      const taxInsurance = Number(w.tax_on_insurance ?? 0)
-      const totalDue = subtotal2 - deposit - downPayment - paymentsTotal + taxInsurance
+      const settlement = buildBillOfSaleSettlement(w, v.price)
 
       const fullName = [c.firstname, c.lastname].filter(Boolean).join(' ') || [c.first_name, c.last_name].filter(Boolean).join(' ') || ''
 
@@ -1013,25 +859,7 @@ function SalesNewDealPageContent() {
         odometer: v.odometer ? `${Number(v.odometer).toLocaleString()} ${v.odometer_unit || 'kms'}` : '',
         serviceDate: '',
         deliveryDate: d.delivery_date ?? '',
-        vehiclePrice: String(price),
-        discount: String(discount),
-        omvicFee: String(omvic),
-        subtotal1: String(subtotal1),
-        netDifference: String(netDiff),
-        hstOnNetDifference: String(hst),
-        totalTax: String(totalTax),
-        licenseFee: String(licenseFee),
-        feesTotal: String(feesTotal),
-        accessoriesTotal: String(accessoriesTotal),
-        accessoriesLineItems: (w.accessories || []).filter((a: any) => a.name && Number(a.price || 0) > 0).map((a: any) => ({ name: String(a.name), price: Number(a.price || 0) })),
-        warrantiesTotal: String(warrantiesTotal),
-        insurancesTotal: String(insurancesTotal),
-        paymentsTotal: String(paymentsTotal),
-        subtotal2: String(subtotal2),
-        deposit: String(deposit),
-        downPayment: String(downPayment),
-        taxOnInsurance: String(taxInsurance),
-        totalBalanceDue: String(totalDue),
+        ...settlement,
         extendedWarranty: warrantyDataE ? '' : 'DECLINED',
         extendedWarrantyData: warrantyDataE,
         commentsHtml: disc.disclosures_html ?? '',

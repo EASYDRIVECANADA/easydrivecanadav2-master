@@ -527,12 +527,14 @@ function DealsSignaturePageInner() {
       try {
         const { jsPDF } = await import('jspdf')
         const { renderBillOfSalePdf } = await import('../new/billOfSalePdf')
+        const { buildBillOfSaleSettlement } = await import('../new/billOfSaleSettlement')
 
         const c = dealData.customer || {}
         const vRaw = dealData.vehicles?.[0] || {}
         const sv = vRaw.selectedVehicle || vRaw
         const w = dealData.worksheet || {}
         const d = dealData.delivery || {}
+        const settlement = buildBillOfSaleSettlement(w, sv.price)
 
         // Build warrantyDataSig: prefer worksheet warranties, fall back to edc_warranty table
         let warrantyDataSig: { has_extended: boolean; description: string; duration: string; distance: string; cost: string } | null = null
@@ -641,24 +643,7 @@ function DealsSignaturePageInner() {
           odometer: sv.selected_odometer ?? sv.odometer ? `${Number(sv.selected_odometer ?? sv.odometer).toLocaleString()} ${String(sv.selected_odometer_unit ?? sv.odometerUnit ?? sv.odometer_unit ?? 'kms')}` : '',
           serviceDate: '',
           deliveryDate: d.delivery_date ?? '',
-          vehiclePrice: String(w.vehicle_price ?? w.purchase_price ?? sv.price ?? 0),
-          discount: String(w.discount ?? 0),
-          omvicFee: String(w.omvic_fee ?? 10),
-          subtotal1: String(w.subtotal ?? 0),
-          netDifference: String(w.net_difference ?? 0),
-          hstOnNetDifference: String(w.hst_on_net ?? 0),
-          totalTax: String(w.total_tax ?? 0),
-          licenseFee: String(w.license_fee ?? 0),
-          feesTotal: String(w.fees_total ?? 0),
-          accessoriesTotal: String(w.accessories_total ?? 0),
-          warrantiesTotal: String(w.warranty_total ?? 0),
-          insurancesTotal: String(w.insurance_total ?? 0),
-          paymentsTotal: String(w.payments_total ?? 0),
-          subtotal2: String(w.subtotal_2 ?? 0),
-          deposit: String(w.deposit ?? 0),
-          downPayment: String(w.down_payment ?? 0),
-          taxOnInsurance: String(w.tax_on_insurance ?? 0),
-          totalBalanceDue: String(w.balance_due ?? w.total_due ?? 0),
+          ...settlement,
           extendedWarranty: warrantyDataSig ? '' : 'DECLINED',
           extendedWarrantyData: warrantyDataSig,
           commentsHtml: dealData.disclosures?.disclosures_html ?? '',

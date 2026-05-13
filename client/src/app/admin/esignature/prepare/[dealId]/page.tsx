@@ -5,6 +5,7 @@ import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import jsPDF from 'jspdf'
 import { supabase } from '@/lib/supabaseClient'
 import { renderBillOfSalePdf, type BillOfSaleData } from '../../../sales/deals/new/billOfSalePdf'
+import { buildBillOfSaleSettlement } from '../../../sales/deals/new/billOfSaleSettlement'
 
 declare global {
   interface Window {
@@ -651,54 +652,7 @@ export default function PrepareDocumentPage() {
         const d = deal?.delivery || {}
         const disc = deal?.disclosures || {}
 
-        const parseFeeItems = (raw: any): any[] => {
-          if (!raw) return []
-          if (Array.isArray(raw)) return raw
-          if (typeof raw === 'string') {
-            try { return Array.isArray(JSON.parse(raw)) ? JSON.parse(raw) : [] } catch { return [] }
-          }
-          return []
-        }
-
-        const getOmvicFromFees = (rawFees: any): number => {
-          const fees = parseFeeItems(rawFees)
-          for (const f of fees) {
-            const name = String(f?.fee_name ?? f?.name ?? f?.label ?? '').toLowerCase()
-            if (name.includes('omvic')) {
-              const amt = Number(f?.fee_amount ?? f?.amount ?? f?.value ?? 0)
-              return Number.isFinite(amt) ? amt : 0
-            }
-          }
-          return 0
-        }
-
-        const sumItems = (raw: any, amtKey: string) => {
-          const items = parseFeeItems(raw)
-          return items.reduce((s: number, i: any) => s + (Number(i?.[amtKey] ?? 0) || 0), 0)
-        }
-
-        const price = Number(w.purchase_price ?? v.price ?? 0)
-        const omvic = Number(w.omvic_fee ?? getOmvicFromFees(w.fees) ?? 0)
-        const discount = Number(w.discount ?? 0)
-        const allFeesTotal = sumItems(w.fees, 'amount')
-        const feesTotal = allFeesTotal - omvic
-        const accessoriesTotal = sumItems(w.accessories, 'price')
-        const warrantiesTotal = sumItems(w.warranties, 'amount')
-        const insurancesTotal = sumItems(w.insurances, 'amount')
-        const paymentsTotal = sumItems(w.payments, 'amount')
-        const subtotal1 = price - discount + omvic + feesTotal + accessoriesTotal + warrantiesTotal + insurancesTotal
-        const tradeValue = Number(w.trade_value ?? 0)
-        const lienPayout = Number(w.lien_payout ?? 0)
-        const netDiff = subtotal1 - tradeValue + lienPayout
-        const taxRate = Number(w.tax_rate ?? 0.13)
-        const hst = netDiff * taxRate
-        const totalTax = hst
-        const licenseFee = w.license_fee && String(w.license_fee).trim() ? Number(w.license_fee) : 0
-        const subtotal2 = netDiff + totalTax + licenseFee
-        const deposit = Number(w.deposit ?? 0)
-        const downPayment = Number(w.down_payment ?? 0)
-        const taxInsurance = Number(w.tax_on_insurance ?? 0)
-        const totalDue = subtotal2 - deposit - downPayment - paymentsTotal + taxInsurance
+        const settlement = buildBillOfSaleSettlement(w, v.price)
 
         const fullName = [c.firstname, c.lastname].filter(Boolean).join(' ') || ''
         const toEmail = String(c.email ?? '').trim().toLowerCase()
@@ -730,24 +684,7 @@ export default function PrepareDocumentPage() {
           odometer: v.odometer ? `${Number(v.odometer).toLocaleString()} ${String(v.odometer_unit || 'kms')}` : '',
           serviceDate: '',
           deliveryDate: d.delivery_date ?? '',
-          vehiclePrice: String(price),
-          discount: String(discount),
-          omvicFee: String(omvic),
-          subtotal1: String(subtotal1),
-          netDifference: String(netDiff),
-          hstOnNetDifference: String(hst),
-          totalTax: String(totalTax),
-          licenseFee: String(licenseFee),
-          feesTotal: String(feesTotal),
-          accessoriesTotal: String(accessoriesTotal),
-          warrantiesTotal: String(warrantiesTotal),
-          insurancesTotal: String(insurancesTotal),
-          paymentsTotal: String(paymentsTotal),
-          subtotal2: String(subtotal2),
-          deposit: String(deposit),
-          downPayment: String(downPayment),
-          taxOnInsurance: String(taxInsurance),
-          totalBalanceDue: String(totalDue),
+          ...settlement,
           extendedWarranty: 'DECLINED',
           commentsHtml: disc.disclosures_html ?? '',
           purchaserName: fullName,
