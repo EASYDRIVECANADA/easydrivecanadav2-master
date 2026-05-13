@@ -15,10 +15,13 @@ type SettlementFields = Pick<
   | 'lienPayout'
   | 'tradeEquity'
   | 'feesTotal'
+  | 'feesLineItems'
   | 'accessoriesTotal'
   | 'accessoriesLineItems'
   | 'warrantiesTotal'
+  | 'warrantiesLineItems'
   | 'insurancesTotal'
+  | 'insurancesLineItems'
   | 'paymentsTotal'
   | 'subtotal2'
   | 'deposit'
@@ -127,6 +130,17 @@ function findOmvicFee(fees: LineItem[]): LineItem | null {
   }) ?? null
 }
 
+function itemName(item: LineItem): string {
+  return String(item?.name ?? item?.fee_name ?? item?.label ?? '').trim()
+}
+
+function lineItems(items: LineItem[], primaryKey: string, exclude?: LineItem | null): Array<{ name: string; price: number }> {
+  return items
+    .filter((item) => item !== exclude)
+    .map((item) => ({ name: itemName(item), price: itemAmount(item, primaryKey) }))
+    .filter((item) => item.name && item.price > 0)
+}
+
 function worksheetTaxRate(w: Record<string, unknown> | null | undefined): number {
   if (!hasAmount(w?.tax_rate)) return 0.13
   const raw = money(w?.tax_rate)
@@ -205,12 +219,13 @@ export function buildBillOfSaleSettlement(w: Record<string, unknown> | null | un
     lienPayout: String(lienPayout),
     tradeEquity: String(tradeEquity),
     feesTotal: String(feesTotal),
+    feesLineItems: lineItems(fees, 'amount', omvicItem),
     accessoriesTotal: String(accessoriesTotal),
-    accessoriesLineItems: accessories
-      .filter((item) => String(item?.name ?? '').trim() && itemAmount(item, 'price') > 0)
-      .map((item) => ({ name: String(item.name), price: itemAmount(item, 'price') })),
+    accessoriesLineItems: lineItems(accessories, 'price'),
     warrantiesTotal: String(warrantiesTotal),
+    warrantiesLineItems: lineItems(warranties, 'amount'),
     insurancesTotal: String(insurancesTotal),
+    insurancesLineItems: lineItems(insurances, 'amount'),
     paymentsTotal: String(paymentsTotal),
     subtotal2: String(subtotal2),
     deposit: String(deposit),

@@ -527,9 +527,11 @@ function DealsSignaturePageInner() {
       try {
         const { jsPDF } = await import('jspdf')
         const { renderBillOfSalePdf } = await import('../new/billOfSalePdf')
+        const { buildBillOfSaleCustomerFields } = await import('../new/billOfSaleCustomers')
         const { buildBillOfSaleSettlement } = await import('../new/billOfSaleSettlement')
 
         const c = dealData.customer || {}
+        const customerFields = buildBillOfSaleCustomerFields(dealData)
         const vRaw = dealData.vehicles?.[0] || {}
         const sv = vRaw.selectedVehicle || vRaw
         const w = dealData.worksheet || {}
@@ -619,18 +621,7 @@ function DealsSignaturePageInner() {
         const billData = {
           dealDate: c.created_at ? new Date(c.created_at).toLocaleDateString('en-CA', { year: 'numeric', month: 'short', day: 'numeric' }) : '',
           invoiceNumber: String(dealId || ''),
-          fullName: [c.firstname, c.lastname].filter(Boolean).join(' ') || 'Unknown',
-          phone: c.phone ?? '',
-          mobile: c.mobile ?? '',
-          email: String(c.email ?? '').trim().toLowerCase(),
-          address: c.street_address ?? c.streetaddress ?? '',
-          city: c.city ?? '',
-          province: c.province ?? 'ON',
-          postalCode: c.postal_code ?? c.postalcode ?? '',
-          driversLicense: c.drivers_license ?? c.driverslicense ?? '',
-          insuranceCompany: c.insurance_company ?? c.insurancecompany ?? '',
-          policyNumber: c.policy_number ?? c.policynumber ?? '',
-          policyExpiry: c.policy_expiry ?? c.policyexpiry ?? '',
+          ...customerFields,
           stockNumber: String(sv.selected_stock_number ?? sv.stockNumber ?? sv.stock_number ?? ''),
           year: String(sv.selected_year ?? sv.year ?? ''),
           make: String(sv.selected_make ?? sv.make ?? ''),
@@ -647,7 +638,6 @@ function DealsSignaturePageInner() {
           extendedWarranty: warrantyDataSig ? '' : 'DECLINED',
           extendedWarrantyData: warrantyDataSig,
           commentsHtml: dealData.disclosures?.disclosures_html ?? '',
-          purchaserName: [c.firstname, c.lastname].filter(Boolean).join(' ') || '',
           purchaserSignatureB64: undefined,
           salesperson: d.salesperson ?? '',
           salespersonRegNo: '4782496',

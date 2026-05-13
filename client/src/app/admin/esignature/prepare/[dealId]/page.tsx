@@ -5,6 +5,7 @@ import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import jsPDF from 'jspdf'
 import { supabase } from '@/lib/supabaseClient'
 import { renderBillOfSalePdf, type BillOfSaleData } from '../../../sales/deals/new/billOfSalePdf'
+import { buildBillOfSaleCustomerFields } from '../../../sales/deals/new/billOfSaleCustomers'
 import { buildBillOfSaleSettlement } from '../../../sales/deals/new/billOfSaleSettlement'
 
 declare global {
@@ -632,6 +633,7 @@ export default function PrepareDocumentPage() {
         if (!deal || deal?.error) throw new Error(String(deal?.error || 'Failed to load document'))
 
         const c = deal?.customer || {}
+        const customerFields = buildBillOfSaleCustomerFields(deal)
         const vRaw = deal?.vehicles?.[0] || {}
         const sv = vRaw.selectedVehicle || vRaw
         const v = {
@@ -654,24 +656,13 @@ export default function PrepareDocumentPage() {
 
         const settlement = buildBillOfSaleSettlement(w, v.price)
 
-        const fullName = [c.firstname, c.lastname].filter(Boolean).join(' ') || ''
-        const toEmail = String(c.email ?? '').trim().toLowerCase()
+        const toEmail = String(customerFields.email || c.email || '').trim().toLowerCase()
 
         const billData: BillOfSaleData = {
           dealDate: c.created_at ? new Date(c.created_at).toLocaleDateString('en-CA', { year: 'numeric', month: 'short', day: 'numeric' }) : '',
           invoiceNumber: String(dealId || ''),
-          fullName,
-          phone: c.phone ?? '',
-          mobile: c.mobile ?? '',
+          ...customerFields,
           email: toEmail,
-          address: c.street_address ?? c.streetaddress ?? '',
-          city: c.city ?? '',
-          province: c.province ?? 'ON',
-          postalCode: c.postal_code ?? c.postalcode ?? '',
-          driversLicense: c.drivers_license ?? c.driverslicense ?? '',
-          insuranceCompany: c.insurance_company ?? c.insurancecompany ?? '',
-          policyNumber: c.policy_number ?? c.policynumber ?? '',
-          policyExpiry: c.policy_expiry ?? c.policyexpiry ?? '',
           stockNumber: String(v.stock_number ?? ''),
           year: String(v.year ?? ''),
           make: String(v.make ?? ''),
@@ -687,7 +678,6 @@ export default function PrepareDocumentPage() {
           ...settlement,
           extendedWarranty: 'DECLINED',
           commentsHtml: disc.disclosures_html ?? '',
-          purchaserName: fullName,
           purchaserSignatureB64: undefined,
           salesperson: d.salesperson ?? '',
           salespersonRegNo: '4782496',

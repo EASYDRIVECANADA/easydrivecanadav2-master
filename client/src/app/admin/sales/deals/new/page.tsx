@@ -10,6 +10,7 @@ import DisclosuresTab from './DisclosuresTab'
 import VehiclesTab, { type VehiclesTabHandle } from './VehiclesTab'
 import WorksheetTab, { type WorksheetTabHandle } from './WorksheetTab'
 import { renderBillOfSalePdf, type BillOfSaleData } from './billOfSalePdf'
+import { buildBillOfSaleCustomerFields } from './billOfSaleCustomers'
 import { buildBillOfSaleSettlement } from './billOfSaleSettlement'
 import { renderDisclosureFormPdf } from './disclosureFormPdf'
 import { supabase } from '@/lib/supabaseClient'
@@ -430,7 +431,7 @@ function SalesNewDealPageContent() {
       // Fetch all deal data from Supabase
       const res = await fetch(`/api/deals/${encodeURIComponent(dealId)}`)
       const deal = res.ok ? await res.json() : null
-      const c = deal?.customer || {}
+      const customerFields = buildBillOfSaleCustomerFields(deal)
       const vRaw = deal?.vehicles?.[0] || {}
       const vp = vehiclePrefill?.vehicle || {}
       // edc_deals_vehicles stores vehicle info in selected_* columns (or camelCase variants)
@@ -576,23 +577,10 @@ function SalesNewDealPageContent() {
 
       const settlement = buildBillOfSaleSettlement(w, v.price)
 
-      const fullName = [c.firstname, c.lastname].filter(Boolean).join(' ') || [c.first_name, c.last_name].filter(Boolean).join(' ') || ''
-
       const billData: BillOfSaleData = {
         dealDate: dealDate ? new Date(dealDate + 'T00:00:00').toLocaleDateString('en-CA', { year: 'numeric', month: 'short', day: 'numeric' }) : '',
         invoiceNumber: String(dealId || ''),
-        fullName,
-        phone: c.phone ?? '',
-        mobile: c.mobile ?? '',
-        email: c.email ?? '',
-        address: c.street_address ?? c.streetaddress ?? '',
-        city: c.city ?? '',
-        province: c.province ?? 'ON',
-        postalCode: c.postal_code ?? c.postalcode ?? '',
-        driversLicense: c.drivers_license ?? c.driverslicense ?? '',
-        insuranceCompany: c.insurance_company ?? c.insurancecompany ?? '',
-        policyNumber: c.policy_number ?? c.policynumber ?? '',
-        policyExpiry: c.policy_expiry ?? c.policyexpiry ?? '',
+        ...customerFields,
         stockNumber: v.stock_number,
         year: String(v.year),
         make: v.make,
@@ -609,8 +597,6 @@ function SalesNewDealPageContent() {
         extendedWarranty: warrantyData ? '' : 'DECLINED',
         extendedWarrantyData: warrantyData,
         commentsHtml: disc.disclosures_html ?? '',
-        purchaserName: fullName,
-        purchaserSignatureB64: c.signature ?? undefined,
         salesperson: d.salesperson ?? '',
         salespersonRegNo: '4782496',
         acceptorName: d.approved_by ?? 'Syed Islam',
@@ -686,7 +672,8 @@ function SalesNewDealPageContent() {
       const res = await fetch(`/api/deals/${encodeURIComponent(dealId)}`)
       const deal = res.ok ? await res.json() : null
       const c = deal?.customer || {}
-      const toEmail = String(c.email ?? '').trim()
+      const customerFields = buildBillOfSaleCustomerFields(deal)
+      const toEmail = String(customerFields.email || c.email || '').trim()
       if (!toEmail) throw new Error('Missing customer email')
 
       const vRaw = deal?.vehicles?.[0] || {}
@@ -830,23 +817,11 @@ function SalesNewDealPageContent() {
 
       const settlement = buildBillOfSaleSettlement(w, v.price)
 
-      const fullName = [c.firstname, c.lastname].filter(Boolean).join(' ') || [c.first_name, c.last_name].filter(Boolean).join(' ') || ''
-
       const billData: BillOfSaleData = {
         dealDate: dealDate ? new Date(dealDate + 'T00:00:00').toLocaleDateString('en-CA', { year: 'numeric', month: 'short', day: 'numeric' }) : '',
         invoiceNumber: String(dealId || ''),
-        fullName,
-        phone: c.phone ?? '',
-        mobile: c.mobile ?? '',
+        ...customerFields,
         email: toEmail,
-        address: c.street_address ?? c.streetaddress ?? '',
-        city: c.city ?? '',
-        province: c.province ?? 'ON',
-        postalCode: c.postal_code ?? c.postalcode ?? '',
-        driversLicense: c.drivers_license ?? c.driverslicense ?? '',
-        insuranceCompany: c.insurance_company ?? c.insurancecompany ?? '',
-        policyNumber: c.policy_number ?? c.policynumber ?? '',
-        policyExpiry: c.policy_expiry ?? c.policyexpiry ?? '',
         stockNumber: v.stock_number,
         year: String(v.year),
         make: v.make,
@@ -863,8 +838,6 @@ function SalesNewDealPageContent() {
         extendedWarranty: warrantyDataE ? '' : 'DECLINED',
         extendedWarrantyData: warrantyDataE,
         commentsHtml: disc.disclosures_html ?? '',
-        purchaserName: fullName,
-        purchaserSignatureB64: c.signature ?? undefined,
         salesperson: d.salesperson ?? '',
         salespersonRegNo: '4782496',
         acceptorName: d.approved_by ?? 'Syed Islam',

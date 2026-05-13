@@ -18,6 +18,20 @@ export interface BillOfSaleData {
   insuranceCompany: string
   policyNumber: string
   policyExpiry: string
+  additionalPurchasers?: Array<{
+    fullName: string
+    phone: string
+    mobile: string
+    email: string
+    address: string
+    city: string
+    province: string
+    postalCode: string
+    driversLicense: string
+    insuranceCompany: string
+    policyNumber: string
+    policyExpiry: string
+  }>
 
   // Vehicle
   stockNumber: string
@@ -45,10 +59,13 @@ export interface BillOfSaleData {
   lienPayout?: string
   tradeEquity?: string
   feesTotal: string
+  feesLineItems?: Array<{ name: string; price: number }>
   accessoriesTotal: string
   accessoriesLineItems?: Array<{ name: string; price: number }>
   warrantiesTotal: string
+  warrantiesLineItems?: Array<{ name: string; price: number }>
   insurancesTotal: string
+  insurancesLineItems?: Array<{ name: string; price: number }>
   paymentsTotal: string
   subtotal2: string
   deposit: string
@@ -295,6 +312,75 @@ export function renderBillOfSalePdf(
     doc.rect(ML + pCols3[i], pRow3Y, pWidths3[i], 26)
   }
   y = pRow3Y + 26
+
+  const additionalPurchasers = data.additionalPurchasers || []
+  for (let i = 0; i < additionalPurchasers.length; i++) {
+    const p = additionalPurchasers[i]
+    const row1Y = y
+
+    doc.setFontSize(5.5)
+    doc.setFont('helvetica', 'normal')
+    doc.setTextColor(GRAY_LINE)
+    doc.text('full name', ML + pCols1[0] + 2, row1Y + 8)
+    doc.text('phone', ML + pCols1[1] + 2, row1Y + 8)
+    doc.text('mobile', ML + pCols1[2] + 2, row1Y + 8)
+    doc.text('email', ML + pCols1[3] + 2, row1Y + 8)
+
+    doc.setFontSize(7.5)
+    doc.setFont('helvetica', 'bold')
+    doc.setTextColor(DARK)
+    doc.text(fmt(p.fullName), ML + pCols1[0] + 2, row1Y + 20)
+    doc.setFont('helvetica', 'normal')
+    doc.text(fmt(p.phone), ML + pCols1[1] + 2, row1Y + 20)
+    doc.text(fmt(p.mobile), ML + pCols1[2] + 2, row1Y + 20)
+    doc.text(fmt(p.email), ML + pCols1[3] + 2, row1Y + 20)
+
+    doc.setDrawColor(GRAY_LINE)
+    doc.setLineWidth(0.5)
+    for (let col = 0; col < 4; col++) {
+      doc.rect(ML + pCols1[col], row1Y, pWidths1[col], 26)
+    }
+
+    const row2Y = row1Y + 26
+    doc.setFontSize(5.5)
+    doc.setFont('helvetica', 'normal')
+    doc.setTextColor(GRAY_LINE)
+    doc.text('address', ML + pCols2[0] + 2, row2Y + 8)
+    doc.text('city', ML + pCols2[1] + 2, row2Y + 8)
+    doc.text('province', ML + pCols2[2] + 2, row2Y + 8)
+    doc.text('postal code', ML + pCols2[3] + 2, row2Y + 8)
+
+    doc.setFontSize(7.5)
+    doc.setTextColor(DARK)
+    doc.text(fmt(p.address), ML + pCols2[0] + 2, row2Y + 20)
+    doc.text(fmt(p.city), ML + pCols2[1] + 2, row2Y + 20)
+    doc.text(fmt(p.province) || 'ON', ML + pCols2[2] + 2, row2Y + 20)
+    doc.text(fmt(p.postalCode), ML + pCols2[3] + 2, row2Y + 20)
+
+    for (let col = 0; col < 4; col++) {
+      doc.rect(ML + pCols2[col], row2Y, pWidths2[col], 26)
+    }
+
+    const row3Y = row2Y + 26
+    doc.setFontSize(5.5)
+    doc.setTextColor(GRAY_LINE)
+    doc.text("driver's license", ML + pCols3[0] + 2, row3Y + 8)
+    doc.text('ins. company', ML + pCols3[1] + 2, row3Y + 8)
+    doc.text('policy #', ML + pCols3[2] + 2, row3Y + 8)
+    doc.text('policy exp.', ML + pCols3[3] + 2, row3Y + 8)
+
+    doc.setFontSize(7.5)
+    doc.setTextColor(DARK)
+    doc.text(fmt(p.driversLicense), ML + pCols3[0] + 2, row3Y + 20)
+    doc.text(fmt(p.insuranceCompany), ML + pCols3[1] + 2, row3Y + 20)
+    doc.text(fmt(p.policyNumber), ML + pCols3[2] + 2, row3Y + 20)
+    doc.text(fmt(p.policyExpiry), ML + pCols3[3] + 2, row3Y + 20)
+
+    for (let col = 0; col < 4; col++) {
+      doc.rect(ML + pCols3[col], row3Y, pWidths3[col], 26)
+    }
+    y = row3Y + 26
+  }
 
   // ─── VEHICLE INFORMATION ──────────────────────────────────────────
   y += 2
@@ -579,28 +665,32 @@ export function renderBillOfSalePdf(
     return Number.isFinite(n) && Math.abs(n) > 0.0001
   }
 
+  const itemRows = (
+    label: string,
+    total: string,
+    items: Array<{ name: string; price: number }> | undefined,
+    totalLabel: string
+  ): [string, string, boolean?][] => {
+    if (!hasVal(total)) return []
+    const visibleItems = (items || []).filter((item) => item.name && item.price > 0)
+    if (visibleItems.length <= 1) return [[label, fmtMoneyNoSign(total)]]
+    const subRows: [string, string, boolean?][] = visibleItems.map((item) => [
+      `  - ${item.name}`,
+      fmtMoneyNoSign(String(item.price)),
+      true,
+    ])
+    subRows.push([totalLabel, fmtMoneyNoSign(total)])
+    return subRows
+  }
+
   const settlementRows: [string, string, boolean?][] = [
     ['Vehicle Price', fmtMoneyNoSign(data.vehiclePrice)],
     ...(hasVal(data.discount) ? [['Discount', '-' + fmtMoneyNoSign(data.discount)] as [string, string]] : []),
     ...(includeOmvic ? [['OMVIC FEE', fmtMoneyNoSign(data.omvicFee)] as [string, string]] : []),
-    ...(hasVal(data.feesTotal) ? [['Fees', fmtMoneyNoSign(data.feesTotal)] as [string, string]] : []),
-    // Accessories: if we have line items, show each as an indented sub-row then a bold total row
-    ...(() => {
-      const items = data.accessoriesLineItems || []
-      if (!hasVal(data.accessoriesTotal)) return []
-      if (items.length <= 1) {
-        return [['Accessories', fmtMoneyNoSign(data.accessoriesTotal)] as [string, string, boolean?]]
-      }
-      const subRows: [string, string, boolean?][] = items.map(item => [
-        `  • ${item.name}`,
-        item.price > 0 ? fmtMoneyNoSign(String(item.price)) : '',
-        true, // isSubRow
-      ])
-      subRows.push(['Accessories Total', fmtMoneyNoSign(data.accessoriesTotal)])
-      return subRows
-    })(),
-    ...(hasVal(data.warrantiesTotal) ? [['Warranties', fmtMoneyNoSign(data.warrantiesTotal)] as [string, string]] : []),
-    ...(hasVal(data.insurancesTotal) ? [['Insurances', fmtMoneyNoSign(data.insurancesTotal)] as [string, string]] : []),
+    ...itemRows('Fees', data.feesTotal, data.feesLineItems, 'Fees Total'),
+    ...itemRows('Accessories', data.accessoriesTotal, data.accessoriesLineItems, 'Accessories Total'),
+    ...itemRows('Warranties', data.warrantiesTotal, data.warrantiesLineItems, 'Warranties Total'),
+    ...itemRows('Insurances', data.insurancesTotal, data.insurancesLineItems, 'Insurances Total'),
     ['Subtotal', fmtMoneyNoSign(data.subtotal1)],
     ['Net Difference', fmtMoneyNoSign(data.netDifference)],
     ['Tax on Net Difference', fmtMoneyNoSign(data.hstOnNetDifference)],
@@ -792,6 +882,14 @@ export function renderBillOfSalePdf(
   doc.text(`Salesperson: ${fmt(data.salesperson)}, Reg No. ${fmt(data.salespersonRegNo)}`, rightSigX1, sigLineY + 10)
 
   const acceptLineY = sigLineY + 26
+  const coBuyerName = (data.additionalPurchasers || []).map((p) => p.fullName).filter(Boolean).join(' / ')
+  if (coBuyerName) {
+    doc.line(leftSigX1, acceptLineY, leftSigX2, acceptLineY)
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(6.5)
+    doc.text(`Co-Buyer: ${fmt(coBuyerName)}`, leftSigX1, acceptLineY + 10)
+  }
+
   const acceptX1 = ML + CW * 0.50
   const acceptX2 = ML + CW - 60
   doc.line(acceptX1, acceptLineY, acceptX2, acceptLineY)
