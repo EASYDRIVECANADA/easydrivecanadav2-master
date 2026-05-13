@@ -23,6 +23,8 @@ type ShowroomVehicle = {
   categories?: string
 }
 
+type ListingTypeFilter = 'premier' | 'dealer' | 'private' | 'fleet'
+
 const getCategoryBadge = (categories?: string) => {
   const raw = String(categories ?? '').trim().toLowerCase()
   if (!raw) return null
@@ -33,14 +35,33 @@ const getCategoryBadge = (categories?: string) => {
   return null
 }
 
+const getListingType = (vehicle: ShowroomVehicle): ListingTypeFilter | '' => {
+  const raw = String(vehicle.categories || '').trim().toLowerCase()
+  if (raw.includes('premier') || raw.includes('premiere')) return 'premier'
+  if (raw.includes('dealer') || raw.includes('dealership')) return 'dealer'
+  if (raw.includes('private')) return 'private'
+  if (raw.includes('fleet')) return 'fleet'
+  return ''
+}
+
+const listingTypeOptions: Array<{ key: ListingTypeFilter; label: string; color: string }> = [
+  { key: 'premier', label: 'EDC Premier', color: '#118df0' },
+  { key: 'dealer', label: 'Dealer Select', color: '#8b5cf6' },
+  { key: 'private', label: 'Private Seller', color: '#f59e0b' },
+  { key: 'fleet', label: 'Fleet Select', color: '#64748b' },
+]
+
 export default function CustomerShowroomPage() {
   const router = useRouter()
   const [mounted, setMounted] = useState(false)
   const [query, setQuery] = useState('')
   const [status, setStatus] = useState<'ALL' | ShowroomVehicle['status']>('ALL')
+  const [listingType, setListingType] = useState<ListingTypeFilter | ''>('')
   const [selected, setSelected] = useState<ShowroomVehicle | null>(null)
   const [imageIdx, setImageIdx] = useState(0)
   const [viewMode, setViewMode] = useState<'TBL' | 'CRD'>('TBL')
+  const [currentPage, setCurrentPage] = useState(1)
+  const [pageSize, setPageSize] = useState(25)
   const [showPayment, setShowPayment] = useState(false)
   const [disclosureModal, setDisclosureModal] = useState<{
     open: boolean
@@ -366,6 +387,7 @@ export default function CustomerShowroomPage() {
     const q = query.trim().toLowerCase()
     return rows.filter((r) => {
       if (status !== 'ALL' && r.status !== status) return false
+      if (listingType && getListingType(r) !== listingType) return false
       // Filters
       // year
       const yr = parseInt(r.vehicle.split(' ')[0])
@@ -398,10 +420,21 @@ export default function CustomerShowroomPage() {
         r.colour.toLowerCase().includes(q) ||
         r.drive.toLowerCase().includes(q) ||
         r.transmission.toLowerCase().includes(q) ||
-        r.status.toLowerCase().includes(q)
+        r.status.toLowerCase().includes(q) ||
+        String(r.categories || '').toLowerCase().includes(q)
       )
     })
-  }, [query, rows, status, yearFrom, yearTo, makeSel, modelSel, priceMin, priceMax, odoMin, odoMax, driveSet, colourSet])
+  }, [query, rows, status, listingType, yearFrom, yearTo, makeSel, modelSel, priceMin, priceMax, odoMin, odoMax, driveSet, colourSet])
+
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [query, status, listingType, yearFrom, yearTo, makeSel, modelSel, priceMin, priceMax, odoMin, odoMax, driveSet, colourSet, pageSize])
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize))
+  const safePage = Math.min(currentPage, totalPages)
+  const pageStart = filtered.length === 0 ? 0 : (safePage - 1) * pageSize + 1
+  const pageEnd = Math.min(filtered.length, safePage * pageSize)
+  const visibleRows = filtered.slice((safePage - 1) * pageSize, safePage * pageSize)
 
   const resetFilters = () => {
     setYearFrom('')
@@ -414,6 +447,7 @@ export default function CustomerShowroomPage() {
     setOdoMax('')
     setDriveSet(new Set())
     setColourSet(new Set())
+    setListingType('')
   }
 
   const payment = useMemo(() => {
@@ -465,7 +499,6 @@ export default function CustomerShowroomPage() {
     <div className="min-h-screen">
       <div className="edc-page-header">
         <h1 className="text-2xl font-bold text-slate-900">Customer Showroom</h1>
-        <p className="text-sm text-slate-500 mt-0.5">Vehicles from Supabase (edc_vehicles)</p>
       </div>
 
       <div className="px-6 py-6">
@@ -501,7 +534,7 @@ export default function CustomerShowroomPage() {
                 <input
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
-                  placeholder="Search vehicle, drive, colour, status..."
+                  placeholder="Search vehicle, drive, colour, status, category..."
                   className="edc-input pl-10"
                 />
                 <svg
@@ -528,7 +561,31 @@ export default function CustomerShowroomPage() {
               </select>
             </div>
 
-            <div className="text-sm text-slate-500 whitespace-nowrap">Showing {filtered.length} of {rows.length}</div>
+            <button
+              type="button"
+              onClick={() => setFiltersOpen(true)}
+              className="h-10 px-4 rounded-lg border border-slate-200 bg-white text-sm font-semibold text-slate-700 hover:bg-slate-50 inline-flex items-center justify-center gap-2 whitespace-nowrap"
+            >
+              <svg className="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5h18M6 12h12M10 19h4" />
+              </svg>
+              Filters
+            </button>
+
+            <select
+              value={pageSize}
+              onChange={(e) => setPageSize(Number(e.target.value) || 25)}
+              className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none"
+            >
+              <option value={10}>10 / page</option>
+              <option value={25}>25 / page</option>
+              <option value={50}>50 / page</option>
+              <option value={100}>100 / page</option>
+            </select>
+
+            <div className="text-sm text-slate-500 whitespace-nowrap">
+              Showing {pageStart}-{pageEnd} of {filtered.length}
+            </div>
           </div>
 
           {fetchError ? (
@@ -557,7 +614,7 @@ export default function CustomerShowroomPage() {
                 {loading ? (
                   <tr><td className="px-6 py-10 text-center text-sm text-slate-400" colSpan={9}>Loading...</td></tr>
                 ) : null}
-                {filtered.map((r) => (
+                {visibleRows.map((r) => (
                   <tr key={r.id} className="hover:bg-slate-50 transition-colors">
                     <td className="px-3 py-3">
                       <button
@@ -601,7 +658,7 @@ export default function CustomerShowroomPage() {
           {loading ? (
             <div className="px-6 py-10 text-center text-sm text-slate-400">Loading...</div>
           ) : null}
-          {filtered.map((r) => (
+          {visibleRows.map((r) => (
             <div key={r.id} className="flex items-stretch hover:bg-slate-50 transition-colors">
               {/* Thumbnail */}
               <div className="w-[160px] flex-shrink-0 bg-slate-100 flex items-center justify-center overflow-hidden">
@@ -659,15 +716,29 @@ export default function CustomerShowroomPage() {
         </div>
         )}
 
-        {/* Filters Drawer Toggle */}
-        <button
-          type="button"
-          onClick={() => setFiltersOpen(true)}
-          className="fixed right-0 top-1/2 -translate-y-1/2 z-[70] bg-white border border-slate-200/60 rounded-l px-2 py-3 shadow-premium"
-          style={{ writingMode: 'vertical-rl', textOrientation: 'mixed' }}
-        >
-          Filters
-        </button>
+        {filtered.length > pageSize ? (
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3">
+            <div className="text-sm text-slate-500">Page {safePage} of {totalPages}</div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                disabled={safePage <= 1}
+                className="h-9 px-3 rounded-lg border border-slate-200 text-sm font-semibold text-slate-700 disabled:opacity-40 hover:bg-slate-50"
+              >
+                Previous
+              </button>
+              <button
+                type="button"
+                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                disabled={safePage >= totalPages}
+                className="h-9 px-3 rounded-lg border border-slate-200 text-sm font-semibold text-slate-700 disabled:opacity-40 hover:bg-slate-50"
+              >
+                Next
+              </button>
+            </div>
+          </div>
+        ) : null}
 
         {/* Filters Drawer */}
         {filtersOpen && (
@@ -721,6 +792,28 @@ export default function CustomerShowroomPage() {
                   <option value="">All Models</option>
                   {facets.models.map(m => (<option key={m} value={m}>{m}</option>))}
                 </select>
+              </div>
+
+              {/* Listing Type */}
+              <div>
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Listing Type</p>
+                <div className="space-y-1.5">
+                  {listingTypeOptions.map(({ key, label, color }) => (
+                    <label key={key} className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="sellerType"
+                        value={key}
+                        checked={listingType === key}
+                        onChange={() => {}}
+                        onClick={() => setListingType(listingType === key ? '' : key)}
+                        className="accent-[#118df0]"
+                      />
+                      <span className="inline-block w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: color }} />
+                      <span className="text-sm text-gray-700">{label}</span>
+                    </label>
+                  ))}
+                </div>
               </div>
 
               {/* Actions (top) */}
