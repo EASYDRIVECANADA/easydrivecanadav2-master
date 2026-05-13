@@ -1,6 +1,7 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { supabase } from '@/lib/supabaseClient'
 import {
   useDealerConfig,
   isPlanEnabled,
@@ -32,6 +33,19 @@ import {
   useCustomWarranty,
 } from '@/lib/custom-warranty'
 import type { WarrantyPlan } from '@/lib/bridgewarranty'
+
+const PRESETS_WEBHOOK_URL = 'https://primary-production-6722.up.railway.app/webhook/presets'
+
+type TaxRateRow = {
+  id: string
+  user_id: string | null
+  name: string | null
+  description: string | null
+  rate: number | null
+  default_tax_rate: boolean | null
+  default_to_sales: string | null
+  default_to_purchases_or_costs: string | null
+}
 
 // ── Toggle component ─────────────────────────────────────────────
 
@@ -87,11 +101,12 @@ function Crumbs({ items }: { items: { label: string; onClick?: () => void }[] })
 
 export default function ConfigurationPage() {
   const cfg = useDealerConfig()
-  const [tab, setTab] = useState<'warranty' | 'products' | 'defaults' | 'guarantee'>('warranty')
+  const [tab, setTab] = useState<'warranty' | 'products' | 'taxes' | 'defaults' | 'guarantee'>('warranty')
 
   const tabs: { key: typeof tab; label: string }[] = [
     { key: 'warranty',  label: 'Warranty plans' },
     { key: 'products',  label: 'Add-on products' },
+    { key: 'taxes',     label: 'Tax rates' },
     { key: 'defaults',  label: 'Defaults' },
     { key: 'guarantee', label: '30-Day Guarantee' },
   ]
@@ -148,6 +163,7 @@ export default function ConfigurationPage() {
       <div className="px-6 lg:px-8 py-6">
         {tab === 'warranty'  && <WarrantyConfigTab />}
         {tab === 'products'  && <ProductCatalogTab />}
+        {tab === 'taxes'     && <TaxRatesConfigTab />}
         {tab === 'defaults'  && <DefaultsTab />}
         {tab === 'guarantee' && <GuaranteeTab />}
       </div>
@@ -996,6 +1012,308 @@ function ProductDialog({ product, onClose }: { product: DealerProductConfig | nu
 }
 
 // ── Defaults tab ─────────────────────────────────────────────────
+
+function boolish(v: unknown): boolean {
+  if (typeof v === 'boolean') return v
+  const s = String(v ?? '').trim().toLowerCase()
+  return s === 'yes' || s === 'true' || s === '1'
+}
+
+async function getConfigurationUserId(): Promise<string | null> {
+  try {
+    if (typeof window !== 'undefined') {
+      const raw = window.localStorage.getItem('edc_admin_session')
+      if (raw) {
+        const parsed = JSON.parse(raw) as { email?: string; user_id?: string }
+        const sessionUserId = String(parsed?.user_id ?? '').trim()
+        if (sessionUserId) return sessionUserId
+
+        const email = String(parsed?.email ?? '').trim().toLowerCase()
+        if (email) {
+          const { data } = await supabase
+            .from('edc_account_verifications')
+            .select('id')
+            .eq('email', email)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle()
+          if ((data as any)?.id) return String((data as any).id)
+        }
+      }
+    }
+
+    const { data: { user } } = await supabase.auth.getUser()
+    return user?.id ?? null
+  } catch {
+    return null
+  }
+}
+
+function TaxRatesConfigTab() {
+  const [rows, setRows] = useState<TaxRateRow[]>([])
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [editing, setEditing] = useState<TaxRateRow | null>(null)
+  const [draft, setDraft] = useState({
+    name: '',
+    description: '',
+    rate: '',
+    defaultTaxRate: false,
+    defaultToSales: true,
+    defaultToPurchasesOrCosts: false,
+  })
+
+  const resetDraft = () => {
+    setEditing(null)
+    setDraft({
+      name: '',
+      description: '',
+      rate: '',
+      defaultTaxRate: false,
+      defaultToSales: true,
+      defaultToPurchasesOrCosts: false,
+    })
+    setError(null)
+  }
+
+  const loadRows = async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const userId = await getConfigurationUserId()
+      if (!userId) {
+        setRows([])
+        setError('Unable to find the active admin user for tax configuration.')
+        return
+      }
+      const { data, error: loadError } = await supabase
+        .from('presets_tax')
+        .select('id, user_id, name, description, rate, default_tax_rate, default_to_sales, default_to_purchases_or_costs')
+        .eq('user_id', userId)
+        .order('name', { ascending: true })
+
+      if (loadError) throw loadError
+      setRows(((data as any) || []) as TaxRateRow[])
+    } catch (e: any) {
+      setRows([])
+      setError(e?.message || 'Failed to load tax rates.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    void loadRows()
+  }, [])
+
+  const startEdit = (row: TaxRateRow) => {
+    setEditing(row)
+    setDraft({
+      name: String(row.name ?? ''),
+      description: String(row.description ?? ''),
+      rate: row.rate == null ? '' : String(row.rate),
+      defaultTaxRate: Boolean(row.default_tax_rate),
+      defaultToSales: boolish(row.default_to_sales),
+      defaultToPurchasesOrCosts: boolish(row.default_to_purchases_or_costs),
+    })
+    setError(null)
+  }
+
+  const save = async () => {
+    if (saving) return
+    setError(null)
+    const name = draft.name.trim()
+    const rate = Number(draft.rate)
+    if (!name) {
+      setError('Tax name is required.')
+      return
+    }
+    if (!Number.isFinite(rate) || rate < 0) {
+      setError('Tax rate must be a valid percentage.')
+      return
+    }
+
+    setSaving(true)
+    try {
+      const userId = await getConfigurationUserId()
+      if (!userId) throw new Error('Unable to find the active admin user.')
+
+      const payload = {
+        user_id: userId,
+        name,
+        description: draft.description.trim() || null,
+        rate,
+        default_tax_rate: draft.defaultTaxRate,
+        default_to_sales: draft.defaultTaxRate ? (draft.defaultToSales ? 'Yes' : 'No') : null,
+        default_to_purchases_or_costs: draft.defaultTaxRate ? (draft.defaultToPurchasesOrCosts ? 'Yes' : 'No') : null,
+      }
+
+      if (editing) {
+        const { error: updateError } = await supabase.from('presets_tax').update(payload).eq('id', editing.id)
+        if (updateError) throw updateError
+      } else {
+        const { error: insertError } = await supabase.from('presets_tax').insert(payload)
+        if (insertError) {
+          const res = await fetch(PRESETS_WEBHOOK_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              category: 'Tax Rates',
+              action: 'create',
+              id: null,
+              user_id: userId,
+              name,
+              description: draft.description.trim() || null,
+              rate,
+              default_tax_rate: draft.defaultTaxRate,
+              default_to_sales: draft.defaultTaxRate ? draft.defaultToSales : null,
+              default_to_purchases_or_costs: draft.defaultTaxRate ? draft.defaultToPurchasesOrCosts : null,
+            }),
+          })
+          const text = await res.text().catch(() => '')
+          if (!res.ok || String(text).trim() !== 'Done') {
+            throw new Error(text || insertError.message || 'Failed to create tax rate.')
+          }
+        }
+      }
+
+      resetDraft()
+      await loadRows()
+    } catch (e: any) {
+      setError(e?.message || 'Failed to save tax rate.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const remove = async (row: TaxRateRow) => {
+    if (!confirm(`Delete tax rate "${row.name || ''}"?`)) return
+    setError(null)
+    try {
+      const { error: deleteError } = await supabase.from('presets_tax').delete().eq('id', row.id)
+      if (deleteError) throw deleteError
+      if (editing?.id === row.id) resetDraft()
+      await loadRows()
+    } catch (e: any) {
+      setError(e?.message || 'Failed to delete tax rate.')
+    }
+  }
+
+  return (
+    <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_420px]">
+      <div className="rounded-2xl border border-slate-200 bg-white p-5">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <div className="font-semibold text-slate-900">Tax rates</div>
+            <div className="mt-0.5 text-xs text-slate-400">
+              These rates feed the worksheet tax selector and each fee, accessory, warranty, and insurance tax picker.
+            </div>
+          </div>
+          <button type="button" onClick={resetDraft} className="h-9 px-4 rounded-full bg-[#0B1F3A] text-white text-sm font-semibold hover:bg-[#1EA7FF] transition-colors">
+            New tax rate
+          </button>
+        </div>
+
+        {error ? <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div> : null}
+
+        <div className="mt-4 overflow-x-auto rounded-xl border border-slate-200">
+          <table className="w-full text-sm">
+            <thead className="bg-slate-50/80 text-xs uppercase tracking-wider text-slate-400">
+              <tr>
+                <th className="px-3 py-3 text-left">Tax</th>
+                <th className="px-3 py-3 text-right">Rate</th>
+                <th className="px-3 py-3 text-center">Default</th>
+                <th className="px-3 py-3 text-center">Sales</th>
+                <th className="px-3 py-3 text-center">Purchases/Costs</th>
+                <th className="px-3 py-3" />
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {loading ? (
+                <tr>
+                  <td colSpan={6} className="px-3 py-8 text-center text-sm text-slate-400">Loading tax rates...</td>
+                </tr>
+              ) : rows.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="px-3 py-8 text-center text-sm text-slate-400">No tax rates configured.</td>
+                </tr>
+              ) : rows.map((row) => (
+                <tr key={row.id} className="hover:bg-slate-50/60 transition-colors">
+                  <td className="px-3 py-3">
+                    <div className="font-medium text-slate-900">{row.name}</div>
+                    <div className="text-xs text-slate-400">{row.description}</div>
+                  </td>
+                  <td className="px-3 py-3 text-right font-semibold tabular-nums text-slate-900">{Number(row.rate ?? 0)}%</td>
+                  <td className="px-3 py-3 text-center">
+                    {row.default_tax_rate ? <span className="rounded-full bg-blue-50 px-2 py-0.5 text-xs font-semibold text-blue-700">Default</span> : <span className="text-xs text-slate-300">-</span>}
+                  </td>
+                  <td className="px-3 py-3 text-center text-xs text-slate-600">{boolish(row.default_to_sales) ? 'Yes' : '-'}</td>
+                  <td className="px-3 py-3 text-center text-xs text-slate-600">{boolish(row.default_to_purchases_or_costs) ? 'Yes' : '-'}</td>
+                  <td className="px-3 py-3 text-right">
+                    <div className="flex justify-end gap-1">
+                      <button type="button" onClick={() => startEdit(row)} className="p-1.5 text-slate-400 hover:text-[#1EA7FF] hover:bg-blue-50 rounded-lg transition-colors">
+                        <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                        </svg>
+                      </button>
+                      <button type="button" onClick={() => void remove(row)} className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors">
+                        <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div className="rounded-2xl border border-slate-200 bg-white p-5">
+        <div className="font-semibold text-slate-900">{editing ? 'Edit tax rate' : 'New tax rate'}</div>
+        <div className="mt-4 space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Name</label>
+            <input value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} placeholder="HST" className="w-full h-10 px-3 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-[#1EA7FF]/30" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Description</label>
+            <input value={draft.description} onChange={(e) => setDraft({ ...draft, description: e.target.value })} placeholder="Ontario sales tax" className="w-full h-10 px-3 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-[#1EA7FF]/30" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Tax rate amount</label>
+            <div className="flex rounded-lg border border-slate-200 overflow-hidden focus-within:ring-2 focus-within:ring-[#1EA7FF]/30">
+              <input type="number" min="0" step="0.001" value={draft.rate} onChange={(e) => setDraft({ ...draft, rate: e.target.value })} placeholder="13" className="flex-1 h-10 px-3 text-sm outline-none" />
+              <div className="h-10 w-10 border-l border-slate-200 bg-slate-50 text-sm text-slate-500 flex items-center justify-center">%</div>
+            </div>
+          </div>
+          <div className="space-y-3">
+            <div className="flex items-center justify-between rounded-xl border border-slate-200 p-3">
+              <span className="text-sm text-slate-700">Default tax rate</span>
+              <Toggle checked={draft.defaultTaxRate} onChange={(v) => setDraft({ ...draft, defaultTaxRate: v })} />
+            </div>
+            <div className="flex items-center justify-between rounded-xl border border-slate-200 p-3">
+              <span className="text-sm text-slate-700">Default for sales worksheets</span>
+              <Toggle checked={draft.defaultToSales} onChange={(v) => setDraft({ ...draft, defaultToSales: v })} />
+            </div>
+            <div className="flex items-center justify-between rounded-xl border border-slate-200 p-3">
+              <span className="text-sm text-slate-700">Default for purchases/costs</span>
+              <Toggle checked={draft.defaultToPurchasesOrCosts} onChange={(v) => setDraft({ ...draft, defaultToPurchasesOrCosts: v })} />
+            </div>
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            {editing ? <button type="button" onClick={resetDraft} className="h-10 px-4 rounded-full border border-slate-200 text-sm text-slate-600 hover:bg-slate-50 transition-colors">Cancel</button> : null}
+            <button type="button" onClick={() => void save()} disabled={saving} className="h-10 px-5 rounded-full bg-[#0B1F3A] text-sm font-semibold text-white hover:bg-[#1EA7FF] disabled:opacity-50 transition-colors">
+              {saving ? 'Saving...' : editing ? 'Save changes' : 'Add tax rate'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
 
 function DefaultsTab() {
   const cfg = useDealerConfig()
