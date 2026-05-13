@@ -415,6 +415,15 @@ export default function VehicleDetailPage() {
     }).format(price)
   }
 
+  const getDownPaymentPresets = (price: number) => {
+    const cap = Math.min(Math.round(price * 0.5), 50000)
+    const roundToNearest500 = (value: number) => Math.round(value / 500) * 500
+    const presets = [0, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4]
+      .map((rate) => Math.min(cap, roundToNearest500(price * rate)))
+
+    return Array.from(new Set(presets)).filter((amount) => amount >= 0 && amount <= cap)
+  }
+
   const handleInquirySubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setSubmitting(true)
@@ -941,7 +950,7 @@ export default function VehicleDetailPage() {
                     className="w-full accent-gray-900"
                   />
                   <div className="flex flex-wrap gap-1.5 mt-2">
-                    {[0, 1000, 2500, 5000, 10000].map((amt) => {
+                    {getDownPaymentPresets(vehicle.price).map((amt) => {
                       const cap = Math.min(Math.round(vehicle.price * 0.5), 50000)
                       if (amt > cap) return null
                       return (
