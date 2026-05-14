@@ -872,24 +872,31 @@ export function renderBillOfSalePdf(
     }
   }
 
-  doc.line(leftSigX1, sigLineY, leftSigX2, sigLineY)
-  doc.line(rightSigX1, sigLineY, rightSigX2, sigLineY)
-
   doc.setFontSize(6.5)
   doc.setFont('helvetica', 'normal')
   doc.setTextColor(DARK)
-  doc.text(`Purchaser: ${fmt(data.purchaserName)}`, leftSigX1, sigLineY + 10)
+
+  const buyerNames = [
+    { label: 'Purchaser', name: data.purchaserName },
+    ...(data.additionalPurchasers || [])
+      .map((p) => fmt(p.fullName).trim())
+      .filter(Boolean)
+      .map((name, idx, arr) => ({
+        label: arr.length === 1 ? 'Co-Buyer' : `Co-Buyer ${idx + 1}`,
+        name,
+      })),
+  ]
+  const signatureRowGap = 26
+  buyerNames.forEach((buyer, idx) => {
+    const rowY = sigLineY + idx * signatureRowGap
+    doc.line(leftSigX1, rowY, leftSigX2, rowY)
+    doc.text(`${buyer.label}: ${fmt(buyer.name)}`, leftSigX1, rowY + 10)
+  })
+
+  doc.line(rightSigX1, sigLineY, rightSigX2, sigLineY)
   doc.text(`Salesperson: ${fmt(data.salesperson)}, Reg No. ${fmt(data.salespersonRegNo)}`, rightSigX1, sigLineY + 10)
 
-  const acceptLineY = sigLineY + 26
-  const coBuyerName = (data.additionalPurchasers || []).map((p) => p.fullName).filter(Boolean).join(' / ')
-  if (coBuyerName) {
-    doc.line(leftSigX1, acceptLineY, leftSigX2, acceptLineY)
-    doc.setFont('helvetica', 'normal')
-    doc.setFontSize(6.5)
-    doc.text(`Co-Buyer: ${fmt(coBuyerName)}`, leftSigX1, acceptLineY + 10)
-  }
-
+  const acceptLineY = sigLineY + signatureRowGap
   const acceptX1 = ML + CW * 0.50
   const acceptX2 = ML + CW - 60
   doc.line(acceptX1, acceptLineY, acceptX2, acceptLineY)
@@ -898,7 +905,8 @@ export function renderBillOfSalePdf(
   doc.setFont('helvetica', 'italic')
   doc.text('This offer is not binding unless accepted by vendor.', acceptX1, acceptLineY + 22)
 
-  y = acceptLineY + 30
+  const lastBuyerLineY = sigLineY + Math.max(0, buyerNames.length - 1) * signatureRowGap
+  y = Math.max(acceptLineY, lastBuyerLineY) + 30
 
   // Page number
   doc.setFontSize(7)
