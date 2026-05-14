@@ -16,6 +16,40 @@ type SignatureRecipientInput = {
   title?: string
 }
 
+const requestIp = (request: Request) =>
+  String(
+    request.headers.get('cf-connecting-ip') ||
+    request.headers.get('x-real-ip') ||
+    request.headers.get('x-vercel-forwarded-for') ||
+    request.headers.get('x-forwarded-for')?.split(',')[0] ||
+    ''
+  ).trim()
+
+const insertAuditEvent = async (payload: Record<string, unknown>) => {
+  if (!baseUrl || !apiKey) return
+  const res = await fetch(`${baseUrl}/rest/v1/edc_signature_events`, {
+    method: 'POST',
+    headers: {
+      apikey: apiKey,
+      Authorization: `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+      Prefer: 'return=minimal',
+    },
+    body: JSON.stringify({
+      metadata: {},
+      created_at: new Date().toISOString(),
+      ...payload,
+    }),
+    cache: 'no-store',
+  })
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => '')
+    if (res.status === 404 || text.includes('does not exist')) return
+    console.warn('[API /esignature/signatures POST] Audit event skipped:', res.status, text)
+  }
+}
+
 export async function GET(request: Request) {
   try {
     // Validate environment variables
@@ -371,6 +405,22 @@ export async function POST(request: Request) {
           cache: 'no-store',
         }).catch(() => null)
       ))
+      await insertAuditEvent({
+        signature_id: envelopeId,
+        deal_id: envelopeId,
+        user_name: userId || 'Owner',
+        user_email: '',
+        action: 'Envelope Created',
+        activity: `Envelope created with ${inserted.length} recipient(s) and ${uploadedFiles.length} document(s).`,
+        status: 'Created',
+        ip_address: requestIp(request),
+        user_agent: request.headers.get('user-agent') || '',
+        metadata: {
+          recipient_count: inserted.length,
+          document_count: uploadedFiles.length,
+          file_names: uploadedFiles.map((file) => file.file_name),
+        },
+      })
     }
     console.log('[API /esignature/signatures POST] Inserted rows:', inserted.length)
 

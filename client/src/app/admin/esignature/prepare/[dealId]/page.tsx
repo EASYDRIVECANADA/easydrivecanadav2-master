@@ -18,6 +18,22 @@ type FieldType = 'signature' | 'initial' | 'stamp' | 'dateSigned' | 'name' | 'co
 type Field = { id: string; type: FieldType; x: number; y: number; width: number; height: number; page: number; value?: string; fileIndex?: number; recipientIndex?: number }
 type UploadedFile = { file_name: string; file_type: string; file_b64?: string; url?: string }
 type Recipient = { id: string; email: string; full_name?: string; company?: string; title?: string; signature_image?: string }
+type AuditEvent = {
+  id?: string
+  signature_id?: string
+  deal_id?: string
+  recipient_id?: string
+  recipient_index?: number | null
+  user_name?: string
+  user_email?: string
+  action?: string
+  activity?: string
+  status?: string
+  ip_address?: string
+  user_agent?: string
+  metadata?: Record<string, unknown>
+  created_at?: string
+}
 
 const fieldKey = (field: Pick<Field, 'id' | 'fileIndex' | 'recipientIndex'>) =>
   `${field.id}::r${field.recipientIndex ?? 0}::f${field.fileIndex ?? 0}`
@@ -224,29 +240,11 @@ export default function PrepareDocumentPage() {
   const [sendingTo, setSendingTo] = useState<string | null>(null)
   const [historyModalOpen, setHistoryModalOpen] = useState(false)
   const [viewPagesOpen, setViewPagesOpen] = useState(false)
-  const [historyEvents, setHistoryEvents] = useState<any[]>([])
+  const [historyEvents, setHistoryEvents] = useState<AuditEvent[]>([])
   const [loadingHistory, setLoadingHistory] = useState(false)
   const [loggedInUser, setLoggedInUser] = useState<{ name: string; email: string }>({ name: '', email: '' })
 
   // ── localStorage event helpers ──
-  const lsKey = (sigId: string) => `edc_sig_events_${sigId}`
-
-  const lsGetEvents = (sigId: string): any[] => {
-    try {
-      const raw = localStorage.getItem(lsKey(sigId))
-      if (!raw) return []
-      const parsed = JSON.parse(raw)
-      return Array.isArray(parsed) ? parsed : []
-    } catch { return [] }
-  }
-
-  const lsAddEvent = (sigId: string, event: { user_name: string; user_email: string; action: string; activity: string; status: string }) => {
-    try {
-      const existing = lsGetEvents(sigId)
-      existing.push({ ...event, created_at: new Date().toISOString() })
-      localStorage.setItem(lsKey(sigId), JSON.stringify(existing))
-    } catch { /* non-fatal */ }
-  }
   const [addRecipientModal, setAddRecipientModal] = useState(false)
   const [addRecipientForm, setAddRecipientForm] = useState({ email: '', full_name: '', company: '', title: '' })
   const [addingRecipient, setAddingRecipient] = useState(false)
@@ -288,6 +286,60 @@ export default function PrepareDocumentPage() {
     setActionModalMessage(message)
     setActionModalOpen(true)
   }, [])
+
+  const envelopeIdForAudit = useCallback((signature?: any) => {
+    const sig = signature || dealData?.signature
+    return String(sig?.deal_id || sig?.id || dealId || '').trim()
+  }, [dealData, dealId])
+
+  const recordAuditEvent = useCallback(async (event: AuditEvent, signature?: any) => {
+    const sig = signature || dealData?.signature
+    const signatureId = String(event.signature_id || envelopeIdForAudit(sig)).trim()
+    if (!signatureId || !event.action) return null
+
+    const payload: AuditEvent = {
+      signature_id: signatureId,
+      deal_id: String(event.deal_id || sig?.deal_id || signatureId).trim(),
+      user_name: loggedInUser.name || loggedInUser.email || event.user_name || '',
+      user_email: loggedInUser.email || event.user_email || '',
+      ...event,
+      signature_id: signatureId,
+    }
+
+    try {
+      const res = await fetch('/api/esignature/events', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+      if (!res.ok) return null
+      return await res.json().catch(() => null)
+    } catch {
+      return null
+    }
+  }, [dealData, envelopeIdForAudit, loggedInUser])
+
+  const loadAuditEvents = useCallback(async (signature?: any) => {
+    const signatureId = envelopeIdForAudit(signature)
+    if (!signatureId) {
+      setHistoryEvents([])
+      return []
+    }
+
+    setLoadingHistory(true)
+    try {
+      const res = await fetch(`/api/esignature/events?signature_id=${encodeURIComponent(signatureId)}`, { cache: 'no-store' })
+      const rows = res.ok ? await res.json().catch(() => []) : []
+      const events = Array.isArray(rows) ? rows : []
+      setHistoryEvents(events)
+      return events
+    } catch {
+      setHistoryEvents([])
+      return []
+    } finally {
+      setLoadingHistory(false)
+    }
+  }, [envelopeIdForAudit])
 
   // History for undo/redo
   const historyRef = useRef<Field[][]>([[]])
@@ -569,33 +621,6 @@ export default function PrepareDocumentPage() {
             if (fileList.length > 0) {
               setUploadedFiles(fileList)
               setSelectedFileIndex(0)
-            }
-
-            // Record "Registered" event once on first load
-            const existingEvents = lsGetEvents(sigData.id)
-            if (existingEvents.length === 0) {
-              // Use loggedInUser if already loaded, otherwise resolve now
-              const resolveUser = async () => {
-                if (loggedInUser.email) return loggedInUser
-                try {
-                  const { data } = await supabase.auth.getUser()
-                  const u = data?.user
-                  if (!u) return { name: sigData.full_name || sigData.email || '', email: sigData.email || '' }
-                  const email = u.email || ''
-                  const meta = u.user_metadata || {}
-                  const name = [meta.first_name, meta.last_name].filter(Boolean).join(' ') || meta.full_name || meta.name || email
-                  return { name: String(name), email }
-                } catch { return { name: sigData.full_name || sigData.email || '', email: sigData.email || '' } }
-              }
-              resolveUser().then(user => {
-                lsAddEvent(sigData.id, {
-                  user_name: user.name,
-                  user_email: user.email,
-                  action: 'Registered',
-                  activity: 'The envelope was created',
-                  status: 'Created',
-                })
-              })
             }
 
             // Use the API's ordered recipients list so field recipientIndex matches the recipient row.
@@ -1065,6 +1090,14 @@ export default function PrepareDocumentPage() {
 
       const fileName = uploadedFiles[fileIdx]?.file_name?.replace(/\.[^.]+$/, '') || `Document_${fileIdx + 1}`
       pdf.save(`${fileName}_with_fields.pdf`)
+      await recordAuditEvent({
+        user_name: loggedInUser.name || loggedInUser.email || 'Owner',
+        user_email: loggedInUser.email || '',
+        action: 'Document Downloaded',
+        activity: `Downloaded prepared document ${fileName}.`,
+        status: 'Downloaded',
+        metadata: { file_index: fileIdx, file_name: fileName },
+      })
     } catch (e: any) {
       openActionModal(false, 'Download failed', String(e?.message || 'Unknown error'))
     } finally {
@@ -1114,14 +1147,17 @@ export default function PrepareDocumentPage() {
         if (!res.ok) {
           errors.push(recip.email || recip.id)
         } else {
-          // Record "Sent Invitations" event in localStorage
-          lsAddEvent(sigData.id, {
+          await recordAuditEvent({
+            signature_id: sigData.deal_id || sigData.id,
+            deal_id: sigData.deal_id || sigData.id,
+            recipient_id: recip.id,
             user_name: loggedInUser.name || sigData.full_name || sigData.email || 'Owner',
             user_email: loggedInUser.email || sigData.email || '',
-            action: 'Sent Invitations',
-            activity: `Sent a signature request to ${recip.full_name || recip.email || ''} [${recip.email || ''}]`,
+            action: 'Request Sent',
+            activity: `Sent a signature request to ${recip.full_name || recip.email || ''} [${recip.email || ''}].`,
             status: 'Sent',
-          })
+            metadata: { recipient_email: recip.email || '' },
+          }, sigData)
         }
       }
 
@@ -1155,6 +1191,14 @@ export default function PrepareDocumentPage() {
 
       overlayFieldsOnPdf(pdf, selectedFileIndex)
       pdf.save(`Document_${dealId}_with_fields.pdf`)
+      await recordAuditEvent({
+        user_name: loggedInUser.name || loggedInUser.email || 'Owner',
+        user_email: loggedInUser.email || '',
+        action: 'Document Downloaded',
+        activity: 'Downloaded prepared document.',
+        status: 'Downloaded',
+        metadata: { file_index: selectedFileIndex },
+      })
     } catch (e: any) {
       openActionModal(false, 'Download failed', String(e?.message || 'Unknown error'))
     } finally {
@@ -1222,6 +1266,20 @@ export default function PrepareDocumentPage() {
           },
         ])
       }
+      await recordAuditEvent({
+        recipient_id: data.recipient?.id || editingRecipientId || '',
+        recipient_index: isEdit
+          ? recipients.findIndex((r) => r.id === editingRecipientId)
+          : recipients.length,
+        user_name: loggedInUser.name || loggedInUser.email || 'Owner',
+        user_email: loggedInUser.email || '',
+        action: isEdit ? 'Recipient Updated' : 'Recipient Added',
+        activity: `${isEdit ? 'Updated' : 'Added'} recipient ${data.recipient?.full_name || addRecipientForm.full_name || data.recipient?.email || addRecipientForm.email}.`,
+        status: isEdit ? 'Updated' : 'Added',
+        metadata: {
+          recipient_email: data.recipient?.email || addRecipientForm.email,
+        },
+      })
       setAddRecipientModal(false)
       setEditingRecipientId(null)
       setAddRecipientForm({ email: '', full_name: '', company: '', title: '' })
@@ -1266,6 +1324,15 @@ export default function PrepareDocumentPage() {
           })
       )
       setActiveRecipientIdx((prev) => Math.max(0, prev > recipientIndex ? prev - 1 : prev))
+      await recordAuditEvent({
+        recipient_id: recipientId,
+        recipient_index: recipientIndex,
+        user_name: loggedInUser.name || loggedInUser.email || 'Owner',
+        user_email: loggedInUser.email || '',
+        action: 'Recipient Removed',
+        activity: `Removed recipient ${deleteRecipientConfirm.label}.`,
+        status: 'Removed',
+      })
       setDeleteRecipientConfirm(null)
     } catch (err: any) {
       openActionModal(false, 'Error', err?.message || 'Failed to delete recipient')
@@ -1320,6 +1387,18 @@ export default function PrepareDocumentPage() {
       }
 
       setIsDirty(false)
+      await recordAuditEvent({
+        user_name: loggedInUser.name || loggedInUser.email || 'Owner',
+        user_email: loggedInUser.email || '',
+        action: 'Document Prepared',
+        activity: `Prepared ${fields.length} field(s) for ${recipients.length} recipient(s).`,
+        status: 'Prepared',
+        metadata: {
+          field_count: fields.length,
+          recipient_count: recipients.length,
+          document_count: uploadedFiles.length || 1,
+        },
+      })
       if (!silent) {
         openActionModal(true, 'Saved', `All fields saved for all ${recipients.length} recipient(s) across all files.`)
       }
@@ -2148,10 +2227,22 @@ export default function PrepareDocumentPage() {
           <button
             type="button"
             title="Audit trail"
-            onClick={() => {
+            onClick={async () => {
               const sigData = dealData?.signature
               if (!sigData) return
-              setHistoryEvents(lsGetEvents(sigData.id))
+              const existingEvents = await loadAuditEvents(sigData)
+              if (existingEvents.length > 0) {
+                await recordAuditEvent({
+                  signature_id: sigData.deal_id || sigData.id,
+                  deal_id: sigData.deal_id || sigData.id,
+                  user_name: loggedInUser.name || loggedInUser.email || 'Owner',
+                  user_email: loggedInUser.email || '',
+                  action: 'Audit Trail Viewed',
+                  activity: 'Audit trail was opened.',
+                  status: 'Viewed',
+                }, sigData)
+                await loadAuditEvents(sigData)
+              }
               setHistoryModalOpen(true)
             }}
             className={`w-12 flex flex-col items-center gap-1 py-2.5 px-1 rounded-xl transition-colors ${darkMode ? 'text-gray-400 hover:text-purple-400 hover:bg-purple-900/40' : 'text-gray-500 hover:text-purple-600 hover:bg-purple-50'}`}
@@ -2272,9 +2363,12 @@ export default function PrepareDocumentPage() {
         const sigData = dealData?.signature
         if (!sigData) return null
 
-        const allRecipients: any[] = [sigData, ...((sigData.siblings as any[]) || [])]
+        const allRecipients: any[] = Array.isArray(sigData.recipients) && sigData.recipients.length > 0
+          ? sigData.recipients
+          : [sigData, ...((sigData.siblings as any[]) || [])]
         const isCompleted = (r: any) => !!(r.signed_at || String(r.status || '').toLowerCase() === 'completed')
-        const overallSigned = allRecipients.every(isCompleted)
+        const overallSigned = allRecipients.length > 0 && allRecipients.every(isCompleted)
+        const completedCount = allRecipients.filter(isCompleted).length
 
         const fmt = (iso: string | null) => {
           if (!iso) return '—'
@@ -2290,13 +2384,22 @@ export default function PrepareDocumentPage() {
         const docNames = docFiles.map((f: any) => f.file_name || '').filter(Boolean)
 
         // Use real events from API; fall back to signature record data if none yet
-        type ActivityRow = { time: string; user: string; user_email: string; action: string; activity: string; status: string }
+        const summarizeAgent = (agent: string) => {
+          const raw = String(agent || '').trim()
+          if (!raw) return '-'
+          const browser = raw.includes('Edg/') ? 'Edge' : raw.includes('Chrome/') ? 'Chrome' : raw.includes('Firefox/') ? 'Firefox' : raw.includes('Safari/') ? 'Safari' : 'Browser'
+          const os = raw.includes('Windows') ? 'Windows' : raw.includes('Mac OS') ? 'macOS' : raw.includes('Android') ? 'Android' : raw.includes('iPhone') || raw.includes('iPad') ? 'iOS' : ''
+          return [browser, os].filter(Boolean).join(' on ') || raw.slice(0, 80)
+        }
+
+        type ActivityRow = { time: string; user: string; user_email: string; action: string; activity: string; status: string; ip: string; device: string }
         let rows: ActivityRow[]
 
         // Admin-triggered actions always show the current logged-in user
-        const adminActions = new Set(['Registered', 'Sent Invitations'])
+        const adminActions = new Set(['Envelope Created', 'Recipient Added', 'Recipient Updated', 'Recipient Removed', 'Document Prepared', 'Request Sent', 'Document Downloaded', 'Audit Trail Viewed', 'Audit Trail Printed', 'Registered', 'Sent Invitations'])
         const displayUser = loggedInUser.name || loggedInUser.email || '—'
         const displayEmail = loggedInUser.email || ''
+        const legacyAudit = historyEvents.length === 0
 
         if (historyEvents.length > 0) {
           rows = historyEvents.map((ev: any) => {
@@ -2308,6 +2411,8 @@ export default function PrepareDocumentPage() {
               action: ev.action || '',
               activity: ev.activity || '',
               status: ev.status || '',
+              ip: ev.ip_address || '-',
+              device: summarizeAgent(ev.user_agent || ''),
             }
           })
         } else {
@@ -2317,9 +2422,11 @@ export default function PrepareDocumentPage() {
             time: fmt(sigData.created_at),
             user: loggedInUser.name || allRecipients[0]?.full_name || allRecipients[0]?.email || 'Owner',
             user_email: loggedInUser.email || allRecipients[0]?.email || '',
-            action: 'Registered',
+            action: 'Envelope Created',
             activity: 'The envelope was created',
             status: 'Created',
+            ip: '-',
+            device: '-',
           })
           for (const r of allRecipients) {
             if (isCompleted(r)) {
@@ -2327,9 +2434,11 @@ export default function PrepareDocumentPage() {
                 time: fmt(r.signed_at || r.updated_at),
                 user: r.full_name || r.email || '',
                 user_email: r.email || '',
-                action: 'Signed',
+                action: 'Recipient Signed',
                 activity: `${r.full_name || r.email || ''} signed the document`,
                 status: 'Completed',
+                ip: '-',
+                device: '-',
               })
             }
           }
@@ -2359,7 +2468,20 @@ export default function PrepareDocumentPage() {
               <div className="text-sm font-semibold text-gray-700">Audit trail</div>
               <button
                 type="button"
-                onClick={() => window.print()}
+                onClick={async () => {
+                  if (!legacyAudit) {
+                    await recordAuditEvent({
+                      signature_id: sigData.deal_id || sigData.id,
+                      deal_id: sigData.deal_id || sigData.id,
+                      user_name: loggedInUser.name || loggedInUser.email || 'Owner',
+                      user_email: loggedInUser.email || '',
+                      action: 'Audit Trail Printed',
+                      activity: 'Audit trail was printed.',
+                      status: 'Printed',
+                    }, sigData)
+                  }
+                  window.print()
+                }}
                 className="h-8 px-4 rounded border border-gray-300 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
               >
                 Print
@@ -2381,7 +2503,7 @@ export default function PrepareDocumentPage() {
                 </div>
                 <div>
                   <div className="text-sm font-semibold text-gray-900 mb-0.5">Envelope ID</div>
-                  <div className="text-sm text-gray-600 font-mono break-all">{sigData.id}</div>
+                  <div className="text-sm text-gray-600 font-mono break-all">{sigData.deal_id || sigData.id}</div>
                 </div>
                 <div>
                   <div className="text-sm font-semibold text-gray-900 mb-0.5">Recipients</div>
@@ -2394,7 +2516,7 @@ export default function PrepareDocumentPage() {
                 <div>
                   <div className="text-sm font-semibold text-gray-900 mb-0.5">Status</div>
                   <div className={`text-sm font-medium ${overallSigned ? 'text-green-600' : 'text-amber-600'}`}>
-                    {overallSigned ? 'Completed' : 'Pending'}
+                    {overallSigned ? 'Completed' : `Pending (${completedCount}/${allRecipients.length})`}
                   </div>
                 </div>
                 <div>
@@ -2419,6 +2541,12 @@ export default function PrepareDocumentPage() {
                 </div>
               </div>
 
+              {legacyAudit && (
+                <div className="mb-6 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                  Legacy audit generated from saved signature timestamps. New activity will be tracked with IP address and device details.
+                </div>
+              )}
+
               {/* Activities table */}
               <div>
                 <h2 className="text-xl font-semibold text-gray-900 mb-5">Activities</h2>
@@ -2435,6 +2563,8 @@ export default function PrepareDocumentPage() {
                           <th className="text-left px-4 py-3 font-semibold text-gray-500 text-xs uppercase tracking-wide w-48">User</th>
                           <th className="text-left px-4 py-3 font-semibold text-gray-500 text-xs uppercase tracking-wide w-36">Action</th>
                           <th className="text-left px-4 py-3 font-semibold text-gray-500 text-xs uppercase tracking-wide">Activity</th>
+                          <th className="text-left px-4 py-3 font-semibold text-gray-500 text-xs uppercase tracking-wide w-32">IP Address</th>
+                          <th className="text-left px-4 py-3 font-semibold text-gray-500 text-xs uppercase tracking-wide w-36">Device</th>
                           <th className="text-left px-4 py-3 font-semibold text-gray-500 text-xs uppercase tracking-wide w-28">Status</th>
                         </tr>
                       </thead>
@@ -2448,6 +2578,8 @@ export default function PrepareDocumentPage() {
                             </td>
                             <td className="px-4 py-3 text-gray-700 align-top">{row.action}</td>
                             <td className="px-4 py-3 text-gray-600 align-top">{row.activity}</td>
+                            <td className="px-4 py-3 text-gray-600 align-top font-mono text-xs">{row.ip}</td>
+                            <td className="px-4 py-3 text-gray-600 align-top text-xs">{row.device}</td>
                             <td className="px-4 py-3 text-gray-700 align-top">{row.status}</td>
                           </tr>
                         ))}

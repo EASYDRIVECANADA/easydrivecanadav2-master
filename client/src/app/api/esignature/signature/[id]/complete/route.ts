@@ -17,6 +17,56 @@ const numberOrZero = (value: unknown) => {
   return Number.isFinite(parsed) ? parsed : 0
 }
 
+const requestIp = (request: Request, fallback?: unknown) =>
+  String(
+    request.headers.get('cf-connecting-ip') ||
+    request.headers.get('x-real-ip') ||
+    request.headers.get('x-vercel-forwarded-for') ||
+    request.headers.get('x-forwarded-for')?.split(',')[0] ||
+    fallback ||
+    ''
+  ).trim()
+
+const insertAuditEvent = async (payload: Record<string, unknown>) => {
+  if (!baseUrl || !apiKey) return
+  const res = await fetch(`${baseUrl}/rest/v1/edc_signature_events`, {
+    method: 'POST',
+    headers: hdrs(),
+    body: JSON.stringify({
+      metadata: {},
+      created_at: new Date().toISOString(),
+      ...payload,
+    }),
+    cache: 'no-store',
+  })
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => '')
+    if (res.status === 404 || text.includes('does not exist')) return
+    if (res.status === 400 && (text.includes('schema cache') || text.includes('PGRST204') || text.includes('Could not find'))) {
+      const legacyPayload = {
+        signature_id: payload.signature_id,
+        user_name: payload.user_name,
+        user_email: payload.user_email,
+        action: payload.action,
+        activity: [
+          payload.activity,
+          payload.ip_address ? `IP: ${payload.ip_address}` : '',
+          payload.user_agent ? `Device: ${payload.user_agent}` : '',
+        ].filter(Boolean).join(' | '),
+        status: payload.status,
+        created_at: payload.created_at || new Date().toISOString(),
+      }
+      await fetch(`${baseUrl}/rest/v1/edc_signature_events`, {
+        method: 'POST',
+        headers: hdrs(),
+        body: JSON.stringify(legacyPayload),
+        cache: 'no-store',
+      }).catch(() => null)
+    }
+  }
+}
+
 export async function PATCH(
   request: Request,
   { params }: { params: { id: string } }
@@ -34,6 +84,10 @@ export async function PATCH(
       fields_data,        // full JSON string of all Field[] for this recipient
       recipient_index,    // which recipient signed (0 = primary, 1 = second, etc.)
       deal_id,            // the deal this signature belongs to
+      user_name,
+      user_email,
+      ip_address,
+      user_agent,
     } = body
 
     const now = new Date().toISOString()
@@ -141,6 +195,59 @@ export async function PATCH(
           ).catch(() => null)
         })
       await Promise.all(fieldUpdates)
+    }
+
+    const envelopeId = String(deal_id || id)
+    const signerName = String(user_name || '').trim()
+    const signerEmail = String(user_email || '').trim()
+    const signedRecipientIndex = recipient_index !== undefined && recipient_index !== null
+      ? numberOrZero(recipient_index)
+      : numberOrZero(fields[0]?.recipientIndex)
+
+    await insertAuditEvent({
+      signature_id: envelopeId,
+      deal_id: envelopeId,
+      recipient_id: id,
+      recipient_index: signedRecipientIndex,
+      user_name: signerName || signerEmail || 'Recipient',
+      user_email: signerEmail,
+      action: 'Recipient Signed',
+      activity: `${signerName || signerEmail || 'Recipient'} signed the document.`,
+      status: 'Signed',
+      ip_address: requestIp(request, ip_address),
+      user_agent: String(user_agent || request.headers.get('user-agent') || ''),
+      metadata: {
+        field_count: fields.length,
+      },
+    })
+
+    const groupRes = await fetch(
+      `${baseUrl}/rest/v1/signature?deal_id=eq.${encodeURIComponent(envelopeId)}&select=id,status,signed_at`,
+      { method: 'GET', headers: hdrs(), cache: 'no-store' }
+    ).catch(() => null)
+    if (groupRes?.ok) {
+      const group = await groupRes.json().catch(() => [])
+      const rows = Array.isArray(group) ? group : []
+      const allComplete = rows.length > 0 && rows.every((row: any) => {
+        const rowStatus = String(row?.status || '').toLowerCase()
+        return row?.signed_at || rowStatus === 'completed' || rowStatus === 'signed'
+      })
+      if (allComplete) {
+        await insertAuditEvent({
+          signature_id: envelopeId,
+          deal_id: envelopeId,
+          user_name: signerName || signerEmail || 'Recipient',
+          user_email: signerEmail,
+          action: 'Envelope Completed',
+          activity: `All ${rows.length} recipient(s) completed the envelope.`,
+          status: 'Completed',
+          ip_address: requestIp(request, ip_address),
+          user_agent: String(user_agent || request.headers.get('user-agent') || ''),
+          metadata: {
+            recipient_count: rows.length,
+          },
+        })
+      }
     }
 
     return NextResponse.json({ success: true })

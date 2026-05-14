@@ -32,6 +32,7 @@ EasyDrive_Canada_Proposal.md
 # Database exports
 *.sql
 db_export*.sql
+!supabase/edc_signature_events.sql
 
 # debug
 npm-debug.log*

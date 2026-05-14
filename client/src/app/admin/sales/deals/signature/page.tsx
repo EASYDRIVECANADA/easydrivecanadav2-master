@@ -159,6 +159,7 @@ function DealsSignaturePageInner() {
   const contentRef = useRef<HTMLDivElement>(null)
   const pagesPanelRef = useRef<HTMLDivElement>(null)
   const pagesButtonRef = useRef<HTMLButtonElement>(null)
+  const viewedAuditRef = useRef<string | null>(null)
 
   // Submit modals
   const [showIncompleteModal, setShowIncompleteModal] = useState(false)
@@ -172,6 +173,30 @@ function DealsSignaturePageInner() {
   const ZOOM_STEP = 0.25
   const ZOOM_MIN = 0.25
   const ZOOM_MAX = 3
+
+  const envelopeIdForAudit = () => String(sigRecord?.deal_id || sigRecord?.id || sigId || '').trim()
+
+  const recordAuditEvent = async (event: Record<string, unknown>) => {
+    const signatureId = String(event.signature_id || envelopeIdForAudit()).trim()
+    if (!signatureId || !event.action) return
+    try {
+      await fetch('/api/esignature/events', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          signature_id: signatureId,
+          deal_id: String(event.deal_id || sigRecord?.deal_id || signatureId),
+          recipient_id: String(event.recipient_id || sigRecord?.id || sigId || ''),
+          recipient_index: sigRecord?.recipient_index ?? null,
+          user_name: sigRecord?.full_name || recipientEmail || 'Recipient',
+          user_email: recipientEmail || sigRecord?.email || '',
+          user_agent: typeof navigator !== 'undefined' ? navigator.userAgent : '',
+          ...event,
+          signature_id: signatureId,
+        }),
+      })
+    } catch { /* non-fatal */ }
+  }
 
   const getCustomerName = (customer: any) => {
     return [
@@ -376,6 +401,12 @@ function DealsSignaturePageInner() {
     overlayFieldsOnPdf(pdf, fileIdx)
     const fileName = uploadedFiles[fileIdx]?.file_name?.replace(/\.[^.]+$/, '') || `Document_${fileIdx + 1}`
     pdf.save(`${fileName}_signed.pdf`)
+    await recordAuditEvent({
+      action: 'Document Downloaded',
+      activity: `${sigRecord?.full_name || recipientEmail || 'Recipient'} downloaded ${fileName}.`,
+      status: 'Downloaded',
+      metadata: { file_index: fileIdx, file_name: fileName },
+    })
   }
 
   const handleDownloadFile = async (fileIdx: number) => {
@@ -646,6 +677,31 @@ function DealsSignaturePageInner() {
 
     loadDocument()
   }, [dealId, sigId])
+
+  useEffect(() => {
+    if (!sigRecord?.id || !recipientEmail) return
+    const envelopeId = envelopeIdForAudit()
+    if (!envelopeId) return
+    const key = `${envelopeId}:${sigRecord.id}:viewed`
+    if (viewedAuditRef.current === key) return
+    viewedAuditRef.current = key
+    try {
+      if (sessionStorage.getItem(`edc_esign_viewed_${key}`)) return
+      sessionStorage.setItem(`edc_esign_viewed_${key}`, '1')
+    } catch { /* non-fatal */ }
+
+    recordAuditEvent({
+      signature_id: envelopeId,
+      deal_id: sigRecord.deal_id || envelopeId,
+      recipient_id: sigRecord.id,
+      recipient_index: sigRecord.recipient_index ?? null,
+      user_name: sigRecord.full_name || recipientEmail || 'Recipient',
+      user_email: recipientEmail || sigRecord.email || '',
+      action: 'Recipient Viewed',
+      activity: `${sigRecord.full_name || recipientEmail || 'Recipient'} opened the signing link.`,
+      status: 'Viewed',
+    })
+  }, [sigRecord, recipientEmail])
 
   // Generate Bill of Sale PDF for dealId flow
   useEffect(() => {
@@ -1083,24 +1139,6 @@ function DealsSignaturePageInner() {
           throw new Error(t || `Webhook failed (${hookRes.status})`)
         }
 
-        // Record "Signed" event in localStorage for process history
-        try {
-          const sigId = sigRecord?.id
-          if (sigId) {
-            const lsKey = `edc_sig_events_${sigId}`
-            const existing = JSON.parse(localStorage.getItem(lsKey) || '[]')
-            existing.push({
-              user_name: sigRecord?.full_name || recipientEmail || 'Recipient',
-              user_email: recipientEmail || '',
-              action: 'Signed',
-              activity: `${sigRecord?.full_name || recipientEmail || 'Recipient'} signed the document`,
-              status: 'Signed',
-              created_at: new Date().toISOString(),
-            })
-            localStorage.setItem(lsKey, JSON.stringify(existing))
-          }
-        } catch { /* non-fatal */ }
-
         // Save to database: update signature record + individual field rows
         if (sigRecord?.id) {
           const now = new Date().toISOString()
@@ -1115,7 +1153,11 @@ function DealsSignaturePageInner() {
                 status: 'completed',
                 fields_data: JSON.stringify(updatedFields),
                 recipient_index: updatedFields.find(f => fieldKey(f) === signingFieldKey)?.recipientIndex ?? updatedFields[0]?.recipientIndex ?? 0,
-                deal_id: sigRecord.id,
+                deal_id: sigRecord.deal_id || sigRecord.id,
+                user_name: sigRecord?.full_name || recipientEmail || 'Recipient',
+                user_email: recipientEmail || sigRecord?.email || '',
+                ip_address: ipAddress,
+                user_agent: typeof navigator !== 'undefined' ? navigator.userAgent : '',
               }),
             })
           } catch { /* non-fatal — webhook already succeeded */ }

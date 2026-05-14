@@ -101,6 +101,36 @@ export default function EsignatureClient() {
   const [esignModalBody, setEsignModalBody] = useState('')
   const [esignModalBlocking, setEsignModalBlocking] = useState(true)
 
+  const getAdminSession = () => {
+    try {
+      const raw = typeof window !== 'undefined' ? window.localStorage.getItem('edc_admin_session') : null
+      return raw ? JSON.parse(raw) as { email?: string; user_id?: string; name?: string } : null
+    } catch {
+      return null
+    }
+  }
+
+  const recordAuditEvent = async (sigData: any, event: Record<string, unknown>) => {
+    const signatureId = String(event.signature_id || sigData?.deal_id || sigData?.id || '').trim()
+    if (!signatureId || !event.action) return
+    const session = getAdminSession()
+    try {
+      await fetch('/api/esignature/events', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          signature_id: signatureId,
+          deal_id: String(event.deal_id || sigData?.deal_id || signatureId),
+          user_name: session?.name || session?.email || 'Owner',
+          user_email: session?.email || '',
+          user_agent: typeof navigator !== 'undefined' ? navigator.userAgent : '',
+          ...event,
+          signature_id: signatureId,
+        }),
+      })
+    } catch { /* non-fatal */ }
+  }
+
   const openEsignModal = (opts: { title: string; body: string; blocking: boolean }) => {
     setEsignModalTitle(opts.title)
     setEsignModalBody(opts.body)
@@ -679,6 +709,16 @@ export default function EsignatureClient() {
         if (!sendRes.ok) {
           const t = await sendRes.text().catch(() => '')
           sendErrors.push(`${recipient.email}: ${t || sendRes.status}`)
+        } else {
+          await recordAuditEvent(sigData, {
+            recipient_id: recipient.id,
+            user_name: getAdminSession()?.email || 'Owner',
+            user_email: getAdminSession()?.email || '',
+            action: 'Request Sent',
+            activity: `Sent a signature request to ${recipient.full_name || recipient.email || ''} [${recipient.email || ''}].`,
+            status: 'Sent',
+            metadata: { recipient_email: recipient.email || '' },
+          })
         }
       }
 
@@ -855,6 +895,12 @@ export default function EsignatureClient() {
     const pdf = await buildSignedPdf(fileEntry, sigData, fields, fileIndex)
     const safeName = (fileEntry.file_name || 'document').replace(/[^a-z0-9._-]/gi, '_')
     pdf.save(safeName.endsWith('.pdf') ? safeName : `${safeName}.pdf`)
+    await recordAuditEvent(sigData, {
+      action: 'Document Downloaded',
+      activity: `Downloaded ${fileEntry.file_name || `Document ${fileIndex + 1}`}.`,
+      status: 'Downloaded',
+      metadata: { file_index: fileIndex, file_name: fileEntry.file_name || '' },
+    })
   }
 
   const openFilePreview = async (
@@ -1348,7 +1394,17 @@ export default function EsignatureClient() {
                       headers: { 'Content-Type': 'application/json' },
                       body: JSON.stringify({ name: recip.full_name || recip.email || '', email: recip.email || '', link, document_url: documentUrl }),
                     })
-                    if (!res.ok) errors.push(recip.email || recip.id)
+                    if (!res.ok) {
+                      errors.push(recip.email || recip.id)
+                    } else {
+                      await recordAuditEvent(sigData, {
+                        recipient_id: recip.id,
+                        action: 'Request Sent',
+                        activity: `Sent a signature request to ${recip.full_name || recip.email || ''} [${recip.email || ''}].`,
+                        status: 'Sent',
+                        metadata: { recipient_email: recip.email || '' },
+                      })
+                    }
                   }
 
                   if (errors.length > 0) throw new Error(`Failed to send to: ${errors.join(', ')}`)
