@@ -188,7 +188,7 @@ export default function SignPage() {
   const params = useParams()
   const searchParams = useSearchParams()
   const id = String(params.id || '')
-  const recipientIdx = Number(searchParams.get('idx') ?? '0')
+  const recipientIdxParam = searchParams.get('idx')
 
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -205,6 +205,9 @@ export default function SignPage() {
   const [dark, setDark] = useState(false)
   const [showPages, setShowPages] = useState(false)
   const [zoom, setZoom] = useState(1)
+  const recipientIdx = recipientIdxParam !== null
+    ? Number(recipientIdxParam)
+    : Number(sigRecord?.recipient_index ?? 0)
 
   const pageRefs = useRef<(HTMLDivElement | null)[]>([])
   const contentRef = useRef<HTMLDivElement>(null)
@@ -220,6 +223,9 @@ export default function SignPage() {
         const sigData = await sigRes.json()
         if (sigData.error) throw new Error(sigData.error)
         setSigRecord(sigData)
+        const recipientIdx = recipientIdxParam !== null
+          ? Number(recipientIdxParam)
+          : Number(sigData?.recipient_index ?? 0)
 
         const fieldsRes = await fetch(`/api/esignature/fields?dealId=${encodeURIComponent(id)}`, { cache: 'no-store' })
         const fieldsJson = await fieldsRes.json()
@@ -263,7 +269,7 @@ export default function SignPage() {
         setLoading(false)
       }
     })()
-  }, [id, recipientIdx])
+  }, [id, recipientIdxParam])
 
   const handleFieldClick = useCallback((field: Field) => {
     if (field.type === 'signature' || field.type === 'initial') {
@@ -278,7 +284,7 @@ export default function SignPage() {
   const handleSignatureApply = useCallback((dataUrl: string) => {
     if (!sigPadField) return
     setSignatureData(dataUrl)
-    setFields(prev => prev.map(f => (f.type === 'signature' || f.type === 'initial') ? { ...f, value: dataUrl } : f))
+    setFields(prev => prev.map(f => f.id === sigPadField ? { ...f, value: dataUrl } : f))
     setSigPadField(null)
   }, [sigPadField])
 
@@ -526,7 +532,7 @@ export default function SignPage() {
             <div className={`text-sm mt-10 ${dark ? 'text-gray-500' : 'text-gray-400'}`}>No document pages to display.</div>
           )}
           {pageUrls.map((pageUrl, pageIdx) => {
-            const pageFields = fields.filter(f => f.page === pageIdx)
+            const pageFields = fields.filter(f => (f.page ?? 1) === pageIdx + 1)
             return (
               <div
                 key={pageIdx}

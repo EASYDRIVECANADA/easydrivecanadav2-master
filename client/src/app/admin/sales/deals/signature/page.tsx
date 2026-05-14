@@ -114,6 +114,7 @@ function DealsSignaturePageInner() {
 
   const [penSize, setPenSize] = useState(2)
   const [signatureDataUrl, setSignatureDataUrl] = useState<string | null>(null)
+  const [dealSignatureValues, setDealSignatureValues] = useState<Record<string, string>>({})
   const [signatureModalOpen, setSignatureModalOpen] = useState(false)
   const [signatureMode, setSignatureMode] = useState<'draw' | 'type'>('draw')
   const [typedName, setTypedName] = useState('')
@@ -125,6 +126,7 @@ function DealsSignaturePageInner() {
   const [saveMessage, setSaveMessage] = useState<string>('')
   const [recipientEmail, setRecipientEmail] = useState('')
   const [currentSigningField, setCurrentSigningField] = useState<string | null>(null)
+  const [currentDealSignatureKey, setCurrentDealSignatureKey] = useState<string | null>(null)
   const [isInitialModal, setIsInitialModal] = useState(false)
   // Edit field modal (company, title, text, dateSigned)
   const [editFieldModal, setEditFieldModal] = useState<{ id: string; type: FieldType; label: string; value: string } | null>(null)
@@ -167,6 +169,80 @@ function DealsSignaturePageInner() {
   const ZOOM_STEP = 0.25
   const ZOOM_MIN = 0.25
   const ZOOM_MAX = 3
+
+  const getCustomerName = (customer: any) => {
+    return [
+      customer?.firstname ?? customer?.first_name,
+      customer?.middlename ?? customer?.middle_name,
+      customer?.lastname ?? customer?.last_name,
+    ].map((v) => String(v ?? '').trim()).filter(Boolean).join(' ') ||
+      String(customer?.legalname ?? customer?.legal_name ?? customer?.displayname ?? customer?.display_name ?? customer?.companyname ?? customer?.company_name ?? '').trim()
+  }
+
+  const dealSignatureFieldId = (key: string) => `bos-${key}-signature`
+
+  const getDealSignatureBoxes = () => {
+    if (!dealId || purchaserSigOverlayY === null) return []
+
+    const customers = Array.isArray(dealData?.customers) && dealData.customers.length > 0
+      ? dealData.customers
+      : dealData?.customer
+        ? [dealData.customer]
+        : []
+
+    const scaleX = PAGE_WIDTH / 612
+    const scaleY = PAGE_HEIGHT / 792
+    const leftSigX1 = Math.round(96 * scaleX)
+    const leftSigX2 = Math.round(295.2 * scaleX)
+    const rightSigX1 = Math.round(316.8 * scaleX)
+    const rightSigX2 = Math.round(516 * scaleX)
+    const topLineTop = purchaserSigOverlayY - 34
+    const secondLineTop = purchaserSigOverlayY + Math.round(26 * scaleY) - 34
+    const height = 34
+
+    const boxes: Array<{ key: string; role: string; label: string; x: number; y: number; width: number; height: number }> = [
+      {
+        key: 'customer-0',
+        role: 'Purchaser',
+        label: getCustomerName(customers[0]) || 'Purchaser',
+        x: leftSigX1,
+        y: topLineTop,
+        width: leftSigX2 - leftSigX1,
+        height,
+      },
+      {
+        key: 'salesperson',
+        role: 'Salesperson',
+        label: String(dealData?.delivery?.salesperson ?? '').trim() || 'Salesperson',
+        x: rightSigX1,
+        y: topLineTop,
+        width: rightSigX2 - rightSigX1,
+        height,
+      },
+    ]
+
+    if (customers.length > 1) {
+      boxes.push({
+        key: 'customer-1',
+        role: 'Co-Buyer',
+        label: getCustomerName(customers[1]) || 'Co-Buyer',
+        x: leftSigX1,
+        y: secondLineTop,
+        width: leftSigX2 - leftSigX1,
+        height,
+      })
+    }
+
+    return boxes
+  }
+
+  const closeSignatureModal = () => {
+    setSignatureModalOpen(false)
+    setIsInitialModal(false)
+    setIsDealPurchaserSignature(false)
+    setCurrentDealSignatureKey(null)
+    setCurrentSigningField(null)
+  }
 
   const handleZoomIn = () => setZoom(z => Math.min(ZOOM_MAX, parseFloat((z + ZOOM_STEP).toFixed(2))))
   const handleZoomOut = () => setZoom(z => Math.max(ZOOM_MIN, parseFloat((z - ZOOM_STEP).toFixed(2))))
@@ -244,7 +320,7 @@ function DealsSignaturePageInner() {
         switch (field.type) {
           case 'signature':
           case 'initial': {
-            const img = toImgUrl(fv || signatureDataUrl || '')
+            const img = toImgUrl(fv)
             if (img) pdf.addImage(img, 'PNG', x, y, w, h)
             break
           }
@@ -273,6 +349,17 @@ function DealsSignaturePageInner() {
         }
       } catch { /* skip broken field */ }
     })
+
+    if (dealId && fileIdx === 0) {
+      getDealSignatureBoxes().forEach((box) => {
+        const img = toImgUrl(String(dealSignatureValues[box.key] || '').trim())
+        if (!img) return
+        try {
+          pdf.setPage(1)
+          pdf.addImage(img, 'PNG', box.x * xScale, box.y * yScale, box.width * xScale, box.height * yScale)
+        } catch { /* skip broken signature image */ }
+      })
+    }
   }
 
   const bakeAndDownload = async (fileIdx: number) => {
@@ -327,9 +414,15 @@ function DealsSignaturePageInner() {
   }
 
   const handleSubmitClick = () => {
-    const hasSignature = signatureDataUrl || fields.some(f => (f.type === 'signature' || f.type === 'initial') && f.value)
-    const hasPurchaser = !dealId || purchaserSigned
-    if (!hasSignature || !hasPurchaser) {
+    const dealSignatureBoxes = getDealSignatureBoxes()
+    const allDealSignaturesSigned = !dealId || (
+      dealSignatureBoxes.length > 0 &&
+      dealSignatureBoxes.every((box) => Boolean(dealSignatureValues[box.key]))
+    )
+    const hasSignature = dealId
+      ? allDealSignaturesSigned
+      : Boolean(signatureDataUrl || fields.some(f => (f.type === 'signature' || f.type === 'initial') && f.value))
+    if (!hasSignature) {
       setShowIncompleteModal(true)
     } else {
       fireSubmitWebhook()
@@ -381,6 +474,38 @@ function DealsSignaturePageInner() {
 
           setDealData(data)
           setSigRecord({ id: dealId, deal_id: dealId, ...data })
+          setDealSignatureValues(() => {
+            const customers = Array.isArray(data?.customers) && data.customers.length > 0
+              ? data.customers
+              : data?.customer
+                ? [data.customer]
+                : []
+            const restored: Record<string, string> = {}
+            customers.forEach((customer: any, idx: number) => {
+              const signature = String(customer?.signature ?? '').trim()
+              if (signature) restored[`customer-${idx}`] = signature.startsWith('data:') || signature.startsWith('http')
+                ? signature
+                : `data:image/png;base64,${signature}`
+            })
+            return restored
+          })
+
+          const fieldsRes = await fetch(`/api/esignature/fields?dealId=${encodeURIComponent(dealId)}`, { cache: 'no-store' })
+          if (fieldsRes.ok) {
+            const fieldsJson = await fieldsRes.json().catch(() => null)
+            const savedFields: Field[] = Array.isArray(fieldsJson?.fields) ? fieldsJson.fields : []
+            const restored: Record<string, string> = {}
+            savedFields.forEach((field) => {
+              const id = String(field.id || '')
+              if (!id.startsWith('bos-') || !id.endsWith('-signature') || !field.value) return
+              const key = id.replace(/^bos-/, '').replace(/-signature$/, '')
+              restored[key] = String(field.value)
+            })
+            if (Object.keys(restored).length > 0) {
+              setDealSignatureValues(prev => ({ ...prev, ...restored }))
+              setPurchaserSigned(true)
+            }
+          }
 
           // For dealId flow, we generate the Bill of Sale PDF dynamically
           // Set docMime to trigger PDF generation in the next effect
@@ -466,11 +591,8 @@ function DealsSignaturePageInner() {
         setDocMime(normalized.mime)
         setPdfDataUrl(normalized.url)
 
-        // Determine this recipient's index using siblings
-        // Primary = index 0; each sibling's index = its position + 1
-        const siblings: any[] = sigData.siblings || []
-        const siblingIdx = siblings.findIndex((s: any) => s.id === sigData.id)
-        const myRecipientIndex = siblingIdx >= 0 ? siblingIdx + 1 : 0
+        // Primary = index 0; each sibling receives its own index from the API.
+        const myRecipientIndex = Number(sigData.recipient_index ?? 0) || 0
 
         // Load fields for this signature record
         // Normalize signature_image to a usable data URL (may be raw base64 or already a data URL)
@@ -842,6 +964,13 @@ function DealsSignaturePageInner() {
     }
     setSignatureDataUrl(url)
 
+    const dealSignatureKey = currentDealSignatureKey
+    if (dealSignatureKey) {
+      setDealSignatureValues(prev => ({ ...prev, [dealSignatureKey]: url }))
+      setPurchaserSigned(true)
+      setCurrentDealSignatureKey(null)
+    }
+
     // Stamp signature image onto the field that triggered the modal
     // Also compute updatedFields synchronously so we can save them to DB below
     let updatedFields = fields
@@ -872,14 +1001,21 @@ function DealsSignaturePageInner() {
         // Purchaser signature from Bill of Sale – send to /webhook/receive
         const c = dealData?.customer || {}
         const purchaserName = [c.firstname, c.lastname].filter(Boolean).join(' ') || ''
+        const signatureBox = getDealSignatureBoxes().find((box) => box.key === dealSignatureKey)
         const hookRes = await fetch('https://primary-production-6722.up.railway.app/webhook/receive', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             dealId,
             type: 'purchaser_signature',
-            purchaser_name: purchaserName,
+            purchaser_name: signatureBox?.label || purchaserName,
+            signature_key: dealSignatureKey || 'customer-0',
+            signature_role: signatureBox?.role || 'Purchaser',
             signature_b64: b64,
+            signatures: {
+              ...dealSignatureValues,
+              ...(dealSignatureKey ? { [dealSignatureKey]: url } : {}),
+            },
             ip_address: ipAddress,
             signed_at: new Date().toISOString(),
           }),
@@ -887,6 +1023,28 @@ function DealsSignaturePageInner() {
         if (!hookRes.ok) {
           const t = await hookRes.text().catch(() => '')
           throw new Error(t || `Webhook failed (${hookRes.status})`)
+        }
+        if (dealSignatureKey) {
+          try {
+            await fetch('/api/esignature/fields', {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                dealId,
+                fieldId: dealSignatureFieldId(dealSignatureKey),
+                fieldType: 'signature',
+                value: url,
+                signedAt: new Date().toISOString(),
+                page: 1,
+                x: signatureBox?.x ?? 0,
+                y: signatureBox?.y ?? 0,
+                width: signatureBox?.width ?? 0,
+                height: signatureBox?.height ?? 0,
+                fileIndex: 0,
+                recipientIndex: dealSignatureKey === 'salesperson' ? 2 : dealSignatureKey === 'customer-1' ? 1 : 0,
+              }),
+            })
+          } catch { /* webhook succeeded; persistence retry can happen on the next signature */ }
         }
         setPurchaserSigned(true)
       } else {
@@ -896,7 +1054,7 @@ function DealsSignaturePageInner() {
               file_name: f.file_name,
               file_type: f.file_type,
               file_b64: f.file_b64,
-              fields: fields.filter(field => (field.fileIndex ?? 0) === idx),
+              fields: updatedFields.filter(field => (field.fileIndex ?? 0) === idx),
             }))
           : null
 
@@ -948,7 +1106,7 @@ function DealsSignaturePageInner() {
                 signed_at: now,
                 status: 'completed',
                 fields_data: JSON.stringify(updatedFields),
-                recipient_index: 0,
+                recipient_index: updatedFields.find(f => f.id === currentSigningField)?.recipientIndex ?? updatedFields[0]?.recipientIndex ?? 0,
                 deal_id: sigRecord.id,
               }),
             })
@@ -1416,21 +1574,35 @@ function DealsSignaturePageInner() {
                               {renderFieldContent(field)}
                             </div>
                           ))}
-                          {dealId && pageNo === 1 && purchaserSigOverlayY !== null && (
-                            <div
-                              className="absolute border-2 border-blue-400 bg-blue-50/80 rounded hover:bg-blue-100/90 transition-colors"
-                              style={{ left: `${Math.round(96 * PAGE_WIDTH / 612)}px`, top: `${purchaserSigOverlayY - 34}px`, width: `${Math.round(199 * PAGE_WIDTH / 612)}px`, height: '34px' }}
-                              title="Purchaser Signature"
-                            >
-                              {purchaserSigned && signatureDataUrl ? (
-                                <img src={signatureDataUrl} alt="Purchaser Signature" className="w-full h-full object-contain p-1" style={{ background: 'transparent' }} />
-                              ) : (
-                                <div className="flex items-center justify-center h-full text-blue-600 text-xs font-medium cursor-pointer" onClick={() => { setIsDealPurchaserSignature(true); setSignatureModalOpen(true) }}>
-                                  Signature
-                                </div>
-                              )}
-                            </div>
-                          )}
+                          {dealId && pageNo === 1 && getDealSignatureBoxes().map((box) => {
+                            const signatureUrl = dealSignatureValues[box.key]
+                            return (
+                              <div
+                                key={box.key}
+                                className="absolute border-2 border-blue-400 bg-blue-50/80 rounded hover:bg-blue-100/90 transition-colors"
+                                style={{ left: `${box.x}px`, top: `${box.y}px`, width: `${box.width}px`, height: `${box.height}px` }}
+                                title={`${box.role}: ${box.label}`}
+                              >
+                                {signatureUrl ? (
+                                  <img src={signatureUrl} alt={`${box.role} Signature`} className="w-full h-full object-contain p-1" style={{ background: 'transparent' }} />
+                                ) : (
+                                  <div
+                                    className="flex items-center justify-center h-full text-blue-600 text-xs font-medium cursor-pointer"
+                                    onClick={() => {
+                                      setIsDealPurchaserSignature(true)
+                                      setCurrentDealSignatureKey(box.key)
+                                      setTypedName(box.label)
+                                      setSignatureMode('draw')
+                                      setIsInitialModal(false)
+                                      setSignatureModalOpen(true)
+                                    }}
+                                  >
+                                    {box.role} Signature
+                                  </div>
+                                )}
+                              </div>
+                            )
+                          })}
                         </div>
                         <div className="w-full flex items-center justify-center py-3">
                           <div className={`text-xs font-semibold ${dark ? 'text-slate-400' : 'text-slate-500'}`}>Page {pageNo} of {pageImages.length}</div>
@@ -1525,7 +1697,7 @@ function DealsSignaturePageInner() {
               <div className="flex items-center justify-between">
                 <h3 className="text-lg font-bold text-slate-900">{isInitialModal ? 'Your Initial' : 'Your Signature'}</h3>
                 <button
-                  onClick={() => { setSignatureModalOpen(false); setIsInitialModal(false) }}
+                  onClick={closeSignatureModal}
                   className="p-1 hover:bg-slate-100 rounded-lg transition-colors"
                 >
                   <svg className="w-5 h-5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">

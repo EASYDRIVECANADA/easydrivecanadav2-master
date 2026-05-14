@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import { supabase } from '@/lib/supabaseClient'
 import { exportRowsToCsv } from '../../reportUtils'
 
 type Row = {
@@ -74,6 +75,22 @@ export default function SalesReportPage() {
     return 0
   }
 
+  const toNumber = (value: unknown) => {
+    const n = Number(String(value ?? '0').replace(/[^0-9.-]/g, ''))
+    return Number.isFinite(n) ? n : 0
+  }
+
+  const hasValue = (value: unknown) => value !== null && value !== undefined && String(value).trim() !== ''
+
+  const costLineTotal = (row: any) => {
+    const amount = toNumber(row?.amount)
+    const qty = Math.max(1, toNumber(row?.quantity) || 1)
+    const discount = toNumber(row?.discount)
+    const tax = toNumber(row?.tax)
+    const hasLineComponents = hasValue(row?.amount) || hasValue(row?.quantity) || hasValue(row?.discount) || hasValue(row?.tax)
+    return hasLineComponents ? Math.max(0, amount * qty - discount) + tax : toNumber(row?.total)
+  }
+
   useEffect(() => {
     const run = async () => {
       try {
@@ -97,7 +114,7 @@ export default function SalesReportPage() {
 
         const dealsAll: any[] = Array.isArray(json?.deals) ? json.deals : []
 
-        const mapped: Row[] = dealsAll
+        const closedDeals = dealsAll
           .filter((d: any) => {
             const customer = d?.customer ?? {}
             const worksheet = d?.worksheet ?? {}
@@ -119,6 +136,69 @@ export default function SalesReportPage() {
             ).trim()
             return stateRaw.toLowerCase() === 'closed'
           })
+
+        const vehiclesForBasis = closedDeals
+          .map((d: any) => (Array.isArray(d?.vehicles) ? d.vehicles[0] : null))
+          .filter(Boolean)
+
+        const stocks = Array.from(new Set(vehiclesForBasis
+          .map((v: any) => String(v?.selected_stock_number ?? v?.stock_number ?? '').trim())
+          .filter(Boolean)))
+        const vehicleIds = Array.from(new Set(vehiclesForBasis
+          .map((v: any) => String(v?.selected_id ?? v?.id ?? '').trim())
+          .filter(Boolean)))
+
+        const purchaseByStock = new Map<string, number>()
+        const costsByVehicleId = new Map<string, any[]>()
+        const costsByStock = new Map<string, any[]>()
+
+        if (stocks.length) {
+          const { data } = await supabase
+            .from('edc_purchase')
+            .select('stock_number, purchase_price, updated_at')
+            .in('stock_number', stocks)
+            .order('updated_at', { ascending: false })
+
+          for (const row of Array.isArray(data) ? data : []) {
+            const stock = String((row as any)?.stock_number ?? '').trim()
+            if (stock && !purchaseByStock.has(stock)) purchaseByStock.set(stock, toNumber((row as any)?.purchase_price))
+          }
+
+          const { data: stockCostRows } = await supabase
+            .from('edc_costs')
+            .select('vehicleId, stock_number, amount, quantity, discount, tax, total')
+            .in('stock_number', stocks)
+
+          for (const row of Array.isArray(stockCostRows) ? stockCostRows : []) {
+            const stock = String((row as any)?.stock_number ?? '').trim()
+            if (!stock) continue
+            costsByStock.set(stock, [...(costsByStock.get(stock) || []), row])
+          }
+        }
+
+        if (vehicleIds.length) {
+          const { data: vehicleCostRows } = await supabase
+            .from('edc_costs')
+            .select('vehicleId, stock_number, amount, quantity, discount, tax, total')
+            .in('vehicleId', vehicleIds)
+
+          for (const row of Array.isArray(vehicleCostRows) ? vehicleCostRows : []) {
+            const vehicleId = String((row as any)?.vehicleId ?? '').trim()
+            if (!vehicleId) continue
+            costsByVehicleId.set(vehicleId, [...(costsByVehicleId.get(vehicleId) || []), row])
+          }
+        }
+
+        const getInventoryCostBasis = (vehicle: any) => {
+          const stock = String(vehicle?.selected_stock_number ?? vehicle?.stock_number ?? '').trim()
+          const vehicleId = String(vehicle?.selected_id ?? vehicle?.id ?? '').trim()
+          const purchasePrice = (stock ? purchaseByStock.get(stock) : 0) || toNumber(vehicle?.purchase_price ?? vehicle?.purchasePrice ?? vehicle?.raw?.purchase_price)
+          const costRows = (vehicleId && costsByVehicleId.get(vehicleId)?.length) ? costsByVehicleId.get(vehicleId)! : (stock ? costsByStock.get(stock) || [] : [])
+          const inventoryCosts = costRows.reduce((sum, row) => sum + costLineTotal(row), 0)
+          return { purchasePrice, inventoryCosts }
+        }
+
+        const mapped: Row[] = closedDeals
           .map((d: any) => {
             const customer = d?.customer ?? {}
             const worksheet = d?.worksheet ?? {}
@@ -168,10 +248,12 @@ export default function SalesReportPage() {
             const insProfit = insRetail - insCost
             const insTax = insRetail * taxRate
 
-            const purchasePrice = Number(v0?.purchase_price ?? v0?.purchasePrice ?? (v0 as any)?.raw?.purchase_price ?? 0) || 0
+            const costBasis = getInventoryCostBasis(v0)
+            const purchasePrice = costBasis.purchasePrice
+            const inventoryCosts = costBasis.inventoryCosts
             const vehicleSellingPrice = Number(worksheet?.purchase_price ?? worksheet?.selling_price ?? worksheet?.vehicle_price ?? v0?.selected_price ?? v0?.price ?? 0) || 0
             const discount = Number(worksheet?.discount ?? 0) || 0
-            const vehicleProfit = (vehicleSellingPrice - discount) - purchasePrice
+            const vehicleProfit = (vehicleSellingPrice - discount) - purchasePrice - inventoryCosts
             const totalProfit = vehicleProfit + feesProfit + accProfit + warrProfit + insProfit + bankCommission
 
             const omvic = Number(worksheet?.omvic_fee ?? getOmvicFromFees(worksheet?.fees) ?? 0)
@@ -202,7 +284,7 @@ export default function SalesReportPage() {
               customer_source: String(customer?.customer_source ?? customer?.source ?? ''),
               purchase_price: purchasePrice ? purchasePrice.toFixed(2) : '',
               vehicle_purchase_price: vehicleSellingPrice ? vehicleSellingPrice.toFixed(2) : '',
-              costs: (feesCost + accCost + warrCost + insCost).toFixed(2),
+              costs: (inventoryCosts + feesCost + accCost + warrCost + insCost).toFixed(2),
               tax_on_costs: (feesTax + accTax + warrTax + insTax).toFixed(2),
               all_in: subtotal2.toFixed(2),
               discount: discount ? discount.toFixed(2) : '',

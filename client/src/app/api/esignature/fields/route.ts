@@ -88,6 +88,18 @@ export async function POST(request: Request) {
     if (!dealId) return NextResponse.json({ error: 'dealId is required' }, { status: 400 })
     if (!Array.isArray(fields)) return NextResponse.json({ error: 'fields must be an array' }, { status: 400 })
 
+    const existingRes = await fetch(
+      `${baseUrl}/rest/v1/edc_esignature_fields?deal_id=eq.${encodeURIComponent(dealId)}&select=field_id,value,signed_at`,
+      { method: 'GET', headers: headers(), cache: 'no-store' }
+    )
+    const existingRows: any[] = existingRes.ok ? await existingRes.json().catch(() => []) : []
+    const existingByFieldId = new Map<string, { value: unknown; signed_at: unknown }>()
+    for (const row of existingRows) {
+      const fieldId = String(row?.field_id ?? '').trim()
+      if (!fieldId) continue
+      existingByFieldId.set(fieldId, { value: row?.value, signed_at: row?.signed_at })
+    }
+
     // Delete all existing field rows for this deal, then re-insert
     const delRes = await fetch(
       `${baseUrl}/rest/v1/edc_esignature_fields?deal_id=eq.${encodeURIComponent(dealId)}`,
@@ -104,23 +116,30 @@ export async function POST(request: Request) {
 
     // Insert one row per field with all positional + metadata columns
     const now = new Date().toISOString()
-    const rows = fields.map((f: any) => ({
-      deal_id: dealId,
-      field_id: f.id,
-      field_type: f.type,
-      page: f.page ?? 1,
-      x: f.x,
-      y: f.y,
-      width: f.width,
-      height: f.height,
-      file_index: f.fileIndex ?? 0,
-      recipient_index: f.recipientIndex ?? 0,
-      value: f.value ?? null,
-      // Also store full fields_data blob for backward compat (only on first row)
-      fields_data: null,
-      created_at: now,
-      updated_at: now,
-    }))
+    const rows = fields.map((f: any) => {
+      const existing = existingByFieldId.get(String(f.id ?? ''))
+      const incomingValue = f.value
+      const hasIncomingValue = incomingValue !== null && incomingValue !== undefined && String(incomingValue).trim() !== ''
+      const preservedValue = hasIncomingValue ? incomingValue : existing?.value ?? null
+      return {
+        deal_id: dealId,
+        field_id: f.id,
+        field_type: f.type,
+        page: f.page ?? 1,
+        x: f.x,
+        y: f.y,
+        width: f.width,
+        height: f.height,
+        file_index: f.fileIndex ?? 0,
+        recipient_index: f.recipientIndex ?? 0,
+        value: preservedValue,
+        signed_at: hasIncomingValue ? f.signedAt ?? f.signed_at ?? existing?.signed_at ?? null : existing?.signed_at ?? null,
+        // Also store full fields_data blob for backward compat (only on first row)
+        fields_data: null,
+        created_at: now,
+        updated_at: now,
+      }
+    })
 
     const insertRes = await fetch(`${baseUrl}/rest/v1/edc_esignature_fields`, {
       method: 'POST',
@@ -166,6 +185,39 @@ export async function PATCH(request: Request) {
     if (!res.ok) {
       const text = await res.text().catch(() => '')
       throw new Error(text || `Failed to update field value (${res.status})`)
+    }
+
+    const updatedRows = await res.json().catch(() => [])
+    if (Array.isArray(updatedRows) && updatedRows.length === 0) {
+      const now = new Date().toISOString()
+      const insertPayload = {
+        deal_id: dealId,
+        field_id: fieldId,
+        field_type: body.fieldType ?? body.type ?? 'signature',
+        page: body.page ?? 1,
+        x: body.x ?? 0,
+        y: body.y ?? 0,
+        width: body.width ?? 0,
+        height: body.height ?? 0,
+        file_index: body.fileIndex ?? 0,
+        recipient_index: body.recipientIndex ?? 0,
+        value,
+        signed_at: signedAt ?? null,
+        fields_data: null,
+        created_at: now,
+        updated_at: now,
+      }
+
+      const insertRes = await fetch(`${baseUrl}/rest/v1/edc_esignature_fields`, {
+        method: 'POST',
+        headers: headers(),
+        body: JSON.stringify(insertPayload),
+      })
+
+      if (!insertRes.ok) {
+        const text = await insertRes.text().catch(() => '')
+        throw new Error(text || `Failed to insert field value (${insertRes.status})`)
+      }
     }
 
     return NextResponse.json({ success: true })

@@ -51,9 +51,11 @@ export async function GET(
 
     // Load sibling records (same user, same document_file) to get all recipients
     let siblings: any[] = []
+    let recipients: any[] = [signature]
+    let recipientIndex = 0
     if (signature.user_id && signature.document_file) {
       const siblingsRes = await fetch(
-        `${baseUrl}/rest/v1/signature?user_id=eq.${encodeURIComponent(signature.user_id)}&select=id,email,full_name,company,title,status,document_file,signature_image`,
+        `${baseUrl}/rest/v1/signature?user_id=eq.${encodeURIComponent(signature.user_id)}&select=id,email,full_name,company,title,status,document_file,signature_image,signed_at,updated_at,created_at`,
         {
           method: 'GET',
           headers: { 'apikey': apiKey, 'Authorization': `Bearer ${apiKey}` },
@@ -63,13 +65,20 @@ export async function GET(
       if (siblingsRes.ok) {
         const allRecords: any[] = await siblingsRes.json().catch(() => [])
         // Filter to only those sharing the same document_file
-        siblings = allRecords.filter(
-          (r: any) => r.id !== signature.id && String(r.document_file ?? '') === String(signature.document_file ?? '')
-        )
+        recipients = allRecords
+          .filter((r: any) => String(r.document_file ?? '') === String(signature.document_file ?? ''))
+          .sort((a: any, b: any) => {
+            const at = new Date(a?.created_at ?? '').getTime()
+            const bt = new Date(b?.created_at ?? '').getTime()
+            if (Number.isFinite(at) && Number.isFinite(bt) && at !== bt) return at - bt
+            return String(a?.id ?? '').localeCompare(String(b?.id ?? ''))
+          })
+        recipientIndex = Math.max(0, recipients.findIndex((r: any) => String(r.id) === String(signature.id)))
+        siblings = recipients.filter((r: any) => r.id !== signature.id)
       }
     }
 
-    return NextResponse.json({ ...signature, siblings }, {
+    return NextResponse.json({ ...signature, siblings, recipients, recipient_index: recipientIndex }, {
       headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0' },
     })
   } catch (err: any) {
