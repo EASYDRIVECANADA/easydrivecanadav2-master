@@ -25,6 +25,22 @@ const ROLE_DISPLAY: Record<string, string> = {
   'premier': 'Premier',
 }
 
+const CLOSED_INVENTORY_STATUSES = new Set(['sold', 'closed'])
+
+const isClosedInventoryStatus = (status: unknown) =>
+  CLOSED_INVENTORY_STATUSES.has(String(status ?? '').trim().toLowerCase())
+
+const matchesStockOrVin = (vehicle: { stockNumber?: unknown; vin?: unknown }, search: string) => {
+  const query = search.trim().toLowerCase()
+  if (!query) return false
+  const stock = String(vehicle.stockNumber ?? '').trim().toLowerCase()
+  const vin = String(vehicle.vin ?? '').trim().toLowerCase()
+  return Boolean(
+    (stock && stock.includes(query)) ||
+    (vin && query.length >= 3 && vin.includes(query))
+  )
+}
+
 interface Vehicle {
   id: string
   make: string
@@ -761,6 +777,9 @@ export default function AdminInventoryPage() {
   // Search and filter vehicles
   useEffect(() => {
     let filtered = vehicles
+    const stockOrVinLookup = searchQuery.trim()
+      ? (vehicle: Vehicle) => matchesStockOrVin(vehicle, searchQuery)
+      : () => false
 
     // Filter by inventory type
     if (inventoryTypeFilter) {
@@ -784,6 +803,17 @@ export default function AdminInventoryPage() {
         if (statusFilter.has('Other') && (!normalized || !known.has(normalized))) return true
         return false
       })
+    }
+
+    // Closed/sold inventory should be removed from normal browsing. Stock/VIN lookup
+    // is the exception so staff can still find the record when reconciling reports.
+    const explicitlyShowingClosedStatus =
+      statusFilter.size > 0 &&
+      statusFilter.size < STATUS_OPTIONS.length &&
+      (statusFilter.has('Sold') || statusFilter.has('Void'))
+
+    if (!explicitlyShowingClosedStatus) {
+      filtered = filtered.filter((vehicle) => !isClosedInventoryStatus(vehicle.status) || stockOrVinLookup(vehicle))
     }
 
     // Filter by search query

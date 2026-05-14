@@ -77,6 +77,11 @@ const isFleetVehicle = (vehicle: Partial<Vehicle> & { inventory_type?: unknown }
   return inventoryType === 'fleet'
 }
 
+const isClosedInventoryStatus = (status: unknown) => {
+  const normalized = String(status ?? '').trim().toLowerCase()
+  return normalized === 'sold' || normalized === 'closed'
+}
+
 export default function InventoryPage() {
   const [vehicles, setVehicles] = useState<Vehicle[]>([])
   const [loading, setLoading] = useState(true)
@@ -272,7 +277,7 @@ export default function InventoryPage() {
         })
       )
 
-      setVehicles(mapped)
+      setVehicles(mapped.filter((vehicle) => !isClosedInventoryStatus(vehicle.status)))
     } catch (_error) {
       console.error('Error fetching vehicles:', _error)
     } finally {

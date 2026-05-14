@@ -15,6 +15,20 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: `Invalid stage. Must be one of: ${DEAL_STAGES.join(', ')}` }, { status: 400 })
     }
 
+    const submissionRes = await fetch(
+      `${supabaseUrl}/rest/v1/edc_purchase_submissions?id=eq.${encodeURIComponent(submissionId)}&select=vehicle_id&limit=1`,
+      {
+        method: 'GET',
+        headers: {
+          apikey: supabaseKey,
+          Authorization: `Bearer ${supabaseKey}`,
+        },
+        cache: 'no-store',
+      }
+    )
+    const submissionRows = submissionRes.ok ? await submissionRes.json().catch(() => []) : []
+    const vehicleId = String(submissionRows?.[0]?.vehicle_id ?? '').trim()
+
     const patchRes = await fetch(
       `${supabaseUrl}/rest/v1/edc_purchase_submissions?id=eq.${encodeURIComponent(submissionId)}`,
       {
@@ -31,6 +45,19 @@ export async function POST(req: Request) {
     if (!patchRes.ok) {
       const text = await patchRes.text()
       throw new Error(`Failed to update stage: ${text}`)
+    }
+
+    if (vehicleId) {
+      await fetch(`${supabaseUrl}/rest/v1/edc_vehicles?id=eq.${encodeURIComponent(vehicleId)}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          apikey: supabaseKey,
+          Authorization: `Bearer ${supabaseKey}`,
+          Prefer: 'return=minimal',
+        },
+        body: JSON.stringify({ status: stage === 'closed' ? 'Sold' : 'Deal Pending' }),
+      })
     }
 
     return NextResponse.json({ success: true, stage })

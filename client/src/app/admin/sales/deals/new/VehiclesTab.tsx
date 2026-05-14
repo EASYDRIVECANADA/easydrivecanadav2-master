@@ -22,6 +22,22 @@ type VehicleRow = {
   created_at?: string | null
 }
 
+const CLOSED_VEHICLE_STATUSES = new Set(['sold', 'closed'])
+
+const isClosedVehicle = (vehicle: Pick<VehicleRow, 'status'>) =>
+  CLOSED_VEHICLE_STATUSES.has(String(vehicle.status ?? '').trim().toLowerCase())
+
+const matchesStockOrVin = (vehicle: Pick<VehicleRow, 'stock_number' | 'vin'>, term: string) => {
+  const query = term.trim().toLowerCase()
+  if (!query) return false
+  const stock = String(vehicle.stock_number ?? '').trim().toLowerCase()
+  const vin = String(vehicle.vin ?? '').trim().toLowerCase()
+  return Boolean(
+    (stock && stock.includes(query)) ||
+    (vin && query.length >= 3 && vin.includes(query))
+  )
+}
+
 export type VehiclesTabHandle = {
   save: () => Promise<void>
   saveWithVehicle: (vehicle: any) => Promise<void>
@@ -1193,7 +1209,8 @@ const VehiclesTab = forwardRef<VehiclesTabHandle, {
         setResults([])
         return
       }
-      const rows = (Array.isArray(data) ? data : []) as unknown as VehicleRow[]
+      const rows = ((Array.isArray(data) ? data : []) as unknown as VehicleRow[])
+        .filter((row) => !isClosedVehicle(row) || matchesStockOrVin(row, term))
       setResults(rows)
     } finally {
       setLoading(false)
