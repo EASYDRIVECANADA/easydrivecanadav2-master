@@ -33,6 +33,7 @@ type SignatureDocumentFile = {
   file_name: string
   file_type: string
   file_b64?: string
+  url?: string
   file_url?: string
 }
 
@@ -70,7 +71,15 @@ export default function EsignatureClient() {
     sigData: any
     fields: EsignField[]
   } | null>(null)
+  const [previewFilesCtx, setPreviewFilesCtx] = useState<{
+    files: SignatureDocumentFile[]
+    sigData: any
+    fields: EsignField[]
+  } | null>(null)
   const [downloadingFileIdx, setDownloadingFileIdx] = useState<number | null>(null)
+  const [previewingFileIdx, setPreviewingFileIdx] = useState<number | null>(null)
+  const [previewingDocId, setPreviewingDocId] = useState<string | null>(null)
+  const [pdfPreview, setPdfPreview] = useState<{ url: string; title: string } | null>(null)
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [wizardStep, setWizardStep] = useState<0 | 1 | 2 | 3 | 4>(0) // 0=hidden, 1=select docs, 2=add recipients, 3=place fields, 4=review & send
   const [wizardDocId, setWizardDocId] = useState<string | null>(null)
@@ -111,6 +120,19 @@ export default function EsignatureClient() {
       esignModalResolverRef.current = null
     }
   }
+
+  const closePdfPreview = () => {
+    setPdfPreview((prev) => {
+      if (prev?.url?.startsWith('blob:')) URL.revokeObjectURL(prev.url)
+      return null
+    })
+  }
+
+  useEffect(() => {
+    return () => {
+      if (pdfPreview?.url?.startsWith('blob:')) URL.revokeObjectURL(pdfPreview.url)
+    }
+  }, [pdfPreview?.url])
 
   const confirmEsignChargeIfNeeded = async (senderEmail: string) => {
     try {
@@ -676,12 +698,12 @@ export default function EsignatureClient() {
   }
 
   // Core PDF renderer for a single file entry
-  const performFileDownload = async (
+  const buildSignedPdf = async (
     fileEntry: SignatureDocumentFile,
     sigData: any,
     fields: EsignField[],
     fileIndex = 0
-  ) => {
+  ): Promise<jsPDF> => {
     const pdfjsLib = await loadPdfJs()
 
     let b64 = String(fileEntry.file_b64 || '').trim()
@@ -818,60 +840,108 @@ export default function EsignatureClient() {
         }
       } catch (err) { console.error('Field render error:', field.id, err) }
     })
+    return pdf
+  }
+
+  const performFileDownload = async (
+    fileEntry: SignatureDocumentFile,
+    sigData: any,
+    fields: EsignField[],
+    fileIndex = 0
+  ) => {
+    const pdf = await buildSignedPdf(fileEntry, sigData, fields, fileIndex)
     const safeName = (fileEntry.file_name || 'document').replace(/[^a-z0-9._-]/gi, '_')
     pdf.save(safeName.endsWith('.pdf') ? safeName : `${safeName}.pdf`)
+  }
+
+  const openFilePreview = async (
+    fileEntry: SignatureDocumentFile,
+    sigData: any,
+    fields: EsignField[],
+    fileIndex = 0
+  ) => {
+    const pdf = await buildSignedPdf(fileEntry, sigData, fields, fileIndex)
+    const blob = pdf.output('blob')
+    const url = URL.createObjectURL(blob)
+    const title = fileEntry.file_name || `Document ${fileIndex + 1}`
+    setPdfPreview((prev) => {
+      if (prev?.url?.startsWith('blob:')) URL.revokeObjectURL(prev.url)
+      return { url, title }
+    })
+  }
+
+  const loadDocumentFilesAndFields = async (doc: Document) => {
+    const sigRes = await fetch(`/api/esignature/signature/${encodeURIComponent(doc.id)}`, { cache: 'no-store' })
+    if (!sigRes.ok) throw new Error('Failed to load signature record')
+    const sigData = await sigRes.json()
+    if (!sigData?.document_file) throw new Error('No document file found')
+
+    // Fetch master fields (positions + primary recipient's values)
+    const fieldsRes = await fetch(`/api/esignature/fields?dealId=${encodeURIComponent(doc.id)}`, { cache: 'no-store' })
+    const fieldsJson = fieldsRes.ok ? await fieldsRes.json().catch(() => null) : null
+    let fields: EsignField[] = Array.isArray(fieldsJson?.fields) ? fieldsJson.fields : []
+
+    // Fetch signed field values for each sibling recipient and merge by field_id
+    const siblings: any[] = sigData?.siblings || []
+    if (siblings.length > 0) {
+      const siblingFieldMaps = await Promise.all(
+        siblings.map(async (s: any) => {
+          try {
+            const r = await fetch(`/api/esignature/fields?dealId=${encodeURIComponent(s.id)}`, { cache: 'no-store' })
+            const j = r.ok ? await r.json().catch(() => null) : null
+            const rows: EsignField[] = Array.isArray(j?.fields) ? j.fields : []
+            const map: Record<string, string> = {}
+            rows.forEach(f => { if (f.id && f.value) map[f.id] = f.value })
+            return map
+          } catch { return {} }
+        })
+      )
+      fields = fields.map(f => {
+        if (f.value) return f
+        for (const map of siblingFieldMaps) {
+          if (map[f.id]) return { ...f, value: map[f.id] }
+        }
+        return f
+      })
+    }
+
+    // Parse document_file: may be JSON array, JSON object, or plain base64
+    const rawDoc = String(sigData.document_file || '').trim()
+    let fileList: SignatureDocumentFile[] = []
+    if (rawDoc.startsWith('[')) {
+      try { const p = JSON.parse(rawDoc); if (Array.isArray(p) && p.length > 0) fileList = p } catch {}
+    } else if (rawDoc.startsWith('{')) {
+      try { const p = JSON.parse(rawDoc); if (p?.file_b64 || p?.file_url || p?.url) fileList = [p] } catch {}
+    }
+    if (fileList.length === 0) {
+      fileList = [{ file_name: doc.title || 'document.pdf', file_type: 'application/pdf', file_b64: rawDoc }]
+    }
+
+    return { sigData, fields, fileList }
+  }
+
+  const handlePreviewDocument = async (doc: Document) => {
+    if (typeof window === 'undefined') return
+    setPreviewingDocId(doc.id)
+    try {
+      const { sigData, fields, fileList } = await loadDocumentFilesAndFields(doc)
+      if (fileList.length === 1) {
+        await openFilePreview(fileList[0], sigData, fields, 0)
+      } else {
+        setPreviewFilesCtx({ files: fileList, sigData, fields })
+      }
+    } catch (err: any) {
+      console.error('Preview error:', err)
+      alert(`Preview failed: ${err?.message || 'Unknown error'}`)
+    } finally {
+      setPreviewingDocId(null)
+    }
   }
 
   const handleDownloadDocument = async (doc: Document) => {
     if (typeof window === 'undefined') return
     try {
-      const sigRes = await fetch(`/api/esignature/signature/${encodeURIComponent(doc.id)}`, { cache: 'no-store' })
-      if (!sigRes.ok) throw new Error('Failed to load signature record')
-      const sigData = await sigRes.json()
-      if (!sigData?.document_file) throw new Error('No document file found')
-
-      // Fetch master fields (positions + primary recipient's values)
-      const fieldsRes = await fetch(`/api/esignature/fields?dealId=${encodeURIComponent(doc.id)}`, { cache: 'no-store' })
-      const fieldsJson = fieldsRes.ok ? await fieldsRes.json().catch(() => null) : null
-      let fields: EsignField[] = Array.isArray(fieldsJson?.fields) ? fieldsJson.fields : []
-
-      // Fetch signed field values for each sibling recipient and merge by field_id
-      const siblings: any[] = sigData?.siblings || []
-      if (siblings.length > 0) {
-        const siblingFieldMaps = await Promise.all(
-          siblings.map(async (s: any) => {
-            try {
-              const r = await fetch(`/api/esignature/fields?dealId=${encodeURIComponent(s.id)}`, { cache: 'no-store' })
-              const j = r.ok ? await r.json().catch(() => null) : null
-              const rows: EsignField[] = Array.isArray(j?.fields) ? j.fields : []
-              // Build map: field_id -> value
-              const map: Record<string, string> = {}
-              rows.forEach(f => { if (f.id && f.value) map[f.id] = f.value })
-              return map
-            } catch { return {} }
-          })
-        )
-        // Merge: for each master field, if it has no value, check sibling maps
-        fields = fields.map(f => {
-          if (f.value) return f
-          for (const map of siblingFieldMaps) {
-            if (map[f.id]) return { ...f, value: map[f.id] }
-          }
-          return f
-        })
-      }
-
-      // Parse document_file: may be JSON array, JSON object, or plain base64
-      const rawDoc = String(sigData.document_file || '').trim()
-      let fileList: SignatureDocumentFile[] = []
-      if (rawDoc.startsWith('[')) {
-        try { const p = JSON.parse(rawDoc); if (Array.isArray(p) && p.length > 0) fileList = p } catch {}
-      } else if (rawDoc.startsWith('{')) {
-        try { const p = JSON.parse(rawDoc); if (p?.file_b64 || p?.file_url) fileList = [p] } catch {}
-      }
-      if (fileList.length === 0) {
-        fileList = [{ file_name: doc.title || 'document.pdf', file_type: 'application/pdf', file_b64: rawDoc }]
-      }
+      const { sigData, fields, fileList } = await loadDocumentFilesAndFields(doc)
 
       if (fileList.length === 1) {
         await performFileDownload(fileList[0], sigData, fields, 0)
@@ -1506,17 +1576,17 @@ export default function EsignatureClient() {
               <p className="text-sm text-slate-500">Try adjusting your search or filters</p>
             </div>
           ) : (
-            <div className="overflow-x-hidden">
-              <table className="w-full table-fixed">
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[1180px] table-fixed">
                 <thead>
                   <tr className="bg-slate-50 border-b border-slate-200">
                     <th className="px-4 py-4 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider w-[30%]">Document</th>
                     <th className="px-4 py-4 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider w-[22%]">Recipient</th>
                     <th className="px-4 py-4 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider w-[12%]">Status</th>
                     <th className="px-4 py-4 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider w-[12%]">Progress</th>
-                    <th className="px-4 py-4 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider w-[10%]">Created</th>
-                    <th className="px-4 py-4 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider w-[10%]">Last Modified</th>
-                    <th className="px-4 py-4 text-right text-xs font-semibold text-slate-600 uppercase tracking-wider w-[180px]">Actions</th>
+                    <th className="px-4 py-4 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider w-[112px]">Created</th>
+                    <th className="px-4 py-4 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider w-[124px]">Last Modified</th>
+                    <th className="px-3 py-4 text-right text-xs font-semibold text-slate-600 uppercase tracking-wider w-[220px]">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -1573,8 +1643,8 @@ export default function EsignatureClient() {
                       </td>
                       <td className="px-4 py-4 text-sm text-slate-600 whitespace-nowrap">{formatDate(doc.createdDate)}</td>
                       <td className="px-4 py-4 text-sm text-slate-600 whitespace-nowrap">{formatDate(doc.lastModified)}</td>
-                      <td className="px-4 py-4">
-                        <div className="flex items-center justify-end gap-2">
+                      <td className="px-3 py-4">
+                        <div className="flex items-center justify-end gap-1">
                           <button
                             type="button"
                             onClick={() => handleEditDeal(doc.id)}
@@ -1600,6 +1670,26 @@ export default function EsignatureClient() {
                             ) : (
                               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z" />
+                              </svg>
+                            )}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handlePreviewDocument(doc)}
+                            disabled={previewingDocId === doc.id}
+                            className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            title={previewingDocId === doc.id ? 'Preparing preview...' : 'Preview PDF'}
+                            aria-label="Preview PDF"
+                          >
+                            {previewingDocId === doc.id ? (
+                              <svg className="w-5 h-5 animate-spin" viewBox="0 0 24 24" fill="none">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V2C6.477 2 2 6.477 2 12h2z" />
+                              </svg>
+                            ) : (
+                              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.25 12s3.75-6.75 9.75-6.75S21.75 12 21.75 12 18 18.75 12 18.75 2.25 12 2.25 12z" />
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15.25a3.25 3.25 0 100-6.5 3.25 3.25 0 000 6.5z" />
                               </svg>
                             )}
                           </button>
@@ -2357,6 +2447,103 @@ export default function EsignatureClient() {
       )}
 
       {/* Download files picker modal — shown when document has multiple files */}
+      {/* PDF preview modal */}
+      {pdfPreview && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/50" onClick={closePdfPreview} />
+          <div className="relative flex h-[90vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+            <div className="flex items-center justify-between gap-4 border-b border-slate-200 px-5 py-4">
+              <div className="min-w-0">
+                <div className="text-base font-bold text-slate-900">PDF Preview</div>
+                <div className="mt-0.5 truncate text-xs text-slate-500">{pdfPreview.title}</div>
+              </div>
+              <div className="flex items-center gap-2">
+                <a
+                  href={pdfPreview.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="h-9 px-4 inline-flex items-center rounded-lg border border-slate-200 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                >
+                  Open in new tab
+                </a>
+                <button
+                  type="button"
+                  onClick={closePdfPreview}
+                  className="h-9 w-9 inline-flex items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-900"
+                  aria-label="Close preview"
+                >
+                  <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+            <iframe
+              src={pdfPreview.url}
+              title={pdfPreview.title}
+              className="h-full w-full bg-slate-100"
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Preview files picker modal - shown when document has multiple files */}
+      {previewFilesCtx && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/40" onClick={() => { setPreviewFilesCtx(null); setPreviewingFileIdx(null) }} />
+          <div className="relative w-full max-w-sm rounded-2xl border border-slate-200 bg-white shadow-2xl overflow-hidden">
+            <div className="px-6 py-4 border-b border-slate-200">
+              <div className="text-base font-bold text-slate-900">Select file to preview</div>
+              <div className="mt-0.5 text-xs text-slate-500">This document has {previewFilesCtx.files.length} files</div>
+            </div>
+            <div className="px-6 py-4 space-y-2 max-h-72 overflow-auto">
+              {previewFilesCtx.files.map((file, idx) => (
+                <div key={`preview-file-${idx}`} className="flex items-center justify-between gap-3 py-2 border-b border-slate-100 last:border-0">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <svg className="w-5 h-5 text-blue-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                    <span className="text-sm text-slate-700 truncate">{file.file_name || `File ${idx + 1}`}</span>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={previewingFileIdx === idx}
+                    onClick={async () => {
+                      setPreviewingFileIdx(idx)
+                      try {
+                        await openFilePreview(file, previewFilesCtx.sigData, previewFilesCtx.fields, idx)
+                        setPreviewFilesCtx(null)
+                      } catch (err: any) {
+                        alert(`Preview failed: ${err?.message || 'Unknown error'}`)
+                      } finally {
+                        setPreviewingFileIdx(null)
+                      }
+                    }}
+                    className="shrink-0 h-8 px-3 rounded-lg bg-indigo-600 text-white text-xs font-semibold hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-1"
+                  >
+                    {previewingFileIdx === idx ? (
+                      <svg className="w-3 h-3 animate-spin" viewBox="0 0 24 24" fill="none"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+                    ) : (
+                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.25 12s3.75-6.75 9.75-6.75S21.75 12 21.75 12 18 18.75 12 18.75 2.25 12 2.25 12z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15.25a3.25 3.25 0 100-6.5 3.25 3.25 0 000 6.5z" /></svg>
+                    )}
+                    {previewingFileIdx === idx ? 'Preparing...' : 'Preview'}
+                  </button>
+                </div>
+              ))}
+            </div>
+            <div className="px-6 py-4 flex justify-end border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => { setPreviewFilesCtx(null); setPreviewingFileIdx(null) }}
+                className="h-9 px-6 rounded-full bg-slate-100 text-slate-700 text-sm font-semibold hover:bg-slate-200"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {downloadFilesCtx && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/40" onClick={() => { setDownloadFilesCtx(null); setDownloadingFileIdx(null) }} />
