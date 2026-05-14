@@ -1,8 +1,8 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { motion, type Transition } from 'framer-motion'
 import { supabase } from '@/lib/supabaseClient'
+import CostsWorkspace from '../../components/CostsWorkspace'
 
 // Supported tax rates
 const TAX_RATES: Record<string, number> = {
@@ -220,7 +220,7 @@ export default function CostsTab({ vehicleId, vehiclePrice, stockNumber }: Costs
         const qty = parseFloat(r.quantity ?? '1') || 1
         const discount = parseFloat(r.discount ?? '0') || 0
         const tax = parseFloat(r.tax ?? '0') || 0
-        const total = parseFloat(r.total ?? String(Math.max(0, price * qty - discount + tax))) || (price * qty - discount + tax)
+        const total = Math.max(0, price * qty - discount) + tax
         return {
           id: String(r.id ?? Date.now()),
           dbId: r.id,
@@ -349,7 +349,8 @@ export default function CostsTab({ vehicleId, vehiclePrice, stockNumber }: Costs
     const rate = resolveTaxRate(modalForm.taxType || 'Exempt')
     const taxable = Math.max(0, price * qty - discount)
     const tax = modalForm.taxType && modalForm.taxType !== 'Exempt' ? taxable * rate : 0
-    const total = (price * qty) - discount + tax
+    const subtotal = Math.max(0, (price * qty) - discount)
+    const total = subtotal + tax
 
     if (editingCost) {
       setCostsData(prev => ({
@@ -452,26 +453,6 @@ export default function CostsTab({ vehicleId, vehiclePrice, stockNumber }: Costs
     setShowModal(false)
   }
 
-  const updateCostItem = (id: string, field: keyof CostItem, value: string | number) => {
-    setCostsData(prev => ({
-      ...prev,
-      additionalExpenses: prev.additionalExpenses.map(item => {
-        if (item.id === id) {
-          const updated = { ...item, [field]: value }
-          const price = Number(updated.price || 0)
-          const qty = Number(updated.qty || 1)
-          const discount = Number(updated.discount || 0)
-          const rate = resolveTaxRate(updated.taxType || 'Exempt')
-          const tax = Math.max(0, (price * qty) - discount) * rate
-          updated.tax = tax
-          updated.total = (price * qty) - discount + tax
-          return updated
-        }
-        return item
-      })
-    }))
-  }
-
   const removeCostItem = async (item: CostItem) => {
     // Optimistic UI update
     setCostsData(prev => ({
@@ -534,518 +515,50 @@ export default function CostsTab({ vehicleId, vehiclePrice, stockNumber }: Costs
   }
 
   // Calculate totals
-  const additionalExpensesTotal = costsData.additionalExpenses.reduce((sum, item) => sum + item.total, 0)
+  const totalTax = costsData.additionalExpenses.reduce((sum, item) => sum + Number(item.tax || 0), 0)
+  const additionalExpensesSubtotal = costsData.additionalExpenses.reduce(
+    (sum, item) => sum + Math.max(0, Number(item.price || 0) * Number(item.qty || 1) - Number(item.discount || 0)),
+    0
+  )
+  const additionalExpensesTotal = additionalExpensesSubtotal + totalTax
   const totalInvested = costsData.purchasePrice + additionalExpensesTotal
-  const totalTax = costsData.additionalExpenses.reduce((sum, item) => sum + item.tax, 0)
-  const grandTotal = totalInvested + totalTax
+  const grandTotal = totalInvested
   const potentialProfit = costsData.listPrice - grandTotal
 
   return (
-    <div className="bg-white rounded-xl shadow p-6">
-      {/* Search Tip */}
-      {showSearchTip && (
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4 flex items-center justify-between">
-          <p className="text-sm text-blue-800">
-            💡 TIP: Use the search box below to search for cost presets. Search by a group name to pull in all costs associated with that group.
-          </p>
-          <button onClick={() => setShowSearchTip(false)} className="text-blue-600 hover:text-blue-800">×</button>
-        </div>
-      )}
-
-      {/* Search */}
-      <div className="mb-6">
-        <input
-          type="text"
-          placeholder="🔍 search costs"
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
-        />
-      </div>
-
-      {/* Cost Preset Tip */}
-      {showPresetTip && (
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-6 flex items-center justify-between">
-          <p className="text-sm text-blue-800">
-            💡 TIP: If you see a cost in red below, it means it was not found as a cost preset. You can upload the cost as a preset by clicking the ⬆️ icon.
-          </p>
-          <button onClick={() => setShowPresetTip(false)} className="text-blue-600 hover:text-blue-800">×</button>
-        </div>
-      )}
-
-      {/* Costs Table */}
-      <div className="mb-6">
-        <div className="flex items-center gap-2 mb-4">
-          <input type="checkbox" className="w-4 h-4 rounded border-gray-300" />
-          <span className="text-sm text-gray-500">Select all</span>
-        </div>
-
-        <table className="w-full">
-          <thead>
-            <tr className="border-b border-gray-200">
-              <th className="text-left py-2 text-sm font-medium text-gray-500">NAME</th>
-              <th className="text-left py-2 text-sm font-medium text-gray-500">PRICE</th>
-              <th className="text-left py-2 text-sm font-medium text-gray-500">QTY</th>
-              <th className="text-left py-2 text-sm font-medium text-gray-500">DISCOUNT</th>
-              <th className="text-left py-2 text-sm font-medium text-gray-500">TAX</th>
-              <th className="text-left py-2 text-sm font-medium text-gray-500">TOTAL</th>
-              <th className="py-2"></th>
-            </tr>
-          </thead>
-          <tbody>
-            {costsData.additionalExpenses.length === 0 ? (
-              <tr>
-                <td colSpan={7} className="py-8 text-center text-gray-500">
-                  No Costs
-                </td>
-              </tr>
-            ) : (
-              costsData.additionalExpenses.map((item) => (
-                <tr key={item.id} className="border-b border-gray-100 hover:bg-gray-50">
-                  <td className="py-2 px-2">
-                    <div className="text-sm font-medium text-gray-900">{item.name || '—'}</div>
-                    {item.description && (
-                      <div className="text-xs text-gray-500 truncate max-w-[200px]">{item.description}</div>
-                    )}
-                  </td>
-                  <td className="py-2 px-2 text-sm">${item.price.toFixed(2)}</td>
-                  <td className="py-2 px-2 text-sm">{item.qty}</td>
-                  <td className="py-2 px-2 text-sm">${item.discount.toFixed(2)}</td>
-                  <td className="py-2 px-2 text-sm">${item.tax.toFixed(2)}</td>
-                  <td className="py-2 px-2 text-sm font-medium">${item.total.toFixed(2)}</td>
-                  <td className="py-2 px-2">
-                    <div className="flex items-center gap-3">
-                      <button
-                        type="button"
-                        title="Edit"
-                        onClick={(e) => { e.stopPropagation(); openEditModal(item); }}
-                        className="text-gray-600 hover:text-gray-800"
-                      >
-                        ✎
-                      </button>
-                      <button
-                        type="button"
-                        title="Delete"
-                        onClick={(e) => { e.stopPropagation(); removeCostItem(item); }}
-                        className="text-red-500 hover:text-red-700"
-                      >
-                        ×
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-
-        <button
-          type="button"
-          onClick={openAddModal}
-          className="mt-4 flex items-center gap-2 text-[#118df0] hover:text-[#0d6ebd] font-medium"
-        >
-          <span className="w-6 h-6 bg-[#118df0] text-white rounded flex items-center justify-center text-lg">+</span>
-          Add Cost
-        </button>
-      </div>
-
-      {/* Summary Section */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Donut Chart */}
-        <div className="flex items-center justify-center">
-          <div className="relative w-48 h-48">
-            {(() => {
-              const total = costsData.purchasePrice + additionalExpensesTotal + Math.max(0, potentialProfit)
-              const purchasePercent = total > 0 ? (costsData.purchasePrice / total) * 100 : 33
-              const expensesPercent = total > 0 ? (additionalExpensesTotal / total) * 100 : 33
-              const profitPercent = total > 0 ? (Math.max(0, potentialProfit) / total) * 100 : 34
-              const circumference = 2 * Math.PI * 35
-              const baseStroke = 20
-
-              const purchaseDash = (purchasePercent / 100) * circumference
-              const expensesDash = (expensesPercent / 100) * circumference
-              const profitDash = (profitPercent / 100) * circumference
-
-              const transition: Transition = { duration: 0.6, ease: 'easeInOut' }
-
-              return (
-                <svg viewBox="0 0 100 100" className="w-full h-full transform -rotate-90">
-                  <motion.circle
-                    cx="50"
-                    cy="50"
-                    r="35"
-                    fill="transparent"
-                    stroke="#3b82f6"
-                    strokeWidth={baseStroke}
-                    animate={{
-                      strokeDasharray: `${purchaseDash} ${circumference}`,
-                      strokeDashoffset: 0,
-                    }}
-                    transition={transition}
-                  />
-                  <motion.circle
-                    cx="50"
-                    cy="50"
-                    r="35"
-                    fill="transparent"
-                    stroke="#ef4444"
-                    strokeWidth={baseStroke}
-                    animate={{
-                      strokeDasharray: `${expensesDash} ${circumference}`,
-                      strokeDashoffset: -purchaseDash,
-                    }}
-                    transition={transition}
-                  />
-                  <motion.circle
-                    cx="50"
-                    cy="50"
-                    r="35"
-                    fill="transparent"
-                    stroke="#22c55e"
-                    strokeWidth={baseStroke}
-                    animate={{
-                      strokeDasharray: `${profitDash} ${circumference}`,
-                      strokeDashoffset: -(purchaseDash + expensesDash),
-                    }}
-                    transition={transition}
-                  />
-                </svg>
-              )
-            })()}
-            <div className="absolute inset-0 flex items-center justify-center">
-              <div className="text-center">
-                <div className="text-xs text-gray-500">Profit</div>
-                <div className={`text-lg font-bold ${potentialProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                  ${potentialProfit.toLocaleString()}
-                </div>
-              </div>
-            </div>
-          </div>
-          <div className="ml-4 space-y-2">
-            <div className="flex items-center gap-2">
-              <span className="w-3 h-3 bg-red-500 rounded"></span>
-              <span className="text-xs text-gray-600">Expenses</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="w-3 h-3 bg-blue-500 rounded"></span>
-              <span className="text-xs text-gray-600">Purchase</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="w-3 h-3 bg-green-500 rounded"></span>
-              <span className="text-xs text-gray-600">Profit</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Summary Numbers */}
-        <div className="space-y-3">
-          <div className="flex justify-between items-center py-2 border-b border-gray-100">
-            <span className="text-sm text-gray-600">Vehicle Purchase Price:</span>
-            <span className="font-semibold">${costsData.purchasePrice.toLocaleString()}</span>
-          </div>
-          <div className="flex justify-between items-center py-2 border-b border-gray-100">
-            <span className="text-sm text-gray-600">Actual Cash Value:</span>
-            <span className="font-semibold">${costsData.actualCashValue.toLocaleString()}</span>
-          </div>
-          <div className="flex justify-between items-center py-2 border-b border-gray-100">
-            <span className="text-sm text-gray-600">Additional Expenses Total:</span>
-            <span className="font-semibold">${additionalExpensesTotal.toLocaleString()}</span>
-          </div>
-          <div className="flex justify-between items-center py-2 border-b border-gray-100 bg-blue-50 px-2 rounded">
-            <span className="text-sm font-medium text-blue-800">Total Invested:</span>
-            <span className="font-bold text-blue-800">${totalInvested.toLocaleString()}</span>
-          </div>
-          <div className="flex justify-between items-center py-2 border-b border-gray-100">
-            <span className="text-sm text-gray-600">Total Tax:</span>
-            <span className="font-semibold">${totalTax.toLocaleString()}</span>
-          </div>
-          <div className="flex justify-between items-center py-2 bg-gray-100 px-2 rounded">
-            <span className="text-sm font-medium text-gray-800">Grand Total:</span>
-            <span className="font-bold text-gray-800">${grandTotal.toLocaleString()}</span>
-          </div>
-        </div>
-      </div>
-
-      {/* Price Inputs */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6 pt-6 border-t border-gray-200">
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">List Price</label>
-          <div className="flex items-center">
-            <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">$</span>
-            <input
-              type="number"
-              name="listPrice"
-              value={costsData.listPrice}
-              onChange={handleChange}
-              className="flex-1 border border-gray-300 rounded-r-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
-            />
-          </div>
-          {costsData.listPrice > 0 && potentialProfit > 0 && (
-            <p className="text-xs text-green-600 mt-1">Sweet bring on the money!</p>
-          )}
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Sale Price</label>
-          <div className="flex items-center">
-            <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">$</span>
-            <input
-              type="number"
-              name="salePrice"
-              value={costsData.salePrice}
-              onChange={handleChange}
-              className="flex-1 border border-gray-300 rounded-r-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
-            />
-          </div>
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">MSRP</label>
-          <div className="flex items-center">
-            <span className="bg-gray-100 border border-r-0 border-gray-300 px-3 py-2 rounded-l-lg text-gray-500">$</span>
-            <input
-              type="number"
-              name="msrp"
-              value={costsData.msrp}
-              onChange={handleChange}
-              className="flex-1 border border-gray-300 rounded-r-lg px-3 py-2 focus:ring-2 focus:ring-[#118df0] focus:border-transparent"
-            />
-          </div>
-        </div>
-      </div>
-
-      {/* Save Button */}
-      <div className="mt-6 flex justify-end">
-        <button
-          onClick={handleSave}
-          disabled={saving}
-          className="bg-[#118df0] text-white px-8 py-3 rounded-lg font-semibold hover:bg-[#0d6ebd] transition-colors disabled:opacity-50"
-        >
-          {saving ? 'Saving...' : 'Update'}
-        </button>
-      </div>
-
-      {/* Add/Edit Cost Modal */}
-      {showModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div 
-            className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-hidden"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* Modal Header */}
-            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 bg-gradient-to-r from-gray-50 to-white">
-              <h2 className="text-xl font-semibold text-gray-900">
-                {editingCost ? 'Edit Cost' : 'New Cost'}
-              </h2>
-              <button
-                onClick={() => setShowModal(false)}
-                className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full transition-colors"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-
-            {/* Modal Body */}
-            <div className="px-6 py-5 overflow-y-auto max-h-[calc(90vh-180px)]">
-              <div className="space-y-5">
-                {/* Date */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Date</label>
-                  <input
-                    type="date"
-                    name="date"
-                    value={modalForm.date || ''}
-                    onChange={handleModalChange}
-                    className="w-full bg-gray-50 border border-gray-200 rounded-lg px-4 py-2.5 text-gray-900 focus:bg-white focus:ring-2 focus:ring-[#118df0] focus:border-transparent transition-all"
-                  />
-                </div>
-
-                {/* Name */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Name</label>
-                  <div className="relative">
-                    <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                    </svg>
-                    <input
-                      type="text"
-                      name="name"
-                      value={modalForm.name || ''}
-                      onChange={handleModalChange}
-                      placeholder="e.g. Gas, Repair, Transport"
-                      className="w-full bg-gray-50 border border-gray-200 rounded-lg pl-10 pr-4 py-2.5 text-gray-900 placeholder-gray-400 focus:bg-white focus:ring-2 focus:ring-[#118df0] focus:border-transparent transition-all"
-                    />
-                  </div>
-                </div>
-
-                {/* Group Name */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Group Name</label>
-                  <select
-                    name="groupName"
-                    value={modalForm.groupName || ''}
-                    onChange={handleModalChange}
-                    className="w-full bg-gray-50 border border-gray-200 rounded-lg px-4 py-2.5 text-gray-900 focus:bg-white focus:ring-2 focus:ring-[#118df0] focus:border-transparent transition-all appearance-none cursor-pointer"
-                  >
-                    <option value="">Select a group...</option>
-                    <option value="transport">Transport Fee</option>
-                    <option value="repair">Repair & Maintenance</option>
-                    <option value="inspection">Inspection</option>
-                    <option value="detailing">Detailing</option>
-                    <option value="auction">Auction Fees</option>
-                    <option value="other">Other</option>
-                  </select>
-                </div>
-
-                {/* Description */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Description</label>
-                  <textarea
-                    name="description"
-                    value={modalForm.description || ''}
-                    onChange={handleModalChange}
-                    placeholder="e.g. Transportation delivery fee from auction"
-                    rows={3}
-                    className="w-full bg-gray-50 border border-gray-200 rounded-lg px-4 py-2.5 text-gray-900 placeholder-gray-400 focus:bg-white focus:ring-2 focus:ring-[#118df0] focus:border-transparent transition-all resize-none"
-                  />
-                </div>
-
-                {/* Vendor */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Vendor</label>
-                  <div className="relative">
-                    <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                    </svg>
-                    <input
-                      type="text"
-                      name="vendor"
-                      value={modalForm.vendor || ''}
-                      onChange={handleModalChange}
-                      placeholder="Search vendor..."
-                      className="w-full bg-gray-50 border border-gray-200 rounded-lg pl-10 pr-4 py-2.5 text-gray-900 placeholder-gray-400 focus:bg-white focus:ring-2 focus:ring-[#118df0] focus:border-transparent transition-all"
-                    />
-                  </div>
-                </div>
-
-                {/* Invoice Ref */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Invoice Reference</label>
-                  <input
-                    type="text"
-                    name="invoiceRef"
-                    value={modalForm.invoiceRef || ''}
-                    onChange={handleModalChange}
-                    placeholder="e.g. INV-2026-001"
-                    className="w-full bg-gray-50 border border-gray-200 rounded-lg px-4 py-2.5 text-gray-900 placeholder-gray-400 focus:bg-white focus:ring-2 focus:ring-[#118df0] focus:border-transparent transition-all"
-                  />
-                </div>
-
-                {/* Amount & Qty Row */}
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1.5">Amount ($)</label>
-                    <input
-                      type="number"
-                      name="price"
-                      value={modalForm.price || 0}
-                      onChange={handleModalChange}
-                      className="w-full bg-gray-50 border border-gray-200 rounded-lg px-4 py-2.5 text-gray-900 focus:bg-white focus:ring-2 focus:ring-[#118df0] focus:border-transparent transition-all"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1.5">Quantity</label>
-                    <input
-                      type="number"
-                      name="qty"
-                      value={modalForm.qty || 1}
-                      onChange={handleModalChange}
-                      min="1"
-                      className="w-full bg-gray-50 border border-gray-200 rounded-lg px-4 py-2.5 text-gray-900 focus:bg-white focus:ring-2 focus:ring-[#118df0] focus:border-transparent transition-all"
-                    />
-                  </div>
-                </div>
-
-                {/* Discount */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Discount ($)</label>
-                  <input
-                    type="number"
-                    name="discount"
-                    value={modalForm.discount || 0}
-                    onChange={handleModalChange}
-                    className="w-full bg-gray-50 border border-gray-200 rounded-lg px-4 py-2.5 text-gray-900 focus:bg-white focus:ring-2 focus:ring-[#118df0] focus:border-transparent transition-all"
-                  />
-                </div>
-
-                {/* Tax */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Tax</label>
-                  <div className="flex gap-3">
-                    <input
-                      type="number"
-                      name="tax"
-                      value={modalForm.tax || 0}
-                      readOnly
-                      className="flex-1 bg-gray-100 border border-gray-200 rounded-lg px-4 py-2.5 text-gray-900 focus:bg-white focus:ring-2 focus:ring-[#118df0] focus:border-transparent transition-all"
-                    />
-                    <select
-                      name="taxType"
-                      value={modalForm.taxType || 'Exempt'}
-                      onChange={handleModalChange}
-                      className="bg-gray-50 border border-gray-200 rounded-lg px-4 py-2.5 text-gray-900 focus:bg-white focus:ring-2 focus:ring-[#118df0] focus:border-transparent transition-all cursor-pointer"
-                    >
-                      {loadingTaxPresets ? (
-                        <option value="">Loading...</option>
-                      ) : taxPresets.length ? (
-                        taxPresets
-                          .filter((t) => String(t.name || '').trim())
-                          .map((t) => {
-                            const name = String(t.name || '').trim()
-                            let rate = typeof t.rate === 'number' ? t.rate : parseFloat(String(t.rate || '0'))
-                            if (!Number.isFinite(rate)) rate = 0
-                            const pct = (rate > 1 ? rate : rate * 100).toFixed(2).replace(/\.?0+$/, '')
-                            return (
-                              <option key={t.id} value={name}>
-                                {name} {pct}%
-                              </option>
-                            )
-                          })
-                      ) : (
-                        <option value="Exempt">Exempt 0%</option>
-                      )}
-                    </select>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Modal Footer */}
-            <div className="px-6 py-4 border-t border-gray-100 bg-gray-50">
-              <div className="flex items-center justify-between mb-4">
-                <span className="text-sm font-medium text-gray-600">Total:</span>
-                <span className="text-2xl font-bold text-gray-900">
-                  ${(((modalForm.price || 0) * (modalForm.qty || 1)) - (modalForm.discount || 0) + (modalForm.tax || 0)).toFixed(2)}
-                </span>
-              </div>
-              <div className="flex gap-3">
-                <button
-                  onClick={() => setShowModal(false)}
-                  className="flex-1 px-5 py-2.5 bg-white border border-gray-200 rounded-lg font-medium text-gray-700 hover:bg-gray-50 hover:border-gray-300 transition-all"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleModalSave}
-                  className="flex-1 px-5 py-2.5 bg-[#118df0] text-white rounded-lg font-medium hover:bg-[#0d6ebd] shadow-lg shadow-blue-500/25 transition-all"
-                >
-                  {editingCost ? 'Update Cost' : 'Add Cost'}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
+    <CostsWorkspace
+      costsData={costsData}
+      totals={{
+        additionalExpensesTotal,
+        totalInvested,
+        totalTax,
+        grandTotal,
+        potentialProfit,
+        chartExpensesTotal: additionalExpensesTotal,
+      }}
+      searchQuery={searchQuery}
+      onSearchChange={setSearchQuery}
+      showTip={showSearchTip || showPresetTip}
+      onDismissTip={() => {
+        setShowSearchTip(false)
+        setShowPresetTip(false)
+      }}
+      onAddCost={openAddModal}
+      onEditCost={openEditModal}
+      onRemoveCost={removeCostItem}
+      onPriceChange={handleChange}
+      showSaveButton
+      saving={saving}
+      onSave={handleSave}
+      showModal={showModal}
+      editingCost={editingCost}
+      modalForm={modalForm}
+      onModalChange={handleModalChange}
+      onModalSave={handleModalSave}
+      onCloseModal={() => setShowModal(false)}
+      taxPresets={taxPresets}
+      loadingTaxPresets={loadingTaxPresets}
+      emptyTaxOption={{ value: 'Exempt', label: 'Exempt 0%' }}
+    />
   )
 }

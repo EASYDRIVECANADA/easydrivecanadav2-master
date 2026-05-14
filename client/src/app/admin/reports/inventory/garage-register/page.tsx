@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import { exportRowsToCsv, getFirstDayOfMonth, getToday, printReport } from '../../reportUtils'
 
 type Row = {
   id: string
@@ -23,6 +24,8 @@ type Row = {
 export default function GarageRegisterPage() {
   const [status, setStatus] = useState('In Stock, Sold, Deal Pending In Trade, In Stock (No Deal)')
   const [filterType, setFilterType] = useState('Purchased Between')
+  const [from, setFrom] = useState(getFirstDayOfMonth)
+  const [to, setTo] = useState(getToday)
   const [perPage, setPerPage] = useState('150')
   const [query, setQuery] = useState('')
 
@@ -46,6 +49,8 @@ export default function GarageRegisterPage() {
         if (userId) qs.set('userId', userId)
         if (status) qs.set('status', status)
         if (filterType) qs.set('filterType', filterType)
+        if (from) qs.set('from', from)
+        if (to) qs.set('to', to)
         if (perPage) qs.set('perPage', perPage)
 
         const res = await fetch(`/api/reports/inventory/garage-register?${qs.toString()}`, {
@@ -67,7 +72,7 @@ export default function GarageRegisterPage() {
     }
 
     void run()
-  }, [filterType, perPage, status])
+  }, [filterType, from, perPage, status, to])
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -106,8 +111,29 @@ export default function GarageRegisterPage() {
             </div>
 
             <div className="flex items-center gap-2 xl:justify-end">
-              <button type="button" className="edc-btn-primary text-sm">Export</button>
-              <button type="button" className="edc-btn-ghost text-sm">Print</button>
+              <button
+                type="button"
+                className="edc-btn-primary text-sm"
+                onClick={() => exportRowsToCsv('garage-register', filtered as unknown as Record<string, unknown>[], [
+                  { key: 'purchasedFromName', label: 'Purchased From Name' },
+                  { key: 'purchasedFromAddress', label: 'Purchased From Address' },
+                  { key: 'plateNo', label: 'Plate No.' },
+                  { key: 'odometerReading', label: 'Odometer Reading' },
+                  { key: 'make', label: 'Make' },
+                  { key: 'model', label: 'Model' },
+                  { key: 'stockNumber', label: 'Stock #' },
+                  { key: 'serialNo', label: 'Serial No.' },
+                  { key: 'colour', label: 'Colour' },
+                  { key: 'dateInStock', label: 'Date Into Stock' },
+                  { key: 'inConsignment', label: 'Consignment' },
+                  { key: 'dateOut', label: 'Date Out' },
+                  { key: 'soldToName', label: 'Sold To Name' },
+                  { key: 'soldToAddress', label: 'Sold To Address' },
+                ])}
+              >
+                Export
+              </button>
+              <button type="button" className="edc-btn-ghost text-sm" onClick={printReport}>Print</button>
             </div>
 
             <div className="xl:w-[120px] xl:ml-auto">
@@ -122,13 +148,22 @@ export default function GarageRegisterPage() {
           </div>
 
           <div className="mt-3 flex flex-col lg:flex-row lg:items-center gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 lg:w-[360px]">
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 mb-1">From</label>
+                <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="edc-input" />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 mb-1">To</label>
+                <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="edc-input" />
+              </div>
+            </div>
             <div className="flex-1 relative">
               <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="search" className="edc-input pl-10" />
               <svg className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35m1.35-5.65a7 7 0 11-14 0 7 7 0 0114 0z" />
               </svg>
             </div>
-            <button type="button" className="edc-btn-ghost text-sm">Advanced</button>
           </div>
 
           <div className="mt-2 text-xs text-slate-500">Total Entries: <span className="font-semibold text-slate-700">{filtered.length}</span></div>

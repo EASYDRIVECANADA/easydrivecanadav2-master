@@ -38,6 +38,8 @@ type CostRow = {
   total: string | number | null
   amount: string | number | null
   quantity: string | number | null
+  discount: string | number | null
+  tax: string | number | null
 }
 
 const toNum = (v: unknown) => {
@@ -45,6 +47,8 @@ const toNum = (v: unknown) => {
   const n = typeof v === 'number' ? v : Number(String(v).replace(/[^0-9.-]/g, ''))
   return Number.isFinite(n) ? n : 0
 }
+
+const hasValue = (v: unknown) => v !== null && v !== undefined && String(v).trim() !== ''
 
 const normalizeDateIso = (raw: unknown) => {
   const s = String(raw ?? '').trim()
@@ -202,7 +206,7 @@ export async function GET(request: Request) {
 
     const costsByStock = new Map<string, number>()
     if (stockNumbers.length) {
-      const costSelect = ['stock_number', 'total', 'amount', 'quantity'].join(',')
+      const costSelect = ['stock_number', 'total', 'amount', 'quantity', 'discount', 'tax'].join(',')
       const inList = `(${stockNumbers.map((s) => `"${String(s).replaceAll('"', '')}"`).join(',')})`
       const cQs = [
         `select=${encodeURIComponent(costSelect)}`,
@@ -232,10 +236,13 @@ export async function GET(request: Request) {
         for (const c of costs) {
           const sn = String(c?.stock_number ?? '').trim()
           if (!sn) continue
-          const total = toNum(c?.total)
           const amount = toNum(c?.amount)
           const qty = Math.max(1, toNum(c?.quantity) || 1)
-          const line = total || (amount * qty)
+          const discount = toNum(c?.discount)
+          const tax = toNum(c?.tax)
+          const subtotal = Math.max(0, amount * qty - discount)
+          const hasLineComponents = hasValue(c?.amount) || hasValue(c?.quantity) || hasValue(c?.discount) || hasValue(c?.tax)
+          const line = hasLineComponents ? subtotal + tax : toNum(c?.total)
           costsByStock.set(sn, (costsByStock.get(sn) || 0) + line)
         }
       }

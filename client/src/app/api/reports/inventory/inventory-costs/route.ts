@@ -37,6 +37,8 @@ const toNum = (v: unknown) => {
   return Number.isFinite(n) ? n : 0
 }
 
+const hasValue = (v: unknown) => v !== null && v !== undefined && String(v).trim() !== ''
+
 const formatPrettyDate = (raw: unknown) => {
   const s = String(raw ?? '').trim()
   if (!s) return ''
@@ -180,7 +182,9 @@ export async function GET(request: Request) {
         const tax = toNum(c?.tax)
 
         const subtotal = Math.max(0, amount * qty - discount)
-        const total = toNum(c?.total) || Math.max(0, subtotal + tax)
+        const computedTotal = subtotal + tax
+        const hasLineComponents = hasValue(c?.amount) || hasValue(c?.quantity) || hasValue(c?.discount) || hasValue(c?.tax)
+        const total = hasLineComponents ? computedTotal : toNum(c?.total)
 
         const taxType = String(c?.tax_type ?? '').trim()
         const hst13 = taxType.toUpperCase() === 'HST' ? tax : 0

@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import { exportRowsToCsv } from '../../reportUtils'
 
 type Row = {
   [key: string]: string | number
@@ -353,7 +354,11 @@ export default function SalesReportPage() {
               <option value="250">250</option>
               <option value="500">500</option>
             </select>
-            <button type="button" className="edc-btn-primary text-sm">
+            <button
+              type="button"
+              className="edc-btn-primary text-sm"
+              onClick={() => exportRowsToCsv('sales-report', filtered as unknown as Record<string, unknown>[], columns as { key: string; label: string }[])}
+            >
               Export
             </button>
           </div>
@@ -397,9 +402,6 @@ export default function SalesReportPage() {
               </div>
             </div>
 
-            <button type="button" className="edc-btn-ghost text-sm">
-              Advanced
-            </button>
           </div>
 
           <div className="mt-2 text-xs text-slate-500">Total Sales: <span className="font-semibold text-slate-700">{filtered.length}</span></div>

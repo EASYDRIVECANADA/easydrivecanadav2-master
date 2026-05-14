@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import { exportRowsToCsv, printReport } from '../../reportUtils'
 
 type Row = {
   id: string
@@ -106,8 +107,6 @@ export default function InventoryCostsPage() {
               </svg>
             </div>
 
-            <button type="button" className="edc-btn-ghost text-sm xl:mt-6">Advanced</button>
-
             <div className="xl:w-[120px] xl:ml-auto">
               <label className="block text-xs font-semibold text-slate-500 mb-1">&nbsp;</label>
               <select value={perPage} onChange={(e) => setPerPage(e.target.value)} className="edc-input">
@@ -119,12 +118,33 @@ export default function InventoryCostsPage() {
             </div>
 
             <div className="flex items-center gap-2 xl:mt-6">
-              <button type="button" className="h-10 w-10 rounded-lg border border-slate-200/60 hover:bg-slate-50 transition-colors" title="Export">
+              <button
+                type="button"
+                className="h-10 w-10 rounded-lg border border-slate-200/60 hover:bg-slate-50 transition-colors"
+                title="Export"
+                onClick={() => exportRowsToCsv('inventory-costs', filtered as unknown as Record<string, unknown>[], [
+                  { key: 'date', label: 'Date' },
+                  { key: 'name', label: 'Name' },
+                  { key: 'description', label: 'Description' },
+                  { key: 'vehicle', label: 'Vehicle' },
+                  { key: 'invoice', label: 'Invoice' },
+                  { key: 'vendor', label: 'Vendor' },
+                  { key: 'subtotal', label: 'Subtotal' },
+                  { key: 'hst13', label: 'HST 13%' },
+                  { key: 'exempt0', label: 'Exempt 0%' },
+                  { key: 'total', label: 'Total' },
+                ])}
+              >
                 <svg className="w-5 h-5 mx-auto text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v10m0 0l-3-3m3 3l3-3M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2" />
                 </svg>
               </button>
-              <button type="button" className="h-10 w-10 rounded-lg border border-slate-200/60 hover:bg-slate-50 transition-colors" title="Print">
+              <button
+                type="button"
+                className="h-10 w-10 rounded-lg border border-slate-200/60 hover:bg-slate-50 transition-colors"
+                title="Print"
+                onClick={printReport}
+              >
                 <svg className="w-5 h-5 mx-auto text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 9V2h12v7M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2M6 14h12v8H6v-8z" />
                 </svg>

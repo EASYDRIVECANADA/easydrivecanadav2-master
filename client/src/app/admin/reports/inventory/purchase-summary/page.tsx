@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import { exportRowsToCsv, getFirstDayOfMonth, getToday, printReport } from '../../reportUtils'
 
 type Row = {
   id: string
@@ -21,8 +22,8 @@ type Row = {
 export default function PurchaseSummaryPage() {
   const [query, setQuery] = useState('')
   const [status, setStatus] = useState('In Stock, Sold, Deal Pending In Trade, In Stock (No Deal)')
-  const [from, setFrom] = useState('2026-01-01')
-  const [to, setTo] = useState('2026-01-31')
+  const [from, setFrom] = useState(getFirstDayOfMonth)
+  const [to, setTo] = useState(getToday)
 
   const [rows, setRows] = useState<Row[]>([])
   const [loading, setLoading] = useState(false)
@@ -129,8 +130,27 @@ export default function PurchaseSummaryPage() {
             </div>
 
             <div className="flex items-center gap-2 xl:justify-end">
-              <button type="button" className="edc-btn-primary text-sm">Export</button>
-              <button type="button" className="edc-btn-ghost text-sm">Print</button>
+              <button
+                type="button"
+                className="edc-btn-primary text-sm"
+                onClick={() => exportRowsToCsv('purchase-summary', filtered as unknown as Record<string, unknown>[], [
+                  { key: 'vehicle', label: 'Vehicle' },
+                  { key: 'purchasedFrom', label: 'Purchased From' },
+                  { key: 'auction', label: 'Auction' },
+                  { key: 'purchasedDate', label: 'Purchased Date' },
+                  { key: 'purchasedPrice', label: 'Purchased Price' },
+                  { key: 'actualCashValue', label: 'Actual Cash Value' },
+                  { key: 'discount', label: 'Discount' },
+                  { key: 'hst13', label: 'HST 13%' },
+                  { key: 'taxOverride', label: 'Tax Override' },
+                  { key: 'gst5', label: 'GST 5%' },
+                  { key: 'qst9975', label: 'QST 9.975%' },
+                  { key: 'taxExempt0', label: 'Tax Exempt 0%' },
+                ])}
+              >
+                Export
+              </button>
+              <button type="button" className="edc-btn-ghost text-sm" onClick={printReport}>Print</button>
             </div>
           </div>
 

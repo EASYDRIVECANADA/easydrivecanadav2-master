@@ -7,14 +7,14 @@ export default function ReportsHomePage() {
     <div className="min-h-screen">
       <div className="edc-page-header">
         <h1 className="text-2xl font-bold text-slate-900">Reports</h1>
-        <p className="text-sm text-slate-500 mt-0.5">Mock data only (UI design)</p>
+        <p className="text-sm text-slate-500 mt-0.5">Live dealership and inventory reporting</p>
       </div>
 
       <div className="px-6 py-6">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           <div className="edc-card p-5">
             <div className="text-sm font-semibold text-slate-800">Sales Reports</div>
-            <div className="text-xs text-slate-500 mt-1">Mock reports</div>
+            <div className="text-xs text-slate-500 mt-1">Closed deals and transaction fee records</div>
             <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
               <Link href="/admin/reports/sales/sales-report" className="border border-slate-200/60 rounded-xl px-4 py-3 hover:bg-slate-50 transition-colors">
                 <div className="text-sm font-semibold text-slate-800">Sales Report</div>
@@ -29,7 +29,7 @@ export default function ReportsHomePage() {
 
           <div className="edc-card p-5">
             <div className="text-sm font-semibold text-slate-800">Inventory Reports</div>
-            <div className="text-xs text-slate-500 mt-1">Mock reports</div>
+            <div className="text-xs text-slate-500 mt-1">Purchases, costs, values, keys, and garage records</div>
             <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
               <Link href="/admin/reports/inventory/purchase-summary" className="border border-slate-200/60 rounded-xl px-4 py-3 hover:bg-slate-50 transition-colors">
                 <div className="text-sm font-semibold text-slate-800">Purchase Summary</div>

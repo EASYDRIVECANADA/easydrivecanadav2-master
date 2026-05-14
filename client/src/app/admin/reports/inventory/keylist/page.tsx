@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import { exportRowsToCsv, getFirstDayOfMonth, getToday } from '../../reportUtils'
 
 type Row = {
   id: string
@@ -20,11 +21,11 @@ type Row = {
 }
 
 export default function KeylistPage() {
-  const [typeFilter, setTypeFilter] = useState('4 selected')
-  const [statusFilter, setStatusFilter] = useState('4 selected')
-  const [certFilter, setCertFilter] = useState('2 selected')
-  const [from, setFrom] = useState('2026-01-01')
-  const [to, setTo] = useState('2026-01-31')
+  const [typeFilter, setTypeFilter] = useState('')
+  const [statusFilter, setStatusFilter] = useState('')
+  const [certFilter, setCertFilter] = useState('')
+  const [from, setFrom] = useState(getFirstDayOfMonth)
+  const [to, setTo] = useState(getToday)
   const [query, setQuery] = useState('')
 
   const [rows, setRows] = useState<Row[]>([])
@@ -89,7 +90,27 @@ export default function KeylistPage() {
             <h1 className="text-2xl font-bold text-slate-900">Keylist</h1>
             <p className="text-sm text-slate-500 mt-0.5">Inventory key list</p>
           </div>
-          <button type="button" className="edc-btn-primary text-sm">Export</button>
+          <button
+            type="button"
+            className="edc-btn-primary text-sm"
+            onClick={() => exportRowsToCsv('keylist', filtered as unknown as Record<string, unknown>[], [
+              { key: 'year', label: 'Year' },
+              { key: 'model', label: 'Model' },
+              { key: 'colour', label: 'Colour' },
+              { key: 'bodyStyle', label: 'Body Style' },
+              { key: 'keyNumber', label: 'Key #' },
+              { key: 'cyl', label: 'Cyl.' },
+              { key: 'odometer', label: 'Odometer' },
+              { key: 'price', label: 'Price' },
+              { key: 'stockNumber', label: 'Stock #' },
+              { key: 'type', label: 'Type' },
+              { key: 'cert', label: 'Cert.' },
+              { key: 'status', label: 'Status' },
+              { key: 'date', label: 'Date' },
+            ])}
+          >
+            Export
+          </button>
         </div>
       </div>
 
@@ -99,7 +120,7 @@ export default function KeylistPage() {
             <div className="lg:col-span-3">
               <label className="block text-xs font-semibold text-slate-500 mb-1">Type</label>
               <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} className="edc-input">
-                <option value="4 selected">4 selected</option>
+                <option value="">All</option>
                 <option value="Car">Car</option>
                 <option value="SUV">SUV</option>
                 <option value="Truck">Truck</option>
@@ -108,7 +129,7 @@ export default function KeylistPage() {
             <div className="lg:col-span-3">
               <label className="block text-xs font-semibold text-slate-500 mb-1">Status</label>
               <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="edc-input">
-                <option value="4 selected">4 selected</option>
+                <option value="">All</option>
                 <option value="In Stock">In Stock</option>
                 <option value="Sold">Sold</option>
                 <option value="Deal Pending">Deal Pending</option>
@@ -117,7 +138,7 @@ export default function KeylistPage() {
             <div className="lg:col-span-3">
               <label className="block text-xs font-semibold text-slate-500 mb-1">Certification</label>
               <select value={certFilter} onChange={(e) => setCertFilter(e.target.value)} className="edc-input">
-                <option value="2 selected">2 selected</option>
+                <option value="">All</option>
                 <option value="Certified">Certified</option>
                 <option value="As-Is">As-Is</option>
               </select>

@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import { exportRowsToCsv, getToday } from '../../reportUtils'
 
 type Row = {
   id: string
@@ -31,7 +32,7 @@ type Row = {
 export default function InventoryValuePage() {
   const [query, setQuery] = useState('')
   const [status, setStatus] = useState('In Stock, Sold, Deal Pending In Trade, In Stock (No Deal)')
-  const [valueOn, setValueOn] = useState('2026-01-15')
+  const [valueOn, setValueOn] = useState(getToday)
 
   const [rows, setRows] = useState<Row[]>([])
   const [loading, setLoading] = useState(false)
@@ -98,7 +99,25 @@ export default function InventoryValuePage() {
             </p>
           </div>
           <div>
-            <button type="button" className="edc-btn-primary text-sm">
+            <button
+              type="button"
+              className="edc-btn-primary text-sm"
+              onClick={() => exportRowsToCsv('inventory-value', filtered as unknown as Record<string, unknown>[], [
+                { key: 'stock', label: 'Stock #' },
+                { key: 'year', label: 'Year' },
+                { key: 'make', label: 'Make' },
+                { key: 'model', label: 'Model' },
+                { key: 'trim', label: 'Trim' },
+                { key: 'vin', label: 'VIN' },
+                { key: 'currentStatus', label: 'Current Status' },
+                { key: 'vehiclePurchasePrice', label: 'Vehicle Purchase Price' },
+                { key: 'actualCashValue', label: 'Actual Cash Value' },
+                { key: 'costs', label: 'Costs' },
+                { key: 'totalTax', label: 'Total Tax' },
+                { key: 'totalInvested', label: 'Total Invested' },
+                { key: 'listPrice', label: 'List Price' },
+              ])}
+            >
               Export
             </button>
           </div>
@@ -134,7 +153,17 @@ export default function InventoryValuePage() {
 
             <div className="flex items-end gap-2">
               <button type="button" className="edc-btn-primary text-sm">Filter</button>
-              <button type="button" className="edc-btn-danger text-sm">Clear</button>
+              <button
+                type="button"
+                className="edc-btn-danger text-sm"
+                onClick={() => {
+                  setQuery('')
+                  setStatus('In Stock, Sold, Deal Pending In Trade, In Stock (No Deal)')
+                  setValueOn(getToday())
+                }}
+              >
+                Clear
+              </button>
             </div>
           </div>
         </div>

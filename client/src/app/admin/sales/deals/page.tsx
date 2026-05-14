@@ -54,6 +54,12 @@ type DealRow = {
   delivery: any
 }
 
+type DealCostBasis = {
+  purchasePrice: number
+  actualCashValue: number
+  inventoryCosts: number
+}
+
 export default function DealsPage() {
   const router = useRouter()
   const [query, setQuery] = useState('')
@@ -65,6 +71,7 @@ export default function DealsPage() {
   const [loading, setLoading] = useState(true)
   const [fetchError, setFetchError] = useState<string | null>(null)
   const [selectedDeal, setSelectedDeal] = useState<DealRow | null>(null)
+  const [selectedDealCosts, setSelectedDealCosts] = useState<DealCostBasis>({ purchasePrice: 0, actualCashValue: 0, inventoryCosts: 0 })
   const [customersOpen, setCustomersOpen] = useState(true)
   const [profitOpen, setProfitOpen] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
@@ -209,6 +216,73 @@ export default function DealsPage() {
   useEffect(() => {
     fetchDeals()
   }, [fetchDeals])
+
+  useEffect(() => {
+    const loadCostBasis = async () => {
+      const vehicle = selectedDeal?.vehicles?.[0] || null
+      const stock = String(vehicle?.selected_stock_number || '').trim()
+      const vehicleId = String(vehicle?.selected_id || '').trim()
+
+      setSelectedDealCosts({ purchasePrice: 0, actualCashValue: 0, inventoryCosts: 0 })
+      if (!stock && !vehicleId) return
+
+      const toNumber = (value: unknown) => {
+        const n = Number(String(value ?? '0').replace(/[^0-9.-]/g, ''))
+        return Number.isFinite(n) ? n : 0
+      }
+
+      try {
+        let purchasePrice = 0
+        let actualCashValue = 0
+
+        if (stock) {
+          const { data } = await supabase
+            .from('edc_purchase')
+            .select('purchase_price, actual_cash_value')
+            .eq('stock_number', stock)
+            .order('updated_at', { ascending: false })
+            .limit(1)
+          const row = Array.isArray(data) ? data[0] : null
+          purchasePrice = toNumber((row as any)?.purchase_price)
+          actualCashValue = toNumber((row as any)?.actual_cash_value)
+        }
+
+        let costRows: any[] = []
+        if (vehicleId) {
+          const { data } = await supabase
+            .from('edc_costs')
+            .select('amount, quantity, discount, tax, total')
+            .eq('vehicleId', vehicleId)
+            .order('created_at', { ascending: true })
+          if (Array.isArray(data) && data.length) costRows = data
+        }
+        if (!costRows.length && stock) {
+          const { data } = await supabase
+            .from('edc_costs')
+            .select('amount, quantity, discount, tax, total')
+            .eq('stock_number', stock)
+            .order('created_at', { ascending: true })
+          if (Array.isArray(data)) costRows = data
+        }
+
+        const inventoryCosts = costRows.reduce((sum, row) => {
+          const amount = toNumber(row?.amount)
+          const qty = Math.max(1, toNumber(row?.quantity) || 1)
+          const discount = toNumber(row?.discount)
+          const tax = toNumber(row?.tax)
+          const hasLineComponents = row?.amount !== null || row?.quantity !== null || row?.discount !== null || row?.tax !== null
+          const computed = Math.max(0, amount * qty - discount) + tax
+          return sum + (hasLineComponents ? computed : toNumber(row?.total))
+        }, 0)
+
+        setSelectedDealCosts({ purchasePrice, actualCashValue, inventoryCosts })
+      } catch {
+        setSelectedDealCosts({ purchasePrice: 0, actualCashValue: 0, inventoryCosts: 0 })
+      }
+    }
+
+    void loadCostBasis()
+  }, [selectedDeal?.dealId, selectedDeal?.vehicles])
 
   const fetchSubmissions = useCallback(async () => {
     try {
@@ -910,22 +984,45 @@ export default function DealsPage() {
             {profitOpen && (() => {
               const ws = selectedDeal.worksheet
               const fmt = (n: number) => '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-              const purchasePrice = Number(ws?.purchase_price) || 0
+              const num = (value: unknown) => {
+                const n = Number(String(value ?? '0').replace(/[^0-9.-]/g, ''))
+                return Number.isFinite(n) ? n : 0
+              }
+              const sumRetail = (items: any[], keys: string[]) => (Array.isArray(items) ? items : []).reduce((sum: number, item: any) => {
+                for (const key of keys) {
+                  const value = num(item?.[key])
+                  if (value !== 0) return sum + value
+                }
+                return sum
+              }, 0)
+              const sumCost = (items: any[]) => (Array.isArray(items) ? items : []).reduce((sum: number, item: any) => sum + num(item?.cost), 0)
+              const vehicle = selectedDeal.vehicles?.[0] || {}
+              const purchasePrice = selectedDealCosts.purchasePrice || num((vehicle as any)?.purchase_price)
               const discount = Number(ws?.discount) || 0
-              const sellingPrice = purchasePrice - discount
-              const feesTotal = (Array.isArray(ws?.fees) ? ws.fees : []).reduce((s: number, f: any) => s + (Number(f.amount) || 0), 0)
-              const accTotal = (Array.isArray(ws?.accessories) ? ws.accessories : []).reduce((s: number, a: any) => s + (Number(a.price) || 0), 0)
-              const warTotal = (Array.isArray(ws?.warranties) ? ws.warranties : []).reduce((s: number, w: any) => s + (Number(w.amount) || 0), 0)
-              const insTotal = (Array.isArray(ws?.insurances) ? ws.insurances : []).reduce((s: number, i: any) => s + (Number(i.amount) || 0), 0)
-              const additionalExpenses = feesTotal + accTotal + warTotal + insTotal
-              const vehicleProfit = sellingPrice - purchasePrice + additionalExpenses
-              const totalProfit = vehicleProfit + feesTotal + accTotal + warTotal + insTotal
+              const sellingPrice = Math.max(0, num(ws?.purchase_price ?? ws?.vehicle_price ?? (vehicle as any)?.selected_price) - discount)
+              const additionalExpenses = selectedDealCosts.inventoryCosts
+              const feesRetail = sumRetail(ws?.fees, ['amount', 'price', 'fee_amount'])
+              const feesCost = sumCost(ws?.fees)
+              const accRetail = sumRetail(ws?.accessories, ['price', 'amount'])
+              const accCost = sumCost(ws?.accessories)
+              const warRetail = sumRetail(ws?.warranties, ['amount', 'price'])
+              const warCost = sumCost(ws?.warranties)
+              const insRetail = sumRetail(ws?.insurances, ['amount', 'price'])
+              const insCost = sumCost(ws?.insurances)
+              const feesTotal = feesRetail - feesCost
+              const accTotal = accRetail - accCost
+              const warTotal = warRetail - warCost
+              const insTotal = insRetail - insCost
+              const bankCommission = num(ws?.bank_commission ?? ws?.bankCommission ?? ws?.finance_commission)
+              const vehicleProfit = sellingPrice - purchasePrice - additionalExpenses
+              const totalProfit = vehicleProfit + feesTotal + accTotal + warTotal + insTotal + bankCommission
 
               // Donut chart with animation
               const circumference = 2 * Math.PI * 35
-              const purchasePct = sellingPrice > 0 ? (purchasePrice / sellingPrice) * 100 : 0
-              const expensesPct = sellingPrice > 0 ? (additionalExpenses / sellingPrice) * 100 : 0
-              const profitPct = sellingPrice > 0 ? (totalProfit / sellingPrice) * 100 : 0
+              const chartTotal = purchasePrice + additionalExpenses + Math.max(0, totalProfit)
+              const purchasePct = chartTotal > 0 ? (purchasePrice / chartTotal) * 100 : 0
+              const expensesPct = chartTotal > 0 ? (additionalExpenses / chartTotal) * 100 : 0
+              const profitPct = chartTotal > 0 ? (Math.max(0, totalProfit) / chartTotal) * 100 : 0
 
               const purchaseDash = (purchasePct / 100) * circumference
               const expensesDash = (expensesPct / 100) * circumference
@@ -987,7 +1084,7 @@ export default function DealsPage() {
                     <div className="flex justify-between"><span className="text-gray-700 font-semibold">Accessories Profit:</span><span>{fmt(accTotal)}</span></div>
                     <div className="flex justify-between"><span className="text-gray-700 font-semibold">Warranties Profit:</span><span>{fmt(warTotal)}</span></div>
                     <div className="flex justify-between"><span className="text-gray-700 font-semibold">Insurance Profit:</span><span>{fmt(insTotal)}</span></div>
-                    <div className="flex justify-between"><span className="text-gray-700 font-semibold">Bank Commission:</span><span>{fmt(0)}</span></div>
+                    <div className="flex justify-between"><span className="text-gray-700 font-semibold">Bank Commission:</span><span>{fmt(bankCommission)}</span></div>
                     <div className="flex justify-between"><span className="text-gray-700 font-bold">Total Profit:</span><span className="font-bold">{fmt(totalProfit)}</span></div>
                   </div>
                 </div>

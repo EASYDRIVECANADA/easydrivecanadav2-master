@@ -297,16 +297,19 @@ export default function AdminInventoryPage() {
     try {
       let rows: any[] | null = null
       if (vehicleId) {
-        rows = await runQuery({ vehicle_id: vehicleId })
-        // Some schemas store vehicleId directly in edc_costs.id
-        if (!rows) {
+        rows = await runQuery({ vehicleId: vehicleId })
+        // Some schemas store vehicle IDs under legacy columns.
+        if (!rows?.length) {
+          rows = await runQuery({ vehicle_id: vehicleId })
+        }
+        if (!rows?.length) {
           rows = await runQuery({ id: vehicleId })
         }
       }
-      if (!rows && stockNumber) {
+      if (!rows?.length && stockNumber) {
         rows = await runQuery({ stock_number: stockNumber })
       }
-      if (!rows) {
+      if (!rows?.length) {
         // fallback: try vehicle costs_data
         try {
           const { data } = await supabase
@@ -329,7 +332,7 @@ export default function AdminInventoryPage() {
         const discount = toNumber((r as any).discount)
         const tax = toNumber((r as any).tax)
         const totalField = toNumber((r as any).total)
-        const computed = Math.max(0, price * qty - discount + tax)
+        const computed = Math.max(0, price * qty - discount) + tax
         const total = totalField || computed
         return sum + total
       }, 0)

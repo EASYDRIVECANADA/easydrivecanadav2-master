@@ -73,6 +73,8 @@ export async function GET(request: Request) {
     const statusRaw = url.searchParams.get('status')
     const statuses = splitStatuses(statusRaw)
     const filterType = String(url.searchParams.get('filterType') ?? 'Purchased Between').trim()
+    const from = normalizeDateIso(url.searchParams.get('from'))
+    const to = normalizeDateIso(url.searchParams.get('to'))
     const perPage = Math.max(1, Number(url.searchParams.get('perPage') ?? '150') || 150)
     const userId = String(url.searchParams.get('userId') ?? '').trim()
 
@@ -253,7 +255,10 @@ export async function GET(request: Request) {
         const iso = filterType.toLowerCase().includes('sold')
           ? String((r as any)?.__sold_date_iso ?? '').trim()
           : String((r as any)?.__purchased_on_iso ?? '').trim()
-        return Boolean(iso) || true
+        if (!iso) return true
+        if (from && iso < from) return false
+        if (to && iso > to) return false
+        return true
       })
 
     const rows = rowsAll.slice(0, perPage)

@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import { exportRowsToCsv } from '../../reportUtils'
 
 type Row = {
   id: string
@@ -115,12 +116,14 @@ export default function TransactionFeeReportPage() {
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
-    if (!q) return rows
     return rows.filter((r) => {
+      if (exportFilter !== 'All' && r.exported.toLowerCase() !== exportFilter.toLowerCase()) return false
+      if (exportType !== 'All' && r.exportedAs.toLowerCase() !== exportType.toLowerCase()) return false
+      if (!q) return true
       const haystack = `${r.customerName} ${r.dealId} ${r.transactionType} ${r.saleType} ${r.province} ${r.country} ${r.vin}`.toLowerCase()
       return haystack.includes(q)
     })
-  }, [query, rows])
+  }, [exportFilter, exportType, query, rows])
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / perPage))
   const paginated = filtered.slice((page - 1) * perPage, page * perPage)
@@ -196,7 +199,7 @@ export default function TransactionFeeReportPage() {
               disabled={loading}
               className="edc-btn-primary text-sm disabled:opacity-60 disabled:cursor-not-allowed"
             >
-              {loading ? 'Loading…' : 'Search'}
+              {loading ? 'Loading...' : 'Search'}
             </button>
             <button type="button" onClick={handleReset} className="edc-btn-ghost text-sm">
               Reset
@@ -209,7 +212,7 @@ export default function TransactionFeeReportPage() {
           <input
             value={query}
             onChange={(e) => { setQuery(e.target.value); setPage(1) }}
-            placeholder="Search…"
+            placeholder="Search..."
             className="edc-input pl-10"
           />
           <svg className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -239,9 +242,28 @@ export default function TransactionFeeReportPage() {
                   OMVIC Registration Number: {dealerInfo.mvda_number || '—'}
                 </div>
                 <div>
-                  Reporting Period: {applied.from?.replaceAll('-', '/') || 'All'} – {applied.to?.replaceAll('-', '/') || 'All'}
+                  Reporting Period: {applied.from?.replaceAll('-', '/') || 'All'} - {applied.to?.replaceAll('-', '/') || 'All'}
                 </div>
                 <div>Report Total (QTY count considered): {filtered.length}</div>
+                <button
+                  type="button"
+                  className="edc-btn-primary mt-3 text-sm"
+                  onClick={() => exportRowsToCsv('transaction-fee-report', filtered as unknown as Record<string, unknown>[], [
+                    { key: 'date', label: 'Date' },
+                    { key: 'dealId', label: 'Deal ID' },
+                    { key: 'transactionType', label: 'Transaction Type' },
+                    { key: 'saleType', label: 'Sale Type' },
+                    { key: 'customerName', label: 'Customer Name' },
+                    { key: 'province', label: 'Province/State' },
+                    { key: 'country', label: 'Country' },
+                    { key: 'exported', label: 'Exported' },
+                    { key: 'exportedAs', label: 'Exported Dealer/Non Dealer' },
+                    { key: 'vin', label: 'VIN' },
+                    { key: 'count', label: 'Count' },
+                  ])}
+                >
+                  Export
+                </button>
               </div>
             </div>
           </div>
@@ -252,7 +274,7 @@ export default function TransactionFeeReportPage() {
           </div>
 
           {loading && (
-            <div className="px-6 py-4 text-sm text-slate-500">Loading…</div>
+            <div className="px-6 py-4 text-sm text-slate-500">Loading...</div>
           )}
 
           {/* Table */}
