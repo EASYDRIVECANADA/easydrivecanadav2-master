@@ -2,7 +2,7 @@
 
 
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
 
 import { supabase } from '@/lib/supabaseClient'
 
@@ -358,7 +358,6 @@ function IconInput({
     </div>
 
   )
-
 }
 
 
@@ -484,25 +483,11 @@ function sortDealCustomers(rows: any[]): any[] {
   })
 }
 
-export default function CustomersTabNew({
+export type CustomersTabHandle = {
+  save: (silent?: boolean) => Promise<void>
+}
 
-  hideAddButton = false,
-
-  dealId,
-
-  dealDate,
-
-  dealType,
-
-  dealMode,
-
-  onSaved,
-
-  initialData,
-
-  submission,
-
-}: {
+const CustomersTabNew = forwardRef<CustomersTabHandle, {
 
   hideAddButton?: boolean
 
@@ -520,7 +505,25 @@ export default function CustomersTabNew({
 
   submission?: any
 
-}) {
+}>(function CustomersTabNew({
+
+  hideAddButton = false,
+
+  dealId,
+
+  dealDate,
+
+  dealType,
+
+  dealMode,
+
+  onSaved,
+
+  initialData,
+
+  submission,
+
+}, ref) {
 
   const getCustomerTabLabel = (f: DealCustomerForm) => {
 
@@ -586,7 +589,7 @@ export default function CustomersTabNew({
   const [hasBeenSaved, setHasBeenSaved] = useState(() => initialCustomers.length > 0)
 
   // Track the saved DB row ID for each customer form (null = not yet inserted)
-  const [formIds, setFormIds] = useState<(number | null)[]>(() =>
+  const [formIds, setFormIds] = useState<Array<string | number | null>>(() =>
     initialCustomers.length > 0 ? initialCustomers.map((c) => c.id ?? null) : [null]
   )
 
@@ -1261,7 +1264,7 @@ export default function CustomersTabNew({
 
 
 
-  const handleSave = async () => {
+  const handleSave = async (silent = false) => {
 
     if (saving) return
 
@@ -1398,11 +1401,36 @@ export default function CustomersTabNew({
 
       }
 
+      if (dealId) {
+        const keepIds = new Set(newFormIds.map((id) => String(id ?? '').trim()).filter(Boolean))
+        try {
+          const dealRes = await fetch(`/api/deals/${encodeURIComponent(dealId)}`, { cache: 'no-store' })
+          const dealJson = dealRes.ok ? await dealRes.json().catch(() => null) : null
+          const savedCustomers = Array.isArray(dealJson?.customers) ? dealJson.customers : []
+          const staleCustomers = savedCustomers.filter((row: any) => {
+            const rowId = String(row?.id ?? '').trim()
+            return rowId && !keepIds.has(rowId)
+          })
+
+          await Promise.all(staleCustomers.map((row: any) =>
+            fetch('/api/deals/delete-row', {
+              method: 'DELETE',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ table: 'edc_deals_customers', id: row.id }),
+            }).catch(() => null)
+          ))
+        } catch {
+          // Non-fatal: current form rows are still saved.
+        }
+      }
+
       setFormIds(newFormIds)
 
       setHasBeenSaved(true)
 
-      setShowSavedModal(true)
+      if (!silent) setShowSavedModal(true)
+
+      onSaved?.()
 
     } finally {
 
@@ -1411,6 +1439,10 @@ export default function CustomersTabNew({
     }
 
   }
+
+  useImperativeHandle(ref, () => ({
+    save: handleSave,
+  }))
 
 
 
@@ -2886,7 +2918,7 @@ export default function CustomersTabNew({
 
             type="button"
 
-            onClick={handleSave}
+            onClick={() => handleSave()}
 
             disabled={saving}
 
@@ -2916,5 +2948,7 @@ export default function CustomersTabNew({
 
   )
 
-}
+})
+
+export default CustomersTabNew
 

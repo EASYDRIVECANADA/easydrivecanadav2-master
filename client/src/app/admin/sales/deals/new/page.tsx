@@ -4,7 +4,7 @@ import { Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import jsPDF from 'jspdf'
 import { useRouter, useSearchParams } from 'next/navigation'
 
-import CustomersTabNew from './CustomersTabNew'
+import CustomersTabNew, { type CustomersTabHandle } from './CustomersTabNew'
 import DeliveryTab from './DeliveryTab'
 import DisclosuresTab from './DisclosuresTab'
 import VehiclesTab, { type VehiclesTabHandle } from './VehiclesTab'
@@ -76,6 +76,7 @@ function SalesNewDealPageContent() {
   const [emailLoading, setEmailLoading] = useState(false)
   const printMenuRef = useRef<HTMLDivElement>(null)
   const vehiclesTabRef = useRef<VehiclesTabHandle>(null)
+  const customersTabRef = useRef<CustomersTabHandle>(null)
   const worksheetTabRef = useRef<WorksheetTabHandle>(null)
 
   const [esignModalOpen, setEsignModalOpen] = useState(false)
@@ -666,7 +667,8 @@ function SalesNewDealPageContent() {
       const okToSend = await confirmEsignChargeIfNeeded(senderEmail)
       if (!okToSend) return
 
-      // Auto-save worksheet so latest in-memory state is persisted before PDF generation
+      // Auto-save current tabs so the PDF is generated from visible, current data.
+      await customersTabRef.current?.save(true)
       try { await worksheetTabRef.current?.save(true) } catch { /* ignore */ }
 
       const res = await fetch(`/api/deals/${encodeURIComponent(dealId)}`)
@@ -1116,6 +1118,7 @@ function SalesNewDealPageContent() {
 
               <div style={{ display: activeTab === 'customers' ? 'block' : 'none' }}>
                 <CustomersTabNew
+                  ref={customersTabRef}
                   key={editDealId ? `edit-${editDealId}-${prefill?.customers?.[0]?.id ?? prefill?.customer?.id ?? '0'}` : 'new'}
                   hideAddButton={!isRetail}
                   dealId={dealId}
