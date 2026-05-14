@@ -56,6 +56,10 @@ export async function PATCH(
       company: body?.company ? String(body.company).trim() : null,
       title: body?.title ? String(body.title).trim() : null,
       updated_at: new Date().toISOString(),
+      ...(body?.recipientIndex !== undefined && body?.recipientIndex !== null
+        ? { recipient_index: Number(body.recipientIndex) }
+        : {}),
+      deal_id: id,
     }
 
     const updateRes = await fetch(`${baseUrl}/rest/v1/signature?id=eq.${encodeURIComponent(recipientId)}`, {

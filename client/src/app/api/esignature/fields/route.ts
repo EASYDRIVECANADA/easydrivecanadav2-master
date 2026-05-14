@@ -14,6 +14,14 @@ const headers = () => ({
   Prefer: 'return=representation',
 })
 
+const numberOrZero = (value: unknown) => {
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
+const fieldStorageKey = (fieldId: unknown, recipientIndex: unknown = 0, fileIndex: unknown = 0) =>
+  `${String(fieldId ?? '')}::r${numberOrZero(recipientIndex)}::f${numberOrZero(fileIndex)}`
+
 // GET /api/esignature/fields?dealId=xxx
 // Returns all fields for a deal, each as its own row, merged into a single fields array
 export async function GET(request: Request) {
@@ -89,7 +97,7 @@ export async function POST(request: Request) {
     if (!Array.isArray(fields)) return NextResponse.json({ error: 'fields must be an array' }, { status: 400 })
 
     const existingRes = await fetch(
-      `${baseUrl}/rest/v1/edc_esignature_fields?deal_id=eq.${encodeURIComponent(dealId)}&select=field_id,value,signed_at`,
+      `${baseUrl}/rest/v1/edc_esignature_fields?deal_id=eq.${encodeURIComponent(dealId)}&select=field_id,value,signed_at,recipient_index,file_index`,
       { method: 'GET', headers: headers(), cache: 'no-store' }
     )
     const existingRows: any[] = existingRes.ok ? await existingRes.json().catch(() => []) : []
@@ -97,7 +105,7 @@ export async function POST(request: Request) {
     for (const row of existingRows) {
       const fieldId = String(row?.field_id ?? '').trim()
       if (!fieldId) continue
-      existingByFieldId.set(fieldId, { value: row?.value, signed_at: row?.signed_at })
+      existingByFieldId.set(fieldStorageKey(fieldId, row?.recipient_index, row?.file_index), { value: row?.value, signed_at: row?.signed_at })
     }
 
     // Delete all existing field rows for this deal, then re-insert
@@ -117,7 +125,9 @@ export async function POST(request: Request) {
     // Insert one row per field with all positional + metadata columns
     const now = new Date().toISOString()
     const rows = fields.map((f: any) => {
-      const existing = existingByFieldId.get(String(f.id ?? ''))
+      const fileIndex = numberOrZero(f.fileIndex)
+      const recipientIndex = numberOrZero(f.recipientIndex)
+      const existing = existingByFieldId.get(fieldStorageKey(f.id, recipientIndex, fileIndex))
       const incomingValue = f.value
       const hasIncomingValue = incomingValue !== null && incomingValue !== undefined && String(incomingValue).trim() !== ''
       const preservedValue = hasIncomingValue ? incomingValue : existing?.value ?? null
@@ -130,8 +140,8 @@ export async function POST(request: Request) {
         y: f.y,
         width: f.width,
         height: f.height,
-        file_index: f.fileIndex ?? 0,
-        recipient_index: f.recipientIndex ?? 0,
+        file_index: fileIndex,
+        recipient_index: recipientIndex,
         value: preservedValue,
         signed_at: hasIncomingValue ? f.signedAt ?? f.signed_at ?? existing?.signed_at ?? null : existing?.signed_at ?? null,
         // Also store full fields_data blob for backward compat (only on first row)
@@ -160,7 +170,7 @@ export async function POST(request: Request) {
 }
 
 // PATCH /api/esignature/fields
-// Body: { dealId, fieldId, value, signedAt? }
+// Body: { dealId, fieldId, value, signedAt?, recipientIndex?, fileIndex? }
 // Updates the value of a single field row
 export async function PATCH(request: Request) {
   try {
@@ -177,8 +187,19 @@ export async function PATCH(request: Request) {
     }
     if (signedAt) payload.signed_at = signedAt
 
+    const filters = [
+      `deal_id=eq.${encodeURIComponent(dealId)}`,
+      `field_id=eq.${encodeURIComponent(fieldId)}`,
+    ]
+    if (body.recipientIndex !== undefined && body.recipientIndex !== null) {
+      filters.push(`recipient_index=eq.${encodeURIComponent(String(numberOrZero(body.recipientIndex)))}`)
+    }
+    if (body.fileIndex !== undefined && body.fileIndex !== null) {
+      filters.push(`file_index=eq.${encodeURIComponent(String(numberOrZero(body.fileIndex)))}`)
+    }
+
     const res = await fetch(
-      `${baseUrl}/rest/v1/edc_esignature_fields?deal_id=eq.${encodeURIComponent(dealId)}&field_id=eq.${encodeURIComponent(fieldId)}`,
+      `${baseUrl}/rest/v1/edc_esignature_fields?${filters.join('&')}`,
       { method: 'PATCH', headers: headers(), body: JSON.stringify(payload) }
     )
 
@@ -199,8 +220,8 @@ export async function PATCH(request: Request) {
         y: body.y ?? 0,
         width: body.width ?? 0,
         height: body.height ?? 0,
-        file_index: body.fileIndex ?? 0,
-        recipient_index: body.recipientIndex ?? 0,
+        file_index: numberOrZero(body.fileIndex),
+        recipient_index: numberOrZero(body.recipientIndex),
         value,
         signed_at: signedAt ?? null,
         fields_data: null,

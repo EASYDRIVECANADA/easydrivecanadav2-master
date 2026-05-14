@@ -88,6 +88,9 @@ const fieldTypeLabels: Record<FieldType, string> = {
   checkbox: 'Checkbox',
 }
 
+const fieldKey = (field: Pick<Field, 'id' | 'fileIndex' | 'recipientIndex'>) =>
+  `${field.id}::r${field.recipientIndex ?? 0}::f${field.fileIndex ?? 0}`
+
 function DealsSignaturePageInner() {
   const searchParams = useSearchParams()
   
@@ -607,10 +610,14 @@ function DealsSignaturePageInner() {
         if (fieldsRes.ok) {
           const fieldsData = await fieldsRes.json()
           if (fieldsData.fields) {
-            // Filter to only this recipient's fields
+            // Primary records store the master field list; sibling records store only their own fields.
+            // If this row only has one recipient's fields, use them as-is even if the current
+            // recipient index has shifted. Do not fall back to all fields from a master list.
             const allFields: Field[] = fieldsData.fields
-            const myFields = allFields.filter(f => (f.recipientIndex ?? 0) === myRecipientIndex)
-            const baseFields = myFields.length > 0 ? myFields : allFields
+            const recipientIndexes = Array.from(new Set(allFields.map(f => f.recipientIndex ?? 0)))
+            const baseFields = recipientIndexes.length > 1
+              ? allFields.filter(f => (f.recipientIndex ?? 0) === myRecipientIndex)
+              : allFields
 
             // Auto-fill field values from recipient data and today's date
             // NOTE: signature/initial fields are NOT auto-filled — recipient must explicitly sign each field.
@@ -974,8 +981,9 @@ function DealsSignaturePageInner() {
     // Stamp signature image onto the field that triggered the modal
     // Also compute updatedFields synchronously so we can save them to DB below
     let updatedFields = fields
+    const signingFieldKey = currentSigningField
     if (currentSigningField) {
-      updatedFields = fields.map(f => f.id === currentSigningField ? { ...f, value: url } : f)
+      updatedFields = fields.map(f => fieldKey(f) === currentSigningField ? { ...f, value: url } : f)
       setFields(updatedFields)
       setCurrentSigningField(null)
     }
@@ -1106,7 +1114,7 @@ function DealsSignaturePageInner() {
                 signed_at: now,
                 status: 'completed',
                 fields_data: JSON.stringify(updatedFields),
-                recipient_index: updatedFields.find(f => f.id === currentSigningField)?.recipientIndex ?? updatedFields[0]?.recipientIndex ?? 0,
+                recipient_index: updatedFields.find(f => fieldKey(f) === signingFieldKey)?.recipientIndex ?? updatedFields[0]?.recipientIndex ?? 0,
                 deal_id: sigRecord.id,
               }),
             })
@@ -1123,8 +1131,16 @@ function DealsSignaturePageInner() {
                   body: JSON.stringify({
                     dealId: sigRecord.id,
                     fieldId: f.id,
+                    fieldType: f.type,
                     value: f.value,
                     signedAt: now,
+                    page: f.page,
+                    x: f.x,
+                    y: f.y,
+                    width: f.width,
+                    height: f.height,
+                    fileIndex: f.fileIndex ?? 0,
+                    recipientIndex: f.recipientIndex ?? 0,
                   }),
                 }).catch(() => null)
               )
@@ -1256,15 +1272,22 @@ function DealsSignaturePageInner() {
             <img
               src={field.value}
               alt="Signature"
-              className="w-full h-full object-contain p-1"
+              className="w-full h-full object-contain p-1 cursor-pointer"
               style={{ background: 'transparent' }}
+              onClick={(e) => {
+                e.stopPropagation()
+                setIsInitialModal(false)
+                setCurrentSigningField(fieldKey(field))
+                setSignatureMode('draw')
+                setSignatureModalOpen(true)
+              }}
             />
           )
         }
         return (
           <div
             className="flex items-center justify-center h-full text-blue-600 text-xs font-medium cursor-pointer hover:bg-blue-100/90"
-            onClick={() => { setIsInitialModal(false); setCurrentSigningField(field.id); setSignatureModalOpen(true) }}
+            onClick={() => { setIsInitialModal(false); setCurrentSigningField(fieldKey(field)); setSignatureModalOpen(true) }}
           >
             <span style={fontStyle}>Signature</span>
           </div>
@@ -1275,8 +1298,18 @@ function DealsSignaturePageInner() {
             <img
               src={field.value}
               alt="Initial"
-              className="w-full h-full object-contain p-1"
+              className="w-full h-full object-contain p-1 cursor-pointer"
               style={{ background: 'transparent' }}
+              onClick={(e) => {
+                e.stopPropagation()
+                const name = sigRecord?.full_name || ''
+                const initials = name ? name.split(' ').map((n: string) => n[0]).join('').toUpperCase() : ''
+                setTypedName(initials)
+                setSignatureMode('type')
+                setIsInitialModal(true)
+                setCurrentSigningField(fieldKey(field))
+                setSignatureModalOpen(true)
+              }}
             />
           )
         }
@@ -1290,7 +1323,7 @@ function DealsSignaturePageInner() {
               setTypedName(initials)
               setSignatureMode('type')
               setIsInitialModal(true)
-              setCurrentSigningField(field.id)
+              setCurrentSigningField(fieldKey(field))
               setSignatureModalOpen(true)
             }}
           >
@@ -1299,7 +1332,7 @@ function DealsSignaturePageInner() {
         )
       case 'dateSigned': {
         const openEdit = () => {
-          setEditFieldModal({ id: field.id, type: field.type, label: 'Date Signed', value: field.value || new Date().toLocaleDateString('en-CA') })
+          setEditFieldModal({ id: fieldKey(field), type: field.type, label: 'Date Signed', value: field.value || new Date().toLocaleDateString('en-CA') })
           setEditFieldValue(field.value || new Date().toLocaleDateString('en-CA'))
         }
         return (
@@ -1317,7 +1350,7 @@ function DealsSignaturePageInner() {
       case 'company': {
         const openEdit = () => {
           const cur = field.value ?? sigRecord?.company ?? ''
-          setEditFieldModal({ id: field.id, type: field.type, label: 'Company', value: cur })
+          setEditFieldModal({ id: fieldKey(field), type: field.type, label: 'Company', value: cur })
           setEditFieldValue(cur)
         }
         return (
@@ -1329,7 +1362,7 @@ function DealsSignaturePageInner() {
       case 'title': {
         const openEdit = () => {
           const cur = field.value ?? sigRecord?.title ?? ''
-          setEditFieldModal({ id: field.id, type: field.type, label: 'Title', value: cur })
+          setEditFieldModal({ id: fieldKey(field), type: field.type, label: 'Title', value: cur })
           setEditFieldValue(cur)
         }
         return (
@@ -1341,7 +1374,7 @@ function DealsSignaturePageInner() {
       case 'text': {
         const openEdit = () => {
           const cur = field.value ?? ''
-          setEditFieldModal({ id: field.id, type: field.type, label: 'Text', value: cur })
+          setEditFieldModal({ id: fieldKey(field), type: field.type, label: 'Text', value: cur })
           setEditFieldValue(cur)
         }
         return (
@@ -1356,7 +1389,7 @@ function DealsSignaturePageInner() {
         return (
           <div
             className="flex items-center justify-center h-full cursor-pointer"
-            onClick={e => { e.stopPropagation(); setFields(prev => prev.map(f => f.id === field.id ? { ...f, value: checked ? 'false' : 'true' } : f)) }}
+            onClick={e => { e.stopPropagation(); setFields(prev => prev.map(f => fieldKey(f) === fieldKey(field) ? { ...f, value: checked ? 'false' : 'true' } : f)) }}
           >
             {checked
               ? <svg style={{ width: cbSize, height: cbSize }} viewBox="0 0 20 20" fill="none"><rect x="1" y="1" width="18" height="18" rx="3" fill="#3b82f6" stroke="#2563eb" strokeWidth="1.5"/><path d="M5 10l3 3 7-7" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
@@ -1566,7 +1599,7 @@ function DealsSignaturePageInner() {
                           <img src={img} alt={`Page ${pageNo}`} className="w-full h-full object-contain" />
                           {pageFields.map((field) => (
                             <div
-                              key={field.id}
+                              key={fieldKey(field)}
                               className="absolute border-2 border-blue-400 bg-blue-50/80 rounded cursor-pointer hover:bg-blue-100/90 transition-colors"
                               style={{ left: `${field.x}px`, top: `${field.y}px`, width: `${field.width}px`, height: `${field.height}px` }}
                               title={fieldTypeLabels[field.type]}
@@ -1619,7 +1652,7 @@ function DealsSignaturePageInner() {
                       <img src={pdfDataUrl} alt="Document" className="w-full h-full object-contain" />
                       {fields.filter(f => f.page === 1 && (f.fileIndex ?? 0) === selectedFileIndex).map((field) => (
                         <div
-                          key={field.id}
+                          key={fieldKey(field)}
                           className="absolute border-2 border-blue-400 bg-blue-50/80 rounded cursor-pointer hover:bg-blue-100/90 transition-colors"
                           style={{ left: `${field.x}px`, top: `${field.y}px`, width: `${field.width}px`, height: `${field.height}px` }}
                           title={fieldTypeLabels[field.type]}
@@ -1853,7 +1886,7 @@ function DealsSignaturePageInner() {
                   className="w-full px-4 py-3 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                   onKeyDown={e => {
                     if (e.key === 'Enter') {
-                      setFields(prev => prev.map(f => f.id === editFieldModal.id ? { ...f, value: editFieldValue } : f))
+                      setFields(prev => prev.map(f => fieldKey(f) === editFieldModal.id ? { ...f, value: editFieldValue } : f))
                       setEditFieldModal(null)
                     }
                   }}
@@ -1871,7 +1904,7 @@ function DealsSignaturePageInner() {
               </button>
               <button
                 onClick={() => {
-                  setFields(prev => prev.map(f => f.id === editFieldModal.id ? { ...f, value: editFieldValue } : f))
+                  setFields(prev => prev.map(f => fieldKey(f) === editFieldModal.id ? { ...f, value: editFieldValue } : f))
                   setEditFieldModal(null)
                 }}
                 className="px-5 py-2 text-sm font-semibold text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"

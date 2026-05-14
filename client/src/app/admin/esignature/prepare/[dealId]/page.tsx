@@ -19,6 +19,9 @@ type Field = { id: string; type: FieldType; x: number; y: number; width: number;
 type UploadedFile = { file_name: string; file_type: string; file_b64?: string; url?: string }
 type Recipient = { id: string; email: string; full_name?: string; company?: string; title?: string; signature_image?: string }
 
+const fieldKey = (field: Pick<Field, 'id' | 'fileIndex' | 'recipientIndex'>) =>
+  `${field.id}::r${field.recipientIndex ?? 0}::f${field.fileIndex ?? 0}`
+
 const FIELD_TYPES: { type: FieldType; label: string; defaultW: number; defaultH: number }[] = [
   { type: 'signature', label: 'Signature', defaultW: 200, defaultH: 60 },
   { type: 'initial', label: 'Initial', defaultW: 80, defaultH: 40 },
@@ -155,28 +158,41 @@ const DEFAULT_TOTAL_PAGES = 3
    return bytes
  }
 
-// Fetch field values saved by sibling recipients and merge into master fields by field_id
+// Fetch field values saved by sibling recipients and merge into master fields by field_id.
+// Sibling-only fields are appended so the editor shows the same fields as preview/download.
 async function mergeFieldsWithSiblingValues(masterFields: Field[], siblingIds: string[]): Promise<Field[]> {
   if (siblingIds.length === 0) return masterFields
-  const maps = await Promise.all(
+  const siblingFieldRows = await Promise.all(
     siblingIds.map(async (sid) => {
       try {
         const r = await fetch(`/api/esignature/fields?dealId=${encodeURIComponent(sid)}`, { cache: 'no-store' })
         const j = r.ok ? await r.json().catch(() => null) : null
-        const rows: Field[] = Array.isArray(j?.fields) ? j.fields : []
-        const map: Record<string, string> = {}
-        rows.forEach((f: Field) => { if (f.id && f.value) map[f.id] = f.value })
-        return map
-      } catch { return {} as Record<string, string> }
+        return Array.isArray(j?.fields) ? j.fields as Field[] : []
+      } catch { return [] as Field[] }
     })
   )
-  return masterFields.map(f => {
-    if (f.value) return f
-    for (const map of maps) {
-      if (map[f.id]) return { ...f, value: map[f.id] }
-    }
-    return f
+
+  const merged = new Map<string, Field>()
+  masterFields.forEach((field) => {
+    if (field.id) merged.set(fieldKey(field), field)
   })
+
+  siblingFieldRows.flat().forEach((field) => {
+    if (!field.id) return
+    const key = fieldKey(field)
+    const existing = merged.get(key)
+    if (!existing) {
+      merged.set(key, field)
+      return
+    }
+    const existingHasValue = String(existing.value ?? '').trim().length > 0
+    const siblingHasValue = String(field.value ?? '').trim().length > 0
+    if (!existingHasValue && siblingHasValue) {
+      merged.set(key, { ...existing, value: field.value })
+    }
+  })
+
+  return Array.from(merged.values())
 }
 
 export default function PrepareDocumentPage() {
@@ -339,8 +355,8 @@ export default function PrepareDocumentPage() {
         newY = Math.max(0, newY)
 
         // Snap to other fields
-        const others = fieldsRef.current.filter(f => f.id !== ir.fieldId)
-        const field = fieldsRef.current.find(f => f.id === ir.fieldId)
+        const others = fieldsRef.current.filter(f => fieldKey(f) !== ir.fieldId)
+        const field = fieldsRef.current.find(f => fieldKey(f) === ir.fieldId)
         let snapX: number | undefined
         let snapY: number | undefined
         if (field) {
@@ -404,7 +420,7 @@ export default function PrepareDocumentPage() {
       if (ir.type === 'drag') {
         setFields(prev => {
           const next = prev.map(f => {
-            if (f.id !== ir.fieldId) return f
+            if (fieldKey(f) !== ir.fieldId) return f
             const rawPage = Math.floor(ir.origY / PAGE_HEIGHT) + 1
             const page = Math.min(Math.max(rawPage, 1), totalPagesRef.current)
             const y = ir.origY - (page - 1) * PAGE_HEIGHT
@@ -421,7 +437,7 @@ export default function PrepareDocumentPage() {
         const fh = (ir as any)._finalH ?? ir.origH
         setFields(prev => {
           const next = prev.map(f => {
-            if (f.id !== ir.fieldId) return f
+            if (fieldKey(f) !== ir.fieldId) return f
             const rawPage = Math.floor(fy / PAGE_HEIGHT) + 1
             const page = Math.min(Math.max(rawPage, 1), totalPagesRef.current)
             const y = fy - (page - 1) * PAGE_HEIGHT
@@ -451,7 +467,7 @@ export default function PrepareDocumentPage() {
       if ((e.key === 'Delete' || e.key === 'Backspace') && selectedRef.current) {
         e.preventDefault()
         setFields(prev => {
-          const next = prev.filter(f => f.id !== selectedRef.current)
+          const next = prev.filter(f => fieldKey(f) !== selectedRef.current)
           pushHistory(next)
           return next
         })
@@ -465,7 +481,7 @@ export default function PrepareDocumentPage() {
         const step = e.shiftKey ? 10 : 1
         setFields(prev => {
           const next = prev.map(f => {
-            if (f.id !== selectedRef.current) return f
+            if (fieldKey(f) !== selectedRef.current) return f
             let { x, y } = f
             if (e.key === 'ArrowUp') y = Math.max(0, y - step)
             if (e.key === 'ArrowDown') y += step
@@ -582,10 +598,18 @@ export default function PrepareDocumentPage() {
               })
             }
 
-            // Build recipients list: primary + siblings
-            const primaryRecipient: Recipient = { id: sigData.id, email: sigData.email || '', full_name: sigData.full_name, company: sigData.company, title: sigData.title, signature_image: sigData.signature_image }
-            const siblingRecipients: Recipient[] = (sigData.siblings || []).map((s: any) => ({ id: s.id, email: s.email || '', full_name: s.full_name, company: s.company, title: s.title, signature_image: s.signature_image }))
-            setRecipients([primaryRecipient, ...siblingRecipients])
+            // Use the API's ordered recipients list so field recipientIndex matches the recipient row.
+            const orderedRecipients = Array.isArray(sigData.recipients) && sigData.recipients.length > 0
+              ? sigData.recipients
+              : [sigData, ...((sigData.siblings as any[]) || [])]
+            setRecipients(orderedRecipients.map((r: any) => ({
+              id: r.id,
+              email: r.email || '',
+              full_name: r.full_name,
+              company: r.company,
+              title: r.title,
+              signature_image: r.signature_image,
+            })))
 
             const normalized = normalizeToDataUrl(docFileForViewer, 'application/pdf')
             console.log('[Load] normalized:', { url: normalized?.url?.substring(0, 60), mime: normalized?.mime })
@@ -612,7 +636,9 @@ export default function PrepareDocumentPage() {
               const fieldsData = await fieldsRes.json()
               if (fieldsData.fields) {
                 // Merge signed values from sibling recipients into master fields
-                const siblingIds = siblingRecipients.map((s: Recipient) => s.id)
+                const siblingIds = orderedRecipients
+                  .filter((r: any) => String(r.id) !== String(sigData.id))
+                  .map((r: any) => String(r.id))
                 const mergedFields = await mergeFieldsWithSiblingValues(fieldsData.fields, siblingIds)
                 setFields(mergedFields)
                 historyRef.current = [mergedFields]
@@ -816,8 +842,8 @@ export default function PrepareDocumentPage() {
     const fieldDocY = (field.page - 1) * PAGE_HEIGHT + field.y
     const offsetX = (e.clientX - rect.left) / scale - field.x
     const offsetY = (e.clientY - rect.top) / scale - fieldDocY
-    interactionRef.current = { type: 'drag', fieldId: field.id, el, offsetX, offsetY, dir: '', startMouseX: 0, startMouseY: 0, origX: field.x, origY: fieldDocY, origW: field.width, origH: field.height }
-    setSelectedFieldId(field.id)
+    interactionRef.current = { type: 'drag', fieldId: fieldKey(field), el, offsetX, offsetY, dir: '', startMouseX: 0, startMouseY: 0, origX: field.x, origY: fieldDocY, origW: field.width, origH: field.height }
+    setSelectedFieldId(fieldKey(field))
     document.body.style.cursor = 'grabbing'
   }
 
@@ -826,8 +852,8 @@ export default function PrepareDocumentPage() {
     e.stopPropagation()
     e.preventDefault()
     const fieldDocY = (field.page - 1) * PAGE_HEIGHT + field.y
-    interactionRef.current = { type: 'resize', fieldId: field.id, el, offsetX: 0, offsetY: 0, dir, startMouseX: e.clientX, startMouseY: e.clientY, origX: field.x, origY: fieldDocY, origW: field.width, origH: field.height }
-    setSelectedFieldId(field.id)
+    interactionRef.current = { type: 'resize', fieldId: fieldKey(field), el, offsetX: 0, offsetY: 0, dir, startMouseX: e.clientX, startMouseY: e.clientY, origX: field.x, origY: fieldDocY, origW: field.width, origH: field.height }
+    setSelectedFieldId(fieldKey(field))
   }
 
   // Sidebar drag-and-drop onto canvas
@@ -853,7 +879,7 @@ export default function PrepareDocumentPage() {
 
   const handleDeleteField = useCallback((fieldId: string) => {
     setFields(prev => {
-      const next = prev.filter(f => f.id !== fieldId)
+      const next = prev.filter(f => fieldKey(f) !== fieldId)
       pushHistory(next)
       return next
     })
@@ -861,12 +887,12 @@ export default function PrepareDocumentPage() {
   }, [pushHistory])
 
   const handleFieldValueChange = useCallback((fieldId: string, value: string) => {
-    setFields(prev => prev.map(f => f.id === fieldId ? { ...f, value } : f))
+    setFields(prev => prev.map(f => fieldKey(f) === fieldId ? { ...f, value } : f))
   }, [])
 
   const handleFieldValueCommit = useCallback((fieldId: string, value: string) => {
     setFields(prev => {
-      const next = prev.map(f => f.id === fieldId ? { ...f, value } : f)
+      const next = prev.map(f => fieldKey(f) === fieldId ? { ...f, value } : f)
       pushHistory(next)
       return next
     })
@@ -1066,10 +1092,10 @@ export default function PrepareDocumentPage() {
       }
       const documentUrl = getDocumentUrl(sigData.document_file)
 
-      const allRecipients = [
-        { id: sigData.id, email: sigData.email, full_name: sigData.full_name },
-        ...((sigData.siblings as any[]) || []).map((s: any) => ({ id: s.id, email: s.email, full_name: s.full_name })),
-      ]
+      const allRecipients = (Array.isArray(sigData.recipients) && sigData.recipients.length > 0
+        ? sigData.recipients
+        : [sigData, ...((sigData.siblings as any[]) || [])]
+      ).map((r: any) => ({ id: r.id, email: r.email, full_name: r.full_name }))
 
       const targets = recipientId
         ? allRecipients.filter(r => r.id === recipientId)
@@ -1251,6 +1277,28 @@ export default function PrepareDocumentPage() {
   const handleSave = async (silent = false) => {
     setSaving(true)
     try {
+      // Persist the current sidebar order onto the signature rows. The signing page uses
+      // this saved index, so Test1/recipient 0 stays attached to recipientIndex 0.
+      await Promise.all(recipients.map((recipient, index) =>
+        fetch(`/api/esignature/signature/${encodeURIComponent(dealId)}/update-recipient`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            recipientId: recipient.id,
+            email: recipient.email,
+            full_name: recipient.full_name,
+            company: recipient.company,
+            title: recipient.title,
+            recipientIndex: index,
+          }),
+        }).then(async (res) => {
+          if (!res.ok) {
+            const json = await res.json().catch(() => null)
+            throw new Error(json?.error || 'Failed to save recipient order')
+          }
+        })
+      ))
+
       // Save master copy (all fields) to primary dealId — used by prepare page on reload
       const res = await fetch('/api/esignature/fields', {
         method: 'POST',
@@ -1301,13 +1349,14 @@ export default function PrepareDocumentPage() {
     }
   }
 
-  // Intercept send: if dirty, show save-first modal; otherwise send directly
-  const handleSendClick = (recipientId: string | null) => {
-    if (isDirty) {
-      setSaveBeforeSendRecipientId(recipientId)
-      setSaveBeforeProceedModal('send')
-    } else {
-      void executeSend(recipientId)
+  // Always sync field rows before sending so each recipient link gets its own latest fields.
+  const handleSendClick = async (recipientId: string | null) => {
+    if (saving || sending) return
+    try {
+      await handleSave(true)
+      await executeSend(recipientId)
+    } catch {
+      // handleSave/executeSend already show an error modal.
     }
   }
 
@@ -1489,8 +1538,8 @@ export default function PrepareDocumentPage() {
         return (
           <input
             value={fieldValue}
-            onChange={(e) => handleFieldValueChange(field.id, e.target.value)}
-            onBlur={(e) => handleFieldValueCommit(field.id, e.target.value)}
+            onChange={(e) => handleFieldValueChange(fieldKey(field), e.target.value)}
+            onBlur={(e) => handleFieldValueCommit(fieldKey(field), e.target.value)}
             onMouseDown={(e) => e.stopPropagation()}
             onClick={(e) => e.stopPropagation()}
             placeholder="Enter text"
@@ -1935,8 +1984,9 @@ export default function PrepareDocumentPage() {
 
               {/* Rendered fields - only for the currently displayed file */}
               {fields.filter((f) => (f.fileIndex ?? 0) === selectedFileIndex).map((field) => {
-                const isSelected = selectedFieldId === field.id
-                const isActive = interactionRef.current.fieldId === field.id
+                const identity = fieldKey(field)
+                const isSelected = selectedFieldId === identity
+                const isActive = interactionRef.current.fieldId === identity
                 const fieldRecipient = field.recipientIndex ?? 0
                 const isActiveRecipient = recipients.length === 0 || fieldRecipient === activeRecipientIdx
                 const recipientBorderColors = ['border-blue-400', 'border-purple-400', 'border-green-400', 'border-orange-400', 'border-pink-400']
@@ -1946,8 +1996,8 @@ export default function PrepareDocumentPage() {
 
                 return (
                   <div
-                    key={field.id}
-                    data-field-id={field.id}
+                    key={identity}
+                    data-field-id={identity}
                     className={`absolute select-none group ${isActive ? '' : 'transition-all duration-150'}`}
                     style={{
                       transform: `translate3d(${field.x * scale}px, ${(((field.page || 1) - 1) * PAGE_HEIGHT + field.y) * scale}px, 0)`,
@@ -1965,7 +2015,7 @@ export default function PrepareDocumentPage() {
                         const el = e.currentTarget.parentElement!
                         startFieldDrag(e, field, el)
                       }}
-                      onClick={(e) => { e.stopPropagation(); setSelectedFieldId(field.id) }}
+                      onClick={(e) => { e.stopPropagation(); setSelectedFieldId(identity) }}
                       className={`w-full h-full cursor-grab active:cursor-grabbing rounded-[3px] border-[1.5px] overflow-hidden ${
                         isSelected
                           ? 'border-blue-500 shadow-[0_0_0_1px_rgba(59,130,246,0.3)] bg-blue-50/20'
@@ -1978,7 +2028,7 @@ export default function PrepareDocumentPage() {
 
                     {/* Delete button */}
                     <button
-                      onClick={(e) => { e.stopPropagation(); handleDeleteField(field.id) }}
+                      onClick={(e) => { e.stopPropagation(); handleDeleteField(identity) }}
                       className={`absolute -top-2.5 -right-2.5 w-5 h-5 rounded-full bg-red-500 hover:bg-red-600 text-white flex items-center justify-center shadow-md transition-all duration-150 z-50 ${
                         isSelected ? 'opacity-100 scale-100' : 'opacity-0 group-hover:opacity-100 scale-75 group-hover:scale-100'
                       }`}

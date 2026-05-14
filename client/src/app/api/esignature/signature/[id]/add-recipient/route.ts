@@ -29,6 +29,20 @@ export async function POST(
 
     if (!email) return NextResponse.json({ error: 'Email is required' }, { status: 400 })
 
+    const siblingsRes = await fetch(
+      `${baseUrl}/rest/v1/signature?user_id=eq.${encodeURIComponent(String(primary.user_id || ''))}&select=id,document_file,recipient_index`,
+      {
+        headers: { 'apikey': apiKey, 'Authorization': `Bearer ${apiKey}` },
+        cache: 'no-store',
+      }
+    )
+    const siblingRows: any[] = siblingsRes.ok ? await siblingsRes.json().catch(() => []) : []
+    const sameDocumentRows = siblingRows.filter((row) => String(row.document_file ?? '') === String(primary.document_file ?? ''))
+    const nextRecipientIndex = sameDocumentRows.reduce((max, row) => {
+      const idx = Number(row?.recipient_index)
+      return Number.isInteger(idx) && idx >= 0 ? Math.max(max, idx) : max
+    }, sameDocumentRows.length - 1) + 1
+
     const newRow = {
       document_file: primary.document_file,
       user_id: primary.user_id,
@@ -37,6 +51,8 @@ export async function POST(
       company: company ? String(company).trim() : null,
       title: title ? String(title).trim() : null,
       status: 'draft',
+      recipient_index: nextRecipientIndex,
+      deal_id: primary.deal_id || id,
     }
 
     const insertRes = await fetch(`${baseUrl}/rest/v1/signature`, {

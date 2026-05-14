@@ -12,6 +12,11 @@ const hdrs = () => ({
   Prefer: 'return=representation',
 })
 
+const numberOrZero = (value: unknown) => {
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
 export async function PATCH(
   request: Request,
   { params }: { params: { id: string } }
@@ -90,9 +95,6 @@ export async function PATCH(
     if (recipient_index !== undefined && recipient_index !== null)
       payload.recipient_index = recipient_index
 
-    if (deal_id)
-      payload.deal_id = deal_id
-
     // Update the signature row
     const res = await fetch(`${baseUrl}/rest/v1/signature?id=eq.${encodeURIComponent(id)}`, {
       method: 'PATCH',
@@ -113,9 +115,20 @@ export async function PATCH(
     if (deal_id && fields.length > 0) {
       const fieldUpdates = fields
         .filter((f: any) => f.id && f.value !== undefined && f.value !== null && f.value !== '')
-        .map((f: any) =>
-          fetch(
-            `${baseUrl}/rest/v1/edc_esignature_fields?deal_id=eq.${encodeURIComponent(deal_id)}&field_id=eq.${encodeURIComponent(f.id)}`,
+        .map((f: any) => {
+          const filters = [
+            `deal_id=eq.${encodeURIComponent(deal_id)}`,
+            `field_id=eq.${encodeURIComponent(f.id)}`,
+          ]
+          if (f.recipientIndex !== undefined && f.recipientIndex !== null) {
+            filters.push(`recipient_index=eq.${encodeURIComponent(String(numberOrZero(f.recipientIndex)))}`)
+          }
+          if (f.fileIndex !== undefined && f.fileIndex !== null) {
+            filters.push(`file_index=eq.${encodeURIComponent(String(numberOrZero(f.fileIndex)))}`)
+          }
+
+          return fetch(
+            `${baseUrl}/rest/v1/edc_esignature_fields?${filters.join('&')}`,
             {
               method: 'PATCH',
               headers: hdrs(),
@@ -126,7 +139,7 @@ export async function PATCH(
               }),
             }
           ).catch(() => null)
-        )
+        })
       await Promise.all(fieldUpdates)
     }
 

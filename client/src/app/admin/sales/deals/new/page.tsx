@@ -426,7 +426,8 @@ function SalesNewDealPageContent() {
     setShowPrintMenu(false)
     setPdfLoading(true)
     try {
-      // Auto-save worksheet so latest in-memory state (warranties, etc.) is persisted before PDF generation
+      // Auto-save current tabs so the PDF is generated from visible, current data.
+      await customersTabRef.current?.save(true)
       try { await worksheetTabRef.current?.save(true) } catch { /* ignore */ }
 
       // Fetch all deal data from Supabase

@@ -107,75 +107,77 @@ export async function GET(request: Request) {
 
     const hasAny = (...vals: any[]) => vals.some((v) => String(v ?? '').trim().length > 0)
 
-    const computeProgress = async (r: any): Promise<{ progressTotal: number; progressCompleted: number }> => {
+    const fieldKey = (f: any) =>
+      `${String(f?.field_id ?? f?.id ?? '')}::r${f?.recipient_index ?? f?.recipientIndex ?? 0}::f${f?.file_index ?? f?.fileIndex ?? 0}`
+
+    const computeProgress = async (group: any[]): Promise<{ progressTotal: number; progressCompleted: number }> => {
       try {
-        const fieldsRes = await fetch(
-          `${baseUrl}/rest/v1/edc_esignature_fields?deal_id=eq.${encodeURIComponent(String(r.id))}&select=fields_data&limit=1`,
-          {
-            method: 'GET',
-            headers: {
-              apikey: apiKey!,
-              Authorization: `Bearer ${apiKey}`,
-            },
-            cache: 'no-store',
-          }
-        )
+        const rowsByRecipient = await Promise.all(group.map(async (r) => {
+          const fieldsRes = await fetch(
+            `${baseUrl}/rest/v1/edc_esignature_fields?deal_id=eq.${encodeURIComponent(String(r.id))}&select=*`,
+            {
+              method: 'GET',
+              headers: {
+                apikey: apiKey!,
+                Authorization: `Bearer ${apiKey}`,
+              },
+              cache: 'no-store',
+            }
+          )
+          return fieldsRes.ok ? await fieldsRes.json().catch(() => []) : []
+        }))
 
-        const rows = fieldsRes.ok ? await fieldsRes.json().catch(() => []) : []
-        const row = rows?.[0]
-        const fields = row?.fields_data ? JSON.parse(row.fields_data) : []
-        const total = Array.isArray(fields) ? fields.length : 0
-
-        if (!Array.isArray(fields) || fields.length === 0) {
-          return { progressTotal: 0, progressCompleted: 0 }
-        }
-
-        const signatureComplete = hasAny(r?.signature_image, r?.signature_b64, r?.signature)
-        const nameComplete = hasAny(r?.full_name)
-        const dateComplete = hasAny(r?.signed_at) || String(r?.status ?? '').toLowerCase() === 'completed'
-
-        let completed = 0
-        for (const f of fields) {
-          const type = String(f?.type ?? '').trim()
-          switch (type) {
-            case 'signature':
-              if (signatureComplete) completed++
-              break
-            case 'initial':
-            case 'name':
-              if (nameComplete) completed++
-              break
-            case 'dateSigned':
-              if (dateComplete) completed++
-              break
-            case 'stamp':
-              // stamp is not user-input; consider it complete when placed
-              completed++
-              break
-            case 'checkbox':
-              if (truthy(f?.value)) completed++
-              break
-            case 'company':
-            case 'title':
-            case 'text':
-              if (hasAny(f?.value)) completed++
-              break
-            default:
-              if (hasAny(f?.value)) completed++
-              break
+        const fieldById = new Map<string, any>()
+        for (const rows of rowsByRecipient) {
+          for (const row of rows || []) {
+            if (row?.field_id) {
+              const key = fieldKey(row)
+              const existing = fieldById.get(key)
+              if (!existing || hasAny(row.value) || row.signed_at) fieldById.set(key, row)
+              continue
+            }
+            if (row?.fields_data) {
+              try {
+                const legacyFields = JSON.parse(row.fields_data)
+                if (Array.isArray(legacyFields)) {
+                  for (const f of legacyFields) {
+                    if (!f?.id) continue
+                    const key = fieldKey(f)
+                    const existing = fieldById.get(key)
+                    if (!existing || hasAny(f.value)) fieldById.set(key, f)
+                  }
+                }
+              } catch {}
+            }
           }
         }
 
-        return { progressTotal: total, progressCompleted: completed }
+        const fields = Array.from(fieldById.values())
+        if (fields.length === 0) {
+          const totalSigners = group.length
+          const completedSigners = group.filter((r) => String(r.status || '').toLowerCase() === 'completed').length
+          return { progressTotal: totalSigners, progressCompleted: completedSigners }
+        }
+
+        const countedFields = fields.filter((f) => String(f?.field_type ?? f?.type ?? '').trim() !== 'stamp')
+        const progressTotal = countedFields.length
+        const progressCompleted = countedFields.filter((f) => {
+          const type = String(f?.field_type ?? f?.type ?? '').trim()
+          if (type === 'checkbox') return truthy(f?.value)
+          if (type === 'dateSigned') return hasAny(f?.value, f?.signed_at)
+          return hasAny(f?.value)
+        }).length
+
+        return { progressTotal, progressCompleted }
       } catch {
         return { progressTotal: 0, progressCompleted: 0 }
       }
     }
 
-    // Group records by document_file so multiple recipients of the same upload = 1 row
+    // Group records by stable envelope id. Fall back to document_file only for legacy rows.
     const groups = new Map<string, any[]>()
     for (const r of records) {
-      const key = String(r.document_file || r.id)
+      const key = String(r.deal_id || r.document_file || r.id)
       if (!groups.has(key)) groups.set(key, [])
       groups.get(key)!.push(r)
     }
@@ -195,13 +197,11 @@ export async function GET(request: Request) {
         lowestStatus === 'declined' ? 'declined' :
         lowestStatus === 'expired' ? 'expired' : 'draft'
 
-      const { progressTotal, progressCompleted } = await computeProgress(primary)
-
       const allRecipients = group.map((r) => String(r.email || '').trim()).filter(Boolean)
       const recipient = allRecipients[0] || ''
       const docTitle = parseDocumentTitle(primary.document_file)
       const totalSigners = group.length
-      const completedSigners = group.filter((r) => r.status === 'completed').length
+      const completedSigners = group.filter((r) => String(r.status || '').toLowerCase() === 'completed').length
 
       return {
         id: primary.id,
@@ -216,8 +216,7 @@ export async function GET(request: Request) {
         lastModified: primary.updated_at || primary.created_at || new Date().toISOString(),
         signers: totalSigners,
         completedSigners,
-        progressTotal,
-        progressCompleted,
+        ...(await computeProgress(group)),
         dealType: 'Signature',
         state: status,
         vehicle: '',
@@ -325,7 +324,7 @@ export async function POST(request: Request) {
     const documentFile = JSON.stringify(uploadedFiles)
 
     // Insert one row per recipient
-    const rows = recipients.map((r) => ({
+    const rows = recipients.map((r, index) => ({
       document_file: documentFile,
       email: r.email,
       full_name: r.name || null,
@@ -333,6 +332,7 @@ export async function POST(request: Request) {
       title: r.title || null,
       status: 'draft',
       user_id: userId || null,
+      recipient_index: index,
     }))
 
     console.log('[API /esignature/signatures POST] Inserting rows:', rows.length)
@@ -356,6 +356,22 @@ export async function POST(request: Request) {
     }
 
     const inserted = await insertRes.json()
+    const envelopeId = inserted?.[0]?.id
+    if (envelopeId) {
+      await Promise.all(inserted.map((row: any, index: number) =>
+        fetch(`${baseUrl}/rest/v1/signature?id=eq.${encodeURIComponent(String(row.id))}`, {
+          method: 'PATCH',
+          headers: {
+            'apikey': apiKey!,
+            'Authorization': `Bearer ${apiKey}`,
+            'Content-Type': 'application/json',
+            'Prefer': 'return=minimal',
+          },
+          body: JSON.stringify({ deal_id: envelopeId, recipient_index: index }),
+          cache: 'no-store',
+        }).catch(() => null)
+      ))
+    }
     console.log('[API /esignature/signatures POST] Inserted rows:', inserted.length)
 
     return NextResponse.json({ success: true, count: inserted.length, documents: inserted })

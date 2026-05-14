@@ -44,6 +44,9 @@ const createEmptyUploadRecipient = (): UploadRecipient => ({
   title: '',
 })
 
+const esignFieldKey = (field: EsignField & { fileIndex?: number; recipientIndex?: number }) =>
+  `${field.id}::r${field.recipientIndex ?? 0}::f${field.fileIndex ?? 0}`
+
 export default function EsignatureClient() {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -881,28 +884,40 @@ export default function EsignatureClient() {
     const fieldsJson = fieldsRes.ok ? await fieldsRes.json().catch(() => null) : null
     let fields: EsignField[] = Array.isArray(fieldsJson?.fields) ? fieldsJson.fields : []
 
-    // Fetch signed field values for each sibling recipient and merge by field_id
+    // Fetch signed field values for each sibling recipient and merge by field_id.
+    // If a sibling has fields that are not in the primary row, append them so every
+    // visible signer field can render in preview/download.
     const siblings: any[] = sigData?.siblings || []
     if (siblings.length > 0) {
-      const siblingFieldMaps = await Promise.all(
+      const siblingFieldRows = await Promise.all(
         siblings.map(async (s: any) => {
           try {
             const r = await fetch(`/api/esignature/fields?dealId=${encodeURIComponent(s.id)}`, { cache: 'no-store' })
             const j = r.ok ? await r.json().catch(() => null) : null
-            const rows: EsignField[] = Array.isArray(j?.fields) ? j.fields : []
-            const map: Record<string, string> = {}
-            rows.forEach(f => { if (f.id && f.value) map[f.id] = f.value })
-            return map
-          } catch { return {} }
+            return Array.isArray(j?.fields) ? j.fields as EsignField[] : []
+          } catch { return [] }
         })
       )
-      fields = fields.map(f => {
-        if (f.value) return f
-        for (const map of siblingFieldMaps) {
-          if (map[f.id]) return { ...f, value: map[f.id] }
-        }
-        return f
+
+      const merged = new Map<string, EsignField>()
+      fields.forEach((field) => {
+        if (field.id) merged.set(esignFieldKey(field as EsignField & { fileIndex?: number; recipientIndex?: number }), field)
       })
+      siblingFieldRows.flat().forEach((field) => {
+        if (!field.id) return
+        const key = esignFieldKey(field as EsignField & { fileIndex?: number; recipientIndex?: number })
+        const existing = merged.get(key)
+        if (!existing) {
+          merged.set(key, field)
+          return
+        }
+        const existingHasValue = String(existing.value ?? '').trim().length > 0
+        const siblingHasValue = String(field.value ?? '').trim().length > 0
+        if (!existingHasValue && siblingHasValue) {
+          merged.set(key, { ...existing, value: field.value })
+        }
+      })
+      fields = Array.from(merged.values())
     }
 
     // Parse document_file: may be JSON array, JSON object, or plain base64
