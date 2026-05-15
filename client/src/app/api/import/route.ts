@@ -8,7 +8,7 @@ export const maxDuration = 60
 const IMPORT_MARKER = 'Imported from weekly inventory feed'
 const IMPORT_CATEGORY = 'fleet'
 const IMPORT_INVENTORY_TYPE = 'FLEET'
-const FLEET_PRICE_MARKUP = 2500
+const FLEET_PRICE_MARKUP = 3000
 
 type ParsedVehicle = {
   sourceRow: number
