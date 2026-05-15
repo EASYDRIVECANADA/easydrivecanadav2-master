@@ -70,6 +70,12 @@ const toNumber = (value: unknown) => {
   return Number.isFinite(num) ? num : 0
 }
 
+const hasNumericValue = (value: unknown) => {
+  const raw = clean(value).replace(/[$,\s]/g, '')
+  if (raw === '') return false
+  return Number.isFinite(Number(raw))
+}
+
 const toInt = (value: unknown) => {
   const num = Math.round(toNumber(value))
   return Number.isFinite(num) ? num : 0
@@ -126,7 +132,6 @@ const parseWorkbook = async (file: File) => {
     ['vin', 'VIN'],
     ['year', 'Year'],
     ['make', 'Make'],
-    ['model', 'Model'],
     ['mileage', 'Kilometers / mileage'],
     ['price', 'Price'],
   ]
@@ -137,6 +142,10 @@ const parseWorkbook = async (file: File) => {
 
   if (missingColumns.length > 0) {
     throw new Error(`Missing required column(s): ${missingColumns.join(', ')}`)
+  }
+
+  if (column.model < 0 && column.equipment < 0) {
+    throw new Error('Missing required column(s): Equip or Model')
   }
 
   const vehicles: ParsedVehicle[] = []
@@ -154,8 +163,10 @@ const parseWorkbook = async (file: File) => {
     const vin = normalizeVin(get(column.vin))
     const year = toInt(get(column.year))
     const make = clean(get(column.make)).toUpperCase()
-    const model = clean(get(column.model)).toUpperCase()
-    const mileage = toInt(get(column.mileage))
+    const equipment = clean(get(column.equipment))
+    const model = (equipment || clean(get(column.model))).toUpperCase()
+    const mileageValue = get(column.mileage)
+    const mileage = toInt(mileageValue)
     const price = toNumber(get(column.price))
 
     const missing = [
@@ -164,7 +175,7 @@ const parseWorkbook = async (file: File) => {
       !year ? 'year' : '',
       !make ? 'make' : '',
       !model ? 'model' : '',
-      !mileage ? 'mileage' : '',
+      !hasNumericValue(mileageValue) ? 'mileage' : '',
       !price ? 'price' : '',
     ].filter(Boolean)
 
@@ -187,7 +198,7 @@ const parseWorkbook = async (file: File) => {
     seenVin.add(vin)
 
     const series = clean(get(column.series)) || null
-    const equipment = clean(get(column.equipment)) || null
+    const equipmentValue = equipment || null
 
     vehicles.push({
       sourceRow,
@@ -203,8 +214,8 @@ const parseWorkbook = async (file: File) => {
       odometer: mileage,
       odometer_unit: 'kms',
       exterior_color: clean(get(column.exteriorColor)) || null,
-      equipment,
-      description: equipment,
+      equipment: equipmentValue,
+      description: equipmentValue,
       lot_location: clean(get(column.location)) || null,
     })
   })

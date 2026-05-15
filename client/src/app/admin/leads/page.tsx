@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type HTMLAttributes, type ReactNode } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   BadgeCheck,
@@ -8,12 +8,15 @@ import {
   CheckCircle2,
   Clock3,
   Eye,
+  FileSpreadsheet,
   Inbox,
   Mail,
   MessageSquare,
   Phone,
+  Plus,
   Search,
   Trash2,
+  UploadCloud,
   UserRound,
   Users,
   X,
@@ -56,6 +59,23 @@ type LeadRow = {
 
 type FilterKey = 'all' | 'new' | 'synced' | 'finance' | 'insurance' | 'contact'
 type SourceKey = 'finance' | 'insurance' | 'contact' | 'unknown'
+type LeadDraftSource = SourceKey
+
+type LeadDraft = {
+  firstName: string
+  lastName: string
+  email: string
+  phone: string
+  source: LeadDraftSource
+  vehicleInterest: string
+  employmentStatus: string
+  monthlyIncome: string
+  downPayment: string
+  creditScore: string
+  message: string
+  adminNotes: string
+  createdAt: string
+}
 
 const FILTERS: Array<{ key: FilterKey; label: string }> = [
   { key: 'all', label: 'All' },
@@ -66,7 +86,26 @@ const FILTERS: Array<{ key: FilterKey; label: string }> = [
   { key: 'contact', label: 'Contact' },
 ]
 
+const BASE_LEAD_SELECT = 'id, first_name, last_name, email, phone, vehicle_interest, message, employment_status, monthly_income, down_payment, credit_score, ghl_synced, created_at'
+const LEAD_SELECT_WITH_NOTES = `${BASE_LEAD_SELECT}, admin_notes`
+
 const clean = (value: unknown) => String(value ?? '').trim()
+
+const emptyLeadDraft: LeadDraft = {
+  firstName: '',
+  lastName: '',
+  email: '',
+  phone: '',
+  source: 'contact',
+  vehicleInterest: '',
+  employmentStatus: '',
+  monthlyIncome: '',
+  downPayment: '',
+  creditScore: '',
+  message: '',
+  adminNotes: '',
+  createdAt: '',
+}
 
 const parseMessageFields = (message: string | null) => {
   const rows: Array<{ label: string; value: string }> = []
@@ -153,6 +192,107 @@ const formatMoney = (value: number | null) => {
   return `$${Number(value).toLocaleString()}`
 }
 
+const sourceMessageValue = (source: LeadDraftSource) => {
+  if (source === 'finance') return 'Manual Finance'
+  if (source === 'insurance') return 'Manual Insurance'
+  if (source === 'contact') return 'Manual Contact'
+  return 'Manual Entry'
+}
+
+const buildMessage = (rows: Array<[string, unknown]>) =>
+  rows
+    .map(([label, value]) => {
+      const cleaned = clean(value)
+      return cleaned ? `${label}: ${cleaned}` : ''
+    })
+    .filter(Boolean)
+    .join('\n')
+
+const toNumberOrNull = (value: unknown) => {
+  const cleaned = clean(value).replace(/[$,\s]/g, '')
+  if (!cleaned) return null
+  const number = Number(cleaned)
+  return Number.isFinite(number) ? number : null
+}
+
+const toDateIsoOrNull = (value: unknown) => {
+  const cleaned = clean(value)
+  if (!cleaned) return null
+  const numeric = Number(cleaned)
+  if (Number.isFinite(numeric) && numeric > 20000 && numeric < 80000) {
+    return new Date(Math.round((numeric - 25569) * 86400 * 1000)).toISOString()
+  }
+  const date = new Date(cleaned)
+  return Number.isNaN(date.getTime()) ? null : date.toISOString()
+}
+
+const mapLeadRow = (l: LeadRow): Lead => ({
+  id: l.id,
+  firstName: l.first_name || '',
+  lastName: l.last_name || '',
+  email: l.email || '',
+  phone: l.phone || '',
+  vehicleInterest: l.vehicle_interest ?? null,
+  message: l.message ?? null,
+  employmentStatus: l.employment_status ?? null,
+  monthlyIncome: l.monthly_income ?? null,
+  downPayment: l.down_payment ?? null,
+  creditScore: l.credit_score ?? null,
+  adminNotes: l.admin_notes ?? null,
+  ghlSynced: !!l.ghl_synced,
+  createdAt: l.created_at,
+})
+
+const normalizeHeader = (value: unknown) => clean(value).toLowerCase().replace(/[^a-z0-9]/g, '')
+
+const pickImportValue = (row: Record<string, unknown>, aliases: string[]) => {
+  const normalizedAliases = aliases.map(normalizeHeader)
+  const entry = Object.entries(row).find(([key]) => normalizedAliases.includes(normalizeHeader(key)))
+  return clean(entry?.[1])
+}
+
+const splitFullName = (fullName: string) => {
+  const parts = clean(fullName).split(/\s+/).filter(Boolean)
+  return {
+    firstName: parts[0] || '',
+    lastName: parts.slice(1).join(' '),
+  }
+}
+
+const normalizeImportSource = (value: unknown): LeadDraftSource => {
+  const source = clean(value).toLowerCase()
+  if (source.includes('finance') || source.includes('financing')) return 'finance'
+  if (source.includes('insurance')) return 'insurance'
+  if (source.includes('contact')) return 'contact'
+  return 'unknown'
+}
+
+const rowToLeadInsert = (draft: LeadDraft, notesEnabled: boolean, createdAt = new Date().toISOString()) => {
+  const insert: Record<string, unknown> = {
+    first_name: clean(draft.firstName) || null,
+    last_name: clean(draft.lastName) || null,
+    email: clean(draft.email).toLowerCase() || null,
+    phone: clean(draft.phone) || null,
+    vehicle_interest: clean(draft.vehicleInterest) || null,
+    employment_status: clean(draft.employmentStatus) || null,
+    monthly_income: toNumberOrNull(draft.monthlyIncome),
+    down_payment: toNumberOrNull(draft.downPayment),
+    credit_score: clean(draft.creditScore) || null,
+    ghl_synced: false,
+    created_at: toDateIsoOrNull(draft.createdAt) || createdAt,
+    message: buildMessage([
+      ['Source', sourceMessageValue(draft.source)],
+      ['Message', draft.message],
+    ]) || null,
+  }
+
+  if (notesEnabled) {
+    insert.admin_notes = clean(draft.adminNotes) || null
+  }
+
+  return insert
+}
+
 export default function AdminLeadsPage() {
   const [leads, setLeads] = useState<Lead[]>([])
   const [loading, setLoading] = useState(true)
@@ -164,6 +304,15 @@ export default function AdminLeadsPage() {
   const [searchQuery, setSearchQuery] = useState('')
   const [activeFilter, setActiveFilter] = useState<FilterKey>('all')
   const [currentPage, setCurrentPage] = useState(1)
+  const [newLeadOpen, setNewLeadOpen] = useState(false)
+  const [leadDraft, setLeadDraft] = useState<LeadDraft>(emptyLeadDraft)
+  const [savingLead, setSavingLead] = useState(false)
+  const [leadFormError, setLeadFormError] = useState('')
+  const [importOpen, setImportOpen] = useState(false)
+  const [importRows, setImportRows] = useState<LeadDraft[]>([])
+  const [importFileName, setImportFileName] = useState('')
+  const [importError, setImportError] = useState('')
+  const [importing, setImporting] = useState(false)
   const itemsPerPage = 20
   const router = useRouter()
 
@@ -178,18 +327,16 @@ export default function AdminLeadsPage() {
 
   const fetchLeads = async () => {
     try {
-      const baseSelect = 'id, first_name, last_name, email, phone, vehicle_interest, message, employment_status, monthly_income, down_payment, credit_score, ghl_synced, created_at'
-      const withNotesSelect = `${baseSelect}, admin_notes`
       let result = await supabase
         .from('edc_leads')
-        .select(withNotesSelect)
+        .select(LEAD_SELECT_WITH_NOTES)
         .order('created_at', { ascending: false })
 
       if (result.error && /admin_notes|column|schema cache/i.test(result.error.message || '')) {
         setNotesEnabled(false)
         result = await supabase
           .from('edc_leads')
-          .select(baseSelect)
+          .select(BASE_LEAD_SELECT)
           .order('created_at', { ascending: false })
       } else {
         setNotesEnabled(true)
@@ -198,22 +345,7 @@ export default function AdminLeadsPage() {
       const { data, error } = result
       if (error) throw error
 
-      const mapped: Lead[] = ((data || []) as LeadRow[]).map((l) => ({
-        id: l.id,
-        firstName: l.first_name || '',
-        lastName: l.last_name || '',
-        email: l.email || '',
-        phone: l.phone || '',
-        vehicleInterest: l.vehicle_interest ?? null,
-        message: l.message ?? null,
-        employmentStatus: l.employment_status ?? null,
-        monthlyIncome: l.monthly_income ?? null,
-        downPayment: l.down_payment ?? null,
-        creditScore: l.credit_score ?? null,
-        adminNotes: l.admin_notes ?? null,
-        ghlSynced: !!l.ghl_synced,
-        createdAt: l.created_at,
-      }))
+      const mapped: Lead[] = ((data || []) as LeadRow[]).map(mapLeadRow)
 
       setLeads(mapped)
     } catch (error) {
@@ -328,6 +460,131 @@ export default function AdminLeadsPage() {
     }
   }
 
+  const resetLeadForm = () => {
+    setLeadDraft(emptyLeadDraft)
+    setLeadFormError('')
+  }
+
+  const handleCreateLead = async () => {
+    if (!clean(leadDraft.firstName) && !clean(leadDraft.lastName) && !clean(leadDraft.email) && !clean(leadDraft.phone)) {
+      setLeadFormError('Add at least a name, email, or phone number.')
+      return
+    }
+
+    setSavingLead(true)
+    setLeadFormError('')
+
+    try {
+      const insert = rowToLeadInsert(leadDraft, notesEnabled)
+      const { data, error } = await supabase
+        .from('edc_leads')
+        .insert(insert)
+        .select(notesEnabled ? LEAD_SELECT_WITH_NOTES : BASE_LEAD_SELECT)
+        .single()
+
+      if (error) throw error
+
+      const created = mapLeadRow(data as LeadRow)
+      setLeads((rows) => [created, ...rows])
+      setSelectedLead(created)
+      setNewLeadOpen(false)
+      resetLeadForm()
+    } catch (error) {
+      console.error('Error creating lead:', error)
+      setLeadFormError('Unable to create lead. Check the lead fields and try again.')
+    } finally {
+      setSavingLead(false)
+    }
+  }
+
+  const parseLeadImportFile = async (file: File) => {
+    setImportFileName(file.name)
+    setImportRows([])
+    setImportError('')
+
+    try {
+      const XLSX = await import('xlsx-js-style')
+      const extension = file.name.split('.').pop()?.toLowerCase()
+      const workbook = extension === 'csv' || extension === 'tsv' || extension === 'txt'
+        ? XLSX.read(await file.text(), { type: 'string' })
+        : XLSX.read(await file.arrayBuffer(), { type: 'array' })
+      const sheet = workbook.Sheets[workbook.SheetNames[0]]
+      const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: '' })
+
+      const drafts = rows
+        .map((row) => {
+          const fullName = pickImportValue(row, ['name', 'full name', 'customer', 'lead'])
+          const splitName = splitFullName(fullName)
+          const source = normalizeImportSource(pickImportValue(row, ['source', 'lead source', 'type', 'category']))
+          const monthlyIncome = pickImportValue(row, ['monthly income', 'income monthly', 'monthly_income']) ||
+            (() => {
+              const annualIncome = toNumberOrNull(pickImportValue(row, ['annual income', 'gross annual income', 'income']))
+              return annualIncome === null ? '' : String(Math.round(annualIncome / 12))
+            })()
+
+          return {
+            firstName: pickImportValue(row, ['first name', 'firstname', 'first_name']) || splitName.firstName,
+            lastName: pickImportValue(row, ['last name', 'lastname', 'last_name']) || splitName.lastName,
+            email: pickImportValue(row, ['email', 'email address', 'e-mail']),
+            phone: pickImportValue(row, ['phone', 'phone number', 'mobile', 'cell', 'telephone']),
+            source,
+            vehicleInterest: pickImportValue(row, ['vehicle interest', 'vehicle', 'car', 'vehicle_interest', 'interest']),
+            employmentStatus: pickImportValue(row, ['employment', 'employment status', 'job status']),
+            monthlyIncome,
+            downPayment: pickImportValue(row, ['down payment', 'downpayment', 'desired down payment']),
+            creditScore: pickImportValue(row, ['credit', 'credit score', 'credit profile']),
+            message: pickImportValue(row, ['message', 'comments', 'comment', 'inquiry', 'details']),
+            adminNotes: pickImportValue(row, ['notes', 'admin notes', 'internal notes', 'follow up notes']),
+            createdAt: pickImportValue(row, ['date', 'created at', 'created_at', 'received', 'submitted', 'submitted at']),
+          } satisfies LeadDraft
+        })
+        .filter((row) => clean(row.firstName) || clean(row.lastName) || clean(row.email) || clean(row.phone) || clean(row.message))
+
+      if (drafts.length === 0) {
+        setImportError('No usable lead rows found. Include at least name, email, phone, or message columns.')
+        return
+      }
+
+      setImportRows(drafts)
+    } catch (error) {
+      console.error('Error parsing lead import:', error)
+      setImportError('Unable to read this file. Try an .xlsx, .xls, .csv, .tsv, or .txt file.')
+    }
+  }
+
+  const handleImportLeads = async () => {
+    if (importRows.length === 0) {
+      setImportError('Choose a file with lead rows before importing.')
+      return
+    }
+
+    setImporting(true)
+    setImportError('')
+
+    try {
+      const inserts = importRows.map((row) => rowToLeadInsert(row, notesEnabled))
+      const { data, error } = await supabase
+        .from('edc_leads')
+        .insert(inserts)
+        .select(notesEnabled ? LEAD_SELECT_WITH_NOTES : BASE_LEAD_SELECT)
+
+      if (error) throw error
+
+      const imported = ((data || []) as LeadRow[]).map(mapLeadRow)
+      setLeads((rows) => [...imported, ...rows])
+      setImportOpen(false)
+      setImportRows([])
+      setImportFileName('')
+      setActiveFilter('all')
+      setCurrentPage(1)
+    } catch (error) {
+      console.error('Error importing leads:', error)
+      setImportError('Unable to import leads. Check the file columns and try again.')
+    } finally {
+      setImporting(false)
+    }
+  }
+
   const selectedLeadFields = selectedLead ? parseMessageFields(selectedLead.message) : { rows: [], notes: [] }
 
   return (
@@ -368,7 +625,27 @@ export default function AdminLeadsPage() {
               />
             </div>
 
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setImportOpen(true)}
+                className="inline-flex h-9 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition-colors hover:border-slate-300 hover:bg-slate-50"
+              >
+                <UploadCloud className="h-4 w-4" />
+                Import
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  resetLeadForm()
+                  setNewLeadOpen(true)
+                }}
+                className="inline-flex h-9 items-center gap-2 rounded-xl bg-[#0B1F3A] px-3 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-[#12345d]"
+              >
+                <Plus className="h-4 w-4" />
+                New lead
+              </button>
+              <div className="h-6 w-px bg-slate-200" />
               {FILTERS.map((filter) => {
                 const active = activeFilter === filter.key
                 return (
@@ -390,108 +667,89 @@ export default function AdminLeadsPage() {
           </div>
         </div>
 
-        <div className="flex gap-6">
-          <div className="min-w-0 flex-1">
-            {loading ? (
-              <LoadingTable />
-            ) : leads.length === 0 ? (
-              <EmptyState
-                icon={Inbox}
-                title="No leads yet"
-                body="Finance, insurance, and contact submissions will appear here when they arrive."
-              />
-            ) : filteredLeads.length === 0 ? (
-              <EmptyState
-                icon={Search}
-                title="No matching leads"
-                body="Try a different search term or clear the current filter."
-              />
-            ) : (
-              <>
-                <div className="hidden overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-card lg:block">
-                  <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
-                    <div className="text-sm font-semibold text-slate-900">Showing {paginatedLeads.length} of {filteredLeads.length} leads</div>
-                    <div className="text-xs text-slate-500">Sorted by newest first</div>
-                  </div>
-                  <div className="overflow-x-auto">
-                    <table className="edc-table min-w-[980px]">
-                      <thead>
-                        <tr>
-                          <th>Lead</th>
-                          <th>Contact</th>
-                          <th>Intent</th>
-                          <th>Received</th>
-                          <th>Status</th>
-                          <th className="text-right">Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {paginatedLeads.map((lead) => (
-                          <LeadRow
-                            key={lead.id}
-                            lead={lead}
-                            selected={selectedLead?.id === lead.id}
-                            onSelect={setSelectedLead}
-                            onDelete={handleDelete}
-                          />
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+        <div className="min-w-0">
+          {loading ? (
+            <LoadingTable />
+          ) : leads.length === 0 ? (
+            <EmptyState
+              icon={Inbox}
+              title="No leads yet"
+              body="Finance, insurance, and contact submissions will appear here when they arrive."
+            />
+          ) : filteredLeads.length === 0 ? (
+            <EmptyState
+              icon={Search}
+              title="No matching leads"
+              body="Try a different search term or clear the current filter."
+            />
+          ) : (
+            <>
+              <div className="hidden overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-card lg:block">
+                <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
+                  <div className="text-sm font-semibold text-slate-900">Showing {paginatedLeads.length} of {filteredLeads.length} leads</div>
+                  <div className="text-xs text-slate-500">Sorted by newest first</div>
                 </div>
-
-                <div className="space-y-3 lg:hidden">
-                  <div className="text-sm font-medium text-slate-500">Showing {paginatedLeads.length} of {filteredLeads.length} leads</div>
-                  {paginatedLeads.map((lead) => (
-                    <MobileLeadCard
-                      key={lead.id}
-                      lead={lead}
-                      selected={selectedLead?.id === lead.id}
-                      onSelect={setSelectedLead}
-                      onDelete={handleDelete}
-                    />
-                  ))}
+                <div className="overflow-x-auto">
+                  <table className="edc-table min-w-[980px]">
+                    <thead>
+                      <tr>
+                        <th>Lead</th>
+                        <th>Contact</th>
+                        <th>Intent</th>
+                        <th>Received</th>
+                        <th>Status</th>
+                        <th className="text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {paginatedLeads.map((lead) => (
+                        <LeadRow
+                          key={lead.id}
+                          lead={lead}
+                          selected={selectedLead?.id === lead.id}
+                          onSelect={setSelectedLead}
+                          onDelete={handleDelete}
+                        />
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
+              </div>
 
-                {totalPages > 1 && (
-                  <Pagination
-                    currentPage={currentPage}
-                    totalPages={totalPages}
-                    onPageChange={setCurrentPage}
+              <div className="space-y-3 lg:hidden">
+                <div className="text-sm font-medium text-slate-500">Showing {paginatedLeads.length} of {filteredLeads.length} leads</div>
+                {paginatedLeads.map((lead) => (
+                  <MobileLeadCard
+                    key={lead.id}
+                    lead={lead}
+                    selected={selectedLead?.id === lead.id}
+                    onSelect={setSelectedLead}
+                    onDelete={handleDelete}
                   />
-                )}
-              </>
-            )}
-          </div>
+                ))}
+              </div>
 
-          {selectedLead && (
-            <aside className="hidden w-[430px] shrink-0 xl:block">
-              <LeadDetailPanel
-                lead={selectedLead}
-                fields={selectedLeadFields}
-                onClose={() => setSelectedLead(null)}
-                onDelete={handleDelete}
-                notesDraft={notesDraft}
-                onNotesChange={setNotesDraft}
-                onSaveNotes={handleSaveNotes}
-                savingNotes={savingNotes}
-                notesEnabled={notesEnabled}
-                notesSaveError={notesSaveError}
-              />
-            </aside>
+              {totalPages > 1 && (
+                <Pagination
+                  currentPage={currentPage}
+                  totalPages={totalPages}
+                  onPageChange={setCurrentPage}
+                />
+              )}
+            </>
           )}
         </div>
       </div>
 
       {selectedLead && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center xl:hidden">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6">
           <button
             type="button"
             aria-label="Close lead details"
             onClick={() => setSelectedLead(null)}
-            className="absolute inset-0 bg-slate-950/50 backdrop-blur-sm"
+            className="absolute inset-0 bg-slate-950/55 backdrop-blur-sm"
           />
-          <div className="relative z-10 max-h-[90vh] w-full overflow-y-auto rounded-t-2xl bg-white shadow-premium sm:max-w-xl sm:rounded-2xl sm:mb-6">
+          <div className="relative z-10 max-h-[92vh] w-full max-w-5xl overflow-hidden rounded-2xl bg-white shadow-premium">
             <LeadDetailPanel
               lead={selectedLead}
               fields={selectedLeadFields}
@@ -503,10 +761,33 @@ export default function AdminLeadsPage() {
               savingNotes={savingNotes}
               notesEnabled={notesEnabled}
               notesSaveError={notesSaveError}
-              compact
             />
           </div>
         </div>
+      )}
+
+      {newLeadOpen && (
+        <LeadFormModal
+          draft={leadDraft}
+          onChange={setLeadDraft}
+          onClose={() => setNewLeadOpen(false)}
+          onSubmit={handleCreateLead}
+          submitting={savingLead}
+          error={leadFormError}
+          notesEnabled={notesEnabled}
+        />
+      )}
+
+      {importOpen && (
+        <LeadImportModal
+          rows={importRows}
+          fileName={importFileName}
+          error={importError}
+          importing={importing}
+          onFile={parseLeadImportFile}
+          onClose={() => setImportOpen(false)}
+          onImport={handleImportLeads}
+        />
       )}
     </div>
   )
@@ -668,6 +949,271 @@ function MobileLeadCard({
   )
 }
 
+function LeadFormModal({
+  draft,
+  onChange,
+  onClose,
+  onSubmit,
+  submitting,
+  error,
+  notesEnabled,
+}: {
+  draft: LeadDraft
+  onChange: (draft: LeadDraft) => void
+  onClose: () => void
+  onSubmit: () => void
+  submitting: boolean
+  error: string
+  notesEnabled: boolean
+}) {
+  const setField = (field: keyof LeadDraft, value: string) => onChange({ ...draft, [field]: value })
+
+  return (
+    <ModalFrame maxWidth="max-w-4xl" onClose={onClose}>
+      <form
+        onSubmit={(event) => {
+          event.preventDefault()
+          onSubmit()
+        }}
+        className="max-h-[92vh] overflow-y-auto"
+      >
+        <div className="border-b border-slate-200 bg-slate-50/70 p-5 sm:p-6">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <div className="inline-flex items-center gap-2 rounded-full bg-[#1EA7FF]/10 px-3 py-1 text-xs font-semibold text-[#0877bd] ring-1 ring-inset ring-[#1EA7FF]/20">
+                <Plus className="h-3.5 w-3.5" />
+                Manual entry
+              </div>
+              <h2 className="mt-3 text-xl font-bold text-slate-950">New lead</h2>
+              <p className="mt-1 text-sm text-slate-500">Add a lead that came in by phone, walk-in, email, or an older list.</p>
+            </div>
+            <button type="button" onClick={onClose} className="rounded-xl p-2 text-slate-400 transition-colors hover:bg-white hover:text-slate-700" aria-label="Close new lead">
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+
+        <div className="grid gap-5 p-5 sm:p-6 lg:grid-cols-2">
+          <div className="space-y-4">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <LeadInput label="First name" value={draft.firstName} onChange={(value) => setField('firstName', value)} />
+              <LeadInput label="Last name" value={draft.lastName} onChange={(value) => setField('lastName', value)} />
+              <LeadInput label="Email" value={draft.email} type="email" onChange={(value) => setField('email', value)} />
+              <LeadInput label="Phone" value={draft.phone} type="tel" onChange={(value) => setField('phone', value)} />
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <label className="block">
+                <span className="text-xs font-semibold text-slate-600">Source</span>
+                <select value={draft.source} onChange={(event) => setField('source', event.target.value)} className="mt-1 h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-800 outline-none focus:border-[#1EA7FF]/50 focus:ring-2 focus:ring-[#1EA7FF]/20">
+                  <option value="contact">Contact</option>
+                  <option value="finance">Finance</option>
+                  <option value="insurance">Insurance</option>
+                  <option value="unknown">Other</option>
+                </select>
+              </label>
+              <LeadInput label="Received date" value={draft.createdAt} type="date" onChange={(value) => setField('createdAt', value)} />
+            </div>
+
+            <LeadInput label="Vehicle interest" value={draft.vehicleInterest} onChange={(value) => setField('vehicleInterest', value)} />
+
+            <label className="block">
+              <span className="text-xs font-semibold text-slate-600">Message</span>
+              <textarea
+                value={draft.message}
+                onChange={(event) => setField('message', event.target.value)}
+                rows={5}
+                placeholder="What did the lead ask about?"
+                className="mt-1 min-h-[120px] w-full resize-y rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-2 text-sm text-slate-800 outline-none focus:border-[#1EA7FF]/50 focus:bg-white focus:ring-2 focus:ring-[#1EA7FF]/20"
+              />
+            </label>
+          </div>
+
+          <div className="space-y-4">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <LeadInput label="Employment" value={draft.employmentStatus} onChange={(value) => setField('employmentStatus', value)} />
+              <LeadInput label="Credit profile" value={draft.creditScore} onChange={(value) => setField('creditScore', value)} />
+              <LeadInput label="Monthly income" value={draft.monthlyIncome} inputMode="decimal" onChange={(value) => setField('monthlyIncome', value)} />
+              <LeadInput label="Down payment" value={draft.downPayment} inputMode="decimal" onChange={(value) => setField('downPayment', value)} />
+            </div>
+
+            <label className="block">
+              <span className="text-xs font-semibold text-slate-600">Internal notes</span>
+              <textarea
+                value={draft.adminNotes}
+                onChange={(event) => setField('adminNotes', event.target.value)}
+                disabled={!notesEnabled}
+                rows={6}
+                placeholder={notesEnabled ? 'Follow-up notes for the team...' : 'Apply admin_notes SQL to enable notes.'}
+                className="mt-1 min-h-[148px] w-full resize-y rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-2 text-sm text-slate-800 outline-none focus:border-[#1EA7FF]/50 focus:bg-white focus:ring-2 focus:ring-[#1EA7FF]/20 disabled:bg-slate-100 disabled:text-slate-400"
+              />
+            </label>
+
+            {error ? <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div> : null}
+          </div>
+        </div>
+
+        <div className="flex flex-col-reverse gap-2 border-t border-slate-200 bg-white p-4 sm:flex-row sm:justify-end">
+          <button type="button" onClick={onClose} className="edc-btn-ghost h-10 px-4 text-xs">Cancel</button>
+          <button type="submit" disabled={submitting} className="edc-btn-primary h-10 px-4 text-xs disabled:cursor-not-allowed disabled:opacity-50">
+            {submitting ? 'Creating...' : 'Create lead'}
+          </button>
+        </div>
+      </form>
+    </ModalFrame>
+  )
+}
+
+function LeadImportModal({
+  rows,
+  fileName,
+  error,
+  importing,
+  onFile,
+  onClose,
+  onImport,
+}: {
+  rows: LeadDraft[]
+  fileName: string
+  error: string
+  importing: boolean
+  onFile: (file: File) => void
+  onClose: () => void
+  onImport: () => void
+}) {
+  return (
+    <ModalFrame maxWidth="max-w-4xl" onClose={onClose}>
+      <div className="max-h-[92vh] overflow-y-auto">
+        <div className="border-b border-slate-200 bg-slate-50/70 p-5 sm:p-6">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <div className="inline-flex items-center gap-2 rounded-full bg-[#1EA7FF]/10 px-3 py-1 text-xs font-semibold text-[#0877bd] ring-1 ring-inset ring-[#1EA7FF]/20">
+                <FileSpreadsheet className="h-3.5 w-3.5" />
+                Lead import
+              </div>
+              <h2 className="mt-3 text-xl font-bold text-slate-950">Import old leads</h2>
+              <p className="mt-1 text-sm text-slate-500">Upload Excel, CSV, TSV, or text files. Common columns are mapped automatically.</p>
+            </div>
+            <button type="button" onClick={onClose} className="rounded-xl p-2 text-slate-400 transition-colors hover:bg-white hover:text-slate-700" aria-label="Close import">
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+
+        <div className="space-y-5 p-5 sm:p-6">
+          <label className="flex cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-slate-50/70 px-6 py-8 text-center transition-colors hover:border-[#1EA7FF]/60 hover:bg-[#1EA7FF]/5">
+            <UploadCloud className="h-8 w-8 text-[#0877bd]" />
+            <span className="mt-3 text-sm font-semibold text-slate-900">{fileName || 'Choose an Excel or CSV file'}</span>
+            <span className="mt-1 text-xs text-slate-500">Supported: .xlsx, .xls, .csv, .tsv, .txt</span>
+            <input
+              type="file"
+              accept=".xlsx,.xls,.csv,.tsv,.txt"
+              className="sr-only"
+              onChange={(event) => {
+                const file = event.target.files?.[0]
+                if (file) void onFile(file)
+              }}
+            />
+          </label>
+
+          <div className="rounded-2xl border border-slate-200 bg-white p-4">
+            <div className="text-sm font-semibold text-slate-900">Recognized columns</div>
+            <p className="mt-1 text-xs leading-5 text-slate-500">
+              Name, first name, last name, email, phone, source, vehicle, message, notes, employment, monthly income, annual income, down payment, credit, and date.
+            </p>
+          </div>
+
+          {error ? <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div> : null}
+
+          {rows.length > 0 && (
+            <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+              <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
+                <div className="text-sm font-semibold text-slate-900">{rows.length} leads ready to import</div>
+                <div className="text-xs text-slate-500">Previewing first 5</div>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-left text-sm">
+                  <thead className="bg-slate-50 text-xs font-bold uppercase text-slate-500">
+                    <tr>
+                      <th className="px-4 py-3">Name</th>
+                      <th className="px-4 py-3">Contact</th>
+                      <th className="px-4 py-3">Source</th>
+                      <th className="px-4 py-3">Intent</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {rows.slice(0, 5).map((row, index) => (
+                      <tr key={`${row.email}-${row.phone}-${index}`}>
+                        <td className="px-4 py-3 font-medium text-slate-900">{[row.firstName, row.lastName].map(clean).filter(Boolean).join(' ') || 'Unnamed lead'}</td>
+                        <td className="px-4 py-3 text-slate-600">
+                          <div>{row.email || 'No email'}</div>
+                          <div className="text-xs text-slate-400">{row.phone || 'No phone'}</div>
+                        </td>
+                        <td className="px-4 py-3 text-slate-600">{sourceLabel(row.source)}</td>
+                        <td className="px-4 py-3 text-slate-600">{row.vehicleInterest || row.message || 'No details'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="flex flex-col-reverse gap-2 border-t border-slate-200 bg-white p-4 sm:flex-row sm:justify-end">
+          <button type="button" onClick={onClose} className="edc-btn-ghost h-10 px-4 text-xs">Cancel</button>
+          <button type="button" onClick={onImport} disabled={rows.length === 0 || importing} className="edc-btn-primary h-10 px-4 text-xs disabled:cursor-not-allowed disabled:opacity-50">
+            {importing ? 'Importing...' : `Import ${rows.length || ''} leads`}
+          </button>
+        </div>
+      </div>
+    </ModalFrame>
+  )
+}
+
+function LeadInput({
+  label,
+  value,
+  onChange,
+  type = 'text',
+  inputMode,
+}: {
+  label: string
+  value: string
+  onChange: (value: string) => void
+  type?: string
+  inputMode?: HTMLAttributes<HTMLInputElement>['inputMode']
+}) {
+  return (
+    <label className="block">
+      <span className="text-xs font-semibold text-slate-600">{label}</span>
+      <input
+        type={type}
+        inputMode={inputMode}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className="mt-1 h-10 w-full rounded-xl border border-slate-200 bg-slate-50/70 px-3 text-sm text-slate-800 outline-none transition focus:border-[#1EA7FF]/50 focus:bg-white focus:ring-2 focus:ring-[#1EA7FF]/20"
+      />
+    </label>
+  )
+}
+
+function ModalFrame({ children, maxWidth, onClose }: { children: ReactNode; maxWidth: string; onClose: () => void }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6">
+      <button
+        type="button"
+        aria-label="Close modal"
+        onClick={onClose}
+        className="absolute inset-0 bg-slate-950/55 backdrop-blur-sm"
+      />
+      <div className={`relative z-10 max-h-[92vh] w-full ${maxWidth} overflow-hidden rounded-2xl bg-white shadow-premium`}>
+        {children}
+      </div>
+    </div>
+  )
+}
+
 function LeadDetailPanel({
   lead,
   fields,
@@ -679,7 +1225,6 @@ function LeadDetailPanel({
   savingNotes,
   notesEnabled,
   notesSaveError,
-  compact = false,
 }: {
   lead: Lead
   fields: { rows: Array<{ label: string; value: string }>; notes: string[] }
@@ -691,15 +1236,14 @@ function LeadDetailPanel({
   savingNotes: boolean
   notesEnabled: boolean
   notesSaveError: string
-  compact?: boolean
 }) {
   const source = sourceFromLead(lead)
   const sourceRows = fields.rows.filter((row) => row.label.toLowerCase() !== 'source')
   const primaryIntent = lead.vehicleInterest || intentFallback(lead)
 
   return (
-    <div className={compact ? 'overflow-hidden' : 'sticky top-20 max-h-[calc(100vh-6.5rem)] overflow-y-auto rounded-2xl border border-slate-200 bg-white shadow-card'}>
-      <div className="border-b border-slate-200 bg-slate-50/70 p-5">
+    <div className="max-h-[92vh] overflow-y-auto">
+      <div className="border-b border-slate-200 bg-slate-50/70 p-5 sm:p-6">
         <div className="flex items-start justify-between gap-3">
           <div className="flex min-w-0 items-start gap-3">
             <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-[#0B1F3A] text-sm font-bold text-white shadow-sm">
@@ -720,64 +1264,83 @@ function LeadDetailPanel({
           </button>
         </div>
 
-        <div className="mt-4 rounded-xl border border-slate-200 bg-white px-3 py-2.5">
-          <div className="text-[11px] font-semibold uppercase text-slate-400">Intent</div>
-          <div className="mt-1 line-clamp-2 text-sm font-semibold text-slate-900">{primaryIntent}</div>
-          <div className="mt-1 text-xs text-slate-500">Received {formatDate(lead.createdAt)}</div>
-        </div>
-
-        <div className="mt-4 grid grid-cols-2 gap-2">
-          <a href={lead.email ? `mailto:${lead.email}` : undefined} className={`edc-btn-primary h-10 text-xs ${lead.email ? '' : 'pointer-events-none opacity-50'}`}>
+        <div className="mt-5 grid gap-3 lg:grid-cols-[1fr_auto] lg:items-end">
+          <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
+            <div className="text-[11px] font-semibold uppercase text-slate-400">Intent</div>
+            <div className="mt-1 text-sm font-semibold text-slate-900">{primaryIntent}</div>
+            <div className="mt-1 text-xs text-slate-500">Received {formatDate(lead.createdAt)}</div>
+          </div>
+          <div className="grid grid-cols-2 gap-2 lg:w-[280px]">
+            <a href={lead.email ? `mailto:${lead.email}` : undefined} className={`edc-btn-primary h-10 text-xs ${lead.email ? '' : 'pointer-events-none opacity-50'}`}>
             <Mail className="h-4 w-4" />
             Email lead
-          </a>
-          <a href={lead.phone ? `tel:${lead.phone}` : undefined} className={`edc-btn-ghost h-10 bg-white text-xs ${lead.phone ? '' : 'pointer-events-none opacity-50'}`}>
-            <Phone className="h-4 w-4" />
-            Call
-          </a>
+            </a>
+            <a href={lead.phone ? `tel:${lead.phone}` : undefined} className={`edc-btn-ghost h-10 bg-white text-xs ${lead.phone ? '' : 'pointer-events-none opacity-50'}`}>
+              <Phone className="h-4 w-4" />
+              Call
+            </a>
+          </div>
         </div>
       </div>
 
-      <div className="space-y-5 p-5">
-        <DetailSection title="Contact" icon={UserRound}>
-          <DetailRow label="Email" value={lead.email} href={lead.email ? `mailto:${lead.email}` : undefined} />
-          <DetailRow label="Phone" value={lead.phone} href={lead.phone ? `tel:${lead.phone}` : undefined} />
-          <DetailRow label="Received" value={formatDate(lead.createdAt)} />
-        </DetailSection>
+      <div className="grid gap-5 p-5 sm:p-6 lg:grid-cols-[minmax(0,1fr)_minmax(320px,0.8fr)]">
+        <div className="space-y-5">
+          <div className="grid gap-5 md:grid-cols-2">
+            <DetailSection title="Contact" icon={UserRound}>
+              <DetailRow label="Email" value={lead.email} href={lead.email ? `mailto:${lead.email}` : undefined} />
+              <DetailRow label="Phone" value={lead.phone} href={lead.phone ? `tel:${lead.phone}` : undefined} />
+              <DetailRow label="Received" value={formatDate(lead.createdAt)} />
+            </DetailSection>
 
-        <DetailSection title="Intent" icon={Car}>
-          <DetailRow label="Vehicle interest" value={primaryIntent} />
-          <DetailRow label="Employment" value={lead.employmentStatus} />
-          <DetailRow label="Monthly income" value={formatMoney(lead.monthlyIncome)} />
-          <DetailRow label="Down payment" value={formatMoney(lead.downPayment)} />
-          <DetailRow label="Credit score" value={lead.creditScore} />
-        </DetailSection>
+            <DetailSection title="Intent" icon={Car}>
+              <DetailRow label="Vehicle" value={primaryIntent} />
+              <DetailRow label="Employment" value={lead.employmentStatus} />
+              <DetailRow label="Income" value={formatMoney(lead.monthlyIncome)} />
+              <DetailRow label="Down payment" value={formatMoney(lead.downPayment)} />
+              <DetailRow label="Credit" value={lead.creditScore} />
+            </DetailSection>
+          </div>
 
-        <LeadNotesSection
-          value={notesDraft}
-          savedValue={lead.adminNotes || ''}
-          onChange={onNotesChange}
-          onSave={() => onSaveNotes(lead)}
-          saving={savingNotes}
-          enabled={notesEnabled}
-          error={notesSaveError}
-        />
+          {(sourceRows.length > 0 || fields.notes.length > 0) && (
+            <DetailSection title="Submitted details" icon={MessageSquare}>
+              {sourceRows.map((row) => (
+                <DetailRow key={`${row.label}-${row.value}`} label={row.label} value={row.value} />
+              ))}
+              {fields.notes.map((note, index) => (
+                <DetailRow key={`${note}-${index}`} label={index === 0 ? 'Note' : `Note ${index + 1}`} value={note} />
+              ))}
+            </DetailSection>
+          )}
+        </div>
 
-        {(sourceRows.length > 0 || fields.notes.length > 0) && (
-          <DetailSection title="Submitted details" icon={MessageSquare}>
-            {sourceRows.map((row) => (
-              <DetailRow key={`${row.label}-${row.value}`} label={row.label} value={row.value} />
-            ))}
-            {fields.notes.map((note, index) => (
-              <DetailRow key={`${note}-${index}`} label={index === 0 ? 'Note' : `Note ${index + 1}`} value={note} />
-            ))}
+        <div className="space-y-5">
+          <LeadNotesSection
+            value={notesDraft}
+            savedValue={lead.adminNotes || ''}
+            onChange={onNotesChange}
+            onSave={() => onSaveNotes(lead)}
+            saving={savingNotes}
+            enabled={notesEnabled}
+            error={notesSaveError}
+          />
+
+          <DetailSection title="Quick actions" icon={Eye}>
+            <div className="grid gap-2 p-3">
+              <a href={lead.email ? `mailto:${lead.email}` : undefined} className={`edc-btn-primary h-10 text-xs ${lead.email ? '' : 'pointer-events-none opacity-50'}`}>
+                <Mail className="h-4 w-4" />
+                Email lead
+              </a>
+              <a href={lead.phone ? `tel:${lead.phone}` : undefined} className={`edc-btn-ghost h-10 text-xs ${lead.phone ? '' : 'pointer-events-none opacity-50'}`}>
+                <Phone className="h-4 w-4" />
+                Call lead
+              </a>
+              <button type="button" onClick={() => onDelete(lead)} className="edc-btn-danger h-10 w-full text-xs">
+                <Trash2 className="h-4 w-4" />
+                Delete lead
+              </button>
+            </div>
           </DetailSection>
-        )}
-
-        <button type="button" onClick={() => onDelete(lead)} className="edc-btn-danger h-10 w-full text-xs">
-          <Trash2 className="h-4 w-4" />
-          Delete lead
-        </button>
+        </div>
       </div>
     </div>
   )
@@ -838,7 +1401,7 @@ function LeadNotesSection({
   )
 }
 
-function DetailSection({ title, icon: Icon, children }: { title: string; icon: typeof UserRound; children: React.ReactNode }) {
+function DetailSection({ title, icon: Icon, children }: { title: string; icon: typeof UserRound; children: ReactNode }) {
   return (
     <section>
       <div className="mb-2 flex items-center gap-2 text-[11px] font-bold uppercase text-slate-500">
