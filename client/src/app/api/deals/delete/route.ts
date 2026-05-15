@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { getAdminAuthContext } from '@/lib/apiAuth'
 
 export const dynamic = 'force-dynamic'
 
@@ -37,10 +38,34 @@ async function deleteFromTable(table: string, dealId: string): Promise<{ table: 
 
 export async function POST(req: Request) {
   try {
+    const { context, error: authError } = await getAdminAuthContext(req)
+    if (authError) return authError
+    if (!context?.canDelete('sales')) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
+
     const body = await req.json().catch(() => ({}))
     const dealId = body?.dealId
     if (!dealId) {
       return NextResponse.json({ error: 'Missing dealId' }, { status: 400 })
+    }
+
+    if (!context.canViewAll('deals')) {
+      const ownerRes = await fetch(
+        `${baseUrl}/rest/v1/edc_deals_customers?deal_id=eq.${encodeURIComponent(dealId)}&select=user_id&limit=1`,
+        {
+          headers: {
+            apikey: apiKey,
+            Authorization: `Bearer ${apiKey}`,
+          },
+          cache: 'no-store',
+        }
+      )
+      const ownerRows = ownerRes.ok ? await ownerRes.json().catch(() => []) : []
+      const ownerId = String(ownerRows?.[0]?.user_id || '').trim()
+      if (!ownerId || ownerId !== context.userId) {
+        return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+      }
     }
 
     const results = await Promise.all(

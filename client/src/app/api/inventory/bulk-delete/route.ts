@@ -1,15 +1,9 @@
 import { NextResponse } from 'next/server'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
+import { getAdminAuthContext } from '@/lib/apiAuth'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
-
-type UserRow = {
-  id?: string | null
-  user_id?: string | null
-  role?: string | null
-  status?: string | null
-}
 
 const clean = (value: unknown) => String(value ?? '').trim()
 
@@ -23,25 +17,6 @@ const chunkList = <T,>(items: T[], size = 200) => {
 
 const uniqueCleanIds = (ids: unknown[]) =>
   Array.from(new Set(ids.map((id) => clean(id)).filter(Boolean)))
-
-const resolveAdminUser = async (supabase: SupabaseClient, email: string) => {
-  if (!email) return { userId: '', role: '', status: '' }
-
-  const { data } = await supabase
-    .from('users')
-    .select('id,user_id,role,status')
-    .ilike('email', email)
-    .limit(1)
-    .maybeSingle()
-
-  const row = data as UserRow | null
-
-  return {
-    userId: clean(row?.user_id ?? row?.id),
-    role: clean(row?.role),
-    status: clean(row?.status),
-  }
-}
 
 const deleteRowsByIds = async (
   supabase: SupabaseClient,
@@ -111,7 +86,6 @@ export async function POST(req: Request) {
     }
 
     const body = await req.json().catch(() => ({}))
-    const email = clean(req.headers.get('x-admin-email') || body?.email).toLowerCase()
     const vehicleIds = uniqueCleanIds(Array.isArray(body?.vehicleIds) ? body.vehicleIds : [])
     const carfaxFolderIds = uniqueCleanIds(Array.isArray(body?.carfaxFolderIds) ? body.carfaxFolderIds : vehicleIds)
     const includeStorage = body?.includeStorage === true
@@ -124,12 +98,30 @@ export async function POST(req: Request) {
       auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
     })
 
-    const { userId, status } = await resolveAdminUser(supabase, email)
-    if (!userId) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    const { context, error: authError } = await getAdminAuthContext(req)
+    if (authError) return authError
+    if (!context?.canDelete('inventory')) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
-    if (status.toLowerCase() === 'disable') {
-      return NextResponse.json({ error: 'Account disabled' }, { status: 403 })
+
+    if (!context.isAdmin) {
+      const { data: ownedRows, error: ownershipError } = await supabase
+        .from('edc_vehicles')
+        .select('id,user_id')
+        .in('id', vehicleIds)
+
+      if (ownershipError) {
+        return NextResponse.json({ error: 'Failed to verify inventory ownership', details: ownershipError.message }, { status: 500 })
+      }
+
+      const allowedIds = new Set(
+        (ownedRows || [])
+          .filter((row: any) => clean(row?.user_id) === context.userId)
+          .map((row: any) => clean(row?.id))
+      )
+      if (allowedIds.size !== vehicleIds.length) {
+        return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+      }
     }
 
     const relatedDeletes = await Promise.all([

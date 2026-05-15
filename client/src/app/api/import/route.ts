@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
+import { requireAdminPermission } from '@/lib/apiAuth'
 import * as XLSX from 'xlsx-js-style'
 
 export const runtime = 'nodejs'
@@ -248,6 +249,9 @@ const resolveImportUser = async (supabase: SupabaseClient, email: string) => {
 
 export async function POST(req: Request) {
   try {
+    const authError = await requireAdminPermission(req, 'inventory')
+    if (authError) return authError
+
     const supabaseUrl = clean(process.env.NEXT_PUBLIC_SUPABASE_URL).replace(/\/+$/, '')
     const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 

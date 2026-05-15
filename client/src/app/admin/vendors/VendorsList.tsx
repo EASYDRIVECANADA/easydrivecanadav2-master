@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
+import { usePermissions } from '@/lib/permissions'
 
 type VendorRow = {
   id: string
@@ -14,6 +15,8 @@ type VendorRow = {
 
 export default function VendorsList({ compact }: { compact?: boolean }) {
   const router = useRouter()
+  const permissions = usePermissions()
+  const canDeleteVendors = permissions.canDelete('vendors')
   const [rows, setRows] = useState<VendorRow[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -62,30 +65,13 @@ export default function VendorsList({ compact }: { compact?: boolean }) {
 
   useEffect(() => {
     const load = async () => {
-      const id = await getLoggedInAdminDbUserId()
+      if (permissions.loading) return
+      const id = permissions.isAdmin ? null : await getLoggedInAdminDbUserId()
       setScopedUserId(id)
-
-      try {
-        const raw = typeof window !== 'undefined' ? window.localStorage.getItem('edc_admin_session') : null
-        const parsed = raw ? (JSON.parse(raw) as any) : null
-        const email = String(parsed?.email || '').trim().toLowerCase()
-        const uid = String(parsed?.user_id || '').trim()
-
-        const { data: byId } = uid
-          ? await supabase.from('users').select('role').eq('user_id', uid).maybeSingle()
-          : ({ data: null } as any)
-        const { data: byEmail } = !byId?.role && email
-          ? await supabase.from('users').select('role').eq('email', email).maybeSingle()
-          : ({ data: null } as any)
-
-        const r = String((byId as any)?.role ?? (byEmail as any)?.role ?? '').trim().toLowerCase()
-        setIsAdminRole(r === 'admin')
-      } catch {
-        setIsAdminRole(false)
-      }
+      setIsAdminRole(permissions.isAdmin)
     }
     void load()
-  }, [getLoggedInAdminDbUserId])
+  }, [getLoggedInAdminDbUserId, permissions.loading, permissions.isAdmin])
 
   const fetchRows = useCallback(async () => {
     setLoading(true)
@@ -147,6 +133,10 @@ export default function VendorsList({ compact }: { compact?: boolean }) {
   }
 
   const confirmDelete = (row: VendorRow) => {
+    if (!canDeleteVendors) {
+      setError('You do not have permission to delete vendors.')
+      return
+    }
     setConfirmTitle('Delete Vendor')
     setConfirmMessage(`Are you sure you want to delete "${row.vendor_name || ''}"?`)
     confirmActionRef.current = async () => {
@@ -159,6 +149,10 @@ export default function VendorsList({ compact }: { compact?: boolean }) {
   }
 
   const confirmBulkDelete = () => {
+    if (!canDeleteVendors) {
+      setError('You do not have permission to delete vendors.')
+      return
+    }
     const ids = Object.keys(checked).filter((k) => checked[k])
     if (!ids.length) return
     setConfirmTitle('Delete Vendors')
@@ -213,7 +207,7 @@ export default function VendorsList({ compact }: { compact?: boolean }) {
             placeholder="Search vendors..."
             className="h-10 w-64 max-w-full pl-4 pr-4 rounded-xl border border-slate-200 bg-white text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#1EA7FF]/30 focus:border-[#1EA7FF]/40 transition-all"
           />
-          {anyChecked ? (
+          {anyChecked && canDeleteVendors ? (
             <button
               type="button"
               onClick={confirmBulkDelete}
@@ -279,13 +273,15 @@ export default function VendorsList({ compact }: { compact?: boolean }) {
                 {/* Card header */}
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex items-start gap-2 min-w-0">
-                    <input
-                      type="checkbox"
-                      className="mt-0.5 h-4 w-4 shrink-0 accent-[#1EA7FF]"
-                      checked={!!checked[r.id]}
-                      onChange={(e) => setChecked((prev) => ({ ...prev, [r.id]: e.target.checked }))}
-                      aria-label={`Select ${r.vendor_name || ''}`}
-                    />
+                    {canDeleteVendors ? (
+                      <input
+                        type="checkbox"
+                        className="mt-0.5 h-4 w-4 shrink-0 accent-[#1EA7FF]"
+                        checked={!!checked[r.id]}
+                        onChange={(e) => setChecked((prev) => ({ ...prev, [r.id]: e.target.checked }))}
+                        aria-label={`Select ${r.vendor_name || ''}`}
+                      />
+                    ) : null}
                     <div className="font-semibold text-[#0B1F3A] leading-snug truncate">
                       {r.vendor_name || <span className="text-slate-400 italic">Unnamed</span>}
                     </div>
@@ -302,19 +298,21 @@ export default function VendorsList({ compact }: { compact?: boolean }) {
                         <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 3.5a2.121 2.121 0 113 3L7 19l-4 1 1-4 12.5-12.5z" />
                       </svg>
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => confirmDelete(r)}
-                      className="h-7 w-7 flex items-center justify-center rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors"
-                      title="Delete"
-                      aria-label="Delete"
-                    >
-                      <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7" />
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M10 11v6m4-6v6" />
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 7h6m2 0H7m2 0V5a2 2 0 012-2h2a2 2 0 012 2v2" />
-                      </svg>
-                    </button>
+                    {canDeleteVendors ? (
+                      <button
+                        type="button"
+                        onClick={() => confirmDelete(r)}
+                        className="h-7 w-7 flex items-center justify-center rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors"
+                        title="Delete"
+                        aria-label="Delete"
+                      >
+                        <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7" />
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M10 11v6m4-6v6" />
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M9 7h6m2 0H7m2 0V5a2 2 0 012-2h2a2 2 0 012 2v2" />
+                        </svg>
+                      </button>
+                    ) : null}
                   </div>
                 </div>
 

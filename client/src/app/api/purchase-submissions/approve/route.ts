@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import nodemailer from 'nodemailer'
+import { requireAdminPermission } from '@/lib/apiAuth'
 
 const supabaseUrl = (process.env.NEXT_PUBLIC_SUPABASE_URL || '').replace(/\/+$/, '')
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
@@ -38,6 +39,9 @@ async function supabasePatch(table: string, filter: string, data: Record<string,
 
 export async function POST(req: Request) {
   try {
+    const authError = await requireAdminPermission(req, 'approver')
+    if (authError) return authError
+
     const { submissionId, userId } = await req.json()
     if (!submissionId) return NextResponse.json({ error: 'Missing submissionId' }, { status: 400 })
 

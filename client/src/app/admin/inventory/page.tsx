@@ -5,6 +5,7 @@ import { motion } from 'framer-motion'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabaseClient'
+import { usePermissions } from '@/lib/permissions'
 import * as XLSX from 'xlsx-js-style'
 
 const VEHICLE_LIMITS: Record<string, number> = {
@@ -84,6 +85,8 @@ interface Vehicle {
 }
 
 export default function AdminInventoryPage() {
+  const permissions = usePermissions()
+  const canDeleteInventory = permissions.canDelete('inventory')
   const STATUS_OPTIONS = [
     'In Stock',
     'In Stock (No Feed)',
@@ -219,6 +222,7 @@ export default function AdminInventoryPage() {
   const getLoggedInAdminDbUserId = async (): Promise<string | null> => {
     try {
       if (typeof window === 'undefined') return null
+      if (permissions.isAdmin) return null
       const raw = window.localStorage.getItem('edc_admin_session')
       if (!raw) return null
       const parsed = JSON.parse(raw) as { email?: string; user_id?: string; role?: string }
@@ -399,20 +403,28 @@ export default function AdminInventoryPage() {
       router.push('/admin')
       return
     }
+    if (permissions.loading) return
     const boot = async () => {
       const uid = await getLoggedInAdminDbUserId()
       setScopedUserId(uid)
+      if (!permissions.isAdmin && !uid) {
+        setVehicles([])
+        setFilteredVehicles([])
+        setLoading(false)
+        return
+      }
       await checkCanAddVehicle(uid)
       await fetchVehicles(uid)
     }
     void boot()
-  }, [])
+  }, [permissions.loading, permissions.isAdmin])
 
   const checkCanAddVehicle = async (userId: string | null) => {
     try {
       setAddGateLoading(true)
       setAddGateReason('')
       setCanAddVehicle(true)
+      if (permissions.isAdmin) return
 
       // If user is an admin, skip restrictions
       try {
@@ -1017,6 +1029,10 @@ export default function AdminInventoryPage() {
 
   const handleDeleteSelected = () => {
     if (selectedIds.size === 0) return
+    if (!canDeleteInventory) {
+      openAlert('Permission required', 'You do not have permission to delete inventory.')
+      return
+    }
     const selected = vehicles.filter((v) => selectedIds.has(v.id))
     if (selected.length === 0) return
 
@@ -1078,16 +1094,22 @@ export default function AdminInventoryPage() {
   }
 
   const performBulkDelete = async (selectedVehicles: Vehicle[]) => {
+    if (!canDeleteInventory) {
+      throw new Error('You do not have permission to delete inventory.')
+    }
     const ids = Array.from(new Set(selectedVehicles.map((vehicle) => String(vehicle.id || '').trim()).filter(Boolean)))
     if (ids.length === 0) return { deletedCount: 0, failed: false }
 
     let email = ''
+    let token = ''
     try {
       const raw = typeof window !== 'undefined' ? window.localStorage.getItem('edc_admin_session') : null
-      const parsed = raw ? (JSON.parse(raw) as { email?: string }) : null
+      const parsed = raw ? (JSON.parse(raw) as { email?: string; session_token?: string; token?: string }) : null
       email = String(parsed?.email || '').trim().toLowerCase()
+      token = String(parsed?.session_token || parsed?.token || 'no-token').trim()
     } catch {
       email = ''
+      token = ''
     }
 
     let deletedCount = 0
@@ -1107,6 +1129,7 @@ export default function AdminInventoryPage() {
         headers: {
           'Content-Type': 'application/json',
           'x-admin-email': email,
+          'x-admin-token': token,
         },
         body: JSON.stringify({
           vehicleIds: idChunk,
@@ -1140,6 +1163,10 @@ export default function AdminInventoryPage() {
   }
 
   const performDelete = async (vehicle: Vehicle, showError = true): Promise<boolean> => {
+    if (!canDeleteInventory) {
+      openAlert('Permission required', 'You do not have permission to delete inventory.')
+      return false
+    }
     setDeleting(vehicle.id)
     try {
       // Delete related DB records
@@ -1225,6 +1252,10 @@ export default function AdminInventoryPage() {
   }
 
   const handleDelete = (vehicle: Vehicle) => {
+    if (!canDeleteInventory) {
+      openAlert('Permission required', 'You do not have permission to delete inventory.')
+      return
+    }
     openConfirm('Confirm delete', 'Are you sure you want to delete this vehicle and all related records?', async () => {
       setModalBusy(true)
       try {
@@ -1288,12 +1319,15 @@ export default function AdminInventoryPage() {
     setImporting(true)
     try {
       let email = ''
+      let token = ''
       try {
         const raw = typeof window !== 'undefined' ? window.localStorage.getItem('edc_admin_session') : null
-        const parsed = raw ? (JSON.parse(raw) as { email?: string }) : null
+        const parsed = raw ? (JSON.parse(raw) as { email?: string; session_token?: string; token?: string }) : null
         email = String(parsed?.email || '').trim().toLowerCase()
+        token = String(parsed?.session_token || parsed?.token || 'no-token').trim()
       } catch {
         email = ''
+        token = ''
       }
 
       const form = new FormData()
@@ -1304,6 +1338,7 @@ export default function AdminInventoryPage() {
         method: 'POST',
         headers: {
           'x-admin-email': email,
+          'x-admin-token': token,
         },
         body: form,
       })
@@ -1620,13 +1655,15 @@ export default function AdminInventoryPage() {
                 {selectedIds.size} selected
               </div>
               <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={handleDeleteSelected}
-                  className="edc-btn-danger text-sm"
-                >
-                  Delete
-                </button>
+                {canDeleteInventory ? (
+                  <button
+                    type="button"
+                    onClick={handleDeleteSelected}
+                    className="edc-btn-danger text-sm"
+                  >
+                    Delete
+                  </button>
+                ) : null}
                 <button
                   type="button"
                   onClick={handleExportSelected}
@@ -1774,16 +1811,18 @@ export default function AdminInventoryPage() {
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                             </svg>
                           </Link>
-                          <button
-                            type="button"
-                            onClick={() => handleDelete(vehicle)}
-                            className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                            title="Delete"
-                          >
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                            </svg>
-                          </button>
+                          {canDeleteInventory ? (
+                            <button
+                              type="button"
+                              onClick={() => handleDelete(vehicle)}
+                              className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                              title="Delete"
+                            >
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                              </svg>
+                            </button>
+                          ) : null}
                         </div>
                       </td>
                     </tr>

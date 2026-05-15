@@ -5,6 +5,7 @@ import Image from 'next/image'
 import { usePathname, useRouter } from 'next/navigation'
 import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
+import { usePermissions } from '@/lib/permissions'
 
 type AdminSession = {
   email?: string
@@ -27,6 +28,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
   const [reportsSalesOpen, setReportsSalesOpen] = useState(false)
   const [reportsInventoryOpen, setReportsInventoryOpen] = useState(false)
   const [showSignOutModal, setShowSignOutModal] = useState(false)
+  const permissionState = usePermissions()
 
   const accountMenuRef = useRef<HTMLDivElement | null>(null)
 
@@ -225,9 +227,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
     return (n[0] || 'A').toUpperCase()
   }, [accountFirstName])
 
-  const isAdminAccount = useMemo(() => {
-    return String(accountType || '').trim().toLowerCase() === 'admin'
-  }, [accountType])
+  const isAdminAccount = permissionState.isAdmin
 
   useEffect(() => {
     if (!accountMenuOpen) return
@@ -253,30 +253,31 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
   }, [accountMenuOpen])
 
   const navItems = useMemo(() => {
+    const can = permissionState.can
     const items = [
-      { href: '/admin', label: 'Home', icon: 'home', disabled: false },
-      { href: '/admin/leads', label: 'Leads', icon: 'phone', disabled: !isVerified },
-      { href: '/admin/customer?view=list', label: 'Customers', icon: 'users', disabled: !isVerified },
-      { href: '/admin/vendors', label: 'Vendors', icon: 'briefcase', disabled: !isVerified },
-      { href: '/admin/marketplace', label: 'Market Place', icon: 'market', disabled: !isVerified },
-      { href: '/admin/inventory', label: 'Inventory', icon: 'car', disabled: !isVerified },
-      { href: '/admin/sales', label: 'Sales', icon: 'dollar', disabled: false },
-      { href: '/admin/esignature', label: 'E-Signature', icon: 'pen', disabled: !isVerified },
-      { href: '/admin/reports', label: 'Reports', icon: 'file', disabled: !isVerified },
-      { href: '/admin/billing', label: 'Billing', icon: 'billing', disabled: !isVerified },
+      { href: '/admin', label: 'Home', icon: 'home', disabled: false, visible: true },
+      { href: '/admin/leads', label: 'Leads', icon: 'phone', disabled: !isVerified, visible: can('customers') || can('access_all_leads_customers') },
+      { href: '/admin/customer?view=list', label: 'Customers', icon: 'users', disabled: !isVerified, visible: can('customers') || can('access_all_leads_customers') },
+      { href: '/admin/vendors', label: 'Vendors', icon: 'briefcase', disabled: !isVerified, visible: can('vendors') },
+      { href: '/admin/marketplace', label: 'Market Place', icon: 'market', disabled: !isVerified, visible: true },
+      { href: '/admin/inventory', label: 'Inventory', icon: 'car', disabled: !isVerified, visible: can('inventory') },
+      { href: '/admin/sales', label: 'Sales', icon: 'dollar', disabled: false, visible: can('sales') || can('access_all_deals') },
+      { href: '/admin/esignature', label: 'E-Signature', icon: 'pen', disabled: !isVerified, visible: true },
+      { href: '/admin/reports', label: 'Reports', icon: 'file', disabled: !isVerified, visible: can('sales_reports_access') || can('inventory_reports_access') },
+      { href: '/admin/billing', label: 'Billing', icon: 'billing', disabled: !isVerified, visible: can('settings') },
     ]
 
     if (isAdminAccount) {
-      items.push({ href: '/admin/directory', label: 'Directory', icon: 'users', disabled: false })
+      items.push({ href: '/admin/directory', label: 'Directory', icon: 'users', disabled: false, visible: true })
     }
 
     const isMasterAccount = String(session?.email || '').trim().toLowerCase() === 'info@easydrivecanada.com'
-    if (isMasterAccount) {
-      items.push({ href: '/admin/configuration', label: 'Configuration', icon: 'config', disabled: !isVerified })
+    if (isMasterAccount || isAdminAccount) {
+      items.push({ href: '/admin/configuration', label: 'Configuration', icon: 'config', disabled: !isVerified, visible: true })
     }
 
-    return items
-  }, [isVerified, isAdminAccount])
+    return items.filter((item) => item.visible)
+  }, [isVerified, isAdminAccount, permissionState.can, session?.email])
 
   const salesSubItems = useMemo(
     () => [
@@ -291,8 +292,8 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
     () => [
       { href: '/admin/reports/sales/sales-report', label: 'Sales Report' },
       { href: '/admin/reports/sales/transaction-fee-report', label: 'Transaction Fee Report' },
-    ],
-    []
+    ].filter(() => permissionState.can('sales_reports_access')),
+    [permissionState]
   )
 
   const reportsInventoryItems = useMemo(
@@ -302,8 +303,8 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
       { href: '/admin/reports/inventory/garage-register', label: 'Garage Register' },
       { href: '/admin/reports/inventory/inventory-value', label: 'Inventory Value' },
       { href: '/admin/reports/inventory/inventory-costs', label: 'Inventory Costs' },
-    ],
-    []
+    ].filter((item) => permissionState.can('inventory_reports_access') && (item.href.endsWith('/inventory-costs') ? permissionState.can('costs') : true)),
+    [permissionState]
   )
 
   const handleSignOut = async () => {
@@ -333,6 +334,8 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
     }
     window.location.href = '/'
   }
+
+  const routeDenied = isAuthed && !permissionState.loading && !permissionState.canAccessRoute(pathname)
 
   return (
     <div className="min-h-screen">
@@ -740,7 +743,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
             </header>
           ) : null}
           <main style={{ backgroundColor: '#ffffff', minHeight: '100vh' }}>
-            {children}
+            {routeDenied ? <AccessDenied /> : children}
           </main>
         </div>
       </div>
@@ -779,6 +782,31 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
           </div>
         </div>
       ) : null}
+    </div>
+  )
+}
+
+function AccessDenied() {
+  const router = useRouter()
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      router.replace('/admin')
+    }, 2200)
+    return () => window.clearTimeout(timer)
+  }, [router])
+
+  return (
+    <div className="flex min-h-[70vh] items-center justify-center px-6">
+      <div className="max-w-md rounded-2xl border border-slate-200 bg-white p-6 text-center shadow-sm">
+        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-red-50 text-red-600">
+          <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M12 9v4m0 4h.01M5.07 19h13.86a2 2 0 001.73-3L13.73 4a2 2 0 00-3.46 0L3.34 16a2 2 0 001.73 3z" />
+          </svg>
+        </div>
+        <h1 className="mt-4 text-lg font-semibold text-slate-900">Access denied</h1>
+        <p className="mt-2 text-sm text-slate-500">You do not have permission to open this area. Returning to the dashboard.</p>
+      </div>
     </div>
   )
 }
