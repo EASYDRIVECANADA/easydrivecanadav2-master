@@ -54,7 +54,6 @@ export async function POST(request: Request) {
 
     // Map both contact_form and financing_application payloads into edc_leads columns
     const insert: Record<string, any> = {
-      source,
       email: clean(body?.email).toLowerCase() || null,
       phone: clean(body?.phone) || null,
       message: clean(body?.message) || null,
@@ -65,39 +64,49 @@ export async function POST(request: Request) {
       const name = clean(body?.name)
       insert.first_name = name.split(' ')[0] || null
       insert.last_name = name.split(' ').slice(1).join(' ') || null
-      insert.subject = clean(body?.subject) || null
+      insert.message = buildMessage([
+        ['Source', 'EasyDrive Contact'],
+        ['Subject', body?.subject],
+        ['Message', body?.message],
+      ]) || null
     }
 
     if (source === 'financing_application') {
       const annualIncome = toNumberOrNull(body?.annualIncome)
       insert.first_name = clean(body?.firstName) || null
       insert.last_name = clean(body?.lastName) || null
-      insert.date_of_birth = clean(body?.dateOfBirth) || null
       insert.monthly_income = annualIncome === null ? null : Math.round(annualIncome / 12)
-      insert.street_address = clean(body?.streetAddress) || null
-      insert.city = clean(body?.city) || null
-      insert.province = clean(body?.province) || null
-      insert.postal_code = clean(body?.postalCode) || null
       insert.employment_status = clean(body?.employmentStatus) || null
       insert.down_payment = toNumberOrNull(body?.downPayment)
       insert.credit_score = clean(body?.creditProfile) || null
+      insert.message = buildMessage([
+        ['Source', 'EasyDrive Finance'],
+        ['Date of birth', body?.dateOfBirth],
+        ['Street address', body?.streetAddress],
+        ['City', body?.city],
+        ['Province', body?.province],
+        ['Postal code', body?.postalCode],
+        ['Residency status', body?.residencyStatus],
+        ['Co-applicant', body?.coApplicant],
+      ]) || null
     }
 
     if (source === 'easydrivefinance.ca') {
       insert.first_name = clean(body?.firstName) || null
       insert.last_name = clean(body?.lastName) || null
-      insert.date_of_birth = clean(body?.dob) || null
       insert.monthly_income = toMonthlyIncome(body?.income)
-      insert.street_address = clean(body?.addressStreet) || null
-      insert.suite_unit = clean(body?.addressUnit) || null
-      insert.city = clean(body?.addressCity) || null
-      insert.province = clean(body?.addressProvince) || null
-      insert.postal_code = clean(body?.addressPostalCode) || null
       insert.employment_status = clean(body?.employment) || null
       insert.down_payment = toNumberOrNull(body?.downPayment)
       insert.credit_score = clean(body?.credit) || null
       insert.message = buildMessage([
+        ['Source', 'easydrivefinance.ca'],
+        ['Date of birth', body?.dob],
         ['Address', body?.address],
+        ['Street address', body?.addressStreet],
+        ['Unit', body?.addressUnit],
+        ['City', body?.addressCity],
+        ['Province', body?.addressProvince],
+        ['Postal code', body?.addressPostalCode],
         ['Canadian resident', body?.isCanadianResident],
         ['Time at address', body?.addressDuration],
         ['Employer', body?.employerName],
@@ -110,18 +119,19 @@ export async function POST(request: Request) {
     if (source === 'easydriveinsurance.ca' || source === 'insurance.easydrivecanada.com') {
       insert.first_name = clean(body?.firstName) || null
       insert.last_name = clean(body?.lastName) || null
-      insert.street_address = clean(body?.streetAddress) || null
-      insert.suite_unit = clean(body?.unitApartment) || null
-      insert.city = clean(body?.city) || null
-      insert.province = clean(body?.province) || null
-      insert.postal_code = clean(body?.postalCode) || null
       insert.vehicle_interest = [body?.vehicleYear, body?.vehicleMake, body?.vehicleModel]
         .map(clean)
         .filter(Boolean)
         .join(' ') || null
       insert.message = buildMessage([
+        ['Source', 'insurance.easydrivecanada.com'],
         ['License number', body?.licenseNumber],
         ['Address', body?.address],
+        ['Street address', body?.streetAddress],
+        ['Unit', body?.unitApartment],
+        ['City', body?.city],
+        ['Province', body?.province],
+        ['Postal code', body?.postalCode],
         ['VIN', body?.vin],
         ['Canadian resident address', body?.canadianResidentAddress],
         ['Consent to contact', body?.consentContact],

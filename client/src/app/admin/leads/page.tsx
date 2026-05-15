@@ -18,7 +18,6 @@ interface Lead {
   downPayment: number | null
   creditScore: string | null
   ghlSynced: boolean
-  source: string | null
   createdAt: string
 }
 
@@ -46,7 +45,7 @@ export default function AdminLeadsPage() {
     try {
       const { data, error } = await supabase
         .from('edc_leads')
-        .select('id, first_name, last_name, email, phone, vehicle_interest, message, employment_status, monthly_income, down_payment, credit_score, ghl_synced, source, created_at')
+        .select('id, first_name, last_name, email, phone, vehicle_interest, message, employment_status, monthly_income, down_payment, credit_score, ghl_synced, created_at')
         .order('created_at', { ascending: false })
 
       if (error) throw error
@@ -64,7 +63,6 @@ export default function AdminLeadsPage() {
         downPayment: l.down_payment ?? null,
         creditScore: l.credit_score ?? null,
         ghlSynced: !!l.ghl_synced,
-        source: l.source ?? null,
         createdAt: l.created_at,
       }))
 
@@ -97,7 +95,7 @@ export default function AdminLeadsPage() {
       lead.email.toLowerCase().includes(query) ||
       lead.phone?.toLowerCase().includes(query) ||
       lead.vehicleInterest?.toLowerCase().includes(query) ||
-      lead.source?.toLowerCase().includes(query) ||
+      lead.message?.toLowerCase().includes(query) ||
       `${lead.firstName} ${lead.lastName}`.toLowerCase().includes(query)
     )
     
@@ -135,22 +133,6 @@ export default function AdminLeadsPage() {
       hour: '2-digit',
       minute: '2-digit',
     })
-  }
-
-  const formatSource = (source: string | null) => {
-    switch (source) {
-      case 'contact_form':
-        return 'EasyDrive Contact'
-      case 'financing_application':
-        return 'EasyDrive Finance'
-      case 'easydrivefinance.ca':
-        return 'easydrivefinance.ca'
-      case 'easydriveinsurance.ca':
-      case 'insurance.easydrivecanada.com':
-        return 'Insurance'
-      default:
-        return source || 'Unknown'
-    }
   }
 
   return (
@@ -225,7 +207,6 @@ export default function AdminLeadsPage() {
                       <tr>
                         <th>Name</th>
                         <th>Contact</th>
-                        <th>Source</th>
                         <th>Vehicle Interest</th>
                         <th>Date</th>
                         <th>Status</th>
@@ -246,9 +227,6 @@ export default function AdminLeadsPage() {
                           <td className="px-6 py-4">
                             <div className="text-sm text-slate-700">{lead.email}</div>
                             <div className="text-sm text-slate-500">{lead.phone}</div>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600">
-                            {formatSource(lead.source)}
                           </td>
                           <td className="px-6 py-4">
                             <div className="text-sm text-slate-700 max-w-xs truncate">
@@ -336,10 +314,6 @@ export default function AdminLeadsPage() {
                             <span className="font-medium">Interest:</span> {lead.vehicleInterest}
                           </div>
                         )}
-
-                        <div className="mb-2 text-sm text-gray-600">
-                          <span className="font-medium">Source:</span> {formatSource(lead.source)}
-                        </div>
 
                         <div className="text-xs text-gray-500">
                           {formatDate(lead.createdAt)}
@@ -492,11 +466,6 @@ export default function AdminLeadsPage() {
                     </div>
                   )}
 
-                  <div>
-                    <label className="text-sm text-gray-500">Source</label>
-                    <p className="font-medium">{formatSource(selectedLead.source)}</p>
-                  </div>
-
                   {selectedLead.employmentStatus && (
                     <div>
                       <label className="text-sm text-gray-500">Employment Status</label>
@@ -614,11 +583,6 @@ export default function AdminLeadsPage() {
                     <p className="font-medium">{selectedLead.vehicleInterest}</p>
                   </div>
                 )}
-
-                <div>
-                  <label className="text-sm text-gray-500">Source</label>
-                  <p className="font-medium">{formatSource(selectedLead.source)}</p>
-                </div>
 
                 {selectedLead.employmentStatus && (
                   <div>
