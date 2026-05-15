@@ -140,8 +140,8 @@ const UsersTab = forwardRef<UsersTabHandle>(function UsersTab(_, ref) {
           password: '',
           profile: data.profile || '',
           balance: data.balance || '',
-          assign_credits: data.assign_credits || '',
-          assign_unlimited_until: data.assign_unlimited_until || '',
+          assign_credits: data.esign_credits || '',
+          assign_unlimited_until: data.esign_unlimited_until || '',
           status: data.status || '',
           subscription_end: data.subscription_end || '',
           account: data.account || '',
@@ -185,8 +185,8 @@ const UsersTab = forwardRef<UsersTabHandle>(function UsersTab(_, ref) {
         twitter: editForm.twitter || null,
         profile: editForm.profile || null,
         balance: editForm.balance || null,
-        assign_credits: editForm.assign_credits || null,
-        assign_unlimited_until: editForm.assign_unlimited_until || null,
+        esign_credits: editForm.assign_credits || null,
+        esign_unlimited_until: editForm.assign_unlimited_until || null,
         status: editForm.status || null,
         subscription_end: editForm.subscription_end || null,
         account: editForm.account || null,
@@ -617,7 +617,7 @@ const UsersTab = forwardRef<UsersTabHandle>(function UsersTab(_, ref) {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Assign Credits</label>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">E-Sign Credits</label>
                   <input
                     type="text"
                     value={editForm.assign_credits}
@@ -638,7 +638,7 @@ const UsersTab = forwardRef<UsersTabHandle>(function UsersTab(_, ref) {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Assign Unlimited Until</label>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">E-Sign Unlimited Until</label>
                   <input
                     type="date"
                     value={editForm.assign_unlimited_until}
