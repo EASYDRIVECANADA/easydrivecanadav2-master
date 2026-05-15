@@ -32,6 +32,7 @@ interface Lead {
   monthlyIncome: number | null
   downPayment: number | null
   creditScore: string | null
+  adminNotes: string | null
   ghlSynced: boolean
   createdAt: string
 }
@@ -48,6 +49,7 @@ type LeadRow = {
   monthly_income: number | null
   down_payment: number | null
   credit_score: string | null
+  admin_notes?: string | null
   ghl_synced: boolean | null
   created_at: string
 }
@@ -58,7 +60,7 @@ type SourceKey = 'finance' | 'insurance' | 'contact' | 'unknown'
 const FILTERS: Array<{ key: FilterKey; label: string }> = [
   { key: 'all', label: 'All' },
   { key: 'new', label: 'New' },
-  { key: 'synced', label: 'GHL Synced' },
+  { key: 'synced', label: 'Handled' },
   { key: 'finance', label: 'Finance' },
   { key: 'insurance', label: 'Insurance' },
   { key: 'contact', label: 'Contact' },
@@ -94,10 +96,13 @@ const sourceFromLead = (lead: Lead): SourceKey => {
   const { rows } = parseMessageFields(lead.message)
   const source = clean(rows.find((row) => row.label.toLowerCase() === 'source')?.value).toLowerCase()
   const message = clean(lead.message).toLowerCase()
+  const labels = rows.map((row) => row.label.toLowerCase())
 
   if (source.includes('insurance') || message.includes('license number')) return 'insurance'
   if (source.includes('finance') || source.includes('financing') || source.includes('easydrivefinance')) return 'finance'
   if (source.includes('contact')) return 'contact'
+  if (labels.includes('subject') || labels.includes('message')) return 'contact'
+  if (lead.message && !lead.vehicleInterest && !lead.employmentStatus && !lead.monthlyIncome && !lead.downPayment && !lead.creditScore) return 'contact'
   return 'unknown'
 }
 
@@ -152,6 +157,10 @@ export default function AdminLeadsPage() {
   const [leads, setLeads] = useState<Lead[]>([])
   const [loading, setLoading] = useState(true)
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null)
+  const [notesDraft, setNotesDraft] = useState('')
+  const [savingNotes, setSavingNotes] = useState(false)
+  const [notesEnabled, setNotesEnabled] = useState(true)
+  const [notesSaveError, setNotesSaveError] = useState('')
   const [searchQuery, setSearchQuery] = useState('')
   const [activeFilter, setActiveFilter] = useState<FilterKey>('all')
   const [currentPage, setCurrentPage] = useState(1)
@@ -169,11 +178,24 @@ export default function AdminLeadsPage() {
 
   const fetchLeads = async () => {
     try {
-      const { data, error } = await supabase
+      const baseSelect = 'id, first_name, last_name, email, phone, vehicle_interest, message, employment_status, monthly_income, down_payment, credit_score, ghl_synced, created_at'
+      const withNotesSelect = `${baseSelect}, admin_notes`
+      let result = await supabase
         .from('edc_leads')
-        .select('id, first_name, last_name, email, phone, vehicle_interest, message, employment_status, monthly_income, down_payment, credit_score, ghl_synced, created_at')
+        .select(withNotesSelect)
         .order('created_at', { ascending: false })
 
+      if (result.error && /admin_notes|column|schema cache/i.test(result.error.message || '')) {
+        setNotesEnabled(false)
+        result = await supabase
+          .from('edc_leads')
+          .select(baseSelect)
+          .order('created_at', { ascending: false })
+      } else {
+        setNotesEnabled(true)
+      }
+
+      const { data, error } = result
       if (error) throw error
 
       const mapped: Lead[] = ((data || []) as LeadRow[]).map((l) => ({
@@ -188,6 +210,7 @@ export default function AdminLeadsPage() {
         monthlyIncome: l.monthly_income ?? null,
         downPayment: l.down_payment ?? null,
         creditScore: l.credit_score ?? null,
+        adminNotes: l.admin_notes ?? null,
         ghlSynced: !!l.ghl_synced,
         createdAt: l.created_at,
       }))
@@ -235,6 +258,7 @@ export default function AdminLeadsPage() {
         lead.phone,
         lead.vehicleInterest,
         lead.message,
+        lead.adminNotes,
         sourceLabel(source),
         lead.employmentStatus,
         lead.creditScore,
@@ -250,6 +274,11 @@ export default function AdminLeadsPage() {
   useEffect(() => {
     setCurrentPage(1)
   }, [activeFilter, searchQuery])
+
+  useEffect(() => {
+    setNotesDraft(selectedLead?.adminNotes || '')
+    setNotesSaveError('')
+  }, [selectedLead?.id, selectedLead?.adminNotes])
 
   const paginatedLeads = filteredLeads.slice(
     (currentPage - 1) * itemsPerPage,
@@ -267,6 +296,35 @@ export default function AdminLeadsPage() {
       setSelectedLead((current) => (current?.id === lead.id ? null : current))
     } catch (error) {
       console.error('Error deleting lead:', error)
+    }
+  }
+
+  const handleSaveNotes = async (lead: Lead) => {
+    if (!notesEnabled) {
+      setNotesSaveError('Apply the admin_notes database column before saving notes.')
+      return
+    }
+
+    setSavingNotes(true)
+    setNotesSaveError('')
+
+    const nextNotes = notesDraft.trim() || null
+
+    try {
+      const { error } = await supabase
+        .from('edc_leads')
+        .update({ admin_notes: nextNotes })
+        .eq('id', lead.id)
+
+      if (error) throw error
+
+      setLeads((rows) => rows.map((row) => (row.id === lead.id ? { ...row, adminNotes: nextNotes } : row)))
+      setSelectedLead((current) => (current?.id === lead.id ? { ...current, adminNotes: nextNotes } : current))
+    } catch (error) {
+      console.error('Error saving lead notes:', error)
+      setNotesSaveError('Unable to save notes. Check that admin_notes exists on edc_leads.')
+    } finally {
+      setSavingNotes(false)
     }
   }
 
@@ -289,7 +347,7 @@ export default function AdminLeadsPage() {
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 xl:min-w-[520px]">
               <StatCard icon={Users} label="Total" value={stats.total} tone="slate" />
               <StatCard icon={Clock3} label="New" value={stats.new} tone="blue" />
-              <StatCard icon={CheckCircle2} label="Synced" value={stats.synced} tone="emerald" />
+              <StatCard icon={CheckCircle2} label="Handled" value={stats.synced} tone="emerald" />
               <StatCard icon={BadgeCheck} label="Today" value={stats.today} tone="amber" />
             </div>
           </div>
@@ -407,12 +465,18 @@ export default function AdminLeadsPage() {
           </div>
 
           {selectedLead && (
-            <aside className="hidden w-[400px] shrink-0 xl:block">
+            <aside className="hidden w-[430px] shrink-0 xl:block">
               <LeadDetailPanel
                 lead={selectedLead}
                 fields={selectedLeadFields}
                 onClose={() => setSelectedLead(null)}
                 onDelete={handleDelete}
+                notesDraft={notesDraft}
+                onNotesChange={setNotesDraft}
+                onSaveNotes={handleSaveNotes}
+                savingNotes={savingNotes}
+                notesEnabled={notesEnabled}
+                notesSaveError={notesSaveError}
               />
             </aside>
           )}
@@ -433,6 +497,12 @@ export default function AdminLeadsPage() {
               fields={selectedLeadFields}
               onClose={() => setSelectedLead(null)}
               onDelete={handleDelete}
+              notesDraft={notesDraft}
+              onNotesChange={setNotesDraft}
+              onSaveNotes={handleSaveNotes}
+              savingNotes={savingNotes}
+              notesEnabled={notesEnabled}
+              notesSaveError={notesSaveError}
               compact
             />
           </div>
@@ -603,53 +673,72 @@ function LeadDetailPanel({
   fields,
   onClose,
   onDelete,
+  notesDraft,
+  onNotesChange,
+  onSaveNotes,
+  savingNotes,
+  notesEnabled,
+  notesSaveError,
   compact = false,
 }: {
   lead: Lead
   fields: { rows: Array<{ label: string; value: string }>; notes: string[] }
   onClose: () => void
   onDelete: (lead: Lead) => void
+  notesDraft: string
+  onNotesChange: (value: string) => void
+  onSaveNotes: (lead: Lead) => void
+  savingNotes: boolean
+  notesEnabled: boolean
+  notesSaveError: string
   compact?: boolean
 }) {
   const source = sourceFromLead(lead)
   const sourceRows = fields.rows.filter((row) => row.label.toLowerCase() !== 'source')
+  const primaryIntent = lead.vehicleInterest || intentFallback(lead)
 
   return (
-    <div className={compact ? 'p-5' : 'sticky top-20 rounded-2xl border border-slate-200 bg-white p-5 shadow-card'}>
-      <div className="flex items-start justify-between gap-4">
-        <div className="min-w-0">
-          <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#0B1F3A] text-sm font-bold text-white">
+    <div className={compact ? 'overflow-hidden' : 'sticky top-20 max-h-[calc(100vh-6.5rem)] overflow-y-auto rounded-2xl border border-slate-200 bg-white shadow-card'}>
+      <div className="border-b border-slate-200 bg-slate-50/70 p-5">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex min-w-0 items-start gap-3">
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-[#0B1F3A] text-sm font-bold text-white shadow-sm">
               {leadInitials(lead)}
             </div>
-            <div className="min-w-0">
-              <h2 className="truncate text-base font-bold text-slate-950">{leadName(lead)}</h2>
-              <div className="mt-1 flex flex-wrap gap-1.5">
-                <span className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 ring-inset ${sourcePillClass(source)}`}>
+            <div className="min-w-0 pt-0.5">
+              <h2 className="break-words text-lg font-bold leading-tight text-slate-950">{leadName(lead)}</h2>
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                <span className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold ring-1 ring-inset ${sourcePillClass(source)}`}>
                   {sourceLabel(source)}
                 </span>
                 <StatusBadge synced={lead.ghlSynced} />
               </div>
             </div>
           </div>
+          <button type="button" onClick={onClose} className="shrink-0 rounded-xl p-2 text-slate-400 transition-colors hover:bg-white hover:text-slate-700" aria-label="Close lead details">
+            <X className="h-4 w-4" />
+          </button>
         </div>
-        <button type="button" onClick={onClose} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700" aria-label="Close lead details">
-          <X className="h-4 w-4" />
-        </button>
+
+        <div className="mt-4 rounded-xl border border-slate-200 bg-white px-3 py-2.5">
+          <div className="text-[11px] font-semibold uppercase text-slate-400">Intent</div>
+          <div className="mt-1 line-clamp-2 text-sm font-semibold text-slate-900">{primaryIntent}</div>
+          <div className="mt-1 text-xs text-slate-500">Received {formatDate(lead.createdAt)}</div>
+        </div>
+
+        <div className="mt-4 grid grid-cols-2 gap-2">
+          <a href={lead.email ? `mailto:${lead.email}` : undefined} className={`edc-btn-primary h-10 text-xs ${lead.email ? '' : 'pointer-events-none opacity-50'}`}>
+            <Mail className="h-4 w-4" />
+            Email lead
+          </a>
+          <a href={lead.phone ? `tel:${lead.phone}` : undefined} className={`edc-btn-ghost h-10 bg-white text-xs ${lead.phone ? '' : 'pointer-events-none opacity-50'}`}>
+            <Phone className="h-4 w-4" />
+            Call
+          </a>
+        </div>
       </div>
 
-      <div className="mt-5 grid grid-cols-2 gap-2">
-        <a href={lead.email ? `mailto:${lead.email}` : undefined} className={`edc-btn-primary h-10 text-xs ${lead.email ? '' : 'pointer-events-none opacity-50'}`}>
-          <Mail className="h-4 w-4" />
-          Email
-        </a>
-        <a href={lead.phone ? `tel:${lead.phone}` : undefined} className={`edc-btn-ghost h-10 text-xs ${lead.phone ? '' : 'pointer-events-none opacity-50'}`}>
-          <Phone className="h-4 w-4" />
-          Call
-        </a>
-      </div>
-
-      <div className="mt-5 space-y-5">
+      <div className="space-y-5 p-5">
         <DetailSection title="Contact" icon={UserRound}>
           <DetailRow label="Email" value={lead.email} href={lead.email ? `mailto:${lead.email}` : undefined} />
           <DetailRow label="Phone" value={lead.phone} href={lead.phone ? `tel:${lead.phone}` : undefined} />
@@ -657,12 +746,22 @@ function LeadDetailPanel({
         </DetailSection>
 
         <DetailSection title="Intent" icon={Car}>
-          <DetailRow label="Vehicle interest" value={lead.vehicleInterest || intentFallback(lead)} />
+          <DetailRow label="Vehicle interest" value={primaryIntent} />
           <DetailRow label="Employment" value={lead.employmentStatus} />
           <DetailRow label="Monthly income" value={formatMoney(lead.monthlyIncome)} />
           <DetailRow label="Down payment" value={formatMoney(lead.downPayment)} />
           <DetailRow label="Credit score" value={lead.creditScore} />
         </DetailSection>
+
+        <LeadNotesSection
+          value={notesDraft}
+          savedValue={lead.adminNotes || ''}
+          onChange={onNotesChange}
+          onSave={() => onSaveNotes(lead)}
+          saving={savingNotes}
+          enabled={notesEnabled}
+          error={notesSaveError}
+        />
 
         {(sourceRows.length > 0 || fields.notes.length > 0) && (
           <DetailSection title="Submitted details" icon={MessageSquare}>
@@ -674,24 +773,79 @@ function LeadDetailPanel({
             ))}
           </DetailSection>
         )}
-      </div>
 
-      <button type="button" onClick={() => onDelete(lead)} className="edc-btn-danger mt-6 h-10 w-full text-xs">
-        <Trash2 className="h-4 w-4" />
-        Delete lead
-      </button>
+        <button type="button" onClick={() => onDelete(lead)} className="edc-btn-danger h-10 w-full text-xs">
+          <Trash2 className="h-4 w-4" />
+          Delete lead
+        </button>
+      </div>
     </div>
+  )
+}
+
+function LeadNotesSection({
+  value,
+  savedValue,
+  onChange,
+  onSave,
+  saving,
+  enabled,
+  error,
+}: {
+  value: string
+  savedValue: string
+  onChange: (value: string) => void
+  onSave: () => void
+  saving: boolean
+  enabled: boolean
+  error: string
+}) {
+  const isDirty = value.trim() !== savedValue.trim()
+
+  return (
+    <section>
+      <div className="mb-2 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2 text-[11px] font-bold uppercase text-slate-500">
+          <MessageSquare className="h-4 w-4 text-[#1EA7FF]" />
+          Notes
+        </div>
+        <button
+          type="button"
+          onClick={onSave}
+          disabled={!enabled || !isDirty || saving}
+          className="h-8 rounded-lg bg-[#0B1F3A] px-3 text-xs font-semibold text-white transition-colors hover:bg-[#12345d] disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400"
+        >
+          {saving ? 'Saving...' : 'Save'}
+        </button>
+      </div>
+      <div className="rounded-xl border border-slate-200 bg-white p-3">
+        <textarea
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          disabled={!enabled}
+          rows={5}
+          placeholder={enabled ? 'Add internal notes for this lead...' : 'Apply the admin_notes database column to enable lead notes.'}
+          className="min-h-[112px] w-full resize-y rounded-lg border border-slate-200 bg-slate-50/70 px-3 py-2 text-sm text-slate-800 outline-none transition focus:border-[#1EA7FF]/50 focus:bg-white focus:ring-2 focus:ring-[#1EA7FF]/20 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+        />
+        <div className="mt-2 flex items-center justify-between gap-3 text-xs">
+          <span className={error ? 'text-red-600' : 'text-slate-400'}>
+            {error || (isDirty ? 'Unsaved changes' : value.trim() ? 'Notes saved' : 'No notes yet')}
+          </span>
+          <span className="shrink-0 text-slate-400">{value.length} chars</span>
+        </div>
+      </div>
+    </section>
   )
 }
 
 function DetailSection({ title, icon: Icon, children }: { title: string; icon: typeof UserRound; children: React.ReactNode }) {
   return (
     <section>
-      <div className="mb-2 flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-slate-500">
+      <div className="mb-2 flex items-center gap-2 text-[11px] font-bold uppercase text-slate-500">
         <Icon className="h-4 w-4 text-[#1EA7FF]" />
         {title}
       </div>
-      <div className="divide-y divide-slate-100 rounded-xl border border-slate-200 bg-slate-50/50">
+      <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
         {children}
       </div>
     </section>
@@ -701,12 +855,12 @@ function DetailSection({ title, icon: Icon, children }: { title: string; icon: t
 function DetailRow({ label, value, href }: { label: string; value?: string | null; href?: string }) {
   const display = clean(value) || 'Not provided'
   return (
-    <div className="grid grid-cols-[120px_1fr] gap-3 px-3 py-2.5 text-sm">
-      <div className="text-xs font-medium text-slate-500">{label}</div>
+    <div className="grid grid-cols-[112px_1fr] gap-3 border-b border-slate-100 px-3 py-3 text-sm last:border-b-0">
+      <div className="text-xs font-medium leading-5 text-slate-500">{label}</div>
       {href && clean(value) ? (
         <a href={href} className="min-w-0 break-words font-medium text-[#0877bd] hover:underline">{display}</a>
       ) : (
-        <div className={`min-w-0 break-words ${clean(value) ? 'font-medium text-slate-800' : 'text-slate-400'}`}>{display}</div>
+        <div className={`min-w-0 break-words leading-5 ${clean(value) ? 'font-medium text-slate-800' : 'text-slate-400'}`}>{display}</div>
       )}
     </div>
   )
@@ -714,7 +868,7 @@ function DetailRow({ label, value, href }: { label: string; value?: string | nul
 
 function StatusBadge({ synced }: { synced: boolean }) {
   return synced ? (
-    <span className="edc-badge-success">GHL Synced</span>
+    <span className="edc-badge-success">Handled</span>
   ) : (
     <span className="edc-badge-neutral">New</span>
   )
