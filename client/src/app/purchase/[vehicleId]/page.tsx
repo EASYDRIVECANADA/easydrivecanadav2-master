@@ -68,6 +68,8 @@ interface PricingBreakdown {
   lineItems: PricingLineItem[]
   addOns: Array<{ id: string; label: string; amount: number; taxable: boolean }>
   warrantyLine: { label: string; amount: number; baseAmount: number; addOns: Array<{ label: string; amount: number }> } | null
+  couponCode: string | null
+  couponDiscount: number
   hst: number; total: number; deposit: number; balanceDue: number
 }
 
@@ -131,6 +133,8 @@ const BRAND_BLUE = '#1aa6ff'
 
 const DEPOSIT = 1000
 const HST_RATE = 0.13
+const WARRANTY_COUPON_CODE = 'EDCSAVE854'
+const WARRANTY_COUPON_DISCOUNT = 854
 const PREMIER_DOC_FEE_LIST = 999
 const PREMIER_ADMIN_FEE_LIST = 999
 const PREMIER_OMVIC_FEE = 22
@@ -182,6 +186,7 @@ function computePricing(
   category: string,
   selectedAddOnIds: AddOnId[] = [],
   warranty: WarrantySelection | null = null,
+  couponCode: string = '',
 ): PricingBreakdown {
   const lineItems: PricingLineItem[] = []
 
@@ -211,20 +216,27 @@ function computePricing(
     : null
 
   const warrantyAmount = warranty?.total ?? 0
+  const normalizedCouponCode = couponCode.trim().toUpperCase()
+  const couponQualifies = normalizedCouponCode === WARRANTY_COUPON_CODE && warrantyAmount >= WARRANTY_COUPON_DISCOUNT
+  const couponDiscount = couponQualifies ? WARRANTY_COUPON_DISCOUNT : 0
 
   const taxableBase =
     salePrice +
     lineItems.filter(l => l.taxable).reduce((s, l) => s + l.amount, 0) +
     addOns.filter(a => a.taxable).reduce((s, a) => s + a.amount, 0) +
-    warrantyAmount
+    warrantyAmount -
+    couponDiscount
 
-  const hst = Math.round(taxableBase * HST_RATE)
+  const hst = Math.round(Math.max(0, taxableBase) * HST_RATE)
   const lineSum = lineItems.reduce((s, l) => s + l.amount, 0)
   const addOnSum = addOns.reduce((s, a) => s + a.amount, 0)
-  const total = salePrice + lineSum + addOnSum + warrantyAmount + hst
+  const total = salePrice + lineSum + addOnSum + warrantyAmount - couponDiscount + hst
 
   return {
-    salePrice, lineItems, addOns, warrantyLine, hst, total,
+    salePrice, lineItems, addOns, warrantyLine,
+    couponCode: couponDiscount > 0 ? WARRANTY_COUPON_CODE : null,
+    couponDiscount,
+    hst, total,
     deposit: DEPOSIT, balanceDue: total - DEPOSIT,
   }
 }
@@ -352,6 +364,9 @@ export default function PurchasePage() {
   const [warrantyTermsAck,  setWarrantyTermsAck]  = useState(false)
 
   const [selectedAddOns, setSelectedAddOns] = useState<AddOnId[]>([])
+  const [couponCode, setCouponCode] = useState('')
+  const [appliedCouponCode, setAppliedCouponCode] = useState('')
+  const [couponError, setCouponError] = useState<string | null>(null)
 
   const [carfaxInitial,  setCarfaxInitial]  = useState<string | null>(null)
   const [carfaxAck,      setCarfaxAck]      = useState(false)
@@ -377,9 +392,56 @@ export default function PurchasePage() {
   const [submitError, setSubmitError] = useState<string | null>(null)
 
   const pricing = useMemo(
-    () => vehicle ? computePricing(vehicle.price, vehicle.category, selectedAddOns, warrantySelection) : null,
-    [vehicle, selectedAddOns, warrantySelection],
+    () => vehicle ? computePricing(vehicle.price, vehicle.category, selectedAddOns, warrantySelection, appliedCouponCode) : null,
+    [vehicle, selectedAddOns, warrantySelection, appliedCouponCode],
   )
+
+  useEffect(() => {
+    if (appliedCouponCode !== WARRANTY_COUPON_CODE) return
+    if (warrantySelection && warrantySelection.total >= WARRANTY_COUPON_DISCOUNT) {
+      setCouponError(null)
+      return
+    }
+    setAppliedCouponCode('')
+    setCouponError(`Coupon removed. Select a warranty of $${fmt(WARRANTY_COUPON_DISCOUNT)} or more to use ${WARRANTY_COUPON_CODE}.`)
+  }, [appliedCouponCode, warrantySelection])
+
+  const applyCoupon = () => {
+    const normalized = couponCode.trim().toUpperCase()
+    if (!normalized) {
+      setAppliedCouponCode('')
+      setCouponError(null)
+      return
+    }
+    if (normalized !== WARRANTY_COUPON_CODE) {
+      setAppliedCouponCode('')
+      setCouponError('Invalid coupon code.')
+      return
+    }
+    if (!warrantySelection || warrantySelection.total < WARRANTY_COUPON_DISCOUNT) {
+      setAppliedCouponCode('')
+      setCouponError(`Select a warranty of $${fmt(WARRANTY_COUPON_DISCOUNT)} or more to use this code.`)
+      return
+    }
+    setCouponCode(WARRANTY_COUPON_CODE)
+    setAppliedCouponCode(WARRANTY_COUPON_CODE)
+    setCouponError(null)
+  }
+
+  const clearCoupon = () => {
+    setCouponCode('')
+    setAppliedCouponCode('')
+    setCouponError(null)
+  }
+
+  const handleCouponCodeChange = (value: string) => {
+    const nextValue = value.toUpperCase()
+    setCouponCode(nextValue)
+    if (appliedCouponCode && nextValue.trim() !== appliedCouponCode) {
+      setAppliedCouponCode('')
+    }
+    if (couponError) setCouponError(null)
+  }
 
   const canNext: boolean = (() => {
     const key = STEPS[step].key
@@ -672,7 +734,18 @@ export default function PurchasePage() {
           </div>
 
           {pricing && (
-            <SummarySidebar vehicle={vehicle} pricing={pricing} orderId={orderId} step={step} />
+            <SummarySidebar
+              vehicle={vehicle}
+              pricing={pricing}
+              orderId={orderId}
+              step={step}
+              couponCode={couponCode}
+              appliedCouponCode={appliedCouponCode}
+              couponError={couponError}
+              onCouponCodeChange={handleCouponCodeChange}
+              onApplyCoupon={applyCoupon}
+              onClearCoupon={clearCoupon}
+            />
           )}
         </div>
       </div>
@@ -1797,7 +1870,30 @@ const BADGE_LABELS: Record<string, string> = {
   dealership: 'DEALER SELECT',
 }
 
-function SummarySidebar({ vehicle, pricing, orderId, step }: { vehicle: Vehicle; pricing: PricingBreakdown; orderId: string; step: number }) {
+function SummarySidebar({
+  vehicle,
+  pricing,
+  orderId,
+  step,
+  couponCode,
+  appliedCouponCode,
+  couponError,
+  onCouponCodeChange,
+  onApplyCoupon,
+  onClearCoupon,
+}: {
+  vehicle: Vehicle
+  pricing: PricingBreakdown
+  orderId: string
+  step: number
+  couponCode: string
+  appliedCouponCode: string
+  couponError: string | null
+  onCouponCodeChange: (value: string) => void
+  onApplyCoupon: () => void
+  onClearCoupon: () => void
+}) {
+  const couponApplied = appliedCouponCode === WARRANTY_COUPON_CODE && pricing.couponDiscount > 0
   return (
     <aside className="lg:sticky lg:top-20 lg:self-start">
       <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-soft">
@@ -1818,6 +1914,53 @@ function SummarySidebar({ vehicle, pricing, orderId, step }: { vehicle: Vehicle;
             {vehicle.trim && <span>{vehicle.trim} </span>}
             {vehicle.stockNumber && <span>Stock #{vehicle.stockNumber}</span>}
           </div>
+          <form
+            className="mt-4 rounded-xl border border-gray-200 bg-gray-50 p-3"
+            onSubmit={(event) => {
+              event.preventDefault()
+              onApplyCoupon()
+            }}
+          >
+            <label htmlFor="checkout-coupon" className="text-xs font-semibold uppercase tracking-wider text-gray-500">
+              Coupon code
+            </label>
+            <div className="mt-2 flex gap-2">
+              <input
+                id="checkout-coupon"
+                value={couponCode}
+                onChange={(event) => onCouponCodeChange(event.target.value.toUpperCase())}
+                placeholder={WARRANTY_COUPON_CODE}
+                className="min-w-0 flex-1 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-semibold uppercase text-gray-900 outline-none transition focus:border-[#118df0] focus:ring-2 focus:ring-[#118df0]/15"
+              />
+              {couponApplied ? (
+                <button
+                  type="button"
+                  onClick={onClearCoupon}
+                  className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-semibold text-gray-600 transition hover:bg-gray-100"
+                >
+                  Clear
+                </button>
+              ) : (
+                <button
+                  type="submit"
+                  className="rounded-lg bg-[#071f3a] px-3 py-2 text-xs font-semibold text-white transition hover:bg-[#0b2d53]"
+                >
+                  Apply
+                </button>
+              )}
+            </div>
+            {couponApplied ? (
+              <p className="mt-2 text-xs font-medium text-emerald-700">
+                {WARRANTY_COUPON_CODE} applied: ${fmt(WARRANTY_COUPON_DISCOUNT)} warranty discount.
+              </p>
+            ) : couponError ? (
+              <p className="mt-2 text-xs font-medium text-red-600">{couponError}</p>
+            ) : (
+              <p className="mt-2 text-xs text-gray-500">
+                Valid with a warranty of ${fmt(WARRANTY_COUPON_DISCOUNT)} or higher.
+              </p>
+            )}
+          </form>
           <div className="mt-4 space-y-1.5 text-sm">
             <div className="flex justify-between">
               <span className="text-gray-500">Sale price</span>
@@ -1859,6 +2002,12 @@ function SummarySidebar({ vehicle, pricing, orderId, step }: { vehicle: Vehicle;
                     <span className="tabular-nums shrink-0">${fmt(a.amount)}</span>
                   </div>
                 ))}
+              </div>
+            )}
+            {pricing.couponDiscount > 0 && (
+              <div className="flex justify-between text-emerald-700">
+                <span className="truncate pr-2 font-medium">Coupon ({pricing.couponCode})</span>
+                <span className="tabular-nums font-semibold">-${fmt(pricing.couponDiscount)}</span>
               </div>
             )}
             <div className="flex justify-between">
@@ -1939,6 +2088,11 @@ function BillOfSaleContent({ vehicle, customer, pricing, orderId }: { vehicle: V
           {pricing.addOns.map(a => (
             <div key={a.id} className="flex justify-between"><span>{a.label}</span><span>${fmt(a.amount)}</span></div>
           ))}
+          {pricing.couponDiscount > 0 && (
+            <div className="flex justify-between text-emerald-700">
+              <span>Coupon ({pricing.couponCode})</span><span>-${fmt(pricing.couponDiscount)}</span>
+            </div>
+          )}
           <div className="flex justify-between"><span>HST (13%)</span><span>${fmt(pricing.hst)}</span></div>
           <div className="flex justify-between font-bold text-gray-900 border-t border-gray-200 pt-1 mt-1">
             <span>TOTAL</span><span>${fmt(pricing.total)}</span>

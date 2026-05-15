@@ -68,6 +68,7 @@ export async function POST(req: Request) {
     // Use order_data.warranty as fallback if top-level warranty fields are missing
     const warrantyName: string | null = sub.warranty_name || od.warranty?.planName || null
     const warrantyTotal: number = Number(sub.warranty_total ?? od.warranty?.total ?? 0)
+    const couponDiscount: number = Number(od.pricing?.couponDiscount ?? 0)
 
     // 3a. Build fees array from the purchase submission line items
     // The purchase flow sends: hst (number), and standard fees are implicit based on category
@@ -177,6 +178,7 @@ export async function POST(req: Request) {
     await supabaseInsert('edc_deals_worksheet', {
       deal_id: dealId,
       purchase_price: Number(sub.vehicle_price) || 0,
+      discount: couponDiscount > 0 ? String(couponDiscount) : '0',
       fees: JSON.stringify(fees),
       accessories: JSON.stringify(richAccessories),
       warranties: JSON.stringify(warranties),
