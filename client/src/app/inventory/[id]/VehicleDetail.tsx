@@ -39,6 +39,17 @@ interface Vehicle {
   category?: string
 }
 
+const getDownPaymentCap = (price: number) => {
+  const numericPrice = Number(price)
+  return Number.isFinite(numericPrice) ? Math.max(0, numericPrice) : 0
+}
+
+const clampDownPayment = (amount: number, price: number) => {
+  const numericAmount = Number(amount)
+  if (!Number.isFinite(numericAmount)) return 0
+  return Math.min(Math.max(0, numericAmount), getDownPaymentCap(price))
+}
+
 export default function VehicleDetailPage() {
   const params = useParams()
   const router = useRouter()
@@ -247,6 +258,12 @@ export default function VehicleDetailPage() {
   }, [vehicle?.id, userEmail])
 
   useEffect(() => {
+    const price = vehicle?.price
+    if (price == null) return
+    setDownPayment((current) => clampDownPayment(current, price))
+  }, [vehicle?.price])
+
+  useEffect(() => {
     if (params.id) {
       setDownPayment(0)
       fetchVehicle()
@@ -416,12 +433,12 @@ export default function VehicleDetailPage() {
   }
 
   const getDownPaymentPresets = (price: number) => {
-    const cap = Math.min(Math.round(price * 0.5), 50000)
+    const cap = getDownPaymentCap(price)
     const roundToNearest500 = (value: number) => Math.round(value / 500) * 500
-    const presets = [0, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4]
+    const presets = [0, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.5, 0.75]
       .map((rate) => Math.min(cap, roundToNearest500(price * rate)))
 
-    return Array.from(new Set(presets)).filter((amount) => amount >= 0 && amount <= cap)
+    return Array.from(new Set([...presets, cap])).filter((amount) => amount >= 0 && amount <= cap)
   }
 
   const handleInquirySubmit = async (e: React.FormEvent) => {
@@ -928,13 +945,11 @@ export default function VehicleDetailPage() {
                       <input
                         type="number"
                         min={0}
-                        max={Math.min(Math.round(vehicle.price * 0.5), 50000)}
-                        step={100}
+                        max={getDownPaymentCap(vehicle.price)}
+                        step="any"
                         value={downPayment}
                         onChange={(e) => {
-                          const v = Number(e.target.value) || 0
-                          const cap = Math.min(Math.round(vehicle.price * 0.5), 50000)
-                          setDownPayment(Math.max(0, Math.min(v, cap)))
+                          setDownPayment(clampDownPayment(Number(e.target.value), vehicle.price))
                         }}
                         className="w-20 text-sm font-semibold text-gray-900 text-right focus:outline-none bg-transparent"
                       />
@@ -943,20 +958,20 @@ export default function VehicleDetailPage() {
                   <input
                     type="range"
                     min={0}
-                    max={Math.min(Math.round(vehicle.price * 0.5), 50000)}
-                    step={500}
+                    max={getDownPaymentCap(vehicle.price)}
+                    step="any"
                     value={downPayment}
-                    onChange={(e) => setDownPayment(Number(e.target.value))}
+                    onChange={(e) => setDownPayment(clampDownPayment(Number(e.target.value), vehicle.price))}
                     className="w-full accent-gray-900"
                   />
                   <div className="flex flex-wrap gap-1.5 mt-2">
                     {getDownPaymentPresets(vehicle.price).map((amt) => {
-                      const cap = Math.min(Math.round(vehicle.price * 0.5), 50000)
+                      const cap = getDownPaymentCap(vehicle.price)
                       if (amt > cap) return null
                       return (
                         <button
                           key={amt}
-                          onClick={() => setDownPayment(amt)}
+                          onClick={() => setDownPayment(clampDownPayment(amt, vehicle.price))}
                           className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors ${
                             downPayment === amt
                               ? 'bg-gray-900 text-white'
@@ -984,7 +999,8 @@ export default function VehicleDetailPage() {
                   </div>
                 </div>
                 {(() => {
-                  const loan = Math.max(0, vehicle.price - downPayment)
+                  const validatedDownPayment = clampDownPayment(downPayment, vehicle.price)
+                  const loan = Math.max(0, vehicle.price - validatedDownPayment)
                   const r = 0.0799 / 12
                   const n = termLength
                   const monthly = loan > 0 ? (loan * r * Math.pow(1 + r, n)) / (Math.pow(1 + r, n) - 1) : 0

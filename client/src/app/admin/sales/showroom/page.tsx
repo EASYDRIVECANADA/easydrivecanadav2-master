@@ -51,6 +51,35 @@ const listingTypeOptions: Array<{ key: ListingTypeFilter; label: string; color: 
   { key: 'fleet', label: 'Fleet Select', color: '#64748b' },
 ]
 
+const getDownPaymentCap = (price: number) => {
+  const numericPrice = Number(price)
+  return Number.isFinite(numericPrice) ? Math.max(0, numericPrice) : 0
+}
+
+const clampDownPaymentAmount = (amount: number, price: number) => {
+  const numericAmount = Number(amount)
+  if (!Number.isFinite(numericAmount)) return 0
+  return Math.min(Math.max(0, numericAmount), getDownPaymentCap(price))
+}
+
+const sanitizeMoneyInput = (value: string) => {
+  let next = value.replace(/[^\d.]/g, '')
+  const firstDot = next.indexOf('.')
+  if (firstDot !== -1) {
+    next = next.slice(0, firstDot + 1) + next.slice(firstDot + 1).replace(/\./g, '')
+  }
+  return next.replace(/^0+(?=\d)/, '')
+}
+
+const clampDownPaymentInput = (value: string, price: number) => {
+  if (!value) return ''
+  const numericValue = Number(value)
+  if (!Number.isFinite(numericValue)) return ''
+  const cap = getDownPaymentCap(price)
+  if (numericValue > cap) return String(cap)
+  return value
+}
+
 export default function CustomerShowroomPage() {
   const router = useRouter()
   const [mounted, setMounted] = useState(false)
@@ -83,6 +112,7 @@ export default function CustomerShowroomPage() {
   const [frequency, setFrequency] = useState<'Monthly' | 'Bi-Weekly' | 'Weekly' | 'Semi-Monthly'>('Bi-Weekly')
   const [interestRateStr, setInterestRateStr] = useState<string>('')
   const [downPaymentStr, setDownPaymentStr] = useState<string>('')
+  const downPaymentCap = useMemo(() => getDownPaymentCap(selected?.price || 0), [selected?.price])
 
   // Filters drawer state
   const [filtersOpen, setFiltersOpen] = useState(false)
@@ -102,6 +132,10 @@ export default function CustomerShowroomPage() {
   const [fetchError, setFetchError] = useState<string | null>(null)
 
   const [bucketImageCache] = useState(() => new Map<string, string[]>())
+
+  useEffect(() => {
+    setDownPaymentStr((current) => clampDownPaymentInput(current, downPaymentCap))
+  }, [downPaymentCap])
 
   const openCarfaxModal = async (vehicleId: string) => {
     setCarfaxModal({ open: true, loading: true, files: [], activeIndex: 0 })
@@ -453,8 +487,9 @@ export default function CustomerShowroomPage() {
   const payment = useMemo(() => {
     if (!selected) return 0
     const ir = parseFloat(interestRateStr || '0')
-    const dp = parseFloat(downPaymentStr || '0')
-    const principal = Math.max(0, (Number(selected.price) || 0) - (dp || 0))
+    const price = Number(selected.price) || 0
+    const dp = clampDownPaymentAmount(parseFloat(downPaymentStr || '0'), price)
+    const principal = Math.max(0, price - dp)
     const periodsPerYear = frequency === 'Monthly' ? 12 : frequency === 'Semi-Monthly' ? 24 : frequency === 'Bi-Weekly' ? 26 : 52
     const totalPeriods = Math.max(1, Math.round(termMonths * (periodsPerYear / 12)))
     const r = (ir || 0) / 100 / periodsPerYear
@@ -470,7 +505,7 @@ export default function CustomerShowroomPage() {
     const tradeValue = 0
     const trueTradeValue = 0
     const lienPayout = 0
-    const deposit = parseFloat(downPaymentStr || '0') || 0
+    const deposit = clampDownPaymentAmount(parseFloat(downPaymentStr || '0'), price)
     const subTotal = price + otherFees + licensing - tradeValue - trueTradeValue + lienPayout
     const taxRate = 0.13
     const hst = subTotal * taxRate
@@ -1108,13 +1143,8 @@ export default function CustomerShowroomPage() {
                         placeholder="0"
                         value={downPaymentStr}
                         onChange={(e) => {
-                          let v = e.target.value.replace(/[^\d.]/g, '')
-                          const firstDot = v.indexOf('.')
-                          if (firstDot !== -1) {
-                            v = v.slice(0, firstDot + 1) + v.slice(firstDot + 1).replace(/\./g, '')
-                          }
-                          v = v.replace(/^0+(?=\d)/, '')
-                          setDownPaymentStr(v)
+                          const v = sanitizeMoneyInput(e.target.value)
+                          setDownPaymentStr(clampDownPaymentInput(v, downPaymentCap))
                         }}
                         className="edc-input w-32 text-right"
                       />

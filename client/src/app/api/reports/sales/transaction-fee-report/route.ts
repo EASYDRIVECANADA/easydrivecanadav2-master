@@ -44,7 +44,7 @@ export async function GET(request: Request) {
     // 1. Fetch customers filtered by userId
     const customerSelect = [
       'id', 'dealdate', 'firstname', 'lastname',
-      'province', 'country', 'dealtype', 'dealmode', 'user_id',
+      'province', 'country', 'dealtype', 'dealmode', 'deal_state', 'user_id',
     ].join(',')
 
     const custQs: string[] = [
@@ -69,15 +69,6 @@ export async function GET(request: Request) {
     let customers: any[] = []
     try { customers = JSON.parse(custText) } catch { customers = [] }
 
-    // 2. Filter by date range in JS (handles various date formats)
-    customers = customers.filter((c) => {
-      const iso = normalizeDateIso(c.dealdate ?? c.deal_date)
-      if (!iso) return true
-      if (from && iso < from) return false
-      if (to && iso > to) return false
-      return true
-    })
-
     const dealIds = Array.from(
       new Set(customers.map((c: any) => String(c.id ?? '')).filter(Boolean))
     )
@@ -95,7 +86,7 @@ export async function GET(request: Request) {
           { method: 'GET', headers: h, cache: 'no-store' }
         ),
         fetch(
-          `${supabaseUrl}/rest/v1/edc_deals_worksheet?select=id,deal_type,deal_mode&id=in.${encodeURIComponent(inList)}`,
+          `${supabaseUrl}/rest/v1/edc_deals_worksheet?select=id,deal_type,deal_mode,deal_state,close_date&id=in.${encodeURIComponent(inList)}`,
           { method: 'GET', headers: h, cache: 'no-store' }
         ),
       ])
@@ -119,8 +110,31 @@ export async function GET(request: Request) {
       }
     }
 
-    // 4. Fetch dealership info and owner name
-    let dealerInfo = {
+    // 4. Filter by closed/report month in JS after worksheets are available.
+    customers = customers.filter((c) => {
+      const did = String(c.id ?? '')
+      const worksheet = worksheetsByDeal[did]
+      const state = String(
+        c?.deal_state ??
+          c?.dealState ??
+          c?.dealstate ??
+          c?.state ??
+          worksheet?.deal_state ??
+          worksheet?.dealState ??
+          worksheet?.dealstate ??
+          ''
+      ).trim()
+      if (state && state.toLowerCase() !== 'closed') return false
+
+      const iso = normalizeDateIso(worksheet?.close_date ?? c.dealdate ?? c.deal_date)
+      if (!iso) return true
+      if (from && iso < from) return false
+      if (to && iso > to) return false
+      return true
+    })
+
+    // 5. Fetch dealership info and owner name
+    const dealerInfo = {
       company_name: '',
       mvda_number: '',
       full_name: '',
@@ -155,7 +169,7 @@ export async function GET(request: Request) {
       }
     }
 
-    // 5. Build rows
+    // 6. Build rows
     const rows = customers
       .map((c: any) => {
         const did = String(c.id ?? '')

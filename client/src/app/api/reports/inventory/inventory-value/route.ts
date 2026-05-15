@@ -23,6 +23,7 @@ type VehicleRow = {
 
 type PurchaseRow = {
   id: string | null
+  VehicleId: string | null
   stock_number: string | null
   purchase_price: string | number | null
   actual_cash_value: string | number | null
@@ -34,6 +35,8 @@ type PurchaseRow = {
 }
 
 type CostRow = {
+  id: string | number | null
+  vehicleId: string | null
   stock_number: string | null
   total: string | number | null
   amount: string | number | null
@@ -154,11 +157,27 @@ export async function GET(request: Request) {
           .filter(Boolean)
       )
     )
+    const vehicleIds = Array.from(
+      new Set(
+        filteredVehicles
+          .map((v) => String(v?.id ?? '').trim())
+          .filter(Boolean)
+      )
+    )
 
     const purchasesByStock = new Map<string, PurchaseRow>()
-    if (stockNumbers.length) {
+    const purchasesByVehicleId = new Map<string, PurchaseRow>()
+    const addPurchase = (p: PurchaseRow) => {
+      const sn = String(p?.stock_number ?? '').trim()
+      if (sn && !purchasesByStock.has(sn)) purchasesByStock.set(sn, p)
+      const vehicleId = String((p as any)?.VehicleId ?? p?.id ?? '').trim()
+      if (vehicleId && !purchasesByVehicleId.has(vehicleId)) purchasesByVehicleId.set(vehicleId, p)
+    }
+
+    if (stockNumbers.length || vehicleIds.length) {
       const purchaseSelect = [
         'id',
+        'VehicleId',
         'stock_number',
         'purchase_price',
         'actual_cash_value',
@@ -169,73 +188,56 @@ export async function GET(request: Request) {
         'total_vehicle_tax',
       ].join(',')
 
-      const inList = `(${stockNumbers.map((s) => `"${String(s).replaceAll('"', '')}"`).join(',')})`
-      const pQs = [
-        `select=${encodeURIComponent(purchaseSelect)}`,
-        `stock_number=in.${encodeURIComponent(inList)}`,
-        'order=created_at.desc',
-        `limit=${encodeURIComponent(String(Math.min(5000, stockNumbers.length * 3)))}`,
-      ]
+      const fetchPurchases = async (column: 'stock_number' | 'VehicleId', values: string[]) => {
+        if (!values.length) return
+        const inList = `(${values.map((s) => `"${String(s).replaceAll('"', '')}"`).join(',')})`
+        const pQs = [
+          `select=${encodeURIComponent(purchaseSelect)}`,
+          `${column}=in.${encodeURIComponent(inList)}`,
+          'order=created_at.desc',
+          `limit=${encodeURIComponent(String(Math.min(5000, values.length * 3)))}`,
+        ]
 
-      const pUrl = `${supabaseUrl}/rest/v1/edc_purchase?${pQs.join('&')}`
-      const pRes = await fetch(pUrl, {
-        method: 'GET',
-        headers: {
-          apikey: supabaseKey,
-          Authorization: `Bearer ${supabaseKey}`,
-        },
-        cache: 'no-store',
-      })
+        const pUrl = `${supabaseUrl}/rest/v1/edc_purchase?${pQs.join('&')}`
+        const pRes = await fetch(pUrl, {
+          method: 'GET',
+          headers: {
+            apikey: supabaseKey,
+            Authorization: `Bearer ${supabaseKey}`,
+          },
+          cache: 'no-store',
+        })
 
-      const pText = await pRes.text().catch(() => '')
-      if (pRes.ok) {
-        let purchases: PurchaseRow[] = []
-        try {
-          purchases = JSON.parse(pText)
-        } catch {
-          purchases = []
-        }
-
-        for (const p of purchases) {
-          const sn = String(p?.stock_number ?? '').trim()
-          if (!sn) continue
-          if (!purchasesByStock.has(sn)) purchasesByStock.set(sn, p)
+        const pText = await pRes.text().catch(() => '')
+        if (pRes.ok) {
+          let purchases: PurchaseRow[] = []
+          try {
+            purchases = JSON.parse(pText)
+          } catch {
+            purchases = []
+          }
+          purchases.forEach(addPurchase)
         }
       }
+
+      await Promise.all([
+        fetchPurchases('stock_number', stockNumbers),
+        fetchPurchases('VehicleId', vehicleIds),
+      ])
     }
 
     const costsByStock = new Map<string, number>()
-    if (stockNumbers.length) {
-      const costSelect = ['stock_number', 'total', 'amount', 'quantity', 'discount', 'tax'].join(',')
-      const inList = `(${stockNumbers.map((s) => `"${String(s).replaceAll('"', '')}"`).join(',')})`
-      const cQs = [
-        `select=${encodeURIComponent(costSelect)}`,
-        `stock_number=in.${encodeURIComponent(inList)}`,
-        'limit=10000',
-      ]
-
-      const cUrl = `${supabaseUrl}/rest/v1/edc_costs?${cQs.join('&')}`
-      const cRes = await fetch(cUrl, {
-        method: 'GET',
-        headers: {
-          apikey: supabaseKey,
-          Authorization: `Bearer ${supabaseKey}`,
-        },
-        cache: 'no-store',
-      })
-
-      const cText = await cRes.text().catch(() => '')
-      if (cRes.ok) {
-        let costs: CostRow[] = []
-        try {
-          costs = JSON.parse(cText)
-        } catch {
-          costs = []
-        }
-
+    const costsByVehicleId = new Map<string, number>()
+    if (stockNumbers.length || vehicleIds.length) {
+      const costSelect = ['id', 'vehicleId', 'stock_number', 'total', 'amount', 'quantity', 'discount', 'tax'].join(',')
+      const seenCostRows = new Set<string>()
+      const addCosts = (costs: CostRow[]) => {
         for (const c of costs) {
+          const rowKey = String(c?.id ?? '').trim() || JSON.stringify(c)
+          if (seenCostRows.has(rowKey)) continue
+          seenCostRows.add(rowKey)
           const sn = String(c?.stock_number ?? '').trim()
-          if (!sn) continue
+          const vehicleId = String(c?.vehicleId ?? '').trim()
           const amount = toNum(c?.amount)
           const qty = Math.max(1, toNum(c?.quantity) || 1)
           const discount = toNum(c?.discount)
@@ -243,19 +245,57 @@ export async function GET(request: Request) {
           const subtotal = Math.max(0, amount * qty - discount)
           const hasLineComponents = hasValue(c?.amount) || hasValue(c?.quantity) || hasValue(c?.discount) || hasValue(c?.tax)
           const line = hasLineComponents ? subtotal + tax : toNum(c?.total)
-          costsByStock.set(sn, (costsByStock.get(sn) || 0) + line)
+          if (vehicleId) costsByVehicleId.set(vehicleId, (costsByVehicleId.get(vehicleId) || 0) + line)
+          if (sn) costsByStock.set(sn, (costsByStock.get(sn) || 0) + line)
         }
       }
+
+      const fetchCosts = async (column: 'stock_number' | 'vehicleId', values: string[]) => {
+        if (!values.length) return
+        const inList = `(${values.map((s) => `"${String(s).replaceAll('"', '')}"`).join(',')})`
+        const cQs = [
+          `select=${encodeURIComponent(costSelect)}`,
+          `${column}=in.${encodeURIComponent(inList)}`,
+          'limit=10000',
+        ]
+
+        const cUrl = `${supabaseUrl}/rest/v1/edc_costs?${cQs.join('&')}`
+        const cRes = await fetch(cUrl, {
+          method: 'GET',
+          headers: {
+            apikey: supabaseKey,
+            Authorization: `Bearer ${supabaseKey}`,
+          },
+          cache: 'no-store',
+        })
+
+        const cText = await cRes.text().catch(() => '')
+        if (cRes.ok) {
+          let costs: CostRow[] = []
+          try {
+            costs = JSON.parse(cText)
+          } catch {
+            costs = []
+          }
+          addCosts(costs)
+        }
+      }
+
+      await Promise.all([
+        fetchCosts('stock_number', stockNumbers),
+        fetchCosts('vehicleId', vehicleIds),
+      ])
     }
 
     const rows = filteredVehicles.map((v) => {
       const stock = String(v?.stock_number ?? '').trim()
-      const p = stock ? purchasesByStock.get(stock) : undefined
+      const vehicleId = String(v?.id ?? '').trim()
+      const p = (vehicleId ? purchasesByVehicleId.get(vehicleId) : undefined) || (stock ? purchasesByStock.get(stock) : undefined)
 
       const vehiclePurchasePrice = toNum(p?.purchase_price)
       const actualCashValue = toNum(p?.actual_cash_value)
       const discount = toNum(p?.discount)
-      const costs = stock ? (costsByStock.get(stock) || 0) : 0
+      const costs = (vehicleId ? costsByVehicleId.get(vehicleId) : 0) || (stock ? (costsByStock.get(stock) || 0) : 0)
 
       const taxType = String(p?.tax_type ?? '').trim()
       const override = Boolean(p?.tax_override)

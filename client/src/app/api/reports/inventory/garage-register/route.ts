@@ -23,6 +23,7 @@ type PurchaseRow = {
 }
 
 type VehicleRow = {
+  id: string | null
   stock_number: string | null
   make: string | null
   model: string | null
@@ -135,10 +136,19 @@ export async function GET(request: Request) {
           .filter(Boolean)
       )
     )
+    const vehicleIds = Array.from(
+      new Set(
+        (purchases || [])
+          .map((p) => String(p?.VehicleId ?? '').trim())
+          .filter(Boolean)
+      )
+    )
 
     const vehiclesByStock = new Map<string, VehicleRow>()
-    if (stockNumbers.length) {
+    const vehiclesById = new Map<string, VehicleRow>()
+    if (stockNumbers.length || vehicleIds.length) {
       const vehicleSelect = [
+        'id',
         'stock_number',
         'make',
         'model',
@@ -151,39 +161,53 @@ export async function GET(request: Request) {
         'status',
       ].join(',')
 
-      const inList = `(${stockNumbers.map((s) => `"${String(s).replaceAll('"', '')}"`).join(',')})`
-      const vQs = [`select=${encodeURIComponent(vehicleSelect)}`, `stock_number=in.${encodeURIComponent(inList)}`]
-      const vUrl = `${supabaseUrl}/rest/v1/edc_vehicles?${vQs.join('&')}`
-
-      const vRes = await fetch(vUrl, {
-        method: 'GET',
-        headers: {
-          apikey: supabaseKey,
-          Authorization: `Bearer ${supabaseKey}`,
-        },
-        cache: 'no-store',
-      })
-
-      const vText = await vRes.text().catch(() => '')
-      if (vRes.ok) {
-        let vehicles: VehicleRow[] = []
-        try {
-          vehicles = JSON.parse(vText)
-        } catch {
-          vehicles = []
-        }
-
+      const addVehicles = (vehicles: VehicleRow[]) => {
         for (const v of vehicles) {
+          const id = String(v?.id ?? '').trim()
+          if (id) vehiclesById.set(id, v)
           const sn = String(v?.stock_number ?? '').trim()
           if (sn) vehiclesByStock.set(sn, v)
         }
       }
+
+      const fetchVehicles = async (column: 'id' | 'stock_number', values: string[]) => {
+        if (!values.length) return
+        const inList = `(${values.map((s) => `"${String(s).replaceAll('"', '')}"`).join(',')})`
+        const vQs = [`select=${encodeURIComponent(vehicleSelect)}`, `${column}=in.${encodeURIComponent(inList)}`]
+        const vUrl = `${supabaseUrl}/rest/v1/edc_vehicles?${vQs.join('&')}`
+
+        const vRes = await fetch(vUrl, {
+          method: 'GET',
+          headers: {
+            apikey: supabaseKey,
+            Authorization: `Bearer ${supabaseKey}`,
+          },
+          cache: 'no-store',
+        })
+
+        const vText = await vRes.text().catch(() => '')
+        if (vRes.ok) {
+          let vehicles: VehicleRow[] = []
+          try {
+            vehicles = JSON.parse(vText)
+          } catch {
+            vehicles = []
+          }
+          addVehicles(vehicles)
+        }
+      }
+
+      await Promise.all([
+        fetchVehicles('stock_number', stockNumbers),
+        fetchVehicles('id', vehicleIds),
+      ])
     }
 
     const rowsAll = (purchases || [])
       .map((p) => {
         const stock = String(p?.stock_number ?? '').trim()
-        const v = stock ? vehiclesByStock.get(stock) : undefined
+        const vehicleId = String(p?.VehicleId ?? '').trim()
+        const v = (vehicleId ? vehiclesById.get(vehicleId) : undefined) || (stock ? vehiclesByStock.get(stock) : undefined)
 
         const purchasedFromName = String(p?.vendor_name ?? p?.vendor_company ?? '').trim() || 'N/A'
 

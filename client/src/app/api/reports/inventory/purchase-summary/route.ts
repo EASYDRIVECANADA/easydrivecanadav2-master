@@ -22,6 +22,7 @@ type PurchaseRow = {
 }
 
 type VehicleRow = {
+  id: string | null
   stock_number: string | null
   year: number | null
   make: string | null
@@ -132,44 +133,65 @@ export async function GET(request: Request) {
           .filter(Boolean)
       )
     )
+    const vehicleIds = Array.from(
+      new Set(
+        (purchases || [])
+          .map((p) => String(p?.VehicleId ?? '').trim())
+          .filter(Boolean)
+      )
+    )
 
     const vehiclesByStock = new Map<string, VehicleRow>()
-    if (stockNumbers.length) {
-      const vehicleSelect = ['stock_number', 'year', 'make', 'model', 'trim', 'status'].join(',')
-
-      const inList = `(${stockNumbers.map((s) => `"${String(s).replaceAll('"', '')}"`).join(',')})`
-      const vehicleQs = [`select=${encodeURIComponent(vehicleSelect)}`, `stock_number=in.${encodeURIComponent(inList)}`]
-      const vehiclesUrl = `${supabaseUrl}/rest/v1/edc_vehicles?${vehicleQs.join('&')}`
-
-      const vehiclesRes = await fetch(vehiclesUrl, {
-        method: 'GET',
-        headers: {
-          apikey: supabaseKey,
-          Authorization: `Bearer ${supabaseKey}`,
-        },
-        cache: 'no-store',
-      })
-
-      const vehiclesText = await vehiclesRes.text().catch(() => '')
-      if (vehiclesRes.ok) {
-        let vehicles: VehicleRow[] = []
-        try {
-          vehicles = JSON.parse(vehiclesText)
-        } catch {
-          vehicles = []
-        }
-
+    const vehiclesById = new Map<string, VehicleRow>()
+    if (stockNumbers.length || vehicleIds.length) {
+      const vehicleSelect = ['id', 'stock_number', 'year', 'make', 'model', 'trim', 'status'].join(',')
+      const addVehicles = (vehicles: VehicleRow[]) => {
         for (const v of vehicles) {
+          const id = String(v?.id ?? '').trim()
+          if (id) vehiclesById.set(id, v)
           const sn = String(v?.stock_number ?? '').trim()
           if (sn) vehiclesByStock.set(sn, v)
         }
       }
+
+      const fetchVehicles = async (column: 'id' | 'stock_number', values: string[]) => {
+        if (!values.length) return
+        const inList = `(${values.map((s) => `"${String(s).replaceAll('"', '')}"`).join(',')})`
+        const vehicleQs = [`select=${encodeURIComponent(vehicleSelect)}`, `${column}=in.${encodeURIComponent(inList)}`]
+        const vehiclesUrl = `${supabaseUrl}/rest/v1/edc_vehicles?${vehicleQs.join('&')}`
+
+        const vehiclesRes = await fetch(vehiclesUrl, {
+          method: 'GET',
+          headers: {
+            apikey: supabaseKey,
+            Authorization: `Bearer ${supabaseKey}`,
+          },
+          cache: 'no-store',
+        })
+
+        const vehiclesText = await vehiclesRes.text().catch(() => '')
+        if (vehiclesRes.ok) {
+          let vehicles: VehicleRow[] = []
+          try {
+            vehicles = JSON.parse(vehiclesText)
+          } catch {
+            vehicles = []
+          }
+          addVehicles(vehicles)
+        }
+      }
+
+      await Promise.all([
+        fetchVehicles('stock_number', stockNumbers),
+        fetchVehicles('id', vehicleIds),
+      ])
     }
 
     const rows = (purchases || [])
       .map((p) => {
         const sn = String(p?.stock_number ?? '').trim()
-        const v = sn ? vehiclesByStock.get(sn) : undefined
+        const vehicleId = String(p?.VehicleId ?? '').trim()
+        const v = (vehicleId ? vehiclesById.get(vehicleId) : undefined) || (sn ? vehiclesByStock.get(sn) : undefined)
 
         const year = v?.year ? String(v.year) : ''
         const make = String(v?.make ?? '').trim()

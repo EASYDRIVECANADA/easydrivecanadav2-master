@@ -2,15 +2,16 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
-import { exportRowsToCsv } from '../../reportUtils'
+import { buildBillOfSaleSettlement, parseBillOfSaleItems } from '../../../sales/deals/new/billOfSaleSettlement'
+import { exportRowsToCsv, getFirstDayOfMonth, getToday } from '../../reportUtils'
 
 type Row = {
   [key: string]: string | number
 }
 
 export default function SalesReportPage() {
-  const [from, setFrom] = useState('')
-  const [to, setTo] = useState('')
+  const [from, setFrom] = useState(getFirstDayOfMonth)
+  const [to, setTo] = useState(getToday)
   const [query, setQuery] = useState('')
   const [perPage, setPerPage] = useState('500')
   const [rows, setRows] = useState<Row[]>([])
@@ -37,43 +38,7 @@ export default function SalesReportPage() {
     return d.toISOString().slice(0, 10)
   }
 
-  const parseArray = (raw: any): any[] => {
-    if (!raw) return []
-    if (Array.isArray(raw)) return raw
-    if (typeof raw === 'string') {
-      try {
-        const parsed = JSON.parse(raw)
-        return Array.isArray(parsed) ? parsed : []
-      } catch {
-        return []
-      }
-    }
-    return []
-  }
-
-  const sumField = (raw: any, keys: string[]) => {
-    const arr = parseArray(raw)
-    return arr.reduce((s: number, i: any) => {
-      for (const k of keys) {
-        const v = Number(i?.[k] ?? 0)
-        if (Number.isFinite(v) && v !== 0) return s + v
-      }
-      return s
-    }, 0)
-  }
-
-  const getOmvicFromFees = (rawFees: any): number => {
-    const fees = parseArray(rawFees)
-    for (const f of fees) {
-      const name = String(f?.fee_name ?? f?.name ?? f?.label ?? '').toLowerCase()
-      if (!name) continue
-      if (name.includes('omvic')) {
-        const amt = Number(f?.fee_amount ?? f?.amount ?? f?.value ?? 0)
-        return Number.isFinite(amt) ? amt : 0
-      }
-    }
-    return 0
-  }
+  const roundMoney = (n: number) => Math.round((Number(n) || 0) * 100) / 100
 
   const toNumber = (value: unknown) => {
     const n = Number(String(value ?? '0').replace(/[^0-9.-]/g, ''))
@@ -81,6 +46,68 @@ export default function SalesReportPage() {
   }
 
   const hasValue = (value: unknown) => value !== null && value !== undefined && String(value).trim() !== ''
+
+  const itemAmount = (item: Record<string, unknown>, primaryKey: string) => {
+    const candidates = [
+      item?.[primaryKey],
+      item?.amount,
+      item?.price,
+      item?.fee_amount,
+      item?.value,
+    ]
+    for (const candidate of candidates) {
+      if (hasValue(candidate)) return toNumber(candidate)
+    }
+    return 0
+  }
+
+  const taxRateFromLabel = (label: string) => {
+    const match = label.match(/(\d+(?:\.\d+)?)\s*%/)
+    if (!match) return 0
+    const rate = Number(match[1])
+    return Number.isFinite(rate) && rate > 0 ? rate / 100 : 0
+  }
+
+  const itemTax = (item: Record<string, unknown>, primaryKey: string) => {
+    if (hasValue(item?.taxAmount)) return toNumber(item.taxAmount)
+    if (hasValue(item?.tax_amount)) return toNumber(item.tax_amount)
+
+    const taxSelected = item?.taxSelected && typeof item.taxSelected === 'object'
+      ? item.taxSelected as Record<string, unknown>
+      : {}
+    const selectedLabels = Object.keys(taxSelected).filter((key) => Boolean(taxSelected[key]))
+    if (!selectedLabels.length) return 0
+
+    if (item?.taxOverride === true || item?.taxOverride === 'true') {
+      const taxValues = item?.taxValues && typeof item.taxValues === 'object'
+        ? item.taxValues as Record<string, unknown>
+        : {}
+      return roundMoney(selectedLabels.reduce((sum, key) => sum + toNumber(taxValues[key]), 0))
+    }
+
+    const amount = itemAmount(item, primaryKey)
+    return roundMoney(selectedLabels.reduce((sum, key) => sum + amount * taxRateFromLabel(key), 0))
+  }
+
+  const findOmvicItem = (fees: Record<string, unknown>[]) => {
+    return fees.find((fee) => {
+      const name = String(fee?.fee_name ?? fee?.name ?? fee?.label ?? '').toLowerCase()
+      return name.includes('omvic')
+    }) ?? null
+  }
+
+  const calcCategory = (raw: unknown, primaryKey: string, exclude?: Record<string, unknown> | null): { retail: number; cost: number; tax: number } => {
+    const items = parseBillOfSaleItems(raw) as Record<string, unknown>[]
+    return items.reduce<{ retail: number; cost: number; tax: number }>((acc, item) => {
+      const retail = item === exclude ? 0 : itemAmount(item, primaryKey)
+      const cost = item === exclude ? 0 : toNumber(item?.cost)
+      return {
+        retail: roundMoney(acc.retail + retail),
+        cost: roundMoney(acc.cost + cost),
+        tax: roundMoney(acc.tax + itemTax(item, primaryKey)),
+      }
+    }, { retail: 0, cost: 0, tax: 0 })
+  }
 
   const costLineTotal = (row: any) => {
     const amount = toNumber(row?.amount)
@@ -149,19 +176,22 @@ export default function SalesReportPage() {
           .filter(Boolean)))
 
         const purchaseByStock = new Map<string, number>()
+        const purchaseByVehicleId = new Map<string, number>()
         const costsByVehicleId = new Map<string, any[]>()
         const costsByStock = new Map<string, any[]>()
 
         if (stocks.length) {
           const { data } = await supabase
             .from('edc_purchase')
-            .select('stock_number, purchase_price, updated_at')
+            .select('VehicleId, stock_number, purchase_price, updated_at')
             .in('stock_number', stocks)
             .order('updated_at', { ascending: false })
 
           for (const row of Array.isArray(data) ? data : []) {
             const stock = String((row as any)?.stock_number ?? '').trim()
             if (stock && !purchaseByStock.has(stock)) purchaseByStock.set(stock, toNumber((row as any)?.purchase_price))
+            const vehicleId = String((row as any)?.VehicleId ?? '').trim()
+            if (vehicleId && !purchaseByVehicleId.has(vehicleId)) purchaseByVehicleId.set(vehicleId, toNumber((row as any)?.purchase_price))
           }
 
           const { data: stockCostRows } = await supabase
@@ -177,6 +207,19 @@ export default function SalesReportPage() {
         }
 
         if (vehicleIds.length) {
+          const { data: purchaseRowsByVehicle } = await supabase
+            .from('edc_purchase')
+            .select('VehicleId, stock_number, purchase_price, updated_at')
+            .in('VehicleId', vehicleIds)
+            .order('updated_at', { ascending: false })
+
+          for (const row of Array.isArray(purchaseRowsByVehicle) ? purchaseRowsByVehicle : []) {
+            const vehicleId = String((row as any)?.VehicleId ?? '').trim()
+            if (vehicleId && !purchaseByVehicleId.has(vehicleId)) purchaseByVehicleId.set(vehicleId, toNumber((row as any)?.purchase_price))
+            const stock = String((row as any)?.stock_number ?? '').trim()
+            if (stock && !purchaseByStock.has(stock)) purchaseByStock.set(stock, toNumber((row as any)?.purchase_price))
+          }
+
           const { data: vehicleCostRows } = await supabase
             .from('edc_costs')
             .select('vehicleId, stock_number, amount, quantity, discount, tax, total')
@@ -192,7 +235,7 @@ export default function SalesReportPage() {
         const getInventoryCostBasis = (vehicle: any) => {
           const stock = String(vehicle?.selected_stock_number ?? vehicle?.stock_number ?? '').trim()
           const vehicleId = String(vehicle?.selected_id ?? vehicle?.id ?? '').trim()
-          const purchasePrice = (stock ? purchaseByStock.get(stock) : 0) || toNumber(vehicle?.purchase_price ?? vehicle?.purchasePrice ?? vehicle?.raw?.purchase_price)
+          const purchasePrice = (vehicleId ? purchaseByVehicleId.get(vehicleId) : 0) || (stock ? purchaseByStock.get(stock) : 0) || toNumber(vehicle?.purchase_price ?? vehicle?.purchasePrice ?? vehicle?.raw?.purchase_price)
           const costRows = (vehicleId && costsByVehicleId.get(vehicleId)?.length) ? costsByVehicleId.get(vehicleId)! : (stock ? costsByStock.get(stock) || [] : [])
           const inventoryCosts = costRows.reduce((sum, row) => sum + costLineTotal(row), 0)
           return { purchasePrice, inventoryCosts }
@@ -208,6 +251,7 @@ export default function SalesReportPage() {
 
             const dealDateRaw = customer?.dealdate ?? worksheet?.deal_date ?? d?.dealDate ?? ''
             const closeDateRaw = worksheet?.close_date ?? d?.closeDate ?? ''
+            const reportDateRaw = closeDateRaw || dealDateRaw
 
             const firstName = String(customer?.firstname ?? customer?.first_name ?? '').trim()
             const lastName = String(customer?.lastname ?? customer?.last_name ?? '').trim()
@@ -226,45 +270,47 @@ export default function SalesReportPage() {
 
             const lender = String(worksheet?.lender_or_bank ?? worksheet?.lender ?? worksheet?.bank ?? '').trim()
 
-            const taxRate = Number(worksheet?.tax_rate ?? worksheet?.taxRate ?? 0.13) || 0
+            const fees = parseBillOfSaleItems(worksheet?.fees) as Record<string, unknown>[]
+            const omvicItem = findOmvicItem(fees)
+            const feesCategory = calcCategory(fees, 'amount', omvicItem)
+            const accCategory = calcCategory(worksheet?.accessories, 'price')
+            const warrCategory = calcCategory(worksheet?.warranties, 'amount')
+            const insCategory = calcCategory(worksheet?.insurances, 'amount')
 
-            const feesRetail = sumField(worksheet?.fees, ['amount', 'price', 'fee_amount'])
-            const feesCost = sumField(worksheet?.fees, ['cost'])
+            const feesRetail = feesCategory.retail
+            const feesCost = feesCategory.cost
             const feesProfit = feesRetail - feesCost
-            const feesTax = feesRetail * taxRate
+            const feesTax = feesCategory.tax
 
-            const accRetail = sumField(worksheet?.accessories, ['price', 'amount'])
-            const accCost = sumField(worksheet?.accessories, ['cost'])
+            const accRetail = accCategory.retail
+            const accCost = accCategory.cost
             const accProfit = accRetail - accCost
-            const accTax = accRetail * taxRate
+            const accTax = accCategory.tax
 
-            const warrRetail = sumField(worksheet?.warranties, ['amount', 'price'])
-            const warrCost = sumField(worksheet?.warranties, ['cost'])
+            const warrRetail = warrCategory.retail
+            const warrCost = warrCategory.cost
             const warrProfit = warrRetail - warrCost
-            const warrTax = warrRetail * taxRate
+            const warrTax = warrCategory.tax
 
-            const insRetail = sumField(worksheet?.insurances, ['amount', 'price'])
-            const insCost = sumField(worksheet?.insurances, ['cost'])
+            const insRetail = insCategory.retail
+            const insCost = insCategory.cost
             const insProfit = insRetail - insCost
-            const insTax = insRetail * taxRate
+            const insTax = insCategory.tax
 
             const costBasis = getInventoryCostBasis(v0)
             const purchasePrice = costBasis.purchasePrice
             const inventoryCosts = costBasis.inventoryCosts
-            const vehicleSellingPrice = Number(worksheet?.purchase_price ?? worksheet?.selling_price ?? worksheet?.vehicle_price ?? v0?.selected_price ?? v0?.price ?? 0) || 0
-            const discount = Number(worksheet?.discount ?? 0) || 0
+            const settlement = buildBillOfSaleSettlement(worksheet, v0?.selected_price ?? v0?.price ?? 0)
+            const vehicleSellingPrice = toNumber(settlement.vehiclePrice)
+            const discount = toNumber(settlement.discount)
             const vehicleProfit = (vehicleSellingPrice - discount) - purchasePrice - inventoryCosts
             const totalProfit = vehicleProfit + feesProfit + accProfit + warrProfit + insProfit + bankCommission
 
-            const omvic = Number(worksheet?.omvic_fee ?? getOmvicFromFees(worksheet?.fees) ?? 0)
-            const subtotal1 = vehicleSellingPrice + omvic
-            const tradeValue = Number(worksheet?.trade_value ?? worksheet?.tradeValue ?? 0)
-            const lienPayout = Number(worksheet?.lien_payout ?? worksheet?.lienPayout ?? 0)
-            const netDiff = subtotal1 - discount - tradeValue + lienPayout
-            const hst = netDiff * taxRate
-            const licenseFee = Number(worksheet?.license_fee ?? worksheet?.licensing_fee ?? worksheet?.licensingFee ?? worksheet?.licenseFee ?? 91)
-            const paymentsTotal = sumField(worksheet?.payments, ['amount'])
-            const subtotal2 = netDiff + hst + licenseFee + feesRetail + accRetail + warrRetail + insRetail + paymentsTotal
+            const subtotal2 = toNumber(settlement.subtotal2)
+            const hstOnNetDifference = toNumber(settlement.hstOnNetDifference)
+            const totalTax = toNumber(settlement.totalTax)
+            const licenseFee = toNumber(settlement.licenseFee)
+            const totalAfterMarketTax = feesTax + accTax + warrTax + insTax
 
             return {
               deal_date: formatMMDDYYYY(dealDateRaw) || 'N/A',
@@ -285,7 +331,7 @@ export default function SalesReportPage() {
               purchase_price: purchasePrice ? purchasePrice.toFixed(2) : '',
               vehicle_purchase_price: vehicleSellingPrice ? vehicleSellingPrice.toFixed(2) : '',
               costs: (inventoryCosts + feesCost + accCost + warrCost + insCost).toFixed(2),
-              tax_on_costs: (feesTax + accTax + warrTax + insTax).toFixed(2),
+              tax_on_costs: totalAfterMarketTax.toFixed(2),
               all_in: subtotal2.toFixed(2),
               discount: discount ? discount.toFixed(2) : '',
               trade_equity: String(worksheet?.trade_equity ?? worksheet?.tradeEquity ?? ''),
@@ -313,11 +359,12 @@ export default function SalesReportPage() {
               fees_tot_tax: feesTax ? feesTax.toFixed(2) : '',
               subtotal: subtotal2.toFixed(2),
               total_profit: totalProfit.toFixed(2),
-              total_tax_after_market: (feesTax + accTax + warrTax + insTax).toFixed(2),
-              licensing_fee: String(worksheet?.licensing_fee ?? worksheet?.licensingFee ?? ''),
-              hst_13: hst.toFixed(2),
-              total_tax: hst.toFixed(2),
+              total_tax_after_market: totalAfterMarketTax.toFixed(2),
+              licensing_fee: licenseFee ? licenseFee.toFixed(2) : '',
+              hst_13: hstOnNetDifference.toFixed(2),
+              total_tax: totalTax.toFixed(2),
               __deal_date_iso: toISODate(dealDateRaw),
+              __report_date_iso: toISODate(reportDateRaw),
             }
           })
 
@@ -331,6 +378,7 @@ export default function SalesReportPage() {
     }
 
     void run()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const columns = useMemo(
@@ -396,9 +444,10 @@ export default function SalesReportPage() {
 
     const byDate = rows.filter((r) => {
       const iso = String((r as any)?.__deal_date_iso ?? '').trim()
-      if (!iso) return true
-      if (fromIso && iso < fromIso) return false
-      if (toIso && iso > toIso) return false
+      const reportIso = String((r as any)?.__report_date_iso ?? iso).trim()
+      if (!reportIso) return true
+      if (fromIso && reportIso < fromIso) return false
+      if (toIso && reportIso > toIso) return false
       return true
     })
 
