@@ -12,7 +12,7 @@ import {
   Sparkles, User, Upload, FileCheck2, X, Eraser,
 } from 'lucide-react'
 import { warrantyPlans, getPlansByProvider, type WarrantyPlan } from '@/lib/bridgewarranty'
-import { useDealerConfig, getConfig, type DealerConfig, type DealerProductConfig } from '@/lib/dealer-config'
+import { useDealerConfig, getConfig, getRetail, type DealerConfig, type DealerProductConfig } from '@/lib/dealer-config'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -956,9 +956,7 @@ function lowestDealerPrice(cfg: DealerConfig, plan: WarrantyPlan): number | null
         for (let ti = 0; ti < tier.terms.length; ti++) {
           const raw = band.values[ti]
           if (typeof raw !== 'number') continue
-          const slot = cfg.warranty[plan.slug]?.tiers?.[tierIndex]?.rows?.[band.label]?.[ti]
-          const cost = slot?.cost ?? raw
-          const retail = slot?.retail ?? Math.round(cost * (1 + cfg.warrantyMarkupPct / 100))
+          const retail = getRetail(cfg, plan.slug, tierIndex, ti, band.label) ?? raw
           if (tierMin === null || retail < tierMin) tierMin = retail
         }
       }
@@ -968,9 +966,7 @@ function lowestDealerPrice(cfg: DealerConfig, plan: WarrantyPlan): number | null
         for (let ti = 0; ti < tier.terms.length; ti++) {
           const raw = row.values[ti]
           if (typeof raw !== 'number') continue
-          const slot = cfg.warranty[plan.slug]?.tiers?.[tierIndex]?.rows?.['Base Price']?.[ti]
-          const cost = slot?.cost ?? raw
-          const retail = slot?.retail ?? Math.round(cost * (1 + cfg.warrantyMarkupPct / 100))
+          const retail = getRetail(cfg, plan.slug, tierIndex, ti, 'Base Price') ?? raw
           if (tierMin === null || retail < tierMin) tierMin = retail
         }
       }
@@ -1007,9 +1003,7 @@ function cellDealerPrice(
     if (typeof v !== 'number') return null
     raw = v
   }
-  const slot = cfg.warranty[plan.slug]?.tiers?.[tierIndex]?.rows?.[rowLabel]?.[termIndex]
-  const cost = slot?.cost ?? raw
-  return slot?.retail ?? Math.round(cost * (1 + cfg.warrantyMarkupPct / 100))
+  return getRetail(cfg, plan.slug, tierIndex, termIndex, rowLabel) ?? raw
 }
 
 function toggleAddOn(

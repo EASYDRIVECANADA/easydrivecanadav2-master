@@ -14,6 +14,7 @@ import {
   fillEmptyOnTier,
   resetTierOverrides,
   getCost,
+  getRetail,
   useGuarantee,
   saveGuarantee,
   DEFAULT_GUARANTEE,
@@ -269,19 +270,57 @@ function WarrantyConfigTab() {
           { label: plan.name },
         ]}
       />
-      <PlanEditor plan={plan} onBack={() => setPlanSlug(null)} />
+      <PlanEditor plan={plan} onBack={() => setPlanSlug(null)} onPickPlan={setPlanSlug} />
     </div>
   )
+}
+
+function planGroupKey(plan: WarrantyPlan): string {
+  return plan.group || plan.slug
+}
+
+function planGroupLabel(plans: WarrantyPlan[]): string {
+  const first = plans[0]
+  if (!first) return 'Warranty Plan'
+  if (first.group === 'powertrain') return 'Powertrain Warranty'
+  return first.name
+}
+
+function planVariantLabel(plan: WarrantyPlan): string {
+  if (plan.group === 'powertrain') return plan.name.replace(/^Powertrain\s+/i, '')
+  return plan.name
 }
 
 function PlansList({ provider, onPick }: { provider: string; onPick: (slug: string) => void }) {
   const plans = getAllPlansByProvider(provider)
   const cfg = useDealerConfig()
   const [q, setQ] = useState('')
-  const filtered = useMemo(
-    () => plans.filter((p) => p.name.toLowerCase().includes(q.toLowerCase())),
-    [plans, q],
-  )
+  const groupedPlans = useMemo(() => {
+    const map = new Map<string, WarrantyPlan[]>()
+    plans.forEach((plan) => {
+      const key = planGroupKey(plan)
+      map.set(key, [...(map.get(key) || []), plan])
+    })
+    return Array.from(map.entries()).map(([key, groupPlans]) => ({
+      key,
+      label: planGroupLabel(groupPlans),
+      plans: groupPlans,
+      defaultSlug: groupPlans[0]?.slug || key,
+      tierCount: groupPlans.reduce((sum, plan) => sum + plan.pricingTiers.length, 0),
+    }))
+  }, [plans])
+  const filtered = useMemo(() => {
+    const needle = q.trim().toLowerCase()
+    if (!needle) return groupedPlans
+    return groupedPlans.filter((entry) => {
+      const searchText = [
+        entry.label,
+        ...entry.plans.map((plan) => plan.name),
+        ...entry.plans.map((plan) => plan.claimRange),
+      ].join(' ').toLowerCase()
+      return searchText.includes(needle)
+    })
+  }, [groupedPlans, q])
 
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-5">
@@ -302,11 +341,12 @@ function PlansList({ provider, onPick }: { provider: string; onPick: (slug: stri
         </span>
       </div>
       <div className="mt-4 grid gap-3 sm:grid-cols-2">
-        {filtered.map((p) => {
-          const enabled = isPlanEnabled(cfg, p.slug)
+        {filtered.map((entry) => {
+          const enabled = entry.plans.every((plan) => isPlanEnabled(cfg, plan.slug))
+          const isCustom = entry.plans.length === 1 && entry.plans[0].slug.startsWith('custom-')
           return (
-            <div key={p.slug} className="flex items-center justify-between rounded-2xl border border-slate-200 bg-white p-4">
-              <button type="button" onClick={() => onPick(p.slug)} className="flex flex-1 items-start gap-3 text-left">
+            <div key={entry.key} className="flex items-center justify-between rounded-2xl border border-slate-200 bg-white p-4">
+              <button type="button" onClick={() => onPick(entry.defaultSlug)} className="flex flex-1 items-start gap-3 text-left">
                 <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-100 text-[#1EA7FF]">
                   <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
@@ -314,11 +354,19 @@ function PlansList({ provider, onPick }: { provider: string; onPick: (slug: stri
                   </svg>
                 </div>
                 <div className="flex-1">
-                  <div className="font-semibold text-slate-900">{p.name}</div>
-
-                  {p.pricingTiers.length > 0 && (
-                    <span className="mt-1 inline-block text-[10px] font-semibold bg-slate-100 text-slate-500 px-2 py-0.5 rounded">
-                      {p.pricingTiers.length} tier{p.pricingTiers.length === 1 ? '' : 's'}
+                  <div className="font-semibold text-slate-900">{entry.label}</div>
+                  {entry.plans.length > 1 && (
+                    <div className="mt-1 flex flex-wrap gap-1">
+                      {entry.plans.map((plan) => (
+                        <span key={plan.slug} className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-500">
+                          {planVariantLabel(plan)}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  {entry.tierCount > 0 && (
+                    <span className="mt-2 inline-block text-[10px] font-semibold bg-slate-100 text-slate-500 px-2 py-0.5 rounded">
+                      {entry.plans.length > 1 ? `${entry.plans.length} variants` : `${entry.tierCount} tier${entry.tierCount === 1 ? '' : 's'}`}
                     </span>
                   )}
                 </div>
@@ -327,13 +375,14 @@ function PlansList({ provider, onPick }: { provider: string; onPick: (slug: stri
                 </svg>
               </button>
               <div className="ml-3 flex items-center gap-2">
-                <Toggle checked={enabled} onChange={(c) => setPlanEnabled(p.slug, c)} />
-                {p.slug.startsWith('custom-') && (
+                <Toggle checked={enabled} onChange={(c) => entry.plans.forEach((plan) => setPlanEnabled(plan.slug, c))} />
+                {isCustom && (
                   <button
                     type="button"
                     onClick={() => {
-                      if (confirm(`Delete custom plan "${p.name}"?`)) {
-                        deleteCustomPlan(p.slug)
+                      const customPlan = entry.plans[0]
+                      if (confirm(`Delete custom plan "${customPlan.name}"?`)) {
+                        deleteCustomPlan(customPlan.slug)
                       }
                     }}
                     className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
@@ -357,10 +406,13 @@ function PlansList({ provider, onPick }: { provider: string; onPick: (slug: stri
   )
 }
 
-function PlanEditor({ plan, onBack }: { plan: WarrantyPlan; onBack: () => void }) {
+function PlanEditor({ plan, onBack, onPickPlan }: { plan: WarrantyPlan; onBack: () => void; onPickPlan: (slug: string) => void }) {
   const cfg = useDealerConfig()
   const [tierIndex, setTierIndex] = useState(0)
   const [bulkMarkup, setBulkMarkup] = useState<number>(cfg.warrantyMarkupPct)
+  const siblingPlans = plan.group
+    ? getAllPlansByProvider(plan.provider).filter((p) => p.group === plan.group)
+    : []
 
   if (!plan.pricingTiers.length) {
     return (
@@ -383,6 +435,33 @@ function PlanEditor({ plan, onBack }: { plan: WarrantyPlan; onBack: () => void }
 
   return (
     <div className="space-y-4">
+      {siblingPlans.length > 1 && (
+        <div className="rounded-2xl border border-slate-200 bg-white p-4">
+          <div className="mb-3 text-xs font-semibold uppercase tracking-wider text-slate-400">
+            {planGroupLabel(siblingPlans)}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {siblingPlans.map((sibling) => (
+              <button
+                key={sibling.slug}
+                type="button"
+                onClick={() => {
+                  onPickPlan(sibling.slug)
+                  setTierIndex(0)
+                }}
+                className={`rounded-full border px-4 py-2 text-sm font-semibold transition ${
+                  sibling.slug === plan.slug
+                    ? 'border-[#0B1F3A] bg-[#0B1F3A] text-white'
+                    : 'border-slate-200 bg-white text-slate-600 hover:border-[#1EA7FF]/50 hover:bg-[#1EA7FF]/5'
+                }`}
+              >
+                {planVariantLabel(sibling)}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Plan card */}
       <div className="rounded-2xl border border-slate-200 bg-white p-5">
         <div className="flex items-start gap-3">
@@ -681,7 +760,7 @@ function PriceCell({
   // Full cell: rawValue is a number, or costOverride exists
   const effectiveRaw = typeof rawValue === 'number' ? rawValue : 0
   const cost = costOverride ?? getCost(plan, tierIndex, termIndex, rowLabel) ?? effectiveRaw
-  const retail = retailOverride ?? Math.round(cost * (1 + markupPct / 100))
+  const retail = retailOverride ?? getRetail(cfg, plan.slug, tierIndex, termIndex, rowLabel) ?? Math.round(cost * (1 + markupPct / 100))
   const markupDelta = cost > 0 ? Math.round(((retail - cost) / cost) * 100) : 0
 
   function commitEdit(field: 'cost' | 'retail') {

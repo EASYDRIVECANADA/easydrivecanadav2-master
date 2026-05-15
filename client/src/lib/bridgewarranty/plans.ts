@@ -9,8 +9,8 @@ export interface PricingTier {
   perClaimAmount: number;
   deductible: number;
   terms: { label: string; months: number; km: string }[];
-  rows: { label: string; values: (number | string | null)[] }[];
-  mileageBands?: { label: string; values: number[] }[];
+  rows: { label: string; values: (number | string | null)[]; dealerValues?: (number | string | null)[] }[];
+  mileageBands?: { label: string; values: number[]; dealerValues?: number[] }[];
 }
 
 export interface WarrantyPlan {
@@ -947,6 +947,316 @@ export const warrantyPlans: WarrantyPlan[] = [
     pricingTiers: [], // No standalone pricing — sold as add-on to manufacturer warranty
   },
 ];
+
+type DealerPricingPatch = Record<string, Array<{
+  rows?: Record<string, (number | string | null)[]>;
+  mileageBands?: number[][];
+}>>;
+
+const DEALER_PRICING: DealerPricingPatch = {
+  "powertrain-bronze": [{
+    rows: {
+      "Base Price": [59, 69, 89, 109, 129],
+      "Unlimited km": [50, 50, 50, 50, 50],
+    },
+  }],
+  "powertrain-silver": [{
+    rows: {
+      "Base Price": [79, 89, 129, 159, 189],
+      "Unlimited km": ["n/a", 25, 35, 45, 65],
+      "Zero Deductible": [25, 30, 35, 45, 55],
+      "Seals & Gaskets": [55, 65, 70, 80, 90],
+      "Car Rental": [25, 25, 35, 45, 55],
+    },
+  }],
+  "powertrain-gold": [{
+    rows: {
+      "Base Price": [99, 149, 189, 249, 279],
+      "Unlimited km": ["Included", "Included", 70, 85, 100],
+      "Zero Deductible": [25, 25, 35, 45, 55],
+      "Seals & Gaskets": [55, 65, 75, 85, 120],
+      "Car Rental": [25, 25, 35, 45, 55],
+      "Air Conditioning": ["n/a", "n/a", 120, 130, 140],
+      "Hi-Tech Components": ["n/a", "n/a", 160, 170, 180],
+    },
+  }],
+  "powertrain-platinum": [
+    {
+      rows: {
+        "Base Price": [189, 249, 319, 389, 489],
+        "Unlimited km": ["Included", 70, 85, 125, "n/a"],
+        "Zero Deductible": [25, 35, 45, 55, 75],
+        "Seals & Gaskets": [65, 85, 100, 150, 175],
+        "Car Rental": [25, 35, 45, 55, 55],
+        "Air Conditioning": ["n/a", 120, 140, 160, 180],
+        "Hi-Tech Components": ["n/a", 160, 170, 180, 200],
+      },
+    },
+    {
+      rows: {
+        "Base Price": [299, 399, 549, 609],
+        "Unlimited km": [70, 85, 125, "n/a"],
+        "Zero Deductible": [35, 45, 55, 75],
+        "Seals & Gaskets": [85, 100, 150, 175],
+        "Car Rental": [35, 45, 55, 55],
+        "Air Conditioning": [120, 140, 160, 180],
+        "Hi-Tech Components": [160, 170, 180, 200],
+      },
+    },
+  ],
+  essential: [
+    {
+      rows: {
+        "Base Price": [189, 219, 259, 369],
+        "Unlimited km": [100, 100, 100, 150],
+        "Zero Deductible": [85, 120, 150, 150],
+        "Air Conditioning": [120, 130, 140, 160],
+      },
+    },
+    {
+      rows: {
+        "Base Price": [219, 309, 379, 489],
+        "Unlimited km": [100, 100, 100, 150],
+        "Zero Deductible": [85, 120, 150, 150],
+        "Air Conditioning": [120, 130, 140, 160],
+        "Hi-Tech Components": [160, 170, 180, 200],
+      },
+    },
+    {
+      rows: {
+        "Base Price": [369, 479, 659, 769],
+        "Unlimited km": [100, 100, 100, "n/a"],
+        "Zero Deductible": [85, 120, 150, 150],
+        "Air Conditioning": [120, 140, 160, 180],
+        "Hi-Tech Components": [160, 170, 180, 200],
+        "Hybrid Components": [249, 299, 349, 449],
+      },
+    },
+    {
+      rows: {
+        "Base Price": [529, 649, 759, 959],
+        "Unlimited km": [100, 100, 200, 250],
+        "Zero Deductible": [125, 125, 150, 150],
+        "Air Conditioning": [160, 170, 190, 200],
+        "Hi-Tech ELITE": [349, 399, 449, 449],
+        "Hybrid Components": [349, 399, 469, 559],
+        "Premium Vehicle Fee": [350, 450, 550, 600],
+      },
+    },
+    {
+      rows: {
+        "Base Price": [779, 909, 1139],
+        "Unlimited km": [100, "n/a", "n/a"],
+        "Zero Deductible": [125, 150, 150],
+        "Air Conditioning": [170, 190, 200],
+        "Hi-Tech ELITE": [399, 449, 449],
+        "Hybrid Components": [399, 469, 559],
+        "Premium Vehicle Fee": [450, 550, 600],
+      },
+    },
+    {
+      rows: {
+        "Base Price": [899, 1059, 1309],
+        "Unlimited km": [100, 250, 350],
+        "Zero Deductible": [125, 150, 150],
+        "Air Conditioning": [170, 190, 200],
+        "Hi-Tech ELITE": [399, 449, 449],
+        "Hybrid Components": [399, 469, 559],
+        "Premium Vehicle Fee": [450, 550, 600],
+      },
+    },
+  ],
+  "premium-special": [
+    {
+      rows: {
+        "Base Price": [189, 339, 479, 619, 739, 899],
+        "Unlimited km": ["Included", "Included", 100, 100, "n/a", "n/a"],
+        "Zero Deductible": [35, 55, 85, 120, 150, 150],
+        "Hi-Tech Components": ["n/a", "n/a", 160, 170, 180, 200],
+        "Hybrid Components": ["n/a", "n/a", 249, 299, 349, 449],
+      },
+    },
+    {
+      rows: {
+        "Base Price": [639, 739, 889, 1129],
+        "Unlimited km": [100, 100, "n/a", "n/a"],
+        "Zero Deductible": [85, 120, 150, 150],
+        "Hi-Tech Components": [160, 170, 180, 200],
+        "Hi-Tech ELITE": [349, 399, 449, 449],
+        "Hybrid Components": [249, 299, 349, 449],
+        "Premium Vehicle Fee": [250, 300, 385, 400],
+      },
+    },
+    {
+      rows: {
+        "Base Price": [699, 789, 939, 1249],
+        "Unlimited km": [100, 150, 250, 350],
+        "Zero Deductible": [85, 120, 150, 150],
+        "Hi-Tech Components": [160, 170, 180, 200],
+        "Hi-Tech ELITE": [349, 399, 449, 449],
+        "Hybrid Components": [249, 299, 359, 449],
+        "Premium Vehicle Fee": [350, 450, 550, 600],
+      },
+    },
+  ],
+  luxury: [
+    {
+      rows: {
+        "Base Price": [119, 209, 279, 329, 399],
+        "Zero Deductible": [35, 55, 85, 115, 135],
+      },
+    },
+    {
+      rows: {
+        "Base Price": [189, 289, 319, 379, 459],
+        "Zero Deductible": [35, 55, 85, 115, 135],
+      },
+    },
+    {
+      rows: {
+        "Base Price": [349, 479, 629, 779],
+        "Zero Deductible": [55, 85, 115, 135],
+        "Hi-Tech Components": ["n/a", 129, 149, 179],
+        "Hybrid Components": ["n/a", 249, 299, 349],
+        "Premium Vehicle Fee": ["n/a", 100, 150, 170],
+      },
+    },
+    {
+      rows: {
+        "Base Price": [789, 849, 1189],
+        "Zero Deductible": [85, 115, 135],
+        "Hi-Tech Components": [129, 149, 179],
+        "Hybrid Components": [249, 299, 349],
+        "Premium Vehicle Fee": [100, 150, 170],
+      },
+    },
+  ],
+  "diamond-plus": [
+    {
+      rows: {
+        "Powertrain PLUS": [295, 295, 345, 345],
+        "Hi-Tech ELITE": [349, 399, 449, 449],
+        "Hybrid Components": [349, 399, 489, 559],
+        "Premium Vehicle Fee": [350, 450, 550, 600],
+      },
+      mileageBands: [
+        [819, 919, 1029, 1149],
+        [1129, 1299, 1409, 1629],
+        [1279, 1549, 1659, 1969],
+      ],
+    },
+    {
+      rows: {
+        "Unlimited km": [100, 100, 100],
+        "Powertrain PLUS": [295, 295, 345],
+        "Hi-Tech ELITE": [349, 399, 449],
+        "Hybrid Components": [399, 489, 559],
+        "Premium Vehicle Fee": [450, 550, 600],
+      },
+      mileageBands: [
+        [989, 1089, 1299],
+        [1349, 1509, 1749],
+        [1639, 1764, 2264],
+      ],
+    },
+    {
+      rows: {
+        "Unlimited km": [250, "n/a", "n/a"],
+        "Powertrain PLUS": [295, 295, 345],
+        "Hi-Tech ELITE": [349, 399, 449],
+        "Hybrid Components": [399, 489, 559],
+        "Premium Vehicle Fee": [450, 550, 600],
+      },
+      mileageBands: [
+        [1099, 1199, 1499],
+        [1459, 1679, 1949],
+        [1799, 1949, 2649],
+      ],
+    },
+    {
+      rows: {
+        "Powertrain PLUS": [295, 295, 345],
+        "Hi-Tech ELITE": [349, 399, 449],
+        "Hybrid Components": [399, 489, 559],
+        "Premium Vehicle Fee": [450, 550, 600],
+      },
+      mileageBands: [
+        [1679, 1789, 2179],
+        [2059, 2289, 2659],
+        [2409, 2559, 3399],
+      ],
+    },
+  ],
+  driver: [
+    {
+      rows: {
+        "Base Price": [399, 499, 599],
+        "Car Rental": [25, 35, 45],
+        "Zero Deductible": [50, 75, 45],
+        "Air Conditioning": [75, 100, 125],
+        "Hi-Tech Components": [100, 150, 200],
+        "Hybrid Components": [350, 450, 550],
+        "Add extra 10,000 km": ["n/a", 175, 225],
+      },
+    },
+    {
+      rows: {
+        "Base Price": [599, 799, 999],
+        "Car Rental": [25, 35, 45],
+        "Zero Deductible": [75, 100, 125],
+        "Air Conditioning": [100, 125, 250],
+        "Hi-Tech Components": [150, 200, 250],
+        "Hybrid Components": [450, 550, 650],
+        "Add extra 10,000 km": ["n/a", 175, 225],
+      },
+    },
+  ],
+  pro: [
+    {
+      rows: {
+        "Base Price": [1499, 1849, 2199],
+        "Car Rental": [25, 35, 45],
+        "Zero Deductible": [125, 175, 225],
+        "GPS & Tech Package": [150, 200, 250],
+        "Hi-Tech Components": [150, 200, 250],
+        "Hybrid Components": [499, 599, 699],
+        "Add extra 10,000 km": ["n/a", "n/a", 299],
+      },
+    },
+    {
+      rows: {
+        "Base Price": [1879, 2249, 2699],
+        "Car Rental": [25, 35, 45],
+        "Zero Deductible": [150, 200, 250],
+        "GPS & Tech Package": [200, 250, 300],
+        "Hi-Tech Components": [175, 225, 275],
+        "Hybrid Components": [499, 599, 699],
+        "Add extra 10,000 km": ["n/a", 199, 299],
+      },
+    },
+  ],
+};
+
+function applyDealerPricing() {
+  for (const plan of warrantyPlans) {
+    const planPatch = DEALER_PRICING[plan.slug];
+    if (!planPatch) continue;
+    plan.pricingTiers.forEach((tier, tierIndex) => {
+      const tierPatch = planPatch[tierIndex];
+      if (!tierPatch) return;
+      tier.rows.forEach((row) => {
+        const dealerValues = tierPatch.rows?.[row.label];
+        if (dealerValues) row.dealerValues = dealerValues;
+      });
+      tier.mileageBands?.forEach((band, bandIndex) => {
+        const dealerValues = tierPatch.mileageBands?.[bandIndex];
+        if (dealerValues) band.dealerValues = dealerValues;
+      });
+    });
+  }
+}
+
+applyDealerPricing();
 
 export const getProviders = () => {
   const providers = Array.from(new Set(warrantyPlans.map(p => p.provider)));

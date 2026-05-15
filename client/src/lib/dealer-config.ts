@@ -153,6 +153,32 @@ export function useDealerConfig(): DealerConfig {
 
 const isNumeric = (v: unknown): v is number => typeof v === 'number' && !isNaN(v)
 
+function findPriceSource(tier: PricingTier, rowLabel: string) {
+  const row = tier.rows.find((r) => r.label === rowLabel)
+  if (row) return row
+  return tier.mileageBands?.find((band) => band.label === rowLabel)
+}
+
+function getBrochureCost(plan: WarrantyPlan, tierIndex: number, termIndex: number, rowLabel: string): number | null {
+  const tier = plan.pricingTiers[tierIndex]
+  if (!tier) return null
+  const source = findPriceSource(tier, rowLabel)
+  if (!source) return null
+  const dealerValue = source.dealerValues?.[termIndex]
+  if (isNumeric(dealerValue)) return dealerValue
+  const retailValue = source.values[termIndex]
+  return isNumeric(retailValue) ? retailValue : null
+}
+
+function getBrochureRetail(plan: WarrantyPlan, tierIndex: number, termIndex: number, rowLabel: string): number | null {
+  const tier = plan.pricingTiers[tierIndex]
+  if (!tier) return null
+  const source = findPriceSource(tier, rowLabel)
+  if (!source) return null
+  const value = source.values[termIndex]
+  return isNumeric(value) ? value : null
+}
+
 export function getCost(
   plan: WarrantyPlan,
   tierIndex: number,
@@ -165,12 +191,7 @@ export function getCost(
     const costOverride = cfg.warranty[plan.slug]?.tiers?.[tierIndex]?.rows?.[rowLabel]?.[termIndex]?.cost
     if (costOverride != null) return costOverride
   }
-  const tier: PricingTier | undefined = plan.pricingTiers[tierIndex]
-  if (!tier) return null
-  const row = tier.rows.find((r) => r.label === rowLabel)
-  if (!row) return null
-  const v = row.values[termIndex]
-  return isNumeric(v) ? v : null
+  return getBrochureCost(plan, tierIndex, termIndex, rowLabel)
 }
 
 export function getRetail(
@@ -186,7 +207,7 @@ export function getRetail(
   if (cost == null) return null
   const override = cfg.warranty[planSlug]?.tiers?.[tierIndex]?.rows?.[rowLabel]?.[termIndex]?.retail
   if (override != null) return override
-  return Math.round(cost * (1 + cfg.warrantyMarkupPct / 100))
+  return getBrochureRetail(plan, tierIndex, termIndex, rowLabel) ?? Math.round(cost * (1 + cfg.warrantyMarkupPct / 100))
 }
 
 export function isPlanEnabled(cfg: DealerConfig, planSlug: string): boolean {
@@ -278,7 +299,7 @@ export function applyMarkupToTier(planSlug: string, tierIndex: number, markupPct
   if (!tier) return
   setConfig((cfg) => {
     const next = structuredClone(cfg)
-    for (const row of tier.rows) {
+    for (const row of [...tier.rows, ...(tier.mileageBands ?? [])]) {
       for (let t = 0; t < tier.terms.length; t++) {
         const cost = getCost(plan, tierIndex, t, row.label)
         if (cost == null) continue
@@ -297,7 +318,7 @@ export function fillEmptyOnTier(planSlug: string, tierIndex: number, markupPct: 
   if (!tier) return
   setConfig((cfg) => {
     const next = structuredClone(cfg)
-    for (const row of tier.rows) {
+    for (const row of [...tier.rows, ...(tier.mileageBands ?? [])]) {
       for (let t = 0; t < tier.terms.length; t++) {
         const cost = getCost(plan, tierIndex, t, row.label)
         if (cost == null) continue
