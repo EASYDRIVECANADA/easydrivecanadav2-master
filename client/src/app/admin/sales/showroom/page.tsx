@@ -51,6 +51,26 @@ const listingTypeOptions: Array<{ key: ListingTypeFilter; label: string; color: 
   { key: 'fleet', label: 'Fleet Select', color: '#64748b' },
 ]
 
+const ownerPermissionDefaults = {
+  access_all_deals: true,
+  access_all_leads_customers: true,
+  administrator: true,
+  approver: true,
+  vendors: true,
+  delete_vendors: true,
+  view_costs: true,
+  costs: true,
+  customers: true,
+  delete_customers: true,
+  sales: true,
+  delete_sales: true,
+  inventory: true,
+  delete_inventory: true,
+  settings: true,
+  sales_reports_access: true,
+  inventory_reports_access: true,
+}
+
 const getDownPaymentCap = (price: number) => {
   const numericPrice = Number(price)
   return Number.isFinite(numericPrice) ? Math.max(0, numericPrice) : 0
@@ -281,6 +301,38 @@ export default function CustomerShowroomPage() {
               .limit(1)
               .maybeSingle()
             userId = String((data as any)?.user_id ?? '').trim()
+            if (!userId) {
+              const { data: verification } = await supabase
+                .from('edc_account_verifications')
+                .select('full_name')
+                .ilike('email', email)
+                .order('created_at', { ascending: false })
+                .limit(1)
+                .maybeSingle()
+              if (verification) {
+                const generatedUserId =
+                  typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+                    ? crypto.randomUUID()
+                    : `${Date.now()}-${Math.random().toString(16).slice(2)}`
+                const fullName = String((verification as any)?.full_name || '').trim()
+                const { data: inserted } = await supabase
+                  .from('users')
+                  .insert({
+                    email,
+                    user_id: generatedUserId,
+                    first_name: fullName.split(/\s+/)[0] || null,
+                    last_name: fullName.split(/\s+/).slice(1).join(' ') || null,
+                    title: 'Owner',
+                    role: 'private',
+                    status: 'enable',
+                    created_at: new Date().toISOString(),
+                    ...ownerPermissionDefaults,
+                  })
+                  .select('user_id')
+                  .single()
+                userId = String((inserted as any)?.user_id || generatedUserId).trim()
+              }
+            }
             if (userId && typeof window !== 'undefined') {
               window.localStorage.setItem('edc_admin_session', JSON.stringify({ ...sessionData, user_id: userId }))
               window.dispatchEvent(new Event('edc_admin_session_changed'))
