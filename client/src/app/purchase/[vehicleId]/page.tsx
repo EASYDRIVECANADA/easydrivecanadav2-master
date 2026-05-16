@@ -78,6 +78,7 @@ interface Order {
   vehicleSnapshot: {
     id: string; year: number; make: string; model: string; trim: string
     stockNumber: string; vin: string; salePrice: number; image: string; listingType: string
+    checkoutTerms?: string
   }
   customer: CustomerInfo
   pricing: PricingBreakdown
@@ -100,6 +101,7 @@ interface Vehicle {
   id: string; make: string; model: string; trim: string; year: number
   price: number; mileage: number; vin: string; stockNumber: string
   image: string; listingType: string; category: string
+  checkoutTerms: string
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -142,6 +144,8 @@ const PREMIER_LICENSING = 59
 const STANDARD_DOC_FEE = 599
 const STANDARD_LICENSING = 120
 const STORAGE_KEY = 'edc.orders.v2'
+const DEFAULT_CHECKOUT_TERMS = 'Vehicle condition, certification status, included warranty coverage, and any extended warranty selected above are documented in this checkout and on the final Bill of Sale. The buyer acknowledges they have been given the opportunity to inspect the vehicle and review the available vehicle records before completing the purchase.'
+const roundMoney = (value: number) => Math.round((Number(value) || 0) * 100) / 100
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Utilities
@@ -227,17 +231,17 @@ function computePricing(
     warrantyAmount -
     couponDiscount
 
-  const hst = Math.round(Math.max(0, taxableBase) * HST_RATE)
+  const hst = roundMoney(Math.max(0, taxableBase) * HST_RATE)
   const lineSum = lineItems.reduce((s, l) => s + l.amount, 0)
   const addOnSum = addOns.reduce((s, a) => s + a.amount, 0)
-  const total = salePrice + lineSum + addOnSum + warrantyAmount - couponDiscount + hst
+  const total = roundMoney(salePrice + lineSum + addOnSum + warrantyAmount - couponDiscount + hst)
 
   return {
     salePrice, lineItems, addOns, warrantyLine,
     couponCode: couponDiscount > 0 ? WARRANTY_COUPON_CODE : null,
     couponDiscount,
     hst, total,
-    deposit: DEPOSIT, balanceDue: total - DEPOSIT,
+    deposit: DEPOSIT, balanceDue: roundMoney(total - DEPOSIT),
   }
 }
 
@@ -310,6 +314,22 @@ export default function PurchasePage() {
           : category === 'private'    ? 'Private Seller'
           : 'Dealer Select'
 
+        let checkoutTerms = DEFAULT_CHECKOUT_TERMS
+        try {
+          const withCheckoutTerms = await supabase
+            .from('ImportantDisclosures')
+            .select('checkout_terms')
+            .eq('vehicleId', String(data.id))
+            .maybeSingle()
+
+          if (!withCheckoutTerms.error) {
+            const customTerms = String((withCheckoutTerms.data as any)?.checkout_terms || '').trim()
+            if (customTerms) checkoutTerms = customTerms
+          }
+        } catch {
+          // Keep the default checkout terms when the optional inventory override is unavailable.
+        }
+
         setVehicle({
           id: String(data.id),
           make: String(data.make || ''),
@@ -323,6 +343,7 @@ export default function PurchasePage() {
           image,
           listingType,
           category,
+          checkoutTerms,
         })
 
         // If vehicle is back In Stock (e.g. submission was declined), clear the stale localStorage order
@@ -403,7 +424,7 @@ export default function PurchasePage() {
       return
     }
     setAppliedCouponCode('')
-    setCouponError(`Coupon removed. Select a warranty of $${fmt(WARRANTY_COUPON_DISCOUNT)} or more to use ${WARRANTY_COUPON_CODE}.`)
+    setCouponError(`Coupon removed. Select a warranty of $${fmt(WARRANTY_COUPON_DISCOUNT)} or more to use this discount.`)
   }, [appliedCouponCode, warrantySelection])
 
   const applyCoupon = () => {
@@ -481,6 +502,7 @@ export default function PurchasePage() {
         id: vehicle.id, year: vehicle.year, make: vehicle.make, model: vehicle.model,
         trim: vehicle.trim, stockNumber: vehicle.stockNumber, vin: vehicle.vin,
         salePrice: vehicle.price, image: vehicle.image, listingType: vehicle.listingType,
+        checkoutTerms: vehicle.checkoutTerms,
       },
       customer, pricing,
       selectedAddOnIds: selectedAddOns,
@@ -1534,7 +1556,7 @@ function StepCarfax({
           <div className="flex-1">
             <h3 className="font-semibold text-gray-900">CARFAX Canada Report</h3>
             <p className="text-xs text-gray-500 mt-0.5">VIN: {vin || 'N/A'}</p>
-            <p className="mt-2 text-sm text-gray-600">No accident/damage records found. Last registered in Ontario. Service records on file. No open recalls.</p>
+            <p className="mt-2 text-sm text-gray-600">Open and review the CARFAX report for this vehicle before signing below.</p>
             <button
               type="button"
               onClick={openCarfax}
@@ -1638,7 +1660,7 @@ function StepCarfax({
         </div>
         <div className="flex items-start pt-6">
           <CheckItem checked={ack} onChange={setAck}>
-            I have reviewed the CARFAX report for this vehicle and accept it as part of my decision to purchase.
+            I acknowledge that I have opened and reviewed the CARFAX report for this vehicle.
           </CheckItem>
         </div>
       </div>
@@ -1923,7 +1945,7 @@ function SummarySidebar({
                 id="checkout-coupon"
                 value={couponCode}
                 onChange={(event) => onCouponCodeChange(event.target.value.toUpperCase())}
-                placeholder={WARRANTY_COUPON_CODE}
+                placeholder="Enter coupon code"
                 className="min-w-0 flex-1 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-semibold uppercase text-gray-900 outline-none transition focus:border-[#118df0] focus:ring-2 focus:ring-[#118df0]/15"
               />
               {couponApplied ? (
@@ -1945,14 +1967,12 @@ function SummarySidebar({
             </div>
             {couponApplied ? (
               <p className="mt-2 text-xs font-medium text-emerald-700">
-                {WARRANTY_COUPON_CODE} applied: ${fmt(WARRANTY_COUPON_DISCOUNT)} warranty discount.
+                Coupon applied: ${fmt(WARRANTY_COUPON_DISCOUNT)} warranty discount.
               </p>
             ) : couponError ? (
               <p className="mt-2 text-xs font-medium text-red-600">{couponError}</p>
             ) : (
-              <p className="mt-2 text-xs text-gray-500">
-                Valid with a warranty of ${fmt(WARRANTY_COUPON_DISCOUNT)} or higher.
-              </p>
+              null
             )}
           </form>
           <div className="mt-4 space-y-1.5 text-sm">
@@ -2000,7 +2020,7 @@ function SummarySidebar({
             )}
             {pricing.couponDiscount > 0 && (
               <div className="flex justify-between text-emerald-700">
-                <span className="truncate pr-2 font-medium">Coupon ({pricing.couponCode})</span>
+                <span className="truncate pr-2 font-medium">Coupon discount</span>
                 <span className="tabular-nums font-semibold">-${fmt(pricing.couponDiscount)}</span>
               </div>
             )}
@@ -2084,7 +2104,7 @@ function BillOfSaleContent({ vehicle, customer, pricing, orderId }: { vehicle: V
           ))}
           {pricing.couponDiscount > 0 && (
             <div className="flex justify-between text-emerald-700">
-              <span>Coupon ({pricing.couponCode})</span><span>-${fmt(pricing.couponDiscount)}</span>
+              <span>Coupon discount</span><span>-${fmt(pricing.couponDiscount)}</span>
             </div>
           )}
           <div className="flex justify-between"><span>HST (13%)</span><span>${fmt(pricing.hst)}</span></div>
@@ -2097,7 +2117,7 @@ function BillOfSaleContent({ vehicle, customer, pricing, orderId }: { vehicle: V
       </div>
       <div>
         <div className="font-semibold text-gray-900 mb-1">TERMS</div>
-        <p>This vehicle is sold as-is unless an extended warranty is included above. The buyer acknowledges they have been given the opportunity to inspect the vehicle and accepts it in its current condition.</p>
+        <p>{vehicle.checkoutTerms || DEFAULT_CHECKOUT_TERMS}</p>
         <p className="mt-2">The $1,000 deposit is non-refundable unless EasyDrive Canada cancels this transaction at its sole discretion. The remaining balance is due within 72 hours of notification that the vehicle is ready for delivery.</p>
         <p className="mt-2">Title transfers to the buyer only upon receipt of full payment and proof of insurance. Ontario HST has been applied at 13% on applicable items.</p>
       </div>

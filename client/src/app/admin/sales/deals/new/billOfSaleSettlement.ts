@@ -88,14 +88,27 @@ function taxRateFromLabel(label: string): number {
   return Number.isFinite(rate) && rate > 0 ? rate / 100 : 0
 }
 
+function isDefaultTaxKey(label: string): boolean {
+  const normalized = String(label || '').trim().toLowerCase()
+  return normalized === 'default tax 0 %' || normalized.startsWith('default tax')
+}
+
+function selectedTaxLabels(item: LineItem): string[] {
+  const taxSelected = item?.taxSelected && typeof item.taxSelected === 'object'
+    ? item.taxSelected as Record<string, unknown>
+    : {}
+  return Object.keys(taxSelected).filter((key) => Boolean(taxSelected[key]))
+}
+
+function hasExplicitItemTaxSelection(item: LineItem): boolean {
+  return selectedTaxLabels(item).some((key) => !isDefaultTaxKey(key))
+}
+
 function itemTax(item: LineItem, primaryKey: string): number {
   if (hasAmount(item?.taxAmount)) return money(item.taxAmount)
   if (hasAmount(item?.tax_amount)) return money(item.tax_amount)
 
-  const taxSelected = item?.taxSelected && typeof item.taxSelected === 'object'
-    ? item.taxSelected as Record<string, unknown>
-    : {}
-  const selectedLabels = Object.keys(taxSelected).filter((key) => Boolean(taxSelected[key]))
+  const selectedLabels = selectedTaxLabels(item)
   if (selectedLabels.length === 0) return 0
 
   if (item?.taxOverride === true || item?.taxOverride === 'true') {
@@ -119,7 +132,7 @@ function sumTaxes(items: LineItem[], primaryKey: string): number {
 
 function sumSelfTaxedBase(items: LineItem[], primaryKey: string): number {
   return roundMoney(items.reduce((sum, item) => {
-    return itemTax(item, primaryKey) > 0 ? sum + itemAmount(item, primaryKey) : sum
+    return hasExplicitItemTaxSelection(item) ? sum + itemAmount(item, primaryKey) : sum
   }, 0))
 }
 
@@ -128,6 +141,12 @@ function findOmvicFee(fees: LineItem[]): LineItem | null {
     const name = String(fee?.fee_name ?? fee?.name ?? fee?.label ?? '').toLowerCase()
     return name.includes('omvic')
   }) ?? null
+}
+
+function isLegacyTaxFee(item: LineItem): boolean {
+  const id = String(item?.id ?? '').trim().toLowerCase()
+  const name = String(item?.fee_name ?? item?.name ?? item?.label ?? '').trim().toLowerCase()
+  return id === 'fee_hst' || /^(hst|gst|pst|qst)(\s*\(\d+(?:\.\d+)?%\))?$/.test(name) || name === 'harmonized sales tax'
 }
 
 function itemName(item: LineItem): string {
@@ -142,9 +161,11 @@ function lineItems(items: LineItem[], primaryKey: string, exclude?: LineItem | n
 }
 
 function worksheetTaxRate(w: Record<string, unknown> | null | undefined): number {
-  if (!hasAmount(w?.tax_rate)) return 0.13
+  const code = String(w?.tax_code ?? '').trim().toLowerCase()
+  if (!hasAmount(w?.tax_rate)) return code.includes('exempt') || code.includes('default tax 0') ? 0 : 0.13
   const raw = money(w?.tax_rate)
   if (raw < 0) return 0
+  if (raw === 0 && (!code || code === 'hst')) return 0.13
   return raw > 1 ? raw / 100 : raw
 }
 
@@ -153,7 +174,7 @@ function isTaxOverridden(w: Record<string, unknown> | null | undefined): boolean
 }
 
 export function buildBillOfSaleSettlement(w: Record<string, unknown> | null | undefined, fallbackPrice?: unknown): SettlementFields {
-  const fees = parseBillOfSaleItems(w?.fees)
+  const fees = parseBillOfSaleItems(w?.fees).filter((item) => !isLegacyTaxFee(item))
   const accessories = parseBillOfSaleItems(w?.accessories)
   const warranties = parseBillOfSaleItems(w?.warranties)
   const insurances = parseBillOfSaleItems(w?.insurances)
@@ -194,7 +215,7 @@ export function buildBillOfSaleSettlement(w: Record<string, unknown> | null | un
   const licenseFee = money(w?.license_fee)
   const lienPayout = money(w?.lien_payout)
   const actualCashValue = money(w?.actual_cash_value)
-  const tradeEquity = roundMoney(hasAmount(w?.trade_equity) ? money(w?.trade_equity) : actualCashValue - tradeValue)
+  const tradeEquity = roundMoney(hasAmount(w?.trade_equity) ? Math.max(0, money(w?.trade_equity)) : Math.max(0, actualCashValue - tradeValue))
   const subtotal2 = roundMoney(netDifference + totalTax + licenseFee + lienPayout - tradeEquity)
   const deposit = money(w?.deposit)
   const downPayment = money(w?.down_payment)

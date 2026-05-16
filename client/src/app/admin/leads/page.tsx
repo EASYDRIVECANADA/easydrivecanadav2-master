@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import {
   BadgeCheck,
   Car,
+  ChevronDown,
   CheckCircle2,
   Clock3,
   Eye,
@@ -81,6 +82,11 @@ type LeadDraft = {
   createdAt: string
 }
 
+type CsvMessageField = {
+  label: string
+  aliases: string[]
+}
+
 const FILTERS: Array<{ key: FilterKey; label: string }> = [
   { key: 'finance', label: 'Credit Application' },
   { key: 'insurance', label: 'Insurance Application' },
@@ -91,8 +97,21 @@ const BASE_LEAD_SELECT = 'id, first_name, last_name, email, phone, vehicle_inter
 const LEAD_SELECT_WITH_NOTES = `${BASE_LEAD_SELECT}, admin_notes`
 const LEAD_SELECT_FULL = `${LEAD_SELECT_WITH_NOTES}, manager_status`
 const MANAGER_STATUSES: LeadManagerStatus[] = ['AWAITING DECISION', 'PENDING', 'PENDING (BHPH)', 'DECLINED']
+const LEAD_DELETE_ALLOWED_EMAIL = 'info@easydrivecanada.com'
 
 const clean = (value: unknown) => String(value ?? '').trim()
+
+const readAdminSessionEmail = () => {
+  if (typeof window === 'undefined') return ''
+  try {
+    const raw = window.localStorage.getItem('edc_admin_session')
+    if (!raw) return ''
+    const parsed = JSON.parse(raw) as { email?: string }
+    return clean(parsed.email).toLowerCase()
+  } catch {
+    return ''
+  }
+}
 
 const emptyLeadDraft: LeadDraft = {
   firstName: '',
@@ -195,6 +214,125 @@ const formatMoney = (value: number | null) => {
   return `$${Number(value).toLocaleString()}`
 }
 
+const normalizeFieldLabel = (label: string) => clean(label).toLowerCase().replace(/[^a-z0-9]/g, '')
+
+const findSubmittedValue = (
+  rows: Array<{ label: string; value: string }>,
+  labels: string[],
+  usedLabels?: Set<string>
+) => {
+  for (const label of labels) {
+    const row = rows.find((item) => normalizeFieldLabel(item.label) === normalizeFieldLabel(label))
+    if (row) {
+      usedLabels?.add(normalizeFieldLabel(row.label))
+      return row.value
+    }
+  }
+  return ''
+}
+
+const buildApplicationRows = (lead: Lead, fields: { rows: Array<{ label: string; value: string }>; notes: string[] }) => {
+  const source = sourceFromLead(lead)
+  const usedLabels = new Set<string>()
+  const sourceValue = findSubmittedValue(fields.rows, ['Source'], usedLabels) || sourceLabel(source)
+  const row = (label: string, value: unknown) => ({ label, value: clean(value) })
+  const submittedFirstName = findSubmittedValue(fields.rows, ['First name', 'First'], usedLabels)
+  const submittedLastName = findSubmittedValue(fields.rows, ['Last name', 'Last'], usedLabels)
+  const submittedPhone = findSubmittedValue(fields.rows, ['Phone', 'Phone number', 'Mobile'], usedLabels)
+  const submittedEmail = findSubmittedValue(fields.rows, ['Email', 'Email address'], usedLabels)
+  const submittedEmployment = findSubmittedValue(fields.rows, ['Employment', 'Employment status'], usedLabels)
+  const submittedMonthlyIncome = findSubmittedValue(fields.rows, ['Monthly income', 'Income'], usedLabels)
+  const submittedDownPayment = findSubmittedValue(fields.rows, ['Down payment'], usedLabels)
+  const submittedCredit = findSubmittedValue(fields.rows, ['Credit situation', 'Credit profile', 'Credit'], usedLabels)
+
+  const baseRows = [
+    row('Submitted at', formatDate(lead.createdAt)),
+    row('Source', sourceValue),
+    row('First name', submittedFirstName || lead.firstName),
+    row('Last name', submittedLastName || lead.lastName),
+    row('Phone', submittedPhone || lead.phone),
+    row('Email', submittedEmail || lead.email),
+  ]
+
+  const financeRows = [
+    row('Date of birth', findSubmittedValue(fields.rows, ['Date of birth', 'DOB', 'Birth date'], usedLabels)),
+    row('Street address', findSubmittedValue(fields.rows, ['Street address', 'Full address', 'Address'], usedLabels)),
+    row('Unit / apartment', findSubmittedValue(fields.rows, ['Unit / apartment', 'Unit', 'Apartment', 'Unit apartment'], usedLabels)),
+    row('City', findSubmittedValue(fields.rows, ['City'], usedLabels)),
+    row('Province / territory', findSubmittedValue(fields.rows, ['Province / territory', 'Province', 'Address province'], usedLabels)),
+    row('Postal code', findSubmittedValue(fields.rows, ['Postal code', 'Address postal code'], usedLabels)),
+    row('Canadian resident', findSubmittedValue(fields.rows, ['Canadian resident', 'Canadian resident address'], usedLabels)),
+    row('Time at address', findSubmittedValue(fields.rows, ['Time at address', 'Address duration'], usedLabels)),
+    row('Employment', submittedEmployment || lead.employmentStatus),
+    row('Company name', findSubmittedValue(fields.rows, ['Company name', 'Employer', 'Employer name'], usedLabels)),
+    row('Time employed at company', findSubmittedValue(fields.rows, ['Time employed at company', 'Time employed', 'Employer duration'], usedLabels)),
+    row('Monthly income', submittedMonthlyIncome || formatMoney(lead.monthlyIncome)),
+    row('Housing', findSubmittedValue(fields.rows, ['Housing'], usedLabels)),
+    row('Credit situation', submittedCredit || lead.creditScore),
+    row('Down payment', submittedDownPayment || formatMoney(lead.downPayment)),
+    row('Referrer', findSubmittedValue(fields.rows, ['Referrer'], usedLabels)),
+  ]
+
+  const insuranceRows = [
+    row('License number', findSubmittedValue(fields.rows, ['License number'], usedLabels)),
+    row('Street address', findSubmittedValue(fields.rows, ['Street address', 'Full address', 'Address'], usedLabels)),
+    row('Unit / apartment', findSubmittedValue(fields.rows, ['Unit / apartment', 'Unit', 'Apartment', 'Unit apartment'], usedLabels)),
+    row('City', findSubmittedValue(fields.rows, ['City'], usedLabels)),
+    row('Province / territory', findSubmittedValue(fields.rows, ['Province / territory', 'Province'], usedLabels)),
+    row('Postal code', findSubmittedValue(fields.rows, ['Postal code'], usedLabels)),
+    row('Vehicle interest', lead.vehicleInterest || findSubmittedValue(fields.rows, ['Vehicle interest', 'Vehicle'], usedLabels)),
+    row('VIN', findSubmittedValue(fields.rows, ['VIN'], usedLabels)),
+    row('Canadian resident address', findSubmittedValue(fields.rows, ['Canadian resident address'], usedLabels)),
+    row('Consent to contact', findSubmittedValue(fields.rows, ['Consent to contact'], usedLabels)),
+    row('Consent accurate', findSubmittedValue(fields.rows, ['Consent accurate'], usedLabels)),
+    row('Referrer', findSubmittedValue(fields.rows, ['Referrer'], usedLabels)),
+  ]
+
+  const templateRows = source === 'insurance' ? insuranceRows : source === 'finance' ? financeRows : []
+  const extraRows = fields.rows
+    .filter((item) => !usedLabels.has(normalizeFieldLabel(item.label)))
+    .filter((item) => clean(item.value))
+    .map((item) => row(item.label, item.value))
+
+  const noteRows = fields.notes.map((note, index) => row(index === 0 ? 'Note' : `Note ${index + 1}`, note))
+
+  if (source === 'finance' || source === 'insurance') {
+    return [...baseRows, ...templateRows, ...extraRows, ...noteRows]
+  }
+
+  return [...baseRows, ...extraRows, ...noteRows]
+}
+
+const leadLocationDetails = (lead: Lead) => {
+  const { rows } = parseMessageFields(lead.message)
+  const city = findSubmittedValue(rows, ['City', 'Address city'])
+  const province = findSubmittedValue(rows, ['Province / territory', 'Province', 'Address province'])
+  const postalCode = findSubmittedValue(rows, ['Postal code', 'Address postal code'])
+  const address = findSubmittedValue(rows, ['Street address', 'Full address', 'Address'])
+  const unit = findSubmittedValue(rows, ['Unit / apartment', 'Unit', 'Apartment', 'Unit apartment'])
+  const inferredCity = inferCityFromAddress(address)
+
+  return {
+    city: [city || inferredCity, province].filter(Boolean).join(', ') || 'City not provided',
+    address: [address, unit, postalCode].filter(Boolean).join(' | ') || 'Address not provided',
+  }
+}
+
+const hasLeadLocation = (lead: Lead) => {
+  const location = leadLocationDetails(lead)
+  return location.city !== 'City not provided' || location.address !== 'Address not provided'
+}
+
+const inferCityFromAddress = (address: string) => {
+  const parts = clean(address).split(',').map(clean).filter(Boolean)
+  if (parts.length < 3) return ''
+
+  const provinceIndex = parts.findIndex((part) => /^[A-Z]{2}$/i.test(part) || /\b(ON|QC|NS|NB|MB|BC|PE|SK|AB|NL|NT|YT|NU)\b/i.test(part))
+  if (provinceIndex > 0) return parts[provinceIndex - 1]
+
+  return ''
+}
+
 const sourceMessageValue = (source: LeadDraftSource) => {
   if (source === 'finance') return 'Manual Finance'
   if (source === 'insurance') return 'Manual Insurance'
@@ -235,6 +373,71 @@ const pickImportValue = (row: Record<string, unknown>, aliases: string[]) => {
   const normalizedAliases = aliases.map(normalizeHeader)
   const entry = Object.entries(row).find(([key]) => normalizedAliases.includes(normalizeHeader(key)))
   return clean(entry?.[1])
+}
+
+const FINANCE_IMPORT_MESSAGE_FIELDS: CsvMessageField[] = [
+  { label: 'Date of birth', aliases: ['date of birth', 'dob', 'birth date'] },
+  { label: 'Street address', aliases: ['street address', 'full address', 'address'] },
+  { label: 'Unit / apartment', aliases: ['unit / apartment', 'unit', 'apartment', 'suite', 'apt'] },
+  { label: 'City', aliases: ['city'] },
+  { label: 'Province / territory', aliases: ['province / territory', 'province', 'territory'] },
+  { label: 'Postal code', aliases: ['postal code', 'postal', 'zip'] },
+  { label: 'Canadian resident', aliases: ['canadian resident'] },
+  { label: 'Time at address', aliases: ['time at address', 'address duration'] },
+  { label: 'Employment', aliases: ['employment', 'employment status', 'job status'] },
+  { label: 'Company name', aliases: ['company name', 'employer', 'employer name'] },
+  { label: 'Time employed at company', aliases: ['time employed at company', 'time employed', 'employer duration'] },
+  { label: 'Monthly income', aliases: ['monthly income', 'income monthly', 'monthly_income'] },
+  { label: 'Housing', aliases: ['housing', 'housing status'] },
+  { label: 'Credit situation', aliases: ['credit', 'credit situation', 'credit score', 'credit profile'] },
+  { label: 'Down payment', aliases: ['down payment', 'downpayment', 'desired down payment'] },
+  { label: 'Referrer', aliases: ['referrer', 'referer', 'referral'] },
+  { label: 'Finance manager', aliases: ['finance manager'] },
+  { label: 'Submitted status', aliases: ['status'] },
+]
+
+const buildImportMessage = (row: Record<string, unknown>, fallbackMessage: string) => {
+  const detailRows = FINANCE_IMPORT_MESSAGE_FIELDS
+    .map((field) => [field.label, pickImportValue(row, field.aliases)] as [string, unknown])
+    .filter(([, value]) => clean(value))
+
+  return buildMessage([
+    ...detailRows,
+    ['Message', fallbackMessage],
+  ])
+}
+
+const draftMessageForInsert = (draft: LeadDraft) => {
+  const sourceLine = `Source: ${sourceMessageValue(draft.source)}`
+  const body = clean(draft.message)
+  if (!body) return sourceLine
+  if (body.toLowerCase().startsWith('source:')) return body
+  if (body.includes('\n') || /^([^:]+):\s*(.*)$/.test(body)) return `${sourceLine}\n${body}`
+  return buildMessage([
+    ['Source', sourceMessageValue(draft.source)],
+    ['Message', body],
+  ])
+}
+
+const leadFromDraftPreview = (draft: LeadDraft, index: number): Lead => {
+  const message = draftMessageForInsert(draft)
+  return {
+    id: `import-preview-${index}`,
+    firstName: draft.firstName,
+    lastName: draft.lastName,
+    email: draft.email,
+    phone: draft.phone,
+    vehicleInterest: clean(draft.vehicleInterest) || null,
+    message,
+    employmentStatus: clean(draft.employmentStatus) || null,
+    monthlyIncome: toNumberOrNull(draft.monthlyIncome),
+    downPayment: toNumberOrNull(draft.downPayment),
+    creditScore: clean(draft.creditScore) || null,
+    adminNotes: clean(draft.adminNotes) || null,
+    managerStatus: normalizeManagerStatus(findSubmittedValue(parseMessageFields(message).rows, ['Submitted status', 'Status'])),
+    ghlSynced: false,
+    createdAt: toDateIsoOrNull(draft.createdAt) || new Date().toISOString(),
+  }
 }
 
 const splitFullName = (fullName: string) => {
@@ -296,10 +499,7 @@ const rowToLeadInsert = (draft: LeadDraft, notesEnabled: boolean, createdAt = ne
     credit_score: clean(draft.creditScore) || null,
     ghl_synced: false,
     created_at: toDateIsoOrNull(draft.createdAt) || createdAt,
-    message: buildMessage([
-      ['Source', sourceMessageValue(draft.source)],
-      ['Message', draft.message],
-    ]) || null,
+    message: draftMessageForInsert(draft) || null,
   }
 
   if (notesEnabled) {
@@ -338,8 +538,11 @@ export default function AdminLeadsPage() {
   const [importSourceMode, setImportSourceMode] = useState<ImportSourceMode>('auto')
   const [importError, setImportError] = useState('')
   const [importing, setImporting] = useState(false)
+  const [adminEmail, setAdminEmail] = useState('')
+  const [selectedLeadIds, setSelectedLeadIds] = useState<Set<string>>(() => new Set())
   const itemsPerPage = 20
   const router = useRouter()
+  const canDeleteLeads = adminEmail === LEAD_DELETE_ALLOWED_EMAIL
 
   useEffect(() => {
     const sessionStr = localStorage.getItem('edc_admin_session')
@@ -347,8 +550,25 @@ export default function AdminLeadsPage() {
       router.push('/admin')
       return
     }
+    setAdminEmail(readAdminSessionEmail())
     void fetchLeads()
   }, [router])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+
+    const syncEmail = () => setAdminEmail(readAdminSessionEmail())
+    const onStorage = (event: StorageEvent) => {
+      if (event.key === 'edc_admin_session') syncEmail()
+    }
+
+    window.addEventListener('storage', onStorage)
+    window.addEventListener('edc_admin_session_changed', syncEmail)
+    return () => {
+      window.removeEventListener('storage', onStorage)
+      window.removeEventListener('edc_admin_session_changed', syncEmail)
+    }
+  }, [])
 
   const fetchLeads = async () => {
     try {
@@ -457,17 +677,100 @@ export default function AdminLeadsPage() {
     currentPage * itemsPerPage
   )
   const totalPages = Math.max(1, Math.ceil(filteredLeads.length / itemsPerPage))
+  const visibleLeadIds = paginatedLeads.map((lead) => lead.id)
+  const selectedCount = selectedLeadIds.size
+  const allVisibleSelected = visibleLeadIds.length > 0 && visibleLeadIds.every((id) => selectedLeadIds.has(id))
+
+  useEffect(() => {
+    const existingIds = new Set(leads.map((lead) => lead.id))
+    setSelectedLeadIds((current) => {
+      const next = new Set(Array.from(current).filter((id) => existingIds.has(id)))
+      return next.size === current.size ? current : next
+    })
+  }, [leads])
+
+  const toggleLeadSelected = (leadId: string, checked: boolean) => {
+    setSelectedLeadIds((current) => {
+      const next = new Set(current)
+      if (checked) next.add(leadId)
+      else next.delete(leadId)
+      return next
+    })
+  }
+
+  const toggleVisibleLeadsSelected = (checked: boolean) => {
+    setSelectedLeadIds((current) => {
+      const next = new Set(current)
+      visibleLeadIds.forEach((id) => {
+        if (checked) next.add(id)
+        else next.delete(id)
+      })
+      return next
+    })
+  }
 
   const handleDelete = async (lead: Lead) => {
+    if (!canDeleteLeads) {
+      alert('Only info@easydrivecanada.com can delete leads.')
+      return
+    }
+
     if (!confirm(`Delete ${leadName(lead)}? This cannot be undone.`)) return
 
     try {
-      const { error } = await supabase.from('edc_leads').delete().eq('id', lead.id)
-      if (error) throw error
+      const response = await fetch('/api/leads', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: adminEmail, ids: [lead.id] }),
+      })
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}))
+        throw new Error(clean(payload?.error) || 'Unable to delete lead.')
+      }
       setLeads((rows) => rows.filter((row) => row.id !== lead.id))
+      setSelectedLeadIds((current) => {
+        const next = new Set(current)
+        next.delete(lead.id)
+        return next
+      })
       setSelectedLead((current) => (current?.id === lead.id ? null : current))
+      setNotesModalLead((current) => (current?.id === lead.id ? null : current))
+      setStatusModalLead((current) => (current?.id === lead.id ? null : current))
     } catch (error) {
       console.error('Error deleting lead:', error)
+      alert(error instanceof Error ? error.message : 'Unable to delete this lead. Try again.')
+    }
+  }
+
+  const handleBulkDelete = async () => {
+    if (!canDeleteLeads) {
+      alert('Only info@easydrivecanada.com can delete leads.')
+      return
+    }
+
+    const ids = Array.from(selectedLeadIds)
+    if (ids.length === 0) return
+    if (!confirm(`Delete ${ids.length} selected lead${ids.length === 1 ? '' : 's'}? This cannot be undone.`)) return
+
+    try {
+      const response = await fetch('/api/leads', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: adminEmail, ids }),
+      })
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}))
+        throw new Error(clean(payload?.error) || 'Unable to delete selected leads.')
+      }
+      const idSet = new Set(ids)
+      setLeads((rows) => rows.filter((row) => !idSet.has(row.id)))
+      setSelectedLeadIds(new Set())
+      setSelectedLead((current) => (current && idSet.has(current.id) ? null : current))
+      setNotesModalLead((current) => (current && idSet.has(current.id) ? null : current))
+      setStatusModalLead((current) => (current && idSet.has(current.id) ? null : current))
+    } catch (error) {
+      console.error('Error bulk deleting leads:', error)
+      alert('Unable to delete the selected leads. Try again.')
     }
   }
 
@@ -616,26 +919,28 @@ export default function AdminLeadsPage() {
           const fullName = pickImportValue(row, ['name', 'full name', 'customer', 'lead'])
           const splitName = splitFullName(fullName)
           const source = normalizeImportSource(pickImportValue(row, ['source', 'lead source', 'type', 'category']))
+          const resolvedSource = source === 'unknown' ? inferImportSourceFromFileName(file.name) : source
           const monthlyIncome = pickImportValue(row, ['monthly income', 'income monthly', 'monthly_income']) ||
             (() => {
               const annualIncome = toNumberOrNull(pickImportValue(row, ['annual income', 'gross annual income', 'income']))
               return annualIncome === null ? '' : String(Math.round(annualIncome / 12))
             })()
+          const fallbackMessage = pickImportValue(row, ['message', 'comments', 'comment', 'inquiry', 'details'])
 
           return {
             firstName: pickImportValue(row, ['first name', 'firstname', 'first_name']) || splitName.firstName,
             lastName: pickImportValue(row, ['last name', 'lastname', 'last_name']) || splitName.lastName,
             email: pickImportValue(row, ['email', 'email address', 'e-mail']),
             phone: pickImportValue(row, ['phone', 'phone number', 'mobile', 'cell', 'telephone']),
-            source,
+            source: resolvedSource === 'auto' ? 'unknown' : resolvedSource,
             vehicleInterest: pickImportValue(row, ['vehicle interest', 'vehicle', 'car', 'vehicle_interest', 'interest']),
             employmentStatus: pickImportValue(row, ['employment', 'employment status', 'job status']),
             monthlyIncome,
             downPayment: pickImportValue(row, ['down payment', 'downpayment', 'desired down payment']),
             creditScore: pickImportValue(row, ['credit', 'credit score', 'credit profile']),
-            message: pickImportValue(row, ['message', 'comments', 'comment', 'inquiry', 'details']),
+            message: buildImportMessage(row, fallbackMessage),
             adminNotes: pickImportValue(row, ['notes', 'admin notes', 'internal notes', 'follow up notes']),
-            createdAt: pickImportValue(row, ['date', 'created at', 'created_at', 'received', 'submitted', 'submitted at']),
+            createdAt: pickImportValue(row, ['timestamp', 'date', 'created at', 'created_at', 'received', 'submitted', 'submitted at']),
           } satisfies LeadDraft
         })
         .filter((row) => clean(row.firstName) || clean(row.lastName) || clean(row.email) || clean(row.phone) || clean(row.message))
@@ -730,6 +1035,17 @@ export default function AdminLeadsPage() {
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
+              {canDeleteLeads ? (
+                <button
+                  type="button"
+                  onClick={handleBulkDelete}
+                  disabled={selectedCount === 0}
+                  className="inline-flex h-9 items-center gap-2 rounded-xl border border-red-200 bg-white px-3 text-xs font-semibold text-red-600 transition-colors hover:bg-red-50 disabled:cursor-not-allowed disabled:border-slate-200 disabled:text-slate-300 disabled:hover:bg-white"
+                >
+                  <Trash2 className="h-4 w-4" />
+                  Delete selected{selectedCount > 0 ? ` (${selectedCount})` : ''}
+                </button>
+              ) : null}
               <button
                 type="button"
                 onClick={() => setImportOpen(true)}
@@ -797,10 +1113,21 @@ export default function AdminLeadsPage() {
                   <table className="edc-table min-w-[1120px]">
                     <thead>
                       <tr>
+                        {canDeleteLeads ? (
+                          <th className="w-12">
+                            <input
+                              type="checkbox"
+                              checked={allVisibleSelected}
+                              onChange={(event) => toggleVisibleLeadsSelected(event.target.checked)}
+                              aria-label="Select all leads on this page"
+                              className="h-4 w-4 rounded border-slate-300 text-[#0B1F3A] focus:ring-[#1EA7FF]"
+                            />
+                          </th>
+                        ) : null}
                         <th>Status</th>
                         <th>Received</th>
                         <th>Contact Name</th>
-                        <th>Intent</th>
+                        <th>City / Address</th>
                         <th>Notes</th>
                         <th className="text-right">Actions</th>
                       </tr>
@@ -811,8 +1138,11 @@ export default function AdminLeadsPage() {
                           key={lead.id}
                           lead={lead}
                           selected={selectedLead?.id === lead.id}
+                          canDelete={canDeleteLeads}
+                          bulkSelected={selectedLeadIds.has(lead.id)}
                           onSelect={setSelectedLead}
                           onDelete={handleDelete}
+                          onToggleBulkSelect={toggleLeadSelected}
                           onEditNotes={setNotesModalLead}
                           onEditStatus={setStatusModalLead}
                         />
@@ -829,8 +1159,11 @@ export default function AdminLeadsPage() {
                     key={lead.id}
                     lead={lead}
                     selected={selectedLead?.id === lead.id}
+                    canDelete={canDeleteLeads}
+                    bulkSelected={selectedLeadIds.has(lead.id)}
                     onSelect={setSelectedLead}
                     onDelete={handleDelete}
+                    onToggleBulkSelect={toggleLeadSelected}
                     onEditNotes={setNotesModalLead}
                     onEditStatus={setStatusModalLead}
                   />
@@ -863,6 +1196,7 @@ export default function AdminLeadsPage() {
               fields={selectedLeadFields}
               onClose={() => setSelectedLead(null)}
               onDelete={handleDelete}
+              canDelete={canDeleteLeads}
               notesDraft={notesDraft}
               onNotesChange={setNotesDraft}
               onSaveNotes={handleSaveNotes}
@@ -969,22 +1303,40 @@ function StatCard({
 function LeadRow({
   lead,
   selected,
+  canDelete,
+  bulkSelected,
   onSelect,
   onDelete,
+  onToggleBulkSelect,
   onEditNotes,
   onEditStatus,
 }: {
   lead: Lead
   selected: boolean
+  canDelete: boolean
+  bulkSelected: boolean
   onSelect: (lead: Lead) => void
   onDelete: (lead: Lead) => void
+  onToggleBulkSelect: (leadId: string, checked: boolean) => void
   onEditNotes: (lead: Lead) => void
   onEditStatus: (lead: Lead) => void
 }) {
   const source = sourceFromLead(lead)
+  const location = leadLocationDetails(lead)
 
   return (
     <tr className={selected ? 'bg-[#1EA7FF]/5' : ''}>
+      {canDelete ? (
+        <td>
+          <input
+            type="checkbox"
+            checked={bulkSelected}
+            onChange={(event) => onToggleBulkSelect(lead.id, event.target.checked)}
+            aria-label={`Select ${leadName(lead)} for bulk delete`}
+            className="h-4 w-4 rounded border-slate-300 text-[#0B1F3A] focus:ring-[#1EA7FF]"
+          />
+        </td>
+      ) : null}
       <td>
         <StatusBadge lead={lead} onClick={() => onEditStatus(lead)} />
       </td>
@@ -1007,8 +1359,8 @@ function LeadRow({
       </td>
       <td>
         <div className="max-w-[280px]">
-          <div className="truncate text-sm font-medium text-slate-800">{lead.vehicleInterest || intentFallback(lead)}</div>
-          <div className="mt-1 truncate text-xs text-slate-500">{messagePreview(lead)}</div>
+          <div className="truncate text-sm font-medium text-slate-800">{location.city}</div>
+          <div className="mt-1 truncate text-xs text-slate-500">{location.address}</div>
         </div>
       </td>
       <td>
@@ -1017,9 +1369,7 @@ function LeadRow({
       <td>
         <div className="flex justify-end gap-1.5">
           <IconButton label="View details" onClick={() => onSelect(lead)} icon={Eye} />
-          {lead.email ? <IconLink label="Email lead" href={`mailto:${lead.email}`} icon={Mail} /> : null}
-          {lead.phone ? <IconLink label="Call lead" href={`tel:${lead.phone}`} icon={Phone} /> : null}
-          <IconButton label="Delete lead" onClick={() => onDelete(lead)} icon={Trash2} danger />
+          {canDelete ? <IconButton label="Delete lead" onClick={() => onDelete(lead)} icon={Trash2} danger /> : null}
         </div>
       </td>
     </tr>
@@ -1029,25 +1379,45 @@ function LeadRow({
 function MobileLeadCard({
   lead,
   selected,
+  canDelete,
+  bulkSelected,
   onSelect,
   onDelete,
+  onToggleBulkSelect,
   onEditNotes,
   onEditStatus,
 }: {
   lead: Lead
   selected: boolean
+  canDelete: boolean
+  bulkSelected: boolean
   onSelect: (lead: Lead) => void
   onDelete: (lead: Lead) => void
+  onToggleBulkSelect: (leadId: string, checked: boolean) => void
   onEditNotes: (lead: Lead) => void
   onEditStatus: (lead: Lead) => void
 }) {
   const source = sourceFromLead(lead)
+  const location = leadLocationDetails(lead)
 
   return (
     <div className={`rounded-2xl border bg-white p-4 shadow-card ${selected ? 'border-[#1EA7FF]' : 'border-slate-200'}`}>
       <div className="mb-3 flex items-center justify-between gap-3">
         <StatusBadge lead={lead} onClick={() => onEditStatus(lead)} />
-        <div className="text-right text-[11px] font-medium text-slate-400">{formatDate(lead.createdAt)}</div>
+        <div className="flex items-center gap-3">
+          {canDelete ? (
+            <label className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-2 py-1 text-[11px] font-semibold text-slate-500">
+              <input
+                type="checkbox"
+                checked={bulkSelected}
+                onChange={(event) => onToggleBulkSelect(lead.id, event.target.checked)}
+                className="h-3.5 w-3.5 rounded border-slate-300 text-[#0B1F3A] focus:ring-[#1EA7FF]"
+              />
+              Select
+            </label>
+          ) : null}
+          <div className="text-right text-[11px] font-medium text-slate-400">{formatDate(lead.createdAt)}</div>
+        </div>
       </div>
       <div className="flex items-start gap-3">
         <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#0B1F3A] text-xs font-bold text-white">
@@ -1068,7 +1438,8 @@ function MobileLeadCard({
           <div className="mt-3 space-y-1 text-sm">
             {lead.email ? <a className="block truncate text-slate-800" href={`mailto:${lead.email}`}>{lead.email}</a> : null}
             {lead.phone ? <a className="block text-slate-500" href={`tel:${lead.phone}`}>{lead.phone}</a> : null}
-            <div className="truncate text-slate-600">{lead.vehicleInterest || intentFallback(lead)}</div>
+            <div className="truncate font-medium text-slate-700">{location.city}</div>
+            <div className="truncate text-slate-500">{location.address}</div>
           </div>
           <div className="mt-3">
             <NotesPreviewButton lead={lead} onClick={() => onEditNotes(lead)} />
@@ -1076,13 +1447,50 @@ function MobileLeadCard({
         </div>
       </div>
 
-      <div className="mt-4 grid grid-cols-4 overflow-hidden rounded-xl border border-slate-200">
+      <div className={`mt-4 grid overflow-hidden rounded-xl border border-slate-200 ${canDelete ? 'grid-cols-2' : 'grid-cols-1'}`}>
         <ActionCell label="View" onClick={() => onSelect(lead)} icon={Eye} />
-        <ActionCell label="Email" href={lead.email ? `mailto:${lead.email}` : undefined} icon={Mail} disabled={!lead.email} />
-        <ActionCell label="Call" href={lead.phone ? `tel:${lead.phone}` : undefined} icon={Phone} disabled={!lead.phone} />
-        <ActionCell label="Delete" onClick={() => onDelete(lead)} icon={Trash2} danger />
+        {canDelete ? <ActionCell label="Delete" onClick={() => onDelete(lead)} icon={Trash2} danger /> : null}
       </div>
     </div>
+  )
+}
+
+function LeadImportPreviewRow({ lead }: { lead: Lead }) {
+  const source = sourceFromLead(lead)
+  const location = leadLocationDetails(lead)
+
+  return (
+    <tr>
+      <td>
+        <ManagerStatusPill lead={lead} />
+      </td>
+      <td>
+        <div className="text-sm text-slate-600">{formatDate(lead.createdAt)}</div>
+      </td>
+      <td>
+        <div className="flex min-w-0 items-center gap-3">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#0B1F3A] text-xs font-bold text-white">
+            {leadInitials(lead)}
+          </span>
+          <span className="min-w-0">
+            <span className="block truncate font-semibold text-slate-900">{leadName(lead)}</span>
+            <span className="mt-1 block truncate text-xs text-slate-500">{lead.email || lead.phone || 'No contact info'}</span>
+            <span className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 ring-inset ${sourcePillClass(source)}`}>
+              {sourceLabel(source)}
+            </span>
+          </span>
+        </div>
+      </td>
+      <td>
+        <div className="max-w-[280px]">
+          <div className="truncate text-sm font-medium text-slate-800">{location.city}</div>
+          <div className="mt-1 truncate text-xs text-slate-500">{location.address}</div>
+        </div>
+      </td>
+      <td>
+        <NotesPreviewStatic notes={lead.adminNotes} />
+      </td>
+    </tr>
   )
 }
 
@@ -1107,6 +1515,25 @@ function NotesPreviewButton({ lead, onClick }: { lead: Lead; onClick: () => void
         </span>
       </span>
     </button>
+  )
+}
+
+function NotesPreviewStatic({ notes }: { notes: string | null }) {
+  const hasNotes = !!clean(notes)
+
+  return (
+    <div className={`flex w-full max-w-[260px] items-start gap-2 rounded-xl border px-3 py-2 text-left ${
+      hasNotes
+        ? 'border-amber-200 bg-amber-50/70'
+        : 'border-dashed border-slate-200 bg-slate-50/70'
+    }`}>
+      <MessageSquare className={`mt-0.5 h-4 w-4 shrink-0 ${hasNotes ? 'text-amber-600' : 'text-slate-400'}`} />
+      <span className="min-w-0">
+        <span className={`block truncate text-xs font-medium ${hasNotes ? 'text-amber-800' : 'text-slate-400'}`}>
+          {hasNotes ? notes : 'No notes yet'}
+        </span>
+      </span>
+    </div>
   )
 }
 
@@ -1246,8 +1673,13 @@ function LeadImportModal({
   onClose: () => void
   onImport: () => void
 }) {
+  const allPreviewLeads = rows.map(leadFromDraftPreview)
+  const locationPreviewLeads = allPreviewLeads.filter(hasLeadLocation)
+  const previewLeads = (locationPreviewLeads.length > 0 ? locationPreviewLeads : allPreviewLeads).slice(0, 5)
+  const previewLabel = locationPreviewLeads.length > 0 ? 'Showing address examples first' : 'Previewing first 5'
+
   return (
-    <ModalFrame maxWidth="max-w-4xl" onClose={onClose}>
+    <ModalFrame maxWidth="max-w-6xl" onClose={onClose}>
       <div className="max-h-[92vh] overflow-y-auto">
         <div className="border-b border-slate-200 bg-slate-50/70 p-5 sm:p-6">
           <div className="flex items-start justify-between gap-4">
@@ -1323,29 +1755,22 @@ function LeadImportModal({
             <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
               <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
                 <div className="text-sm font-semibold text-slate-900">{rows.length} leads ready to import</div>
-                <div className="text-xs text-slate-500">Previewing first 5</div>
+                <div className="text-xs text-slate-500">{previewLabel}</div>
               </div>
               <div className="overflow-x-auto">
-                <table className="min-w-full text-left text-sm">
-                  <thead className="bg-slate-50 text-xs font-bold uppercase text-slate-500">
+                <table className="edc-table min-w-[1040px]">
+                  <thead>
                     <tr>
-                      <th className="px-4 py-3">Name</th>
-                      <th className="px-4 py-3">Contact</th>
-                      <th className="px-4 py-3">Source</th>
-                      <th className="px-4 py-3">Intent</th>
+                      <th>Status</th>
+                      <th>Received</th>
+                      <th>Contact Name</th>
+                      <th>City / Address</th>
+                      <th>Notes</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {rows.slice(0, 5).map((row, index) => (
-                      <tr key={`${row.email}-${row.phone}-${index}`}>
-                        <td className="px-4 py-3 font-medium text-slate-900">{[row.firstName, row.lastName].map(clean).filter(Boolean).join(' ') || 'Unnamed lead'}</td>
-                        <td className="px-4 py-3 text-slate-600">
-                          <div>{row.email || 'No email'}</div>
-                          <div className="text-xs text-slate-400">{row.phone || 'No phone'}</div>
-                        </td>
-                        <td className="px-4 py-3 text-slate-600">{sourceLabel(row.source)}</td>
-                        <td className="px-4 py-3 text-slate-600">{row.vehicleInterest || row.message || 'No details'}</td>
-                      </tr>
+                  <tbody>
+                    {previewLeads.map((lead) => (
+                      <LeadImportPreviewRow key={lead.id} lead={lead} />
                     ))}
                   </tbody>
                 </table>
@@ -1568,6 +1993,7 @@ function LeadDetailPanel({
   fields,
   onClose,
   onDelete,
+  canDelete,
   notesDraft,
   onNotesChange,
   onSaveNotes,
@@ -1579,6 +2005,7 @@ function LeadDetailPanel({
   fields: { rows: Array<{ label: string; value: string }>; notes: string[] }
   onClose: () => void
   onDelete: (lead: Lead) => void
+  canDelete: boolean
   notesDraft: string
   onNotesChange: (value: string) => void
   onSaveNotes: (lead: Lead) => void
@@ -1587,8 +2014,14 @@ function LeadDetailPanel({
   notesSaveError: string
 }) {
   const source = sourceFromLead(lead)
-  const sourceRows = fields.rows.filter((row) => row.label.toLowerCase() !== 'source')
   const primaryIntent = lead.vehicleInterest || intentFallback(lead)
+  const applicationRows = buildApplicationRows(lead, fields)
+  const applicationTitle =
+    source === 'finance'
+      ? 'Full credit application'
+      : source === 'insurance'
+        ? 'Full insurance application'
+        : 'Submitted details'
 
   return (
     <div className="max-h-[92vh] overflow-y-auto">
@@ -1613,21 +2046,11 @@ function LeadDetailPanel({
           </button>
         </div>
 
-        <div className="mt-5 grid gap-3 lg:grid-cols-[1fr_auto] lg:items-end">
+        <div className="mt-5 grid gap-3">
           <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
             <div className="text-[11px] font-semibold uppercase text-slate-400">Intent</div>
             <div className="mt-1 text-sm font-semibold text-slate-900">{primaryIntent}</div>
             <div className="mt-1 text-xs text-slate-500">Received {formatDate(lead.createdAt)}</div>
-          </div>
-          <div className="grid grid-cols-2 gap-2 lg:w-[280px]">
-            <a href={lead.email ? `mailto:${lead.email}` : undefined} className={`edc-btn-primary h-10 text-xs ${lead.email ? '' : 'pointer-events-none opacity-50'}`}>
-            <Mail className="h-4 w-4" />
-            Email lead
-            </a>
-            <a href={lead.phone ? `tel:${lead.phone}` : undefined} className={`edc-btn-ghost h-10 bg-white text-xs ${lead.phone ? '' : 'pointer-events-none opacity-50'}`}>
-              <Phone className="h-4 w-4" />
-              Call
-            </a>
           </div>
         </div>
       </div>
@@ -1650,13 +2073,10 @@ function LeadDetailPanel({
             </DetailSection>
           </div>
 
-          {(sourceRows.length > 0 || fields.notes.length > 0) && (
-            <DetailSection title="Submitted details" icon={MessageSquare}>
-              {sourceRows.map((row) => (
-                <DetailRow key={`${row.label}-${row.value}`} label={row.label} value={row.value} />
-              ))}
-              {fields.notes.map((note, index) => (
-                <DetailRow key={`${note}-${index}`} label={index === 0 ? 'Note' : `Note ${index + 1}`} value={note} />
+          {applicationRows.length > 0 && (
+            <DetailSection title={applicationTitle} icon={MessageSquare}>
+              {applicationRows.map((row, index) => (
+                <DetailRow key={`${row.label}-${index}`} label={row.label} value={row.value} />
               ))}
             </DetailSection>
           )}
@@ -1673,22 +2093,16 @@ function LeadDetailPanel({
             error={notesSaveError}
           />
 
-          <DetailSection title="Quick actions" icon={Eye}>
-            <div className="grid gap-2 p-3">
-              <a href={lead.email ? `mailto:${lead.email}` : undefined} className={`edc-btn-primary h-10 text-xs ${lead.email ? '' : 'pointer-events-none opacity-50'}`}>
-                <Mail className="h-4 w-4" />
-                Email lead
-              </a>
-              <a href={lead.phone ? `tel:${lead.phone}` : undefined} className={`edc-btn-ghost h-10 text-xs ${lead.phone ? '' : 'pointer-events-none opacity-50'}`}>
-                <Phone className="h-4 w-4" />
-                Call lead
-              </a>
-              <button type="button" onClick={() => onDelete(lead)} className="edc-btn-danger h-10 w-full text-xs">
-                <Trash2 className="h-4 w-4" />
-                Delete lead
-              </button>
-            </div>
-          </DetailSection>
+          {canDelete ? (
+            <DetailSection title="Actions" icon={Eye}>
+              <div className="grid gap-2 p-3">
+                <button type="button" onClick={() => onDelete(lead)} className="edc-btn-danger h-10 w-full text-xs">
+                  <Trash2 className="h-4 w-4" />
+                  Delete lead
+                </button>
+              </div>
+            </DetailSection>
+          ) : null}
         </div>
       </div>
     </div>
@@ -1786,8 +2200,19 @@ const managerStatusClass = (status: LeadManagerStatus | null) => {
   return 'bg-emerald-500 text-white ring-emerald-400'
 }
 
-function ManagerStatusPill({ lead }: { lead: Lead }) {
-  const label = lead.managerStatus || (lead.ghlSynced ? 'Handled' : 'New')
+const defaultLeadStatusLabel = (lead: Lead) => {
+  if (lead.managerStatus) return lead.managerStatus
+  if (lead.ghlSynced) return 'Handled'
+
+  const source = sourceFromLead(lead)
+  if (source === 'finance') return 'New Credit Application'
+  if (source === 'insurance') return 'New Insurance Application'
+  if (source === 'contact') return 'New Contact Lead'
+  return 'New Lead'
+}
+
+function ManagerStatusPill({ lead, interactive = false }: { lead: Lead; interactive?: boolean }) {
+  const label = defaultLeadStatusLabel(lead)
   const className = lead.managerStatus
     ? managerStatusClass(lead.managerStatus)
     : lead.ghlSynced
@@ -1795,16 +2220,26 @@ function ManagerStatusPill({ lead }: { lead: Lead }) {
       : managerStatusClass(null)
 
   return (
-    <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-bold shadow-sm ring-1 ring-inset ${className}`}>
+    <span className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-bold shadow-sm ring-1 ring-inset transition ${interactive ? 'group-hover:shadow-md' : ''} ${className}`}>
       {label}
+      {interactive ? <ChevronDown className="h-3 w-3" aria-hidden="true" /> : null}
     </span>
   )
 }
 
 function StatusBadge({ lead, onClick }: { lead: Lead; onClick: () => void }) {
   return (
-    <button type="button" onClick={onClick} className="text-left" title="Update lead status">
-      <ManagerStatusPill lead={lead} />
+    <button
+      type="button"
+      onClick={onClick}
+      className="group inline-flex flex-col items-start gap-1 text-left"
+      title="Click to update lead status"
+      aria-label={`Update status for ${leadName(lead)}`}
+    >
+      <ManagerStatusPill lead={lead} interactive />
+      <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-400 transition-colors group-hover:text-[#0877bd]">
+        Click to update
+      </span>
     </button>
   )
 }

@@ -6,6 +6,8 @@ import { supabase } from '@/lib/supabaseClient'
 
 const DEFAULT_FEE_TAX_LABEL = 'Default Tax 0 %'
 const DEFAULT_ITEM_TAX_LABEL = 'HST 13 %'
+const DEFAULT_TAX_CODE = 'HST'
+const DEFAULT_TAX_RATE_PERCENT = 13
 const roundMoney = (n: number) => Math.round((Number(n) || 0) * 100) / 100
 
 function defaultItemTaxSelection(): Record<string, boolean> {
@@ -92,6 +94,21 @@ function formatTaxRatePercent(rate: number): string {
   return String(normalized)
 }
 
+function worksheetTaxRatePercent(raw: unknown, code: unknown): number {
+  const label = String(code || '').trim().toLowerCase()
+  const parsed = Number(raw)
+  if (Number.isFinite(parsed) && parsed > 0) return parsed > 1 ? parsed : parsed * 100
+  if (label.includes('exempt') || label.includes('default tax 0')) return 0
+  if (!label || label === 'hst') return DEFAULT_TAX_RATE_PERCENT
+  return 0
+}
+
+function isLegacyTaxFee(item: any): boolean {
+  const id = String(item?.id ?? '').trim().toLowerCase()
+  const name = String(item?.fee_name ?? item?.name ?? item?.label ?? '').trim().toLowerCase()
+  return id === 'fee_hst' || /^(hst|gst|pst|qst)(\s*\(\d+(?:\.\d+)?%\))?$/.test(name) || name === 'harmonized sales tax'
+}
+
 export type WorksheetTabHandle = {
   save: (silent?: boolean) => Promise<void>
   addWarranty: (item: { name: string; desc: string; amount: number; duration?: string; distance?: string }) => void
@@ -125,14 +142,8 @@ const WorksheetTab = forwardRef<WorksheetTabHandle, {
   const [worksheetRowId, setWorksheetRowId] = useState<string | null>(() => d?.id ?? null)
   const [purchasePrice, setPurchasePrice] = useState(d.purchase_price ?? '0')
   const [discount, setDiscount] = useState(d.discount ?? '0')
-  const [taxCode, setTaxCode] = useState<string>(d.tax_code ?? 'HST')
-  const [taxRate, setTaxRate] = useState<number>(() => {
-    const fromRow = Number(d.tax_rate)
-    if (Number.isFinite(fromRow) && fromRow >= 0) {
-      return fromRow > 1 ? fromRow : fromRow * 100
-    }
-    return 0
-  })
+  const [taxCode, setTaxCode] = useState<string>(d.tax_code ?? DEFAULT_TAX_CODE)
+  const [taxRate, setTaxRate] = useState<number>(() => worksheetTaxRatePercent(d.tax_rate, d.tax_code ?? DEFAULT_TAX_CODE))
   const [taxMenuOpen, setTaxMenuOpen] = useState(false)
   const [taxPresets, setTaxPresets] = useState<Array<{ id: string; name: string; rate: number; default_tax_rate?: boolean | null }>>([])
   const [taxPresetsLoading, setTaxPresetsLoading] = useState(false)
@@ -160,7 +171,7 @@ const WorksheetTab = forwardRef<WorksheetTabHandle, {
   const [feeSearch, setFeeSearch] = useState('')
   const [fees, setFees] = useState<Array<{ id: string; name: string; desc?: string; amount: number; cost?: number; taxSelected?: Record<string, boolean>; taxOverride?: boolean; taxValues?: Record<string, string> }>>(() => {
     if (Array.isArray(d.fees))
-      return d.fees.map((f: any) => ({
+      return d.fees.filter((f: any) => !isLegacyTaxFee(f)).map((f: any) => ({
         id: f.id || `fee_${Date.now()}`,
         name: f.name || '',
         desc: f.desc || '',
@@ -484,9 +495,8 @@ const WorksheetTab = forwardRef<WorksheetTabHandle, {
     const nd = initialData || {}
     setPurchasePrice(nd.purchase_price ?? '0')
     setDiscount(nd.discount ?? '0')
-    setTaxCode(nd.tax_code ?? 'HST')
-    const rowRate = Number(nd.tax_rate)
-    if (Number.isFinite(rowRate) && rowRate >= 0) setTaxRate(rowRate > 1 ? rowRate : rowRate * 100)
+    setTaxCode(nd.tax_code ?? DEFAULT_TAX_CODE)
+    setTaxRate(worksheetTaxRatePercent(nd.tax_rate, nd.tax_code ?? DEFAULT_TAX_CODE))
     setTaxOverride(nd.tax_override === true || nd.tax_override === 'true')
     setTaxManual(nd.tax_manual ?? '0')
     setLicenseFee(nd.license_fee ?? '')
@@ -504,7 +514,7 @@ const WorksheetTab = forwardRef<WorksheetTabHandle, {
     setFinanceRateType(nd.finance_rate_type || 'VAR')
     setFinanceCommission(nd.finance_commission ?? '')
 
-    setFees(Array.isArray(nd.fees) ? nd.fees.map((f: any) => ({ id: f.id || `fee_${Date.now()}`, name: f.name || '', desc: f.desc || '', amount: Number(f.amount) || 0, cost: Number(f.cost) || 0, taxSelected: normalizeFeeTaxSelection(f.taxSelected || defaultItemTaxSelection()), taxOverride: f.taxOverride || false, taxValues: f.taxValues || {} })) : [])
+    setFees(Array.isArray(nd.fees) ? nd.fees.filter((f: any) => !isLegacyTaxFee(f)).map((f: any) => ({ id: f.id || `fee_${Date.now()}`, name: f.name || '', desc: f.desc || '', amount: Number(f.amount) || 0, cost: Number(f.cost) || 0, taxSelected: normalizeFeeTaxSelection(f.taxSelected || defaultItemTaxSelection()), taxOverride: f.taxOverride || false, taxValues: f.taxValues || {} })) : [])
     setPayments(Array.isArray(nd.payments) ? nd.payments.map((p: any) => ({ id: p.id || `pay_${Date.now()}`, amount: Number(p.amount) || 0, type: p.type || 'Cash', desc: p.desc || '', category: p.category || 'Deposit' })) : [])
     setAccessories(Array.isArray(nd.accessories) ? nd.accessories.map((a: any) => ({ id: a.id || `acc_${Date.now()}`, name: a.name || '', desc: a.desc || '', price: Number(a.price) || 0, cost: Number(a.cost) || 0, vehicleType: a.vehicleType || a.vehicle_type || '', taxSelected: normalizeCardTaxSelection(a.taxSelected), taxOverride: a.taxOverride || false, taxValues: a.taxValues || {} })) : [])
     setWarranties(Array.isArray(nd.warranties) ? nd.warranties.map((w: any) => ({ id: w.id || `war_${Date.now()}`, name: w.name || '', desc: w.desc || '', amount: Number(w.amount) || 0, cost: Number(w.cost) || 0, duration: w.duration || '', distance: w.distance || '', isDealerGuaranty: w.isDealerGuaranty === true || w.is_dealer_guaranty === true, taxSelected: normalizeCardTaxSelection(w.taxSelected), taxOverride: w.taxOverride || false, taxValues: w.taxValues || {} })) : [])
@@ -534,8 +544,8 @@ const WorksheetTab = forwardRef<WorksheetTabHandle, {
 
     setPurchasePrice('0')
     setDiscount('0')
-    setTaxCode('HST')
-    setTaxRate(0)
+    setTaxCode(DEFAULT_TAX_CODE)
+    setTaxRate(DEFAULT_TAX_RATE_PERCENT)
     setTaxMenuOpen(false)
     setTaxOverride(false)
     setTaxManual('0')
@@ -672,7 +682,7 @@ const WorksheetTab = forwardRef<WorksheetTabHandle, {
     return roundMoney(Math.max(0, parseMoney(purchasePrice) - parseMoney(discount)))
   }, [purchasePrice, discount])
 
-  const tradeEquity = useMemo(() => roundMoney(parseMoney(actualCashValue) - parseMoney(tradeValue)), [actualCashValue, tradeValue])
+  const tradeEquity = useMemo(() => roundMoney(Math.max(0, parseMoney(actualCashValue) - parseMoney(tradeValue))), [actualCashValue, tradeValue])
 
   const periodsPerYear = useMemo(() => {
     switch (paymentType) {
@@ -1324,8 +1334,8 @@ const WorksheetTab = forwardRef<WorksheetTabHandle, {
         const scopedUserId = await getWebhookUserId().catch(() => null)
         if (!scopedUserId) {
           setTaxPresets([])
-          setTaxCode('HST')
-          setTaxRate(0)
+          setTaxCode(DEFAULT_TAX_CODE)
+          setTaxRate(DEFAULT_TAX_RATE_PERCENT)
           return
         }
         const { data, error } = await supabase.from('presets_tax').select('id, name, rate, default_tax_rate').eq('user_id', scopedUserId).order('name', { ascending: true })
@@ -1350,8 +1360,8 @@ const WorksheetTab = forwardRef<WorksheetTabHandle, {
           setTaxCode(best.name)
           if (Number.isFinite(best.rate) && best.rate >= 0) setTaxRate(best.rate)
         } else if (mapped.length === 0) {
-          setTaxCode('HST')
-          setTaxRate(0)
+          setTaxCode(DEFAULT_TAX_CODE)
+          setTaxRate(DEFAULT_TAX_RATE_PERCENT)
         }
       } catch (e) {
         console.error('[WorksheetTab] loadTaxPresets error', e)
@@ -1614,6 +1624,7 @@ const WorksheetTab = forwardRef<WorksheetTabHandle, {
                   <option value="Credit Card">Credit Card</option>
                   <option value="Debit">Debit</option>
                   <option value="Bank Transfer">Bank Transfer</option>
+                  <option value="EFT (email transfer)">EFT (email transfer)</option>
                   <option value="Cheque">Cheque</option>
                 </select>
               </div>
@@ -1643,6 +1654,7 @@ const WorksheetTab = forwardRef<WorksheetTabHandle, {
                   <option value="Credit Card">Credit Card</option>
                   <option value="Debit">Debit</option>
                   <option value="Bank Transfer">Bank Transfer</option>
+                  <option value="EFT (email transfer)">EFT (email transfer)</option>
                   <option value="Cheque">Cheque</option>
                 </select></div>
                 <div className="p-2"><textarea className="w-full h-8 px-2 border border-gray-200 rounded text-sm" value={editingPaymentDraft.desc} onChange={(e) => setEditingPaymentDraft({ ...editingPaymentDraft, desc: e.target.value })} /></div>

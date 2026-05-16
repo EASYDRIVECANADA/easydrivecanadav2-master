@@ -69,19 +69,30 @@ export async function POST(req: Request) {
     const warrantyName: string | null = sub.warranty_name || od.warranty?.planName || null
     const warrantyTotal: number = Number(sub.warranty_total ?? od.warranty?.total ?? 0)
     const couponDiscount: number = Number(od.pricing?.couponDiscount ?? 0)
+    const odPricingLineItems: any[] = Array.isArray(od.pricing?.lineItems) ? od.pricing.lineItems : []
+    const taxSelection = (taxable: unknown) => Boolean(taxable) ? { 'HST 13 %': true } : { 'Exempt 0 %': true }
 
-    // 3a. Build fees array from the purchase submission line items
-    // The purchase flow sends: hst (number), and standard fees are implicit based on category
+    // 3a. Build real worksheet fees from purchase line items.
+    // Do not insert HST as a fee. The worksheet recalculates tax from taxable bases.
     const fees: any[] = []
-    // HST line
-    if (sub.hst && Number(sub.hst) > 0) {
+    let licenseFee = 0
+    for (const item of odPricingLineItems) {
+      const label = String(item?.label || '').trim()
+      const amount = Number(item?.amount || 0)
+      if (!label || amount <= 0) continue
+
+      if (/licen[cs]|plate/i.test(label)) {
+        licenseFee += amount
+        continue
+      }
+
       fees.push({
-        id: `fee_hst`,
-        name: 'HST (13%)',
-        desc: 'Harmonized Sales Tax',
-        amount: Number(sub.hst),
+        id: `fee_${label.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'line_item'}`,
+        name: label,
+        desc: '',
+        amount,
         cost: 0,
-        taxSelected: { 'Default Tax 0 %': true },
+        taxSelected: taxSelection(item?.taxable),
         taxOverride: false,
       })
     }
@@ -97,7 +108,7 @@ export async function POST(req: Request) {
           desc: '',
           price: Number(a.amount || a.price || 0),
           cost: 0,
-          taxSelected: { 'HST 13 %': true },
+          taxSelected: taxSelection(a.taxable ?? true),
           taxOverride: false,
         }))
       : addOnIds.map((id: string) => ({
@@ -122,7 +133,7 @@ export async function POST(req: Request) {
         duration: '',
         distance: '',
         isDealerGuaranty: false,
-        taxSelected: { 'Default Tax 0 %': true },
+        taxSelected: { 'HST 13 %': true },
         taxOverride: false,
       })
     }
@@ -132,7 +143,7 @@ export async function POST(req: Request) {
       {
         id: `pay_deposit`,
         amount: Number(sub.deposit_amount) || 1000,
-        type: 'E-Transfer',
+        type: 'EFT (email transfer)',
         desc: 'Deposit received via Interac E-Transfer',
         category: 'Deposit',
       },
@@ -179,6 +190,10 @@ export async function POST(req: Request) {
       deal_id: dealId,
       purchase_price: Number(sub.vehicle_price) || 0,
       discount: couponDiscount > 0 ? String(couponDiscount) : '0',
+      tax_code: 'HST',
+      tax_rate: '0.13',
+      license_fee: licenseFee > 0 ? String(licenseFee) : null,
+      new_plates: licenseFee > 0,
       fees: JSON.stringify(fees),
       accessories: JSON.stringify(richAccessories),
       warranties: JSON.stringify(warranties),

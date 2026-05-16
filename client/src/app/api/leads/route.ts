@@ -4,6 +4,7 @@ import { createClient } from '@supabase/supabase-js'
 export const dynamic = 'force-dynamic'
 
 const clean = (value: unknown) => String(value ?? '').trim()
+const LEAD_DELETE_ALLOWED_EMAIL = 'info@easydrivecanada.com'
 
 const toNumberOrNull = (value: unknown) => {
   const raw = clean(value).replace(/[$,\s]/g, '')
@@ -150,6 +151,43 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true }, { status: 201 })
   } catch (err) {
     console.error('leads route error:', err)
+    return NextResponse.json({ error: 'Server error' }, { status: 500 })
+  }
+}
+
+export async function DELETE(request: Request) {
+  try {
+    const body = await request.json().catch(() => ({}))
+    const email = clean(body?.email || request.headers.get('x-edc-admin-email')).toLowerCase()
+    const ids = Array.isArray(body?.ids) ? body.ids.map(clean).filter(Boolean) : []
+
+    if (email !== LEAD_DELETE_ALLOWED_EMAIL) {
+      return NextResponse.json({ error: 'Only info@easydrivecanada.com can delete leads' }, { status: 403 })
+    }
+
+    if (ids.length === 0) {
+      return NextResponse.json({ error: 'No leads selected' }, { status: 400 })
+    }
+
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+    if (!supabaseUrl || !supabaseKey) {
+      return NextResponse.json({ error: 'Server not configured' }, { status: 500 })
+    }
+
+    const supabase = createClient(supabaseUrl, supabaseKey, {
+      auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+    })
+
+    const { error } = await supabase.from('edc_leads').delete().in('id', ids)
+    if (error) {
+      console.error('leads delete error:', error)
+      return NextResponse.json({ error: 'Failed to delete leads' }, { status: 500 })
+    }
+
+    return NextResponse.json({ ok: true, deleted: ids.length })
+  } catch (err) {
+    console.error('leads delete route error', err)
     return NextResponse.json({ error: 'Server error' }, { status: 500 })
   }
 }

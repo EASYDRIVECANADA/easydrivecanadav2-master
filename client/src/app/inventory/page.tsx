@@ -910,16 +910,14 @@ export default function InventoryPage() {
                   </div>
 
                   <div className="hidden overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm lg:block">
-                    <table className="w-full table-fixed text-left text-sm">
+                    <table className="w-full table-fixed text-left text-sm [&_tbody_td:nth-child(3)]:hidden [&_tbody_td:nth-child(7)]:hidden">
                       <thead className="border-b border-gray-200 bg-gray-50 text-xs font-semibold uppercase tracking-wide text-gray-500">
                         <tr>
                           <th className="w-20 px-4 py-3">Year</th>
                           <th className="px-4 py-3">Make / Model</th>
-                          <th className="px-4 py-3">Trim</th>
                           <th className="w-28 px-4 py-3">Price</th>
                           <th className="w-28 px-4 py-3">Odometer</th>
                           <th className="w-28 px-4 py-3">Stock #</th>
-                          <th className="w-32 px-4 py-3">Location</th>
                           <th className="w-28 px-4 py-3 text-right">Action</th>
                         </tr>
                       </thead>
@@ -952,7 +950,7 @@ export default function InventoryPage() {
                     {paginatedVehicles.map((vehicle) => (
                       <Link key={vehicle.id} href={`/inventory/${vehicle.id}`} className="block rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
                         <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
+                          <div className="min-w-0 [&>p:nth-of-type(2)]:hidden">
                             <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Fleet Select</p>
                             <h3 className="mt-1 truncate text-base font-semibold text-gray-900">
                               {vehicle.year} {vehicle.make} {vehicle.model}
@@ -961,7 +959,7 @@ export default function InventoryPage() {
                           </div>
                           <p className="shrink-0 text-base font-bold text-gray-900">{formatPrice(vehicle.price)}</p>
                         </div>
-                        <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-gray-600">
+                        <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-gray-600 [&>div:nth-child(3)]:hidden">
                           <div>
                             <span className="block font-semibold text-gray-500">Odometer</span>
                             {formatOdometer(vehicle)}

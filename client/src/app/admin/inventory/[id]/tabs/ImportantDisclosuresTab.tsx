@@ -12,6 +12,7 @@ type ImportantDisclosureRow = {
   user_id: string | null
   vehicleId: string | null
   disclosures: string | null
+  checkout_terms?: string | null
   categories: string | null
 }
 
@@ -153,10 +154,13 @@ const getVehicleDisclosureRole = async (vehicleId: string) => {
   return null
 }
 
+const DEFAULT_CHECKOUT_TERMS = `Vehicle condition, certification status, included warranty coverage, and any extended warranty selected above are documented in this checkout and on the final Bill of Sale. The buyer acknowledges they have been given the opportunity to inspect the vehicle and review the available vehicle records before completing the purchase.`
+
 const ImportantDisclosuresTab = ({ vehicleId }: ImportantDisclosuresTabProps) => {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [text, setText] = useState('')
+  const [checkoutTerms, setCheckoutTerms] = useState(DEFAULT_CHECKOUT_TERMS)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
   const [existingId, setExistingId] = useState<string | null>(null)
@@ -186,11 +190,25 @@ const ImportantDisclosuresTab = ({ vehicleId }: ImportantDisclosuresTabProps) =>
           }
         }
 
-        const { data, error } = await supabase
+        let data: ImportantDisclosureRow | null = null
+        let error: any = null
+        const withCheckoutTerms = await supabase
           .from('ImportantDisclosures')
-          .select('id, user_id, vehicleId, disclosures, categories')
+          .select('id, user_id, vehicleId, disclosures, checkout_terms, categories')
           .eq('vehicleId', id)
           .maybeSingle()
+
+        data = (withCheckoutTerms.data as unknown as ImportantDisclosureRow | null) || null
+        error = withCheckoutTerms.error
+        if (error && String(error.message || '').toLowerCase().includes('checkout_terms')) {
+          const fallback = await supabase
+            .from('ImportantDisclosures')
+            .select('id, user_id, vehicleId, disclosures, categories')
+            .eq('vehicleId', id)
+            .maybeSingle()
+          data = (fallback.data as unknown as ImportantDisclosureRow | null) || null
+          error = fallback.error
+        }
 
         if (error && error.code !== 'PGRST116') {
           throw error
@@ -200,12 +218,15 @@ const ImportantDisclosuresTab = ({ vehicleId }: ImportantDisclosuresTabProps) =>
           const row = data as unknown as ImportantDisclosureRow
           setExistingId(String(row.id))
           const current = String(row.disclosures || '').trim()
+          const currentCheckoutTerms = String(row.checkout_terms || '').trim()
           const vehicleRole = await getVehicleDisclosureRole(id)
           const roleForDefault = String(row.categories || '').trim() || vehicleRole || sessionRole
           setText(current || getDefaultDisclosureText(roleForDefault))
+          setCheckoutTerms(currentCheckoutTerms || DEFAULT_CHECKOUT_TERMS)
         } else if (!cancelled) {
           const vehicleRole = await getVehicleDisclosureRole(id)
           setText(getDefaultDisclosureText(vehicleRole || sessionRole))
+          setCheckoutTerms(DEFAULT_CHECKOUT_TERMS)
         }
       } catch (e: unknown) {
         if (!cancelled) {
@@ -255,6 +276,7 @@ const ImportantDisclosuresTab = ({ vehicleId }: ImportantDisclosuresTabProps) =>
         user_id: currentUserId,
         vehicleId: id,
         disclosures: text || null,
+        checkout_terms: checkoutTerms.trim() || null,
         categories: vehicleRole || currentUserRole,
       }
 
@@ -289,8 +311,7 @@ const ImportantDisclosuresTab = ({ vehicleId }: ImportantDisclosuresTabProps) =>
       <div>
         <h2 className="text-base font-semibold text-gray-900">Important Disclosures</h2>
         <p className="mt-1 text-sm text-gray-600">
-          This text overrides the default Important Disclosure shown on the public marketplace for this specific
-          vehicle. If left empty, the system will continue using the default disclosure.
+          Edit the public marketplace disclosure and the shorter checkout terms statement for this specific vehicle.
         </p>
       </div>
 
@@ -309,6 +330,20 @@ const ImportantDisclosuresTab = ({ vehicleId }: ImportantDisclosuresTabProps) =>
             />
             <p className="mt-1 text-xs text-gray-500">
               Supports plain text. Line breaks will be preserved on the marketplace disclosure modal.
+            </p>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Checkout terms statement</label>
+            <textarea
+              rows={4}
+              value={checkoutTerms}
+              onChange={(e) => setCheckoutTerms(e.target.value)}
+              placeholder="Enter the condition and warranty statement shown on the checkout Bill of Sale step..."
+              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#118df0] focus:border-transparent resize-vertical"
+            />
+            <p className="mt-1 text-xs text-gray-500">
+              This appears in the checkout Bill of Sale terms. Keep it short and specific to how this vehicle is being sold.
             </p>
           </div>
 
