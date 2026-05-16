@@ -41,8 +41,6 @@ const UsersTab = forwardRef<UsersTabHandle>(function UsersTab(_, ref) {
     password: '',
     profile: '',
     balance: '',
-    assign_credits: '',
-    assign_unlimited_until: '',
     status: '',
     subscription_end: '',
     account: '',
@@ -140,8 +138,6 @@ const UsersTab = forwardRef<UsersTabHandle>(function UsersTab(_, ref) {
           password: '',
           profile: data.profile || '',
           balance: data.balance || '',
-          assign_credits: data.esign_credits || '',
-          assign_unlimited_until: data.esign_unlimited_until || '',
           status: data.status || '',
           subscription_end: data.subscription_end || '',
           account: data.account || '',
@@ -185,8 +181,6 @@ const UsersTab = forwardRef<UsersTabHandle>(function UsersTab(_, ref) {
         twitter: editForm.twitter || null,
         profile: editForm.profile || null,
         balance: editForm.balance || null,
-        esign_credits: editForm.assign_credits || null,
-        esign_unlimited_until: editForm.assign_unlimited_until || null,
         status: editForm.status || null,
         subscription_end: editForm.subscription_end || null,
         account: editForm.account || null,
@@ -616,15 +610,6 @@ const UsersTab = forwardRef<UsersTabHandle>(function UsersTab(_, ref) {
                     className="w-full h-10 px-3 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-[#1EA7FF]/30"
                   />
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">E-Sign Credits</label>
-                  <input
-                    type="text"
-                    value={editForm.assign_credits}
-                    onChange={(e) => setEditForm({ ...editForm, assign_credits: e.target.value })}
-                    className="w-full h-10 px-3 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-[#1EA7FF]/30"
-                  />
-                </div>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
@@ -634,15 +619,6 @@ const UsersTab = forwardRef<UsersTabHandle>(function UsersTab(_, ref) {
                     type="date"
                     value={editForm.subscription_end}
                     onChange={(e) => setEditForm({ ...editForm, subscription_end: e.target.value })}
-                    className="w-full h-10 px-3 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-[#1EA7FF]/30"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">E-Sign Unlimited Until</label>
-                  <input
-                    type="date"
-                    value={editForm.assign_unlimited_until}
-                    onChange={(e) => setEditForm({ ...editForm, assign_unlimited_until: e.target.value })}
                     className="w-full h-10 px-3 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-[#1EA7FF]/30"
                   />
                 </div>

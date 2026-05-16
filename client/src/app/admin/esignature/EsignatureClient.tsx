@@ -168,6 +168,7 @@ export default function EsignatureClient() {
   }, [pdfPreview?.url])
 
   const confirmEsignChargeIfNeeded = async (senderEmail: string) => {
+    return true
     try {
       if (!senderEmail) return true
       const res = await fetch('/api/esign/wallet', {
@@ -394,7 +395,6 @@ export default function EsignatureClient() {
       }
 
       const done = Boolean(uploadJson?.success) || Boolean(uploadJson?.done)
-      const successCount = Number(uploadJson?.count ?? recipients.length)
       // Extract document ID from response (may be id, document_id, documentId, or first item)
       const docId: string = String(
         uploadJson?.id ?? uploadJson?.document_id ?? uploadJson?.documentId ??
@@ -402,26 +402,6 @@ export default function EsignatureClient() {
       ).trim()
 
       if (done) {
-        // Deduct credits in background
-        void (async () => {
-          try {
-            const raw = typeof window !== 'undefined' ? window.localStorage.getItem('edc_admin_session') : null
-            const parsed = raw ? JSON.parse(raw) : null
-            const senderEmail = String(parsed?.email ?? '').trim().toLowerCase()
-            if (senderEmail) {
-              for (let i = 0; i < successCount; i += 1) {
-                await fetch('/api/esign/deduct-credit', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ email: senderEmail }),
-                })
-              }
-            }
-          } catch (err) {
-            console.error('Failed to deduct credit:', err)
-          }
-        })()
-
         // Refresh document list in background
         void fetch(`/api/esignature/signatures?user_id=${encodeURIComponent(userIdForPayload)}`, { cache: 'no-store' })
           .then(r => r.ok ? r.json() : null)

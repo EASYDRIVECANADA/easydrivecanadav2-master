@@ -9,6 +9,14 @@ const apiKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_
 
 export async function POST(request: Request) {
   try {
+    await request.json().catch(() => ({}))
+    return NextResponse.json({
+      success: true,
+      message: 'E-signature is free for all users; no credits or balance were deducted.',
+      charged: false,
+      unlimited: true,
+    })
+
     if (!baseUrl || !apiKey) {
       return NextResponse.json({ error: 'Server configuration error' }, { status: 500 })
     }

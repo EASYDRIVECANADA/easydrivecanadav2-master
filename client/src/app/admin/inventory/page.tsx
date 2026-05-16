@@ -645,17 +645,13 @@ export default function AdminInventoryPage() {
         }
       }
 
-      let q = supabase
+      const q = supabase
         .from('edc_vehicles')
         .select('*')
         // Order by stock_number descending so the most recent is on top
         // Note: stock_number is stored as text; server-side order will be lexicographic.
         // We'll enforce a numeric sort on the client after mapping as a reliable fallback.
         .order('stock_number', { ascending: false })
-
-      if (userId) {
-        q = q.eq('user_id', userId)
-      }
 
       const { data, error } = await q
 

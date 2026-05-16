@@ -16,6 +16,18 @@ export async function POST(request: Request) {
     const body = (await request.json().catch(() => ({}))) as any
     const email = normalizeEmail(body?.email)
     if (!email) return NextResponse.json({ error: 'Missing email' }, { status: 400 })
+    return NextResponse.json(
+      {
+        email,
+        balance: 0,
+        esign_credits: 999999,
+        esign_unlimited_until: null,
+        role: '',
+        premier_unlimited: true,
+        free_for_all: true,
+      },
+      { status: 200 }
+    )
 
     const { supabaseUrl, supabaseKey } = getSupabaseServerConfig()
     const q = `${supabaseUrl}/rest/v1/users?select=email,balance,esign_credits,esign_unlimited_until,role&email=eq.${encodeURIComponent(email)}&limit=1`

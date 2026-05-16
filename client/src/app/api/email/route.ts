@@ -75,7 +75,7 @@ export async function POST(request: Request) {
 
     // Charge E‑Signature pay-per-use at the moment the signing request is sent.
     // Prefer consuming bundle credits; otherwise deduct $3 from wallet balance.
-    if (senderEmail) {
+    if (false && senderEmail) {
       try {
         const wallet = await getUserWalletByEmail(senderEmail)
 

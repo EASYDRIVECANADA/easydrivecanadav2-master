@@ -170,12 +170,9 @@ export default function AdminCostumerPage() {
   useEffect(() => {
     let cancelled = false
     const load = async () => {
-      const user_id = await getWebhookUserId().catch(() => null)
-      if (!user_id) return
       const { data, error } = await supabase
         .from('edc_customer')
         .select('id, first_name, last_name, phone, mobile, email, drivers_license, rin, date_of_birth')
-        .eq('user_id', user_id)
         .order('created_at', { ascending: false })
         .limit(100)
       if (error) {
@@ -246,21 +243,16 @@ export default function AdminCostumerPage() {
     setPrintDropdownOpen(false)
     setPdfLoading(true)
     try {
-      const user_id = await getWebhookUserId().catch(() => null)
-      if (!user_id) throw new Error('Missing user')
-
       const { data: cust } = await supabase
         .from('edc_customer')
         .select('*')
         .eq('id', editingId)
-        .eq('user_id', user_id)
         .maybeSingle()
 
       const { data: credit } = await supabase
         .from('edc_creditapp')
         .select('*')
         .eq('customer_id', editingId)
-        .eq('user_id', user_id)
         .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle()
@@ -367,9 +359,7 @@ export default function AdminCostumerPage() {
     setCredit(getDefaultCredit())
     setShowCreate(true)
     try {
-      const user_id = await getWebhookUserId().catch(() => null)
-      if (!user_id) return
-      const { data, error } = await supabase.from('edc_customer').select('*').eq('id', id).eq('user_id', user_id).single()
+      const { data, error } = await supabase.from('edc_customer').select('*').eq('id', id).single()
       if (error || !data) return
 
       const r: any = data
@@ -431,7 +421,6 @@ export default function AdminCostumerPage() {
         .from('edc_creditapp')
         .select('*')
         .eq('customer_id', id)
-        .eq('user_id', user_id)
         .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle()

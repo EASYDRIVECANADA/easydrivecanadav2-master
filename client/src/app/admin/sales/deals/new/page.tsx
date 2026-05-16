@@ -93,6 +93,7 @@ function SalesNewDealPageContent() {
   }
 
   const confirmEsignChargeIfNeeded = async (senderEmail: string) => {
+    return true
     try {
       if (!senderEmail) return true
       const res = await fetch('/api/esign/wallet', {
