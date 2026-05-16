@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
+import { resolveShowroomVehicleScope } from '@/lib/accountScope.mjs'
 
 type ShowroomVehicle = {
   id: string
@@ -290,56 +291,65 @@ export default function CustomerShowroomPage() {
         }
         const storedSession = typeof window !== 'undefined' ? window.localStorage.getItem('edc_admin_session') : null
         const sessionData = storedSession ? (() => { try { return JSON.parse(storedSession) } catch { return null } })() : null
-        let userId = String(sessionData?.user_id ?? '').trim()
-        if (!userId) {
-          const email = String(sessionData?.email ?? '').trim().toLowerCase()
-          if (email) {
-            const { data } = await supabase
-              .from('users')
-              .select('user_id')
+        const sessionUserId = String(sessionData?.user_id ?? '').trim()
+        let userId = sessionUserId
+        let shouldFilterByUserId = Boolean(userId)
+        const email = String(sessionData?.email ?? '').trim().toLowerCase()
+        if (email) {
+          const { data } = await supabase
+            .from('users')
+            .select('id, user_id, administrator, access_all_deals, sales')
+            .ilike('email', email)
+            .limit(1)
+            .maybeSingle()
+          const scope = resolveShowroomVehicleScope({
+            sessionUserId,
+            rowUserId: (data as any)?.user_id,
+            rowId: (data as any)?.id,
+            canViewAllShowroomVehicles: Boolean((data as any)?.administrator || (data as any)?.access_all_deals || (data as any)?.sales),
+          })
+          userId = scope.userId
+          shouldFilterByUserId = scope.shouldFilterByUserId
+          if (!userId) {
+            const { data: verification } = await supabase
+              .from('edc_account_verifications')
+              .select('full_name')
               .ilike('email', email)
+              .order('created_at', { ascending: false })
               .limit(1)
               .maybeSingle()
-            userId = String((data as any)?.user_id ?? '').trim()
-            if (!userId) {
-              const { data: verification } = await supabase
-                .from('edc_account_verifications')
-                .select('full_name')
-                .ilike('email', email)
-                .order('created_at', { ascending: false })
-                .limit(1)
-                .maybeSingle()
-              if (verification) {
-                const generatedUserId =
-                  typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
-                    ? crypto.randomUUID()
-                    : `${Date.now()}-${Math.random().toString(16).slice(2)}`
-                const fullName = String((verification as any)?.full_name || '').trim()
-                const { data: inserted } = await supabase
-                  .from('users')
-                  .insert({
-                    email,
-                    user_id: generatedUserId,
-                    first_name: fullName.split(/\s+/)[0] || null,
-                    last_name: fullName.split(/\s+/).slice(1).join(' ') || null,
-                    title: 'Owner',
-                    role: 'private',
-                    status: 'enable',
-                    created_at: new Date().toISOString(),
-                    ...ownerPermissionDefaults,
-                  })
-                  .select('user_id')
-                  .single()
-                userId = String((inserted as any)?.user_id || generatedUserId).trim()
-              }
-            }
-            if (userId && typeof window !== 'undefined') {
-              window.localStorage.setItem('edc_admin_session', JSON.stringify({ ...sessionData, user_id: userId }))
-              window.dispatchEvent(new Event('edc_admin_session_changed'))
+            if (verification) {
+              const generatedUserId =
+                typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+                  ? crypto.randomUUID()
+                  : `${Date.now()}-${Math.random().toString(16).slice(2)}`
+              const fullName = String((verification as any)?.full_name || '').trim()
+              const { data: inserted } = await supabase
+                .from('users')
+                .insert({
+                  email,
+                  user_id: generatedUserId,
+                  first_name: fullName.split(/\s+/)[0] || null,
+                  last_name: fullName.split(/\s+/).slice(1).join(' ') || null,
+                  title: 'Owner',
+                  role: 'private',
+                  status: 'enable',
+                  created_at: new Date().toISOString(),
+                  ...ownerPermissionDefaults,
+                })
+                .select('user_id')
+                .single()
+              userId = String((inserted as any)?.user_id || generatedUserId).trim()
+              shouldFilterByUserId = Boolean(userId)
             }
           }
+          if (userId && userId !== sessionUserId && typeof window !== 'undefined') {
+            window.localStorage.setItem('edc_admin_session', JSON.stringify({ ...sessionData, user_id: userId }))
+            window.dispatchEvent(new Event('edc_admin_session_changed'))
+          }
         }
-        const res = await fetch(userId ? `/api/vehicles?user_id=${encodeURIComponent(userId)}` : '/api/vehicles', { cache: 'no-store' })
+        const vehiclesUrl = shouldFilterByUserId && userId ? `/api/vehicles?user_id=${encodeURIComponent(userId)}` : '/api/vehicles'
+        const res = await fetch(vehiclesUrl, { cache: 'no-store' })
         const json = await res.json().catch(() => ({}))
         if (!res.ok || json.error) throw new Error(json.error || `Failed to fetch vehicles (${res.status})`)
 
