@@ -3,13 +3,11 @@
 import { type ReactNode, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { usePermissions } from '@/lib/permissions'
 
 export default function AdminSettingsLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname()
   const [dealership, setDealership] = useState('EASYDRIVE CANADA')
   const [isVerified, setIsVerified] = useState(false)
-  const permissions = usePermissions()
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -60,8 +58,8 @@ export default function AdminSettingsLayout({ children }: { children: ReactNode 
         { key: 'users', label: 'Users', href: '/admin/settings/users' },
         { key: 'presets', label: 'Presets', href: '/admin/settings/presets' },
         { key: 'integrations', label: 'Integrations', href: '/admin/settings/integrations' },
-      ].filter(() => permissions.can('settings')),
-    [permissions]
+      ],
+    []
   )
 
   const activeKey = useMemo(() => {

@@ -29,34 +29,10 @@ export async function POST(request: Request) {
     // Try hashed password first (SHA-256), then fall back to plaintext for migration
     const hashedPassword = sha256(password)
 
-    const selectColumns = [
-      'id',
-      'user_id',
-      'email',
-      'administrator',
-      'status',
-      'password',
-      'access_all_deals',
-      'access_all_leads_customers',
-      'approver',
-      'vendors',
-      'delete_vendors',
-      'costs',
-      'customers',
-      'delete_customers',
-      'sales',
-      'delete_sales',
-      'inventory',
-      'delete_inventory',
-      'settings',
-      'sales_reports_access',
-      'inventory_reports_access',
-    ].join(', ')
-
     const tryQuery = (pwd: string) =>
       supabase
         .from('users')
-        .select(selectColumns)
+        .select('id, user_id, email, administrator, status, password')
         .ilike('email', email)
         .eq('password', pwd)
         .limit(1)
@@ -103,24 +79,6 @@ export async function POST(request: Request) {
 
     const role = (data as any)?.administrator ? 'ADMIN' : 'STAFF'
     const scopedUserId = String((data as any)?.user_id ?? (data as any)?.id ?? '').trim()
-    const permissions = {
-      access_all_deals: Boolean((data as any)?.access_all_deals),
-      access_all_leads_customers: Boolean((data as any)?.access_all_leads_customers),
-      administrator: Boolean((data as any)?.administrator),
-      approver: Boolean((data as any)?.approver),
-      vendors: Boolean((data as any)?.vendors),
-      delete_vendors: Boolean((data as any)?.delete_vendors),
-      costs: Boolean((data as any)?.costs),
-      customers: Boolean((data as any)?.customers),
-      delete_customers: Boolean((data as any)?.delete_customers),
-      sales: Boolean((data as any)?.sales),
-      delete_sales: Boolean((data as any)?.delete_sales),
-      inventory: Boolean((data as any)?.inventory),
-      delete_inventory: Boolean((data as any)?.delete_inventory),
-      settings: Boolean((data as any)?.settings),
-      sales_reports_access: Boolean((data as any)?.sales_reports_access),
-      inventory_reports_access: Boolean((data as any)?.inventory_reports_access),
-    }
 
     return NextResponse.json(
       {
@@ -129,7 +87,6 @@ export async function POST(request: Request) {
           email: String((data as any)?.email ?? email),
           role,
           user_id: scopedUserId,
-          permissions,
         },
       },
       { status: 200 }

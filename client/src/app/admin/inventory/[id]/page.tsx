@@ -5,7 +5,6 @@ import type { ComponentType } from 'react'
 import { useRouter, useParams, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabaseClient'
-import { usePermissions } from '@/lib/permissions'
 import {
   CarFront,
   ClipboardList,
@@ -118,9 +117,6 @@ export default function AdminEditVehiclePage() {
   const params = useParams()
   const router = useRouter()
   const searchParams = useSearchParams()
-  const permissions = usePermissions()
-  const canAccessCosts = permissions.can('costs')
-  const visibleTabs = TABS.filter((tab) => tab.id !== 'costs' || canAccessCosts)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [formData, setFormData] = useState<VehicleFormData>({})
@@ -145,13 +141,22 @@ export default function AdminEditVehiclePage() {
   // Pick active tab from URL query param (?tab=disclosures, images, etc.)
   useEffect(() => {
     const tab = (searchParams?.get('tab') || '').toLowerCase()
-    const validTabs = visibleTabs.map((item) => item.id)
+    const validTabs: TabType[] = [
+      'details',
+      'images',
+      'disclosures',
+      'importantDisclosures',
+      'purchase',
+      'costs',
+      'warranty',
+      'files',
+      'carfax',
+      'certificate',
+    ]
     if (validTabs.includes(tab as TabType)) {
       setActiveTab(tab as TabType)
-    } else if (tab === 'costs' && !canAccessCosts) {
-      setActiveTab('details')
     }
-  }, [searchParams, canAccessCosts])
+  }, [searchParams])
 
   const fetchVehicle = async () => {
     try {
@@ -442,7 +447,7 @@ export default function AdminEditVehiclePage() {
         {/* Tab Navigation */}
         <div className="w-full px-4 sm:px-6 lg:px-8 border-t border-gray-200">
           <nav className="flex gap-1 overflow-x-auto" aria-label="Tabs">
-            {visibleTabs.map((tab) => {
+            {TABS.map((tab) => {
               const Icon = tab.icon
               return (
                 <button
@@ -523,7 +528,7 @@ export default function AdminEditVehiclePage() {
           <PurchaseTab vehicleId={String(params.id)} stockNumber={formData.stockNumber || ''} />
         )}
 
-        {activeTab === 'costs' && canAccessCosts && (
+        {activeTab === 'costs' && (
           <CostsTab
             vehicleId={String(params.id)}
             vehiclePrice={formData.price || 0}

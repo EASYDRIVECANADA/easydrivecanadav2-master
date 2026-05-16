@@ -22,7 +22,6 @@ import {
   X,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
-import { usePermissions } from '@/lib/permissions'
 
 interface Lead {
   id: string
@@ -38,7 +37,6 @@ interface Lead {
   creditScore: string | null
   adminNotes: string | null
   managerStatus: LeadManagerStatus | null
-  userId: string | null
   ghlSynced: boolean
   createdAt: string
 }
@@ -57,7 +55,6 @@ type LeadRow = {
   credit_score: string | null
   admin_notes?: string | null
   manager_status?: string | null
-  user_id?: string | null
   ghl_synced: boolean | null
   created_at: string
 }
@@ -91,7 +88,7 @@ const FILTERS: Array<{ key: FilterKey; label: string }> = [
 
 const BASE_LEAD_SELECT = 'id, first_name, last_name, email, phone, vehicle_interest, message, employment_status, monthly_income, down_payment, credit_score, ghl_synced, created_at'
 const LEAD_SELECT_WITH_NOTES = `${BASE_LEAD_SELECT}, admin_notes`
-const LEAD_SELECT_FULL = `${LEAD_SELECT_WITH_NOTES}, manager_status, user_id`
+const LEAD_SELECT_FULL = `${LEAD_SELECT_WITH_NOTES}, manager_status`
 const MANAGER_STATUSES: LeadManagerStatus[] = ['AWAITING DECISION', 'PENDING', 'PENDING (BHPH)', 'DECLINED']
 
 const clean = (value: unknown) => String(value ?? '').trim()
@@ -274,12 +271,11 @@ const mapLeadRow = (l: LeadRow): Lead => ({
   creditScore: l.credit_score ?? null,
   adminNotes: l.admin_notes ?? null,
   managerStatus: normalizeManagerStatus(l.manager_status),
-  userId: l.user_id ?? null,
   ghlSynced: !!l.ghl_synced,
   createdAt: l.created_at,
 })
 
-const rowToLeadInsert = (draft: LeadDraft, notesEnabled: boolean, createdAt = new Date().toISOString(), userId?: string) => {
+const rowToLeadInsert = (draft: LeadDraft, notesEnabled: boolean, createdAt = new Date().toISOString()) => {
   const insert: Record<string, unknown> = {
     first_name: clean(draft.firstName) || null,
     last_name: clean(draft.lastName) || null,
@@ -298,10 +294,6 @@ const rowToLeadInsert = (draft: LeadDraft, notesEnabled: boolean, createdAt = ne
     ]) || null,
   }
 
-  if (userId) {
-    insert.user_id = userId
-  }
-
   if (notesEnabled) {
     insert.admin_notes = clean(draft.adminNotes) || null
   }
@@ -310,8 +302,6 @@ const rowToLeadInsert = (draft: LeadDraft, notesEnabled: boolean, createdAt = ne
 }
 
 export default function AdminLeadsPage() {
-  const permissions = usePermissions()
-  const canDeleteLeads = permissions.canDelete('customers')
   const [leads, setLeads] = useState<Lead[]>([])
   const [loading, setLoading] = useState(true)
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null)
@@ -348,50 +338,32 @@ export default function AdminLeadsPage() {
       router.push('/admin')
       return
     }
-    if (!permissions.loading) void fetchLeads()
-  }, [permissions.loading, permissions.userId, permissions.permissions.access_all_leads_customers, router])
+    void fetchLeads()
+  }, [router])
 
   const fetchLeads = async () => {
     try {
-      const scopedUserId = permissions.userId
-      const canViewAllLeadRows = permissions.canViewAll('leadsCustomers')
-      if (!canViewAllLeadRows && !scopedUserId) {
-        setLeads([])
-        return
-      }
-      let query = supabase
+      let result = await supabase
         .from('edc_leads')
         .select(LEAD_SELECT_FULL)
         .order('created_at', { ascending: false })
-      if (!canViewAllLeadRows && scopedUserId) {
-        query = query.eq('user_id', scopedUserId)
-      }
-      let result = await query
 
       if (result.error && /manager_status|column|schema cache/i.test(result.error.message || '')) {
         setStatusEnabled(false)
-        let fallbackQuery = supabase
+        result = await supabase
           .from('edc_leads')
           .select(LEAD_SELECT_WITH_NOTES)
           .order('created_at', { ascending: false })
-        if (!canViewAllLeadRows && scopedUserId) {
-          fallbackQuery = fallbackQuery.eq('user_id', scopedUserId)
-        }
-        result = await fallbackQuery
       } else {
         setStatusEnabled(true)
       }
 
       if (result.error && /admin_notes|column|schema cache/i.test(result.error.message || '')) {
         setNotesEnabled(false)
-        let baseQuery = supabase
+        result = await supabase
           .from('edc_leads')
           .select(BASE_LEAD_SELECT)
           .order('created_at', { ascending: false })
-        if (!canViewAllLeadRows && scopedUserId) {
-          baseQuery = baseQuery.eq('user_id', scopedUserId)
-        }
-        result = await baseQuery
       } else if (!result.error) {
         setNotesEnabled(true)
       }
@@ -478,10 +450,6 @@ export default function AdminLeadsPage() {
   const totalPages = Math.max(1, Math.ceil(filteredLeads.length / itemsPerPage))
 
   const handleDelete = async (lead: Lead) => {
-    if (!canDeleteLeads) {
-      alert('You do not have permission to delete leads.')
-      return
-    }
     if (!confirm(`Delete ${leadName(lead)}? This cannot be undone.`)) return
 
     try {
@@ -597,7 +565,7 @@ export default function AdminLeadsPage() {
     setLeadFormError('')
 
     try {
-      const insert = rowToLeadInsert(leadDraft, notesEnabled, new Date().toISOString(), permissions.userId)
+      const insert = rowToLeadInsert(leadDraft, notesEnabled)
       const { data, error } = await supabase
         .from('edc_leads')
         .insert(insert)
@@ -684,7 +652,7 @@ export default function AdminLeadsPage() {
     setImportError('')
 
     try {
-      const inserts = importRows.map((row) => rowToLeadInsert(row, notesEnabled, new Date().toISOString(), permissions.userId))
+      const inserts = importRows.map((row) => rowToLeadInsert(row, notesEnabled))
       const { data, error } = await supabase
         .from('edc_leads')
         .insert(inserts)
@@ -831,7 +799,6 @@ export default function AdminLeadsPage() {
                           selected={selectedLead?.id === lead.id}
                           onSelect={setSelectedLead}
                           onDelete={handleDelete}
-                          canDelete={canDeleteLeads}
                           onEditNotes={setNotesModalLead}
                           onEditStatus={setStatusModalLead}
                         />
@@ -850,7 +817,6 @@ export default function AdminLeadsPage() {
                     selected={selectedLead?.id === lead.id}
                     onSelect={setSelectedLead}
                     onDelete={handleDelete}
-                    canDelete={canDeleteLeads}
                     onEditNotes={setNotesModalLead}
                     onEditStatus={setStatusModalLead}
                   />
@@ -883,7 +849,6 @@ export default function AdminLeadsPage() {
               fields={selectedLeadFields}
               onClose={() => setSelectedLead(null)}
               onDelete={handleDelete}
-              canDelete={canDeleteLeads}
               notesDraft={notesDraft}
               onNotesChange={setNotesDraft}
               onSaveNotes={handleSaveNotes}
@@ -990,7 +955,6 @@ function LeadRow({
   selected,
   onSelect,
   onDelete,
-  canDelete,
   onEditNotes,
   onEditStatus,
 }: {
@@ -998,7 +962,6 @@ function LeadRow({
   selected: boolean
   onSelect: (lead: Lead) => void
   onDelete: (lead: Lead) => void
-  canDelete: boolean
   onEditNotes: (lead: Lead) => void
   onEditStatus: (lead: Lead) => void
 }) {
@@ -1040,7 +1003,7 @@ function LeadRow({
           <IconButton label="View details" onClick={() => onSelect(lead)} icon={Eye} />
           {lead.email ? <IconLink label="Email lead" href={`mailto:${lead.email}`} icon={Mail} /> : null}
           {lead.phone ? <IconLink label="Call lead" href={`tel:${lead.phone}`} icon={Phone} /> : null}
-          {canDelete ? <IconButton label="Delete lead" onClick={() => onDelete(lead)} icon={Trash2} danger /> : null}
+          <IconButton label="Delete lead" onClick={() => onDelete(lead)} icon={Trash2} danger />
         </div>
       </td>
     </tr>
@@ -1052,7 +1015,6 @@ function MobileLeadCard({
   selected,
   onSelect,
   onDelete,
-  canDelete,
   onEditNotes,
   onEditStatus,
 }: {
@@ -1060,7 +1022,6 @@ function MobileLeadCard({
   selected: boolean
   onSelect: (lead: Lead) => void
   onDelete: (lead: Lead) => void
-  canDelete: boolean
   onEditNotes: (lead: Lead) => void
   onEditStatus: (lead: Lead) => void
 }) {
@@ -1099,11 +1060,11 @@ function MobileLeadCard({
         </div>
       </div>
 
-      <div className={`mt-4 grid ${canDelete ? 'grid-cols-4' : 'grid-cols-3'} overflow-hidden rounded-xl border border-slate-200`}>
+      <div className="mt-4 grid grid-cols-4 overflow-hidden rounded-xl border border-slate-200">
         <ActionCell label="View" onClick={() => onSelect(lead)} icon={Eye} />
         <ActionCell label="Email" href={lead.email ? `mailto:${lead.email}` : undefined} icon={Mail} disabled={!lead.email} />
         <ActionCell label="Call" href={lead.phone ? `tel:${lead.phone}` : undefined} icon={Phone} disabled={!lead.phone} />
-        {canDelete ? <ActionCell label="Delete" onClick={() => onDelete(lead)} icon={Trash2} danger /> : null}
+        <ActionCell label="Delete" onClick={() => onDelete(lead)} icon={Trash2} danger />
       </div>
     </div>
   )
@@ -1558,7 +1519,6 @@ function LeadDetailPanel({
   fields,
   onClose,
   onDelete,
-  canDelete,
   notesDraft,
   onNotesChange,
   onSaveNotes,
@@ -1570,7 +1530,6 @@ function LeadDetailPanel({
   fields: { rows: Array<{ label: string; value: string }>; notes: string[] }
   onClose: () => void
   onDelete: (lead: Lead) => void
-  canDelete: boolean
   notesDraft: string
   onNotesChange: (value: string) => void
   onSaveNotes: (lead: Lead) => void
@@ -1675,12 +1634,10 @@ function LeadDetailPanel({
                 <Phone className="h-4 w-4" />
                 Call lead
               </a>
-              {canDelete ? (
-                <button type="button" onClick={() => onDelete(lead)} className="edc-btn-danger h-10 w-full text-xs">
-                  <Trash2 className="h-4 w-4" />
-                  Delete lead
-                </button>
-              ) : null}
+              <button type="button" onClick={() => onDelete(lead)} className="edc-btn-danger h-10 w-full text-xs">
+                <Trash2 className="h-4 w-4" />
+                Delete lead
+              </button>
             </div>
           </DetailSection>
         </div>

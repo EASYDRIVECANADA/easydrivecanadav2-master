@@ -10,13 +10,9 @@ import jsPDF from 'jspdf'
 import { renderCreditConsentPdf } from './creditConsentPdf'
 import type { CreditForm, CustomerForm, CustomerRow } from './types'
 import { supabase } from '@/lib/supabaseClient'
-import { usePermissions } from '@/lib/permissions'
 
 export default function AdminCostumerPage() {
   const searchParams = useSearchParams()
-  const permissions = usePermissions()
-  const canViewAllCustomers = permissions.canViewAll('leadsCustomers')
-  const canDeleteCustomers = permissions.canDelete('customers')
   const [query, setQuery] = useState('')
   const [pageSize, setPageSize] = useState(5)
   const [checked, setChecked] = useState<Record<string, boolean>>({})
@@ -175,14 +171,13 @@ export default function AdminCostumerPage() {
     let cancelled = false
     const load = async () => {
       const user_id = await getWebhookUserId().catch(() => null)
-      if (!canViewAllCustomers && !user_id) return
-      let listQuery = supabase
+      if (!user_id) return
+      const { data, error } = await supabase
         .from('edc_customer')
         .select('id, first_name, last_name, phone, mobile, email, drivers_license, rin, date_of_birth')
+        .eq('user_id', user_id)
         .order('created_at', { ascending: false })
         .limit(100)
-      if (!canViewAllCustomers && user_id) listQuery = listQuery.eq('user_id', user_id)
-      const { data, error } = await listQuery
       if (error) {
         // Fail silently for now; keep empty list
         return
@@ -200,11 +195,11 @@ export default function AdminCostumerPage() {
       }))
       setRows(mapped)
     }
-    if (!permissions.loading) load()
+    load()
     return () => {
       cancelled = true
     }
-  }, [permissions.loading, canViewAllCustomers])
+  }, [])
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -254,21 +249,21 @@ export default function AdminCostumerPage() {
       const user_id = await getWebhookUserId().catch(() => null)
       if (!user_id) throw new Error('Missing user')
 
-      let customerQuery = supabase
+      const { data: cust } = await supabase
         .from('edc_customer')
         .select('*')
         .eq('id', editingId)
-      if (!canViewAllCustomers) customerQuery = customerQuery.eq('user_id', user_id)
-      const { data: cust } = await customerQuery.maybeSingle()
+        .eq('user_id', user_id)
+        .maybeSingle()
 
-      let creditQuery = supabase
+      const { data: credit } = await supabase
         .from('edc_creditapp')
         .select('*')
         .eq('customer_id', editingId)
+        .eq('user_id', user_id)
         .order('created_at', { ascending: false })
         .limit(1)
-      if (!canViewAllCustomers) creditQuery = creditQuery.eq('user_id', user_id)
-      const { data: credit } = await creditQuery.maybeSingle()
+        .maybeSingle()
 
       const c: any = cust ?? {}
       const cr: any = credit ?? {}
@@ -338,7 +333,6 @@ export default function AdminCostumerPage() {
   const pageRows = filtered.slice(0, pageSize)
 
   const toggleAll = (next: boolean) => {
-    if (!canDeleteCustomers) return
     setCheckedAll(next)
     if (!next) {
       setChecked({})
@@ -374,10 +368,8 @@ export default function AdminCostumerPage() {
     setShowCreate(true)
     try {
       const user_id = await getWebhookUserId().catch(() => null)
-      if (!canViewAllCustomers && !user_id) return
-      let customerQuery = supabase.from('edc_customer').select('*').eq('id', id)
-      if (!canViewAllCustomers && user_id) customerQuery = customerQuery.eq('user_id', user_id)
-      const { data, error } = await customerQuery.single()
+      if (!user_id) return
+      const { data, error } = await supabase.from('edc_customer').select('*').eq('id', id).eq('user_id', user_id).single()
       if (error || !data) return
 
       const r: any = data
@@ -435,14 +427,14 @@ export default function AdminCostumerPage() {
       const emp = toArray(r.employments) as any[] | null
       const inc = toArray(r.incomes) as any[] | null
 
-      let creditQuery = supabase
+      const { data: creditData, error: creditError } = await supabase
         .from('edc_creditapp')
         .select('*')
         .eq('customer_id', id)
+        .eq('user_id', user_id)
         .order('created_at', { ascending: false })
         .limit(1)
-      if (!canViewAllCustomers && user_id) creditQuery = creditQuery.eq('user_id', user_id)
-      const { data: creditData, error: creditError } = await creditQuery.maybeSingle()
+        .maybeSingle()
 
       setCreditAppExists(!creditError && !!creditData)
       if (!creditError && creditData) {
@@ -544,23 +536,14 @@ export default function AdminCostumerPage() {
 
   const handleDelete = async (id: string) => {
     if (deletingId) return
-    if (!canDeleteCustomers) {
-      setSaveErrorMessage('You do not have permission to delete customers.')
-      setSaveErrorOpen(true)
-      return
-    }
     const ok = confirm('Delete this customer?')
     if (!ok) return
     setDeletingId(id)
     try {
       const user_id = await getWebhookUserId().catch(() => null)
-      if (!canViewAllCustomers && !user_id) return
-      let creditDelete = supabase.from('edc_creditapp').delete().eq('customer_id', id)
-      if (!canViewAllCustomers && user_id) creditDelete = creditDelete.eq('user_id', user_id)
-      await creditDelete
-      let customerDelete = supabase.from('edc_customer').delete().eq('id', id)
-      if (!canViewAllCustomers && user_id) customerDelete = customerDelete.eq('user_id', user_id)
-      const { error } = await customerDelete
+      if (!user_id) return
+      await supabase.from('edc_creditapp').delete().eq('customer_id', id).eq('user_id', user_id)
+      const { error } = await supabase.from('edc_customer').delete().eq('id', id).eq('user_id', user_id)
       if (error) throw error
       setRows((prev) => prev.filter((r) => r.id !== id))
       setChecked((prev) => {
@@ -581,11 +564,6 @@ export default function AdminCostumerPage() {
   }
 
   const handleBulkDelete = async () => {
-    if (!canDeleteCustomers) {
-      setSaveErrorMessage('You do not have permission to delete customers.')
-      setSaveErrorOpen(true)
-      return
-    }
     const ids = Object.keys(checked).filter((k) => checked[k])
     if (!ids.length) return
     const ok = confirm(`Delete ${ids.length} customer${ids.length > 1 ? 's' : ''}?`)
@@ -593,13 +571,9 @@ export default function AdminCostumerPage() {
     setBulkDeleting(true)
     try {
       const user_id = await getWebhookUserId().catch(() => null)
-      if (!canViewAllCustomers && !user_id) return
-      let creditDelete = supabase.from('edc_creditapp').delete().in('customer_id', ids)
-      if (!canViewAllCustomers && user_id) creditDelete = creditDelete.eq('user_id', user_id)
-      await creditDelete
-      let customerDelete = supabase.from('edc_customer').delete().in('id', ids)
-      if (!canViewAllCustomers && user_id) customerDelete = customerDelete.eq('user_id', user_id)
-      const { error } = await customerDelete
+      if (!user_id) return
+      await supabase.from('edc_creditapp').delete().in('customer_id', ids).eq('user_id', user_id)
+      const { error } = await supabase.from('edc_customer').delete().in('id', ids).eq('user_id', user_id)
       if (error) throw error
       setRows((prev) => prev.filter((r) => !ids.includes(r.id)))
       setChecked({})
@@ -979,7 +953,7 @@ export default function AdminCostumerPage() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35m1.35-5.65a7 7 0 11-14 0 7 7 0 0114 0z" />
                 </svg>
               </div>
-              {Object.values(checked).some(Boolean) && canDeleteCustomers ? (
+              {Object.values(checked).some(Boolean) ? (
                 <button
                   type="button"
                   onClick={() => void handleBulkDelete()}
@@ -1015,17 +989,15 @@ export default function AdminCostumerPage() {
                 <table className="w-full text-sm">
                   <thead className="bg-slate-50/80 text-xs uppercase tracking-wider text-slate-500">
                     <tr>
-                      {canDeleteCustomers ? (
-                        <th className="w-10 px-4 py-3 text-center">
-                          <input
-                            type="checkbox"
-                            className="h-4 w-4 accent-[#1EA7FF]"
-                            checked={checkedAll && pageRows.length > 0}
-                            onChange={(e) => toggleAll(e.target.checked)}
-                            aria-label="Select all"
-                          />
-                        </th>
-                      ) : null}
+                      <th className="w-10 px-4 py-3 text-center">
+                        <input
+                          type="checkbox"
+                          className="h-4 w-4 accent-[#1EA7FF]"
+                          checked={checkedAll && pageRows.length > 0}
+                          onChange={(e) => toggleAll(e.target.checked)}
+                          aria-label="Select all"
+                        />
+                      </th>
                       <th className="px-4 py-3 text-left font-semibold">Customer</th>
                       <th className="px-4 py-3 text-left font-semibold">Phone</th>
                       <th className="px-4 py-3 text-left font-semibold">Mobile</th>
@@ -1060,17 +1032,15 @@ export default function AdminCostumerPage() {
                     ) : (
                       pageRows.map((r) => (
                         <tr key={r.id} className="hover:bg-slate-50/60 transition-colors">
-                          {canDeleteCustomers ? (
-                            <td className="px-4 py-3 text-center">
-                              <input
-                                type="checkbox"
-                                className="h-4 w-4 accent-[#1EA7FF]"
-                                checked={!!checked[r.id]}
-                                onChange={(e) => setChecked((prev) => ({ ...prev, [r.id]: e.target.checked }))}
-                                aria-label={`Select ${r.name}`}
-                              />
-                            </td>
-                          ) : null}
+                          <td className="px-4 py-3 text-center">
+                            <input
+                              type="checkbox"
+                              className="h-4 w-4 accent-[#1EA7FF]"
+                              checked={!!checked[r.id]}
+                              onChange={(e) => setChecked((prev) => ({ ...prev, [r.id]: e.target.checked }))}
+                              aria-label={`Select ${r.name}`}
+                            />
+                          </td>
                           <td className="px-4 py-3">
                             <div className="font-medium text-[#0B1F3A]">{r.name || <span className="text-slate-400 italic">Unnamed</span>}</div>
                             <div className="text-xs text-slate-500">{r.email}</div>

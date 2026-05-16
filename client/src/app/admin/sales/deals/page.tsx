@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
 import { motion } from 'framer-motion'
-import { usePermissions } from '@/lib/permissions'
 
 type PurchaseSubmission = {
   id: string
@@ -63,7 +62,6 @@ type DealCostBasis = {
 
 export default function DealsPage() {
   const router = useRouter()
-  const permissions = usePermissions()
   const [query, setQuery] = useState('')
   const [stateFilter, setStateFilter] = useState('ALL')
   const [showClosed, setShowClosed] = useState(true)
@@ -81,6 +79,7 @@ export default function DealsPage() {
   // Delete state
   const [deleteTarget, setDeleteTarget] = useState<DealRow | null>(null)
   const [deleting, setDeleting] = useState(false)
+  const [isAdminRole, setIsAdminRole] = useState(false)
   const [bulkDeleteConfirmOpen, setBulkDeleteConfirmOpen] = useState(false)
 
   // Purchase submissions
@@ -92,8 +91,6 @@ export default function DealsPage() {
   const [decliningId, setDecliningId] = useState<string | null>(null)
   const [declineTarget, setDeclineTarget] = useState<PurchaseSubmission | null>(null)
   const [declineReason, setDeclineReason] = useState('')
-  const canApproveSubmissions = permissions.can('approver')
-  const canDeleteDeals = permissions.canDelete('sales')
 
 
   const getAdminHeaders = useCallback((): Record<string, string> => {
@@ -135,18 +132,44 @@ export default function DealsPage() {
     }
   }, [])
 
-  const fetchDeals = useCallback(async (): Promise<DealRow[]> => {
-    if (permissions.loading) {
-      setLoading(true)
-      return []
+  const getIsAdminRole = useCallback(async (): Promise<boolean> => {
+    try {
+      if (typeof window === 'undefined') return false
+      const raw = window.localStorage.getItem('edc_admin_session')
+      if (!raw) return false
+      const parsed = JSON.parse(raw) as { email?: string; user_id?: string }
+      const email = String(parsed?.email ?? '').trim().toLowerCase()
+      const uid = String(parsed?.user_id ?? '').trim()
+
+      const { data: byId } = uid
+        ? await supabase.from('users').select('role').eq('user_id', uid).maybeSingle()
+        : ({ data: null } as any)
+      const { data: byEmail } = !byId?.role && email
+        ? await supabase.from('users').select('role').eq('email', email).maybeSingle()
+        : ({ data: null } as any)
+
+      const r = String((byId as any)?.role ?? (byEmail as any)?.role ?? '').trim().toLowerCase()
+      return r === 'admin'
+    } catch {
+      return false
     }
+  }, [])
+
+  useEffect(() => {
+    void (async () => {
+      const admin = await getIsAdminRole()
+      setIsAdminRole(admin)
+    })()
+  }, [getIsAdminRole])
+
+  const fetchDeals = useCallback(async (): Promise<DealRow[]> => {
     try {
       setLoading(true)
       setFetchError(null)
 
-      const scopedUserId = await getLoggedInUserId()
-      const canViewAllDeals = permissions.canViewAll('deals')
-      if (!canViewAllDeals && !scopedUserId) {
+      const [scopedUserId, admin] = await Promise.all([getLoggedInUserId(), getIsAdminRole()])
+      setIsAdminRole(admin)
+      if (!admin && !scopedUserId) {
         setRows([])
         return []
       }
@@ -173,7 +196,7 @@ export default function DealsPage() {
         delivery: d.delivery || null,
       }))
 
-      const deals = canViewAllDeals
+      const deals = admin
         ? dealsAll
         : dealsAll.filter((r) => {
             const uid = String(r.customer?.user_id ?? '').trim()
@@ -188,7 +211,7 @@ export default function DealsPage() {
     } finally {
       setLoading(false)
     }
-  }, [getLoggedInUserId, permissions.canViewAll, permissions.loading])
+  }, [getIsAdminRole, getLoggedInUserId])
 
   useEffect(() => {
     fetchDeals()
@@ -281,15 +304,11 @@ export default function DealsPage() {
 
   const handleDecline = async () => {
     if (!declineTarget) return
-    if (!canApproveSubmissions) {
-      setApproveError('You do not have permission to decline purchase submissions.')
-      return
-    }
     setDecliningId(declineTarget.id)
     try {
       const res = await fetch('/api/purchase-submissions/decline', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...getAdminHeaders() },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ submissionId: declineTarget.id, reason: declineReason.trim() || undefined }),
       })
       const json = await res.json()
@@ -305,17 +324,13 @@ export default function DealsPage() {
   }
 
   const handleApprove = async (sub: PurchaseSubmission) => {
-    if (!canApproveSubmissions) {
-      setApproveError('You do not have permission to approve purchase submissions.')
-      return
-    }
     setApprovingId(sub.id)
     setApproveError(null)
     try {
       const userId = await getLoggedInUserId()
       const res = await fetch('/api/purchase-submissions/approve', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...getAdminHeaders() },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ submissionId: sub.id, userId }),
       })
       const json = await res.json()
@@ -383,21 +398,12 @@ export default function DealsPage() {
 
   const handleDeleteSelected = async () => {
     if (selectedIds.size === 0) return
-    if (!canDeleteDeals) {
-      setFetchError('You do not have permission to delete deals.')
-      return
-    }
     const selected = rows.filter((d) => selectedIds.has(d.dealId))
     if (selected.length === 0) return
     setBulkDeleteConfirmOpen(true)
   }
 
   const confirmBulkDelete = async () => {
-    if (!canDeleteDeals) {
-      setBulkDeleteConfirmOpen(false)
-      setFetchError('You do not have permission to delete deals.')
-      return
-    }
     const selected = rows.filter((d) => selectedIds.has(d.dealId))
     setBulkDeleteConfirmOpen(false)
     try {
@@ -431,11 +437,6 @@ export default function DealsPage() {
 
   const handleDelete = async () => {
     if (!deleteTarget) return
-    if (!canDeleteDeals) {
-      setDeleteTarget(null)
-      setFetchError('You do not have permission to delete deals.')
-      return
-    }
     try {
       setDeleting(true)
       const res = await fetch('/api/deals/delete', {
@@ -537,32 +538,28 @@ export default function DealsPage() {
                           >
                             {isExpanded ? 'Hide' : 'Details'}
                           </button>
-                          {canApproveSubmissions ? (
-                            <>
-                              <button
-                                type="button"
-                                onClick={() => { setDeclineTarget(sub); setDeclineReason('') }}
-                                disabled={isApproving || decliningId === sub.id}
-                                className="h-8 px-3 rounded-lg bg-red-50 border border-red-200 text-red-600 text-xs font-semibold hover:bg-red-100 disabled:opacity-50 flex items-center gap-1.5 transition-colors"
-                              >
-                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-                                Decline
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => handleApprove(sub)}
-                                disabled={isApproving || decliningId === sub.id}
-                                className="h-8 px-4 rounded-lg bg-green-600 text-white text-xs font-semibold hover:bg-green-700 disabled:opacity-50 flex items-center gap-1.5 transition-colors"
-                              >
-                                {isApproving ? (
-                                  <svg className="w-3.5 h-3.5 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2a10 10 0 1 0 10 10"/></svg>
-                                ) : (
-                                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
-                                )}
-                                {isApproving ? 'Approving...' : 'Approve'}
-                              </button>
-                            </>
-                          ) : null}
+                          <button
+                            type="button"
+                            onClick={() => { setDeclineTarget(sub); setDeclineReason('') }}
+                            disabled={isApproving || decliningId === sub.id}
+                            className="h-8 px-3 rounded-lg bg-red-50 border border-red-200 text-red-600 text-xs font-semibold hover:bg-red-100 disabled:opacity-50 flex items-center gap-1.5 transition-colors"
+                          >
+                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                            Decline
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleApprove(sub)}
+                            disabled={isApproving || decliningId === sub.id}
+                            className="h-8 px-4 rounded-lg bg-green-600 text-white text-xs font-semibold hover:bg-green-700 disabled:opacity-50 flex items-center gap-1.5 transition-colors"
+                          >
+                            {isApproving ? (
+                              <svg className="w-3.5 h-3.5 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2a10 10 0 1 0 10 10"/></svg>
+                            ) : (
+                              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                            )}
+                            {isApproving ? 'Approving...' : 'Approve'}
+                          </button>
                         </div>
                       </div>
                       {isExpanded && (() => {
@@ -665,7 +662,7 @@ export default function DealsPage() {
         )}
 
         {/* Decline Confirmation Modal */}
-        {declineTarget && canApproveSubmissions && (
+        {declineTarget && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
             <div className="edc-card w-full max-w-md p-6 shadow-premium">
               <div className="flex items-start gap-3 mb-4">
@@ -770,7 +767,7 @@ export default function DealsPage() {
           <div className="mt-4 rounded-xl border border-danger-500/20 bg-danger-500/5 text-danger-600 px-4 py-3 text-sm">{fetchError}</div>
         ) : null}
 
-        {selectedIds.size > 0 && canDeleteDeals && (
+        {selectedIds.size > 0 && (
           <div className="bg-white rounded-2xl border border-slate-200/60 p-3 mb-5" style={{ boxShadow: '0 1px 3px rgba(0,0,0,.04)' }}>
             <div className="flex items-center justify-between gap-3 flex-wrap">
               <div className="text-sm font-semibold text-slate-700">
@@ -796,16 +793,14 @@ export default function DealsPage() {
               <thead>
                 <tr>
                   <th className="w-10"></th>
-                  {canDeleteDeals ? (
-                    <th className="w-10">
-                      <input
-                        type="checkbox"
-                        className="h-4 w-4"
-                        checked={allSelected}
-                        onChange={(e) => toggleSelectAll(e.target.checked)}
-                      />
-                    </th>
-                  ) : null}
+                  <th className="w-10">
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4"
+                      checked={allSelected}
+                      onChange={(e) => toggleSelectAll(e.target.checked)}
+                    />
+                  </th>
                   <th>Primary Customer</th>
                   <th>Vehicle</th>
                   <th>Type</th>
@@ -848,16 +843,14 @@ export default function DealsPage() {
                           </svg>
                         </button>
                       </td>
-                      {canDeleteDeals ? (
-                        <td className="px-2 py-3" onClick={(e) => e.stopPropagation()}>
-                          <input
-                            type="checkbox"
-                            className="h-4 w-4"
-                            checked={selectedIds.has(r.dealId)}
-                            onChange={(e) => toggleSelect(r.dealId, e.target.checked)}
-                          />
-                        </td>
-                      ) : null}
+                      <td className="px-2 py-3" onClick={(e) => e.stopPropagation()}>
+                        <input
+                          type="checkbox"
+                          className="h-4 w-4"
+                          checked={selectedIds.has(r.dealId)}
+                          onChange={(e) => toggleSelect(r.dealId, e.target.checked)}
+                        />
+                      </td>
                       <td className="px-4 py-3 text-sm text-slate-600 whitespace-nowrap">{r.primaryCustomer}</td>
                       <td className="px-4 py-3 text-sm text-slate-600 min-w-[360px]">{r.vehicle}</td>
                       <td className="px-4 py-3 text-sm text-slate-600 whitespace-nowrap">{r.type}</td>
@@ -1102,7 +1095,7 @@ export default function DealsPage() {
       )}
 
       {/* Delete confirmation modal */}
-      {deleteTarget && canDeleteDeals && (
+      {deleteTarget && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
           <div className="edc-overlay absolute inset-0 z-0" onClick={() => !deleting && setDeleteTarget(null)} />
           <div className="edc-modal relative z-10 w-full max-w-sm mx-4 p-6">
@@ -1139,7 +1132,7 @@ export default function DealsPage() {
       )}
 
       {/* Bulk Delete Confirm Modal */}
-      {bulkDeleteConfirmOpen && canDeleteDeals && (
+      {bulkDeleteConfirmOpen && (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/40" onClick={() => { if (!deleting) setBulkDeleteConfirmOpen(false) }} />
           <div className="relative w-full max-w-sm bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">
