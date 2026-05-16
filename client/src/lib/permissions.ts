@@ -116,7 +116,12 @@ export function usePermissionVisibility() {
     return role === 'ADMIN' || permissions.administrator || accountValue === 'admin'
   }, [accountValue, permissions.administrator, session?.role])
 
-  const canShow = useCallback((key: PermissionKey) => isAdmin || Boolean(permissions[key]), [isAdmin, permissions])
+  const canShow = useCallback((key: PermissionKey) => {
+    if (isAdmin) return true
+    if (key === 'access_all_leads_customers') return Boolean(permissions.access_all_leads_customers || permissions.customers)
+    if (key === 'access_all_deals') return Boolean(permissions.access_all_deals || permissions.sales)
+    return Boolean(permissions[key])
+  }, [isAdmin, permissions])
 
   return {
     session,

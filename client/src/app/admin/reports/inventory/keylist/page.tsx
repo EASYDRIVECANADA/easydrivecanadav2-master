@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import { usePermissionVisibility } from '@/lib/permissions'
 import { exportRowsToCsv, getFirstDayOfMonth, getToday } from '../../reportUtils'
 
 type Row = {
@@ -21,6 +22,8 @@ type Row = {
 }
 
 export default function KeylistPage() {
+  const permissionVisibility = usePermissionVisibility()
+  const canAccessAllInventoryReports = permissionVisibility.canShow('inventory_reports_access') || permissionVisibility.canShow('inventory')
   const [typeFilter, setTypeFilter] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
   const [certFilter, setCertFilter] = useState('')
@@ -39,10 +42,12 @@ export default function KeylistPage() {
         setError(null)
 
         let userId = ''
-        try {
-          const raw = typeof window !== 'undefined' ? window.localStorage.getItem('edc_admin_session') : null
-          if (raw) userId = String((JSON.parse(raw) as { user_id?: string })?.user_id ?? '').trim()
-        } catch { userId = '' }
+        if (!canAccessAllInventoryReports) {
+          try {
+            const raw = typeof window !== 'undefined' ? window.localStorage.getItem('edc_admin_session') : null
+            if (raw) userId = String((JSON.parse(raw) as { user_id?: string })?.user_id ?? '').trim()
+          } catch { userId = '' }
+        }
 
         const qs = new URLSearchParams()
         if (userId) qs.set('userId', userId)
@@ -71,7 +76,7 @@ export default function KeylistPage() {
     }
 
     void run()
-  }, [certFilter, from, statusFilter, to, typeFilter])
+  }, [canAccessAllInventoryReports, certFilter, from, statusFilter, to, typeFilter])
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()

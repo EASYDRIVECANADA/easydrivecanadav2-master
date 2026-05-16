@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
+import { usePermissionVisibility } from '@/lib/permissions'
 import { buildBillOfSaleSettlement, parseBillOfSaleItems } from '../../../sales/deals/new/billOfSaleSettlement'
 import { exportRowsToCsv, getFirstDayOfMonth, getToday } from '../../reportUtils'
 
@@ -10,6 +11,8 @@ type Row = {
 }
 
 export default function SalesReportPage() {
+  const permissionVisibility = usePermissionVisibility()
+  const canAccessAllSalesReports = permissionVisibility.canShow('sales_reports_access') || permissionVisibility.canShow('access_all_deals')
   const [from, setFrom] = useState(getFirstDayOfMonth)
   const [to, setTo] = useState(getToday)
   const [query, setQuery] = useState('')
@@ -125,13 +128,15 @@ export default function SalesReportPage() {
         setError(null)
 
         let userId = ''
-        try {
-          const raw = typeof window !== 'undefined' ? window.localStorage.getItem('edc_admin_session') : null
-          if (raw) {
-            const parsed = JSON.parse(raw) as { user_id?: string }
-            userId = String(parsed?.user_id ?? '').trim()
-          }
-        } catch { userId = '' }
+        if (!canAccessAllSalesReports) {
+          try {
+            const raw = typeof window !== 'undefined' ? window.localStorage.getItem('edc_admin_session') : null
+            if (raw) {
+              const parsed = JSON.parse(raw) as { user_id?: string }
+              userId = String(parsed?.user_id ?? '').trim()
+            }
+          } catch { userId = '' }
+        }
 
         const qs = userId ? `?userId=${encodeURIComponent(userId)}` : ''
         const res = await fetch(`/api/deals${qs}`, { cache: 'no-store' })
@@ -379,7 +384,7 @@ export default function SalesReportPage() {
 
     void run()
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [canAccessAllSalesReports])
 
   const columns = useMemo(
     () => [

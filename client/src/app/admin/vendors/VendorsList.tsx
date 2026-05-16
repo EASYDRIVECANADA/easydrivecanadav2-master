@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
+import { usePermissionVisibility } from '@/lib/permissions'
 
 type VendorRow = {
   id: string
@@ -14,6 +15,8 @@ type VendorRow = {
 
 export default function VendorsList({ compact }: { compact?: boolean }) {
   const router = useRouter()
+  const permissionVisibility = usePermissionVisibility()
+  const canAccessAllVendors = permissionVisibility.canShow('vendors')
   const [rows, setRows] = useState<VendorRow[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -97,7 +100,7 @@ export default function VendorsList({ compact }: { compact?: boolean }) {
         .order('vendor_name', { ascending: true })
         .limit(1000)
 
-      if (!isAdminRole) {
+      if (!isAdminRole && !canAccessAllVendors) {
         if (!scopedUserId) {
           setRows([])
           return
@@ -115,7 +118,7 @@ export default function VendorsList({ compact }: { compact?: boolean }) {
     } finally {
       setLoading(false)
     }
-  }, [isAdminRole, scopedUserId])
+  }, [canAccessAllVendors, isAdminRole, scopedUserId])
 
   useEffect(() => {
     void fetchRows()

@@ -64,7 +64,7 @@ type FilterKey = 'finance' | 'insurance' | 'synced'
 type SourceKey = 'finance' | 'insurance' | 'contact' | 'unknown'
 type LeadDraftSource = SourceKey
 type ImportSourceMode = 'auto' | 'finance' | 'insurance'
-type LeadManagerStatus = 'AWAITING DECISION' | 'DECLINED' | 'PENDING' | 'PENDING (BHPH)'
+type LeadManagerStatus = 'AWAITING' | 'PENDING' | 'PROCESSING' | 'BOOKED' | 'DECLINED'
 
 type LeadDraft = {
   firstName: string
@@ -96,7 +96,7 @@ const FILTERS: Array<{ key: FilterKey; label: string }> = [
 const BASE_LEAD_SELECT = 'id, first_name, last_name, email, phone, vehicle_interest, message, employment_status, monthly_income, down_payment, credit_score, ghl_synced, created_at'
 const LEAD_SELECT_WITH_NOTES = `${BASE_LEAD_SELECT}, admin_notes`
 const LEAD_SELECT_FULL = `${LEAD_SELECT_WITH_NOTES}, manager_status`
-const MANAGER_STATUSES: LeadManagerStatus[] = ['AWAITING DECISION', 'PENDING', 'PENDING (BHPH)', 'DECLINED']
+const MANAGER_STATUSES: LeadManagerStatus[] = ['AWAITING', 'PENDING', 'PROCESSING', 'BOOKED']
 const LEAD_DELETE_ALLOWED_EMAIL = 'info@easydrivecanada.com'
 
 const clean = (value: unknown) => String(value ?? '').trim()
@@ -465,6 +465,9 @@ const inferImportSourceFromFileName = (fileName: string): ImportSourceMode => {
 
 const normalizeManagerStatus = (value: unknown): LeadManagerStatus | null => {
   const status = clean(value).toUpperCase()
+  if (status === 'AWAITING DECISION') return 'AWAITING'
+  if (status === 'PENDING (BHPH)') return 'PROCESSING'
+  if (status === 'DECLINED') return 'DECLINED'
   return MANAGER_STATUSES.includes(status as LeadManagerStatus) ? status as LeadManagerStatus : null
 }
 
@@ -1190,7 +1193,7 @@ export default function AdminLeadsPage() {
             onClick={() => setSelectedLead(null)}
             className="absolute inset-0 bg-slate-950/55 backdrop-blur-sm"
           />
-          <div className="relative z-10 max-h-[92vh] w-full max-w-5xl overflow-hidden rounded-2xl bg-white shadow-premium">
+          <div className="relative z-10 max-h-[94vh] w-full max-w-[1400px] overflow-hidden rounded-2xl bg-white shadow-premium">
             <LeadDetailPanel
               lead={selectedLead}
               fields={selectedLeadFields}
@@ -1910,7 +1913,7 @@ function LeadStatusModal({
                     onChange={() => setSelectedStatus(checked ? null : status)}
                     className="h-4 w-4 accent-[#0B1F3A]"
                   />
-                  {status}
+                  {managerStatusLabel(status)}
                 </span>
                 <span className={`h-2.5 w-2.5 rounded-full ${managerStatusClass(status).split(' ')[0]}`} />
               </label>
@@ -2015,6 +2018,7 @@ function LeadDetailPanel({
 }) {
   const source = sourceFromLead(lead)
   const primaryIntent = lead.vehicleInterest || intentFallback(lead)
+  const primaryIntentLabel = clean(lead.vehicleInterest) ? 'Vehicle' : 'Application'
   const applicationRows = buildApplicationRows(lead, fields)
   const applicationTitle =
     source === 'finance'
@@ -2024,15 +2028,20 @@ function LeadDetailPanel({
         : 'Submitted details'
 
   return (
-    <div className="max-h-[92vh] overflow-y-auto">
-      <div className="border-b border-slate-200 bg-slate-50/70 p-5 sm:p-6">
+    <div className="max-h-[94vh] overflow-y-auto bg-slate-50/70">
+      <div className="sticky top-0 z-20 border-b border-slate-200 bg-white/95 px-4 py-4 backdrop-blur sm:px-6">
         <div className="flex items-start justify-between gap-3">
           <div className="flex min-w-0 items-start gap-3">
-            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-[#0B1F3A] text-sm font-bold text-white shadow-sm">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#0B1F3A] text-sm font-bold text-white shadow-sm">
               {leadInitials(lead)}
             </div>
-            <div className="min-w-0 pt-0.5">
-              <h2 className="break-words text-lg font-bold leading-tight text-slate-950">{leadName(lead)}</h2>
+            <div className="min-w-0">
+              <h2 className="break-words text-base font-bold leading-tight text-slate-950 sm:text-lg">{leadName(lead)}</h2>
+              <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                <span>Received {formatDate(lead.createdAt)}</span>
+                <span className="hidden h-1 w-1 rounded-full bg-slate-300 sm:inline-block" />
+                <span>{sourceLabel(source)} lead</span>
+              </div>
               <div className="mt-2 flex flex-wrap gap-1.5">
                 <span className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold ring-1 ring-inset ${sourcePillClass(source)}`}>
                   {sourceLabel(source)}
@@ -2041,48 +2050,71 @@ function LeadDetailPanel({
               </div>
             </div>
           </div>
-          <button type="button" onClick={onClose} className="shrink-0 rounded-xl p-2 text-slate-400 transition-colors hover:bg-white hover:text-slate-700" aria-label="Close lead details">
+          <button type="button" onClick={onClose} className="shrink-0 rounded-xl p-2 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700" aria-label="Close lead details">
             <X className="h-4 w-4" />
           </button>
         </div>
-
-        <div className="mt-5 grid gap-3">
-          <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
-            <div className="text-[11px] font-semibold uppercase text-slate-400">Intent</div>
-            <div className="mt-1 text-sm font-semibold text-slate-900">{primaryIntent}</div>
-            <div className="mt-1 text-xs text-slate-500">Received {formatDate(lead.createdAt)}</div>
-          </div>
-        </div>
       </div>
 
-      <div className="grid gap-5 p-5 sm:p-6 lg:grid-cols-[minmax(0,1fr)_minmax(320px,0.8fr)]">
-        <div className="space-y-5">
-          <div className="grid gap-5 md:grid-cols-2">
+      <div className="grid gap-5 p-4 sm:p-6 xl:grid-cols-[minmax(0,1fr)_360px]">
+        <div className="min-w-0 space-y-5">
+          <div className="grid gap-3 lg:grid-cols-3">
+            <LeadSummaryCard
+              icon={UserRound}
+              label="Contact"
+              primary={lead.email}
+              secondary={lead.phone}
+              href={lead.email ? `mailto:${lead.email}` : undefined}
+            />
+            <LeadSummaryCard
+              icon={Car}
+              label="Intent"
+              primary={primaryIntent}
+              secondary={lead.employmentStatus || sourceLabel(source)}
+            />
+            <LeadSummaryCard
+              icon={BadgeCheck}
+              label="Finance"
+              primary={formatMoney(lead.monthlyIncome)}
+              secondary={lead.creditScore ? `Credit: ${lead.creditScore}` : ''}
+              tertiary={formatMoney(lead.downPayment) ? `Down: ${formatMoney(lead.downPayment)}` : ''}
+            />
+          </div>
+
+          <div className="grid gap-5 lg:grid-cols-2">
             <DetailSection title="Contact" icon={UserRound}>
-              <DetailRow label="Email" value={lead.email} href={lead.email ? `mailto:${lead.email}` : undefined} />
-              <DetailRow label="Phone" value={lead.phone} href={lead.phone ? `tel:${lead.phone}` : undefined} />
-              <DetailRow label="Received" value={formatDate(lead.createdAt)} />
+              <div className="grid h-full grid-rows-3 divide-y divide-slate-100">
+                <DetailRow label="Email" value={lead.email} href={lead.email ? `mailto:${lead.email}` : undefined} />
+                <DetailRow label="Phone" value={lead.phone} href={lead.phone ? `tel:${lead.phone}` : undefined} />
+                <DetailRow label="Received" value={formatDate(lead.createdAt)} />
+              </div>
             </DetailSection>
 
             <DetailSection title="Intent" icon={Car}>
-              <DetailRow label="Vehicle" value={primaryIntent} />
-              <DetailRow label="Employment" value={lead.employmentStatus} />
-              <DetailRow label="Income" value={formatMoney(lead.monthlyIncome)} />
-              <DetailRow label="Down payment" value={formatMoney(lead.downPayment)} />
-              <DetailRow label="Credit" value={lead.creditScore} />
+              <div className="grid h-full grid-rows-5 divide-y divide-slate-100">
+                <DetailRow label={primaryIntentLabel} value={primaryIntent} />
+                <DetailRow label="Employment" value={lead.employmentStatus} />
+                <DetailRow label="Income" value={formatMoney(lead.monthlyIncome)} />
+                <DetailRow label="Down payment" value={formatMoney(lead.downPayment)} />
+                <DetailRow label="Credit" value={lead.creditScore} />
+              </div>
             </DetailSection>
           </div>
 
           {applicationRows.length > 0 && (
-            <DetailSection title={applicationTitle} icon={MessageSquare}>
-              {applicationRows.map((row, index) => (
-                <DetailRow key={`${row.label}-${index}`} label={row.label} value={row.value} />
-              ))}
+            <DetailSection title={applicationTitle} icon={FileSpreadsheet}>
+              <div className="grid md:grid-cols-2">
+                {applicationRows.map((row, index) => (
+                  <div key={`${row.label}-${index}`} className="border-b border-slate-100 md:odd:border-r">
+                    <DetailRow label={row.label} value={row.value} />
+                  </div>
+                ))}
+              </div>
             </DetailSection>
           )}
         </div>
 
-        <div className="space-y-5">
+        <aside className="space-y-5 xl:sticky xl:top-24 xl:self-start">
           <LeadNotesSection
             value={notesDraft}
             savedValue={lead.adminNotes || ''}
@@ -2103,8 +2135,48 @@ function LeadDetailPanel({
               </div>
             </DetailSection>
           ) : null}
-        </div>
+        </aside>
       </div>
+    </div>
+  )
+}
+
+function LeadSummaryCard({
+  icon: Icon,
+  label,
+  primary,
+  secondary,
+  tertiary,
+  href,
+}: {
+  icon: typeof UserRound
+  label: string
+  primary?: string | null
+  secondary?: string | null
+  tertiary?: string | null
+  href?: string
+}) {
+  const primaryDisplay = clean(primary) || 'Not provided'
+  const secondaryDisplay = clean(secondary)
+  const tertiaryDisplay = clean(tertiary)
+
+  return (
+    <div className="min-w-0 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+      <div className="flex items-center gap-2 text-[11px] font-bold uppercase text-slate-500">
+        <Icon className="h-4 w-4 text-[#1EA7FF]" />
+        {label}
+      </div>
+      {href && clean(primary) ? (
+        <a href={href} className="mt-2 block min-w-0 truncate text-sm font-bold text-[#0877bd] hover:underline">
+          {primaryDisplay}
+        </a>
+      ) : (
+        <div className={`mt-2 min-w-0 truncate text-sm font-bold ${clean(primary) ? 'text-slate-950' : 'text-slate-400'}`}>
+          {primaryDisplay}
+        </div>
+      )}
+      {secondaryDisplay ? <div className="mt-1 truncate text-xs text-slate-500">{secondaryDisplay}</div> : null}
+      {tertiaryDisplay ? <div className="mt-1 truncate text-xs text-slate-500">{tertiaryDisplay}</div> : null}
     </div>
   )
 }
@@ -2144,14 +2216,14 @@ function LeadNotesSection({
           {saving ? 'Saving...' : 'Save'}
         </button>
       </div>
-      <div className="rounded-xl border border-slate-200 bg-white p-3">
+      <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
         <textarea
           value={value}
           onChange={(event) => onChange(event.target.value)}
           disabled={!enabled}
           rows={5}
           placeholder={enabled ? 'Add internal notes for this lead...' : 'Apply the admin_notes database column to enable lead notes.'}
-          className="min-h-[112px] w-full resize-y rounded-lg border border-slate-200 bg-slate-50/70 px-3 py-2 text-sm text-slate-800 outline-none transition focus:border-[#1EA7FF]/50 focus:bg-white focus:ring-2 focus:ring-[#1EA7FF]/20 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+          className="min-h-[132px] w-full resize-y rounded-lg border border-slate-200 bg-slate-50/70 px-3 py-2 text-sm text-slate-800 outline-none transition focus:border-[#1EA7FF]/50 focus:bg-white focus:ring-2 focus:ring-[#1EA7FF]/20 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
         />
         <div className="mt-2 flex items-center justify-between gap-3 text-xs">
           <span className={error ? 'text-red-600' : 'text-slate-400'}>
@@ -2166,12 +2238,12 @@ function LeadNotesSection({
 
 function DetailSection({ title, icon: Icon, children }: { title: string; icon: typeof UserRound; children: ReactNode }) {
   return (
-    <section>
+    <section className="flex h-full flex-col">
       <div className="mb-2 flex items-center gap-2 text-[11px] font-bold uppercase text-slate-500">
         <Icon className="h-4 w-4 text-[#1EA7FF]" />
         {title}
       </div>
-      <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+      <div className="flex-1 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
         {children}
       </div>
     </section>
@@ -2181,10 +2253,10 @@ function DetailSection({ title, icon: Icon, children }: { title: string; icon: t
 function DetailRow({ label, value, href }: { label: string; value?: string | null; href?: string }) {
   const display = clean(value) || 'Not provided'
   return (
-    <div className="grid grid-cols-[112px_1fr] gap-3 border-b border-slate-100 px-3 py-3 text-sm last:border-b-0">
-      <div className="text-xs font-medium leading-5 text-slate-500">{label}</div>
+    <div className="grid items-center gap-1 px-3 py-2.5 text-sm sm:grid-cols-[minmax(104px,0.38fr)_minmax(0,1fr)] sm:gap-3">
+      <div className="text-[11px] font-semibold uppercase leading-5 text-slate-500">{label}</div>
       {href && clean(value) ? (
-        <a href={href} className="min-w-0 break-words font-medium text-[#0877bd] hover:underline">{display}</a>
+        <a href={href} className="min-w-0 break-words font-medium leading-5 text-[#0877bd] hover:underline">{display}</a>
       ) : (
         <div className={`min-w-0 break-words leading-5 ${clean(value) ? 'font-medium text-slate-800' : 'text-slate-400'}`}>{display}</div>
       )}
@@ -2194,18 +2266,27 @@ function DetailRow({ label, value, href }: { label: string; value?: string | nul
 
 const managerStatusClass = (status: LeadManagerStatus | null) => {
   if (status === 'DECLINED') return 'bg-red-500 text-white ring-red-400'
-  if (status === 'PENDING') return 'bg-amber-400 text-slate-950 ring-amber-300'
-  if (status === 'PENDING (BHPH)') return 'bg-orange-500 text-white ring-orange-400'
-  if (status === 'AWAITING DECISION') return 'bg-sky-500 text-white ring-sky-400'
+  if (status === 'BOOKED') return 'bg-slate-950 text-white ring-slate-800'
+  if (status === 'PROCESSING') return 'bg-amber-400 text-slate-950 ring-amber-300'
+  if (status === 'PENDING') return 'bg-orange-500 text-white ring-orange-400'
+  if (status === 'AWAITING') return 'bg-sky-500 text-white ring-sky-400'
   return 'bg-emerald-500 text-white ring-emerald-400'
 }
 
+const managerStatusLabel = (status: LeadManagerStatus) => {
+  if (status === 'AWAITING') return 'Awaiting'
+  if (status === 'PENDING') return 'Pending'
+  if (status === 'PROCESSING') return 'Processing'
+  if (status === 'BOOKED') return 'Booked'
+  return 'Declined'
+}
+
 const defaultLeadStatusLabel = (lead: Lead) => {
-  if (lead.managerStatus) return lead.managerStatus
+  if (lead.managerStatus) return managerStatusLabel(lead.managerStatus)
   if (lead.ghlSynced) return 'Handled'
 
   const source = sourceFromLead(lead)
-  if (source === 'finance') return 'New Credit Application'
+  if (source === 'finance') return 'New Credit App'
   if (source === 'insurance') return 'New Insurance Application'
   if (source === 'contact') return 'New Contact Lead'
   return 'New Lead'

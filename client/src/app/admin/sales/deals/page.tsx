@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
 import { motion } from 'framer-motion'
+import { usePermissionVisibility } from '@/lib/permissions'
 
 type PurchaseSubmission = {
   id: string
@@ -62,6 +63,8 @@ type DealCostBasis = {
 
 export default function DealsPage() {
   const router = useRouter()
+  const permissionVisibility = usePermissionVisibility()
+  const canAccessAllDeals = permissionVisibility.canShow('access_all_deals')
   const [query, setQuery] = useState('')
   const [stateFilter, setStateFilter] = useState('ALL')
   const [showClosed, setShowClosed] = useState(true)
@@ -169,7 +172,8 @@ export default function DealsPage() {
 
       const [scopedUserId, admin] = await Promise.all([getLoggedInUserId(), getIsAdminRole()])
       setIsAdminRole(admin)
-      if (!admin && !scopedUserId) {
+      const canViewAllDeals = admin || canAccessAllDeals
+      if (!canViewAllDeals && !scopedUserId) {
         setRows([])
         return []
       }
@@ -196,7 +200,7 @@ export default function DealsPage() {
         delivery: d.delivery || null,
       }))
 
-      const deals = admin
+      const deals = canViewAllDeals
         ? dealsAll
         : dealsAll.filter((r) => {
             const uid = String(r.customer?.user_id ?? '').trim()
@@ -211,7 +215,7 @@ export default function DealsPage() {
     } finally {
       setLoading(false)
     }
-  }, [getIsAdminRole, getLoggedInUserId])
+  }, [canAccessAllDeals, getIsAdminRole, getLoggedInUserId])
 
   useEffect(() => {
     fetchDeals()

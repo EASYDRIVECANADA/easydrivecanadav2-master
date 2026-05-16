@@ -5,6 +5,7 @@ import { motion } from 'framer-motion'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabaseClient'
+import { usePermissionVisibility } from '@/lib/permissions'
 import * as XLSX from 'xlsx-js-style'
 
 const VEHICLE_LIMITS: Record<string, number> = {
@@ -98,6 +99,8 @@ const getVehicleListingBucket = (vehicle: Pick<Vehicle, 'category' | 'inventoryT
 }
 
 export default function AdminInventoryPage() {
+  const permissionVisibility = usePermissionVisibility()
+  const canAccessAllInventory = permissionVisibility.canShow('inventory')
   const STATUS_OPTIONS = [
     'In Stock',
     'In Stock (No Feed)',
@@ -420,7 +423,7 @@ export default function AdminInventoryPage() {
       await fetchVehicles(uid)
     }
     void boot()
-  }, [])
+  }, [canAccessAllInventory])
 
   const checkCanAddVehicle = async (userId: string | null) => {
     try {
@@ -645,13 +648,24 @@ export default function AdminInventoryPage() {
         }
       }
 
-      const q = supabase
+      let q = supabase
         .from('edc_vehicles')
         .select('*')
         // Order by stock_number descending so the most recent is on top
         // Note: stock_number is stored as text; server-side order will be lexicographic.
         // We'll enforce a numeric sort on the client after mapping as a reliable fallback.
         .order('stock_number', { ascending: false })
+
+      if (!canAccessAllInventory) {
+        if (!userId) {
+          setVehicles([])
+          setTotalVehicles(0)
+          setFilteredVehicles([])
+          setCurrentPage(1)
+          return
+        }
+        q = q.eq('user_id', userId)
+      }
 
       const { data, error } = await q
 

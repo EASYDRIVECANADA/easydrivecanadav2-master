@@ -2,6 +2,7 @@
 
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
+import { usePermissionVisibility } from '@/lib/permissions'
 
 type LineItem = { name: string; description?: string; cost?: number; price?: number; amount?: number }
 
@@ -26,6 +27,8 @@ type AdjustorRow = {
 }
 
 export default function DealAdjustorPage() {
+  const permissionVisibility = usePermissionVisibility()
+  const canAccessAllDeals = permissionVisibility.canShow('access_all_deals')
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
   const [query, setQuery] = useState('')
@@ -324,7 +327,8 @@ export default function DealAdjustorPage() {
 
       const [scopedUserId, admin] = await Promise.all([getLoggedInUserId(), getIsAdminRole()])
       setIsAdminRole(admin)
-      if (!admin && !scopedUserId) {
+      const canViewAllDeals = admin || canAccessAllDeals
+      if (!canViewAllDeals && !scopedUserId) {
         setRows([])
         return
       }
@@ -335,7 +339,7 @@ export default function DealAdjustorPage() {
       if (json.error) throw new Error(json.error)
 
       const dealsAll: any[] = Array.isArray(json.deals) ? json.deals : []
-      const dealsScoped = admin
+      const dealsScoped = canViewAllDeals
         ? dealsAll
         : dealsAll.filter((d: any) => String(d?.customer?.user_id ?? '').trim() === scopedUserId)
 
@@ -439,7 +443,7 @@ export default function DealAdjustorPage() {
     } finally {
       setLoading(false)
     }
-  }, [getIsAdminRole, getLoggedInUserId])
+  }, [canAccessAllDeals, getIsAdminRole, getLoggedInUserId])
 
   useEffect(() => {
     fetchDeals()

@@ -10,9 +10,12 @@ import jsPDF from 'jspdf'
 import { renderCreditConsentPdf } from './creditConsentPdf'
 import type { CreditForm, CustomerForm, CustomerRow } from './types'
 import { supabase } from '@/lib/supabaseClient'
+import { usePermissionVisibility } from '@/lib/permissions'
 
 export default function AdminCostumerPage() {
   const searchParams = useSearchParams()
+  const permissionVisibility = usePermissionVisibility()
+  const canAccessAllCustomers = permissionVisibility.canShow('access_all_leads_customers')
   const [query, setQuery] = useState('')
   const [pageSize, setPageSize] = useState(5)
   const [checked, setChecked] = useState<Record<string, boolean>>({})
@@ -170,11 +173,21 @@ export default function AdminCostumerPage() {
   useEffect(() => {
     let cancelled = false
     const load = async () => {
-      const { data, error } = await supabase
+      let request = supabase
         .from('edc_customer')
         .select('id, first_name, last_name, phone, mobile, email, drivers_license, rin, date_of_birth')
         .order('created_at', { ascending: false })
-        .limit(100)
+
+      if (!canAccessAllCustomers) {
+        const userId = await getWebhookUserId().catch(() => null)
+        if (!userId) {
+          if (!cancelled) setRows([])
+          return
+        }
+        request = request.eq('user_id', userId)
+      }
+
+      const { data, error } = await request.range(0, 4999)
       if (error) {
         // Fail silently for now; keep empty list
         return
@@ -196,7 +209,7 @@ export default function AdminCostumerPage() {
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [canAccessAllCustomers])
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {

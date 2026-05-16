@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import { usePermissionVisibility } from '@/lib/permissions'
 import { exportRowsToCsv } from '../../reportUtils'
 
 type Row = {
@@ -36,6 +37,8 @@ const getToday = () => new Date().toISOString().slice(0, 10)
 const defaultApplied = { from: getFirstDayOfMonth(), to: getToday(), transactionType: '', province: '', country: '' }
 
 export default function TransactionFeeReportPage() {
+  const permissionVisibility = usePermissionVisibility()
+  const canAccessAllSalesReports = permissionVisibility.canShow('sales_reports_access') || permissionVisibility.canShow('access_all_deals')
   const [from, setFrom] = useState(getFirstDayOfMonth)
   const [to, setTo] = useState(getToday)
   const [query, setQuery] = useState('')
@@ -61,10 +64,12 @@ export default function TransactionFeeReportPage() {
       setError(null)
 
       let userId = ''
-      try {
-        const raw = typeof window !== 'undefined' ? window.localStorage.getItem('edc_admin_session') : null
-        if (raw) userId = String((JSON.parse(raw) as { user_id?: string })?.user_id ?? '').trim()
-      } catch { userId = '' }
+      if (!canAccessAllSalesReports) {
+        try {
+          const raw = typeof window !== 'undefined' ? window.localStorage.getItem('edc_admin_session') : null
+          if (raw) userId = String((JSON.parse(raw) as { user_id?: string })?.user_id ?? '').trim()
+        } catch { userId = '' }
+      }
 
       const qs = new URLSearchParams()
       if (userId) qs.set('userId', userId)
@@ -92,7 +97,7 @@ export default function TransactionFeeReportPage() {
   useEffect(() => {
     void fetchData(defaultApplied)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [canAccessAllSalesReports])
 
   const handleSearch = () => {
     const params = { from, to, transactionType, province: provinceFilter, country: countryFilter }
