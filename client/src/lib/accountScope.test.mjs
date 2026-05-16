@@ -36,3 +36,27 @@ test('does not filter showroom vehicles by a staff row id when all-deals staff h
     { userId: '', shouldFilterByUserId: false }
   )
 })
+
+test('does not filter showroom vehicles when permitted staff session has no user_id', () => {
+  assert.deepEqual(
+    resolveShowroomVehicleScope({
+      sessionUserId: '',
+      rowUserId: '',
+      rowId: 'employee-row-id',
+      canViewAllShowroomVehicles: true,
+    }),
+    { userId: '', shouldFilterByUserId: false }
+  )
+})
+
+test('does not filter showroom vehicles when permitted staff session has a stale unmatched user_id', () => {
+  assert.deepEqual(
+    resolveShowroomVehicleScope({
+      sessionUserId: 'stale-session-id',
+      rowUserId: '',
+      rowId: 'employee-row-id',
+      canViewAllShowroomVehicles: true,
+    }),
+    { userId: '', shouldFilterByUserId: false }
+  )
+})

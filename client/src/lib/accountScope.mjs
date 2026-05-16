@@ -19,7 +19,7 @@ export function resolveShowroomVehicleScope({
 
   const fromSession = String(sessionUserId ?? '').trim()
   const fromRow = String(rowId ?? '').trim()
-  if (canViewAllShowroomVehicles && fromRow && fromSession === fromRow) {
+  if (canViewAllShowroomVehicles && fromRow) {
     return { userId: '', shouldFilterByUserId: false }
   }
 
