@@ -116,7 +116,7 @@ export default function ConfigurationPage() {
     <div className="min-h-screen bg-white">
       {/* Header */}
       <div className="px-6 lg:px-8 pt-8 pb-4 border-b border-slate-100">
-        <h1 className="text-2xl font-bold text-slate-900">Configuration</h1>
+        <h1 className="text-2xl font-bold text-slate-900">Configurations</h1>
         <p className="text-sm text-slate-400 mt-0.5">Set retail pricing for warranty plans and dealer-managed add-on products.</p>
       </div>
 

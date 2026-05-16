@@ -494,7 +494,7 @@ const DisclosuresTab = forwardRef<DisclosuresTabHandle, DisclosuresTabProps>(fun
           The disclosure builder tool enables you to quickly add common disclosures to your vehicle. 
           You can search for a disclosure using the search box. Simply drag-n-drop it into the notes box 
           and the disclosure will automatically be applied. You can create additional custom disclosures 
-          from the settings → presets tab.
+          from the configurations → presets tab.
         </p>
       </div>
 

@@ -1105,7 +1105,7 @@ const PurchaseTab = forwardRef<PurchaseTabHandle, PurchaseTabProps>(function Pur
 
         {/* QuickBooks Info */}
         <div className="bg-blue-600 text-white rounded-lg p-3 mb-4">
-          <p className="text-sm">ℹ️ Connect QuickBooks in Settings to enable vendor selection for Bill generation.</p>
+          <p className="text-sm">ℹ️ Connect QuickBooks in Configurations to enable vendor selection for Bill generation.</p>
         </div>
 
         {/* Contact Details */}

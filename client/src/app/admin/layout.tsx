@@ -273,7 +273,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
 
     const isMasterAccount = String(session?.email || '').trim().toLowerCase() === 'info@easydrivecanada.com'
     if (isMasterAccount || isAdminAccount) {
-      items.push({ href: '/admin/configuration', label: 'Configuration', icon: 'config', disabled: !isVerified, visible: true })
+      items.push({ href: '/admin/configuration', label: 'Configurations', icon: 'config', disabled: !isVerified, visible: true })
     }
 
     return items.filter((item) => item.visible)
@@ -710,7 +710,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
                           className="block px-4 py-2.5 text-[13px] text-gray-700 hover:bg-gray-50 transition-colors"
                           onClick={() => setAccountMenuOpen(false)}
                         >
-                          Settings
+                          Configurations
                         </Link>
                       ) : (
                         <button
@@ -719,7 +719,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
                           className="w-full text-left px-4 py-2.5 text-[13px] text-gray-300 cursor-not-allowed"
                           disabled
                         >
-                          Settings
+                          Configurations
                         </button>
                       )}
                       <div className="border-t border-gray-100" />

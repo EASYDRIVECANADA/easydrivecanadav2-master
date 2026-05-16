@@ -358,7 +358,7 @@ export default function AdminUsersPage() {
                   <option value="ADMIN">Admin</option>
                 </select>
                 <p className="mt-1 text-xs text-slate-500">
-                  Staff can manage inventory. Admins can manage users and all settings.
+                  Staff can manage inventory. Admins can manage users and all configurations.
                 </p>
               </div>
 

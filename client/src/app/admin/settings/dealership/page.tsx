@@ -811,7 +811,7 @@ export default function DealershipDetailsSettingsPage() {
       </div>
 
       <div>
-        <div className="text-[11px] font-semibold text-slate-500">Settings</div>
+        <div className="text-[11px] font-semibold text-slate-500">Configurations</div>
         <div className="mt-2 border-t border-slate-200/60" />
         <div className="mt-3">
           <div className="flex items-center gap-3">

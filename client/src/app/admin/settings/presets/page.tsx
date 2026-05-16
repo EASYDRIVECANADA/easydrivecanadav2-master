@@ -1973,9 +1973,9 @@ export default function SettingsPresetsPage() {
       <div className="min-h-screen bg-slate-50">
         <div className="w-full px-4 sm:px-6 lg:px-8 py-10">
           <div className="max-w-2xl bg-white border border-slate-200/60 rounded-2xl shadow-sm p-6">
-            <div className="text-lg font-bold text-slate-800">Settings are disabled</div>
+            <div className="text-lg font-bold text-slate-800">Configurations are disabled</div>
             <div className="mt-2 text-sm text-slate-500">
-              Your account is not verified yet. Please validate your ID to access Settings.
+              Your account is not verified yet. Please validate your ID to access Configurations.
             </div>
             <div className="mt-5 flex items-center gap-3">
               <Link href="/account/verification" className="edc-btn-primary h-10 px-4 text-sm">

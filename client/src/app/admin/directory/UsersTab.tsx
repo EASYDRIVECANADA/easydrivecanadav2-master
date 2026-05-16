@@ -656,7 +656,7 @@ const UsersTab = forwardRef<UsersTabHandle>(function UsersTab(_, ref) {
                       { key: 'delete_sales', label: 'Delete Sales' },
                       { key: 'inventory', label: 'Inventory' },
                       { key: 'delete_inventory', label: 'Delete Inventory' },
-                      { key: 'settings', label: 'Settings' },
+                      { key: 'settings', label: 'Configurations' },
                       { key: 'sales_reports_access', label: 'Sales Reports Access' },
                       { key: 'inventory_reports_access', label: 'Inventory Reports Access' },
                     ].map((p) => {

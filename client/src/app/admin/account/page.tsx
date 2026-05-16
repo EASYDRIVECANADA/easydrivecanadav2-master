@@ -458,7 +458,7 @@ export default function AdminAccountPage() {
         setVerification(verifyData ? (verifyData as VerificationRow) : null)
         setUsersRow(userData ?? null)
       } catch (e: any) {
-        setError(e?.message || 'Failed to load account settings')
+        setError(e?.message || 'Failed to load account configurations')
       } finally {
         setLoading(false)
       }
@@ -774,7 +774,7 @@ export default function AdminAccountPage() {
               </svg>
             </div>
             <div>
-              <h1 className="text-2xl font-bold text-white drop-shadow-[0_2px_8px_rgba(0,0,0,0.55)]">Account Settings</h1>
+              <h1 className="text-2xl font-bold text-white drop-shadow-[0_2px_8px_rgba(0,0,0,0.55)]">Account Configurations</h1>
               <p className="text-sm text-white/70 mt-0.5 drop-shadow-[0_2px_8px_rgba(0,0,0,0.55)]">Manage your admin session and verification details.</p>
             </div>
           </div>
@@ -1100,7 +1100,7 @@ export default function AdminAccountPage() {
                         { key: 'delete_sales', label: 'Delete Sales' },
                         { key: 'inventory', label: 'Inventory' },
                         { key: 'delete_inventory', label: 'Delete Inventory' },
-                        { key: 'settings', label: 'Settings' },
+                        { key: 'settings', label: 'Configurations' },
                         { key: 'sales_reports_access', label: 'Sales Reports Access' },
                         { key: 'inventory_reports_access', label: 'Inventory Reports Access' },
                       ].map((p) => {

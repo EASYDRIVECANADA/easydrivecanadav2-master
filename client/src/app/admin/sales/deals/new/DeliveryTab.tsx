@@ -481,7 +481,7 @@ export default function DeliveryTab({
                   </svg>
                   Tasks
                 </div>
-                <button type="button" className="text-white/80 hover:text-white" aria-label="Settings">
+                <button type="button" className="text-white/80 hover:text-white" aria-label="Configurations">
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 12a1 1 0 102 0 1 1 0 00-2 0z" />
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09a1.65 1.65 0 00-1-1.51 1.65 1.65 0 00-1.82.33l-.06.06A2 2 0 013.4 19.7l.06-.06A1.65 1.65 0 003.8 17.8 1.65 1.65 0 002.3 16.8H2a2 2 0 010-4h.09a1.65 1.65 0 001.51-1 1.65 1.65 0 00-.33-1.82l-.06-.06A2 2 0 016.04 3.1l.06.06a1.65 1.65 0 001.82.33H8a1.65 1.65 0 001-1.51V2a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06A2 2 0 0120.9 6.04l-.06.06a1.65 1.65 0 00-.33 1.82V8c0 .66.26 1.3.73 1.77.47.47 1.11.73 1.77.73H23a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z" />
