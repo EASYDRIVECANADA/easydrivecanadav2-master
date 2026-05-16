@@ -52,6 +52,7 @@ const VehiclesTab = forwardRef<VehiclesTabHandle, {
   prefillSelected?: any
   autoSaved?: boolean
   onVehicleSelected?: (vehicle: VehicleRow) => void
+  onTradeLienPayoutChange?: (amount: number) => void
 }>(function VehiclesTab({
   dealId,
   dealMode,
@@ -61,6 +62,7 @@ const VehiclesTab = forwardRef<VehiclesTabHandle, {
   prefillSelected,
   autoSaved,
   onVehicleSelected,
+  onTradeLienPayoutChange,
 }, ref) {
   const [query, setQuery] = useState(() => {
     if (Array.isArray(initialData) && initialData.length > 0) {
@@ -208,6 +210,8 @@ const VehiclesTab = forwardRef<VehiclesTabHandle, {
     return (acv - tv).toFixed(2)
   }
 
+  const roundMoney = (n: number) => Math.round((Number(n) || 0) * 100) / 100
+
   const [addCertAsIs, setAddCertAsIs] = useState(false)
   const [addBrandType, setAddBrandType] = useState<'na' | 'none' | 'rebuilt' | 'salvage' | 'irreparable'>('na')
   const [tradeDisclosuresBrandType, setTradeDisclosuresBrandType] = useState<'na' | 'none' | 'rebuilt' | 'salvage' | 'irreparable'>('na')
@@ -280,9 +284,17 @@ const VehiclesTab = forwardRef<VehiclesTabHandle, {
     }
     return []
   })
+
+  useEffect(() => {
+    const totalLienPayout = roundMoney(
+      savedTrades.reduce((sum, trade) => sum + toMoneyNum(trade?.lienAmount ?? trade?.lien_amount), 0)
+    )
+    onTradeLienPayoutChange?.(totalLienPayout)
+  }, [savedTrades, onTradeLienPayoutChange])
   const [showSavedModal, setShowSavedModal] = useState(false)
   const [showSaveErrorModal, setShowSaveErrorModal] = useState(false)
   const [saveErrorModalMessage, setSaveErrorModalMessage] = useState<string | null>(null)
+  const [deletingTradeIdx, setDeletingTradeIdx] = useState<number | null>(null)
   const [vinConfirmOpen, setVinConfirmOpen] = useState(false)
   const [vinConfirmDontShow, setVinConfirmDontShow] = useState(false)
   const [vinConfirmBalance, setVinConfirmBalance] = useState<number | null>(null)
@@ -1111,6 +1123,100 @@ const VehiclesTab = forwardRef<VehiclesTabHandle, {
     }
   }
 
+  const handleDeleteTrade = async (idx: number) => {
+    if (deletingTradeIdx !== null || savingTrades) return
+
+    const rowId = vehicleRowIds[idx] ?? null
+    const isLastTrade = savedTrades.length === 1
+    const trade = savedTrades[idx] ?? null
+    try {
+      setSaveError(null)
+      setDeletingTradeIdx(idx)
+
+      if (rowId) {
+        const selectedSnapshot = trade?.selectedVehicle ?? makeSelectedVehicleSnapshot()
+        const selectedRow = {
+          deal_id: dealId || null,
+          selected_id: selectedSnapshot?.id ?? null,
+          selected_year: selectedSnapshot?.year ?? null,
+          selected_make: selectedSnapshot?.make ?? null,
+          selected_model: selectedSnapshot?.model ?? null,
+          selected_trim: selectedSnapshot?.trim ?? null,
+          selected_vin: selectedSnapshot?.vin ?? null,
+          selected_exterior_color: selectedSnapshot?.exteriorColor ?? null,
+          selected_interior_color: selectedSnapshot?.interiorColor ?? null,
+          selected_odometer: selectedSnapshot?.odometer ?? null,
+          selected_odometer_unit: selectedSnapshot?.odometerUnit ?? null,
+          selected_status: selectedSnapshot?.status ?? null,
+          selected_stock_number: selectedSnapshot?.stockNumber ?? null,
+          vin: null,
+          year: null,
+          make: null,
+          model: null,
+          trim: null,
+          colour: null,
+          odometer: null,
+          odometer_unit: null,
+          disclosures: null,
+          disclosures_notes: null,
+          disclosures_editor: null,
+          disclosures_search: null,
+          disclosures_detail_open: null,
+          brand_type: null,
+          is_company: null,
+          owner_name: null,
+          owner_company: null,
+          owner_street: null,
+          owner_suite: null,
+          owner_city: null,
+          owner_province: null,
+          owner_postal: null,
+          owner_country: null,
+          owner_phone: null,
+          owner_mobile: null,
+          owner_email: null,
+          is_rin: null,
+          owner_dl: null,
+          rin: null,
+          owner_plate: null,
+          trade_value: null,
+          actual_cash_value: null,
+          lien_amount: null,
+          trade_equity: null,
+        }
+
+        const res = await fetch(isLastTrade ? '/api/deals/update' : '/api/deals/delete-row', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(
+            isLastTrade
+              ? { table: 'edc_deals_vehicles', id: rowId, data: selectedRow }
+              : { table: 'edc_deals_vehicles', id: rowId }
+          ),
+        })
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}))
+          throw new Error(err.error || `Delete failed (${res.status})`)
+        }
+      }
+
+      setSavedTrades((prev) => prev.filter((_, i) => i !== idx))
+      setVehicleRowIds((prev) => isLastTrade ? prev.slice(0, 1) : prev.filter((_, i) => i !== idx))
+      setOpenSavedDisclosureIdx((current) => {
+        if (current === null) return null
+        if (current === idx) return null
+        return current > idx ? current - 1 : current
+      })
+    } catch (e: any) {
+      const msg = e?.message || 'Failed to delete trade'
+      setSaveError(msg)
+      setSaveErrorModalMessage(msg)
+      setShowSaveErrorModal(true)
+    } finally {
+      setDeletingTradeIdx(null)
+    }
+  }
+
   // Expose save() and saveWithVehicle() to parent via ref
   useImperativeHandle(ref, () => ({
     save: async () => { await handleSaveAllTrades({ silent: true }) },
@@ -1925,13 +2031,28 @@ const VehiclesTab = forwardRef<VehiclesTabHandle, {
                   </div>
 
                   <div className="col-span-12 text-[11px] text-[#118df0]">
-                    <button
-                      type="button"
-                      className="text-[#118df0] hover:underline"
-                      onClick={() => setOpenSavedDisclosureIdx(openSavedDisclosureIdx === idx ? null : idx)}
-                    >
-                      Disclosures &gt;
-                    </button>
+                    <div className="flex items-center justify-between gap-3">
+                      <button
+                        type="button"
+                        className="text-[#118df0] hover:underline"
+                        onClick={() => setOpenSavedDisclosureIdx(openSavedDisclosureIdx === idx ? null : idx)}
+                      >
+                        Disclosures &gt;
+                      </button>
+                      <button
+                        type="button"
+                        className="inline-flex items-center gap-1 text-red-600 hover:text-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                        onClick={() => handleDeleteTrade(idx)}
+                        disabled={deletingTradeIdx === idx || savingTrades}
+                        aria-label="Delete trade"
+                        title="Delete trade"
+                      >
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 7h12M9 7V5h6v2m-8 0l1 12h8l1-12" />
+                        </svg>
+                        {deletingTradeIdx === idx ? 'Deleting...' : 'Delete'}
+                      </button>
+                    </div>
                   </div>
 
                   {openSavedDisclosureIdx === idx ? (

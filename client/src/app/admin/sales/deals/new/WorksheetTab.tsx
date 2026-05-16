@@ -123,6 +123,7 @@ const WorksheetTab = forwardRef<WorksheetTabHandle, {
   onSaved?: () => void
   initialData?: any
   autoSaved?: boolean
+  tradeLienPayoutTotal?: number
 }>(function WorksheetTab({
   dealId,
   dealMode = 'RTL',
@@ -132,6 +133,7 @@ const WorksheetTab = forwardRef<WorksheetTabHandle, {
   onSaved,
   initialData,
   autoSaved,
+  tradeLienPayoutTotal,
 }, ref) {
   const d = initialData || {}
   const appliedInitialKeyRef = useRef<string>('')
@@ -649,6 +651,16 @@ const WorksheetTab = forwardRef<WorksheetTabHandle, {
     return v
   }
 
+  useEffect(() => {
+    if (tradeLienPayoutTotal === undefined) return
+
+    const next = fmtMoney(tradeLienPayoutTotal)
+    const current = fmtMoney(parseMoney(lienPayout))
+    if (current !== next) {
+      setLienPayout(next)
+    }
+  }, [tradeLienPayoutTotal, lienPayout])
+
   const addPaymentDraft = (category: string) => {
     const id = `pay_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
     setPaymentDrafts((prev) => [{ id, amount: '0', type: 'Cash', desc: '', category }, ...prev])
@@ -776,6 +788,7 @@ const WorksheetTab = forwardRef<WorksheetTabHandle, {
     return roundMoney(taxOnNetDifference + itemsTax)
   }, [taxOnNetDifference, feesTaxTotal, accessoriesTaxTotal, warrantiesTaxTotal, insurancesTaxTotal])
   const totalTax = taxOverride ? roundMoney(parseMoney(taxManual)) : computedTax
+  const shouldShowLienPayout = parseMoney(lienPayout) > 0
 
   const totalBeforePayments = useMemo(() => {
     const licenseAmount = licenseFee && licenseFee.trim() ? parseMoney(licenseFee) : 0
@@ -2220,14 +2233,20 @@ const WorksheetTab = forwardRef<WorksheetTabHandle, {
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <div className="text-xs text-gray-700 mb-1">Lien Payout</div>
-                <div className="flex items-stretch border border-gray-200 rounded bg-white shadow-sm overflow-hidden w-full">
-                  <div className="w-10 flex items-center justify-center bg-gray-100 text-gray-600 border-r border-gray-200">$
+              {shouldShowLienPayout ? (
+                <div>
+                  <div className="text-xs text-gray-700 mb-1">Lien Payout</div>
+                  <div className="flex items-stretch border border-gray-200 rounded bg-gray-100 shadow-sm overflow-hidden w-full">
+                    <div className="w-10 flex items-center justify-center text-gray-600 border-r border-gray-200">$
+                    </div>
+                    <input
+                      className="flex-1 h-10 px-3 text-sm outline-none bg-gray-100"
+                      value={lienPayout}
+                      readOnly
+                    />
                   </div>
-                  <input className="flex-1 h-10 px-3 text-sm outline-none" value={lienPayout} onChange={(e) => setLienPayout(stripLeadingZeros(e.target.value))} />
                 </div>
-              </div>
+              ) : null}
               <div>
                 <div className="text-xs text-gray-700 mb-1">Trade Equity</div>
                 <div className="flex items-stretch border border-gray-200 rounded bg-gray-100 overflow-hidden w-full">

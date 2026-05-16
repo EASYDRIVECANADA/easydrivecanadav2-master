@@ -64,6 +64,7 @@ function SalesNewDealPageContent() {
   const [prefillLoading, setPrefillLoading] = useState(() => Boolean(editDealId))
   const [dealHasSignature, setDealHasSignature] = useState(false)
   const [selectedVehicleData, setSelectedVehicleData] = useState<any>(null)
+  const [tradeLienPayoutTotal, setTradeLienPayoutTotal] = useState(0)
 
   // Print dropdown & Documents Preview modal
   const [showPrintMenu, setShowPrintMenu] = useState(false)
@@ -403,6 +404,10 @@ function SalesNewDealPageContent() {
     } catch {
       // ignore warranty fetch errors — not critical
     }
+  }, [])
+
+  const handleTradeLienPayoutChange = useCallback((amount: number) => {
+    setTradeLienPayoutTotal((prev) => (prev === amount ? prev : amount))
   }, [])
 
   // Close print menu on outside click
@@ -1156,6 +1161,7 @@ function SalesNewDealPageContent() {
                     stock_number: vehiclePrefill.vehicle.stock_number,
                   } : null}
                   onVehicleSelected={handleVehicleSelected}
+                  onTradeLienPayoutChange={handleTradeLienPayoutChange}
                 />
               </div>
               <div style={{ display: activeTab === 'worksheet' ? 'block' : 'none' }}>
@@ -1169,6 +1175,7 @@ function SalesNewDealPageContent() {
                   formMode={formMode}
                   onSaved={() => unlockTab('disclosures')}
                   autoSaved={false}
+                  tradeLienPayoutTotal={tradeLienPayoutTotal}
                   initialData={(() => {
                     // Get vehicle price from available sources
                     const vehicleSource = selectedVehicleData || vehiclePrefill?.vehicle
