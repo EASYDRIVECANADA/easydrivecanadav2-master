@@ -714,6 +714,7 @@ function DealsSignaturePageInner() {
         const { renderBillOfSalePdf } = await import('../new/billOfSalePdf')
         const { buildBillOfSaleCustomerFields } = await import('../new/billOfSaleCustomers')
         const { buildBillOfSaleSettlement } = await import('../new/billOfSaleSettlement')
+        const { fetchBillOfSaleDealerInfo } = await import('../new/billOfSaleDealer')
 
         const c = dealData.customer || {}
         const customerFields = buildBillOfSaleCustomerFields(dealData)
@@ -722,6 +723,7 @@ function DealsSignaturePageInner() {
         const w = dealData.worksheet || {}
         const d = dealData.delivery || {}
         const settlement = buildBillOfSaleSettlement(w, sv.price)
+        const dealerInfo = await fetchBillOfSaleDealerInfo(dealData)
 
         // Build warrantyDataSig: prefer worksheet warranties, fall back to edc_warranty table
         let warrantyDataSig: { has_extended: boolean; description: string; duration: string; distance: string; cost: string } | null = null
@@ -806,6 +808,7 @@ function DealsSignaturePageInner() {
         const billData = {
           dealDate: c.created_at ? new Date(c.created_at).toLocaleDateString('en-CA', { year: 'numeric', month: 'short', day: 'numeric' }) : '',
           invoiceNumber: String(dealId || ''),
+          dealer: dealerInfo,
           ...customerFields,
           stockNumber: String(sv.selected_stock_number ?? sv.stockNumber ?? sv.stock_number ?? ''),
           year: String(sv.selected_year ?? sv.year ?? ''),

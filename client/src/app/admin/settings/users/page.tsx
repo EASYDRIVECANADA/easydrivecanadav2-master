@@ -22,6 +22,7 @@ type AdminUserRow = {
   approver?: boolean | null
   vendors?: boolean | null
   delete_vendors?: boolean | null
+  view_costs?: boolean | null
   costs?: boolean | null
   customers?: boolean | null
   delete_customers?: boolean | null
@@ -105,6 +106,7 @@ export default function SettingsUsersPage() {
     approver: false,
     vendors: false,
     delete_vendors: false,
+    view_costs: false,
     costs: false,
     customers: false,
     delete_customers: false,
@@ -443,7 +445,7 @@ export default function SettingsUsersPage() {
       const { data, error } = await supabase
         .from('users')
         .select(
-          'id, first_name, last_name, title, registration, phone, mobile, email, facebook, twitter, password, access_all_deals, access_all_leads_customers, administrator, approver, vendors, delete_vendors, costs, customers, delete_customers, sales, delete_sales, inventory, delete_inventory, settings, sales_reports_access, inventory_reports_access, created_at'
+          'id, first_name, last_name, title, registration, phone, mobile, email, facebook, twitter, password, access_all_deals, access_all_leads_customers, administrator, approver, vendors, delete_vendors, view_costs, costs, customers, delete_customers, sales, delete_sales, inventory, delete_inventory, settings, sales_reports_access, inventory_reports_access, created_at'
         )
         .eq('user_id', scopedUserId)
         .order('created_at', { ascending: false })
@@ -659,6 +661,7 @@ export default function SettingsUsersPage() {
       approver: Boolean(r.approver),
       vendors: Boolean(r.vendors),
       delete_vendors: Boolean(r.delete_vendors),
+      view_costs: Boolean(r.view_costs),
       costs: Boolean(r.costs),
       customers: Boolean(r.customers),
       delete_customers: Boolean(r.delete_customers),
@@ -1015,7 +1018,8 @@ export default function SettingsUsersPage() {
                       { key: 'approver', label: 'Approver' },
                       { key: 'vendors', label: 'Vendors' },
                       { key: 'delete_vendors', label: 'Delete Vendors' },
-                      { key: 'costs', label: 'Costs' },
+                      { key: 'view_costs', label: 'View Costs' },
+                      { key: 'costs', label: 'Manage Costs' },
                       { key: 'customers', label: 'Customers' },
                       { key: 'delete_customers', label: 'Delete Customers' },
                       { key: 'sales', label: 'Sales' },

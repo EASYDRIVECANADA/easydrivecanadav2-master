@@ -51,9 +51,10 @@ interface CostsTabProps {
   vehicleId: string
   vehiclePrice: number
   stockNumber?: string
+  readOnly?: boolean
 }
 
-export default function CostsTab({ vehicleId, vehiclePrice, stockNumber }: CostsTabProps) {
+export default function CostsTab({ vehicleId, vehiclePrice, stockNumber, readOnly = false }: CostsTabProps) {
   const [costsData, setCostsData] = useState<CostsData>({
     listPrice: vehiclePrice || 0,
     salePrice: 0,
@@ -171,6 +172,7 @@ export default function CostsTab({ vehicleId, vehiclePrice, stockNumber }: Costs
   }
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (readOnly) return
     const { name, value } = e.target
     setCostsData((prev) => ({
       ...prev,
@@ -293,6 +295,7 @@ export default function CostsTab({ vehicleId, vehiclePrice, stockNumber }: Costs
   }, [vehicleId, stockNumber])
 
   const openAddModal = () => {
+    if (readOnly) return
     setEditingCost(null)
     setModalForm({
       date: new Date().toISOString().split('T')[0],
@@ -311,6 +314,7 @@ export default function CostsTab({ vehicleId, vehiclePrice, stockNumber }: Costs
   }
 
   const openEditModal = (item: CostItem) => {
+    if (readOnly) return
     setEditingCost(item)
     setModalForm({
       ...item,
@@ -321,6 +325,7 @@ export default function CostsTab({ vehicleId, vehiclePrice, stockNumber }: Costs
   }
 
   const handleModalChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
+    if (readOnly) return
     const { name, value } = e.target
     setModalForm(prev => {
       const next: Partial<CostItem> = { ...prev }
@@ -343,6 +348,7 @@ export default function CostsTab({ vehicleId, vehiclePrice, stockNumber }: Costs
   }
 
   const handleModalSave = async () => {
+    if (readOnly) return
     const price = modalForm.price || 0
     const qty = modalForm.qty || 1
     const discount = modalForm.discount || 0
@@ -454,6 +460,7 @@ export default function CostsTab({ vehicleId, vehiclePrice, stockNumber }: Costs
   }
 
   const removeCostItem = async (item: CostItem) => {
+    if (readOnly) return
     // Optimistic UI update
     setCostsData(prev => ({
       ...prev,
@@ -481,6 +488,7 @@ export default function CostsTab({ vehicleId, vehiclePrice, stockNumber }: Costs
   }
 
   const handleSave = async () => {
+    if (readOnly) return
     setSaving(true)
     try {
       console.log('Updating price for vehicle:', vehicleId, 'to:', costsData.listPrice)
@@ -547,7 +555,7 @@ export default function CostsTab({ vehicleId, vehiclePrice, stockNumber }: Costs
       onEditCost={openEditModal}
       onRemoveCost={removeCostItem}
       onPriceChange={handleChange}
-      showSaveButton
+      showSaveButton={!readOnly}
       saving={saving}
       onSave={handleSave}
       showModal={showModal}
@@ -559,6 +567,7 @@ export default function CostsTab({ vehicleId, vehiclePrice, stockNumber }: Costs
       taxPresets={taxPresets}
       loadingTaxPresets={loadingTaxPresets}
       emptyTaxOption={{ value: 'Exempt', label: 'Exempt 0%' }}
+      readOnly={readOnly}
     />
   )
 }

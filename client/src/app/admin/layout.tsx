@@ -272,7 +272,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
     }
 
     const isMasterAccount = String(session?.email || '').trim().toLowerCase() === 'info@easydrivecanada.com'
-    if (isMasterAccount || isAdminAccount) {
+    if (isMasterAccount || isAdminAccount || canShow('settings')) {
       items.push({ href: '/admin/configuration', label: 'Configurations', icon: 'config', disabled: !isVerified, visible: true })
     }
 
@@ -303,7 +303,12 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
       { href: '/admin/reports/inventory/garage-register', label: 'Garage Register' },
       { href: '/admin/reports/inventory/inventory-value', label: 'Inventory Value' },
       { href: '/admin/reports/inventory/inventory-costs', label: 'Inventory Costs' },
-    ].filter((item) => permissionVisibility.canShow('inventory_reports_access') && (item.href.endsWith('/inventory-costs') ? permissionVisibility.canShow('costs') : true)),
+    ].filter((item) => {
+      if (item.href.endsWith('/inventory-costs')) {
+        return permissionVisibility.canShow('inventory_reports_access') || permissionVisibility.canShow('view_costs') || permissionVisibility.canShow('inventory')
+      }
+      return permissionVisibility.canShow('inventory_reports_access')
+    }),
     [permissionVisibility.canShow]
   )
 
@@ -705,7 +710,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
                       </Link>
                       {isVerified ? (
                         <Link
-                          href="/admin/settings/dealership"
+                          href="/admin/configuration?tab=company"
                           role="menuitem"
                           className="block px-4 py-2.5 text-[13px] text-gray-700 hover:bg-gray-50 transition-colors"
                           onClick={() => setAccountMenuOpen(false)}

@@ -10,6 +10,7 @@ export type PermissionKey =
   | 'approver'
   | 'vendors'
   | 'delete_vendors'
+  | 'view_costs'
   | 'costs'
   | 'customers'
   | 'delete_customers'
@@ -34,6 +35,7 @@ export const PERMISSION_KEYS: PermissionKey[] = [
   'approver',
   'vendors',
   'delete_vendors',
+  'view_costs',
   'costs',
   'customers',
   'delete_customers',
@@ -78,12 +80,25 @@ export function usePermissionVisibility() {
     }
 
     try {
-      const { data } = await supabase
+      const result = await supabase
         .from('users')
         .select(['account', ...PERMISSION_KEYS].join(','))
         .ilike('email', email)
         .limit(1)
         .maybeSingle()
+      let data = result.data
+      const error = result.error
+
+      if (error && String(error.message || '').toLowerCase().includes('view_costs')) {
+        const fallbackKeys = PERMISSION_KEYS.filter((key) => key !== 'view_costs')
+        const fallback = await supabase
+          .from('users')
+          .select(['account', ...fallbackKeys].join(','))
+          .ilike('email', email)
+          .limit(1)
+          .maybeSingle()
+        data = fallback.data
+      }
 
       const next = { ...DEFAULT_PERMISSIONS }
       for (const key of PERMISSION_KEYS) next[key] = Boolean((data as any)?.[key])
@@ -120,6 +135,7 @@ export function usePermissionVisibility() {
     if (isAdmin) return true
     if (key === 'access_all_leads_customers') return Boolean(permissions.access_all_leads_customers || permissions.customers)
     if (key === 'access_all_deals') return Boolean(permissions.access_all_deals || permissions.sales)
+    if (key === 'view_costs') return Boolean(permissions.view_costs || permissions.costs)
     return Boolean(permissions[key])
   }, [isAdmin, permissions])
 

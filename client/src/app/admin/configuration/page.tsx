@@ -34,6 +34,7 @@ import {
   useCustomWarranty,
 } from '@/lib/custom-warranty'
 import type { WarrantyPlan } from '@/lib/bridgewarranty'
+import CompanyProfileTab from './CompanyProfileTab'
 
 const PRESETS_WEBHOOK_URL = 'https://primary-production-6722.up.railway.app/webhook/presets'
 
@@ -47,6 +48,17 @@ type TaxRateRow = {
   default_to_sales: string | null
   default_to_purchases_or_costs: string | null
 }
+
+type ConfigTab = 'company' | 'warranty' | 'products' | 'taxes' | 'defaults' | 'guarantee'
+
+const CONFIG_TABS: { key: ConfigTab; label: string }[] = [
+  { key: 'company',   label: 'Company Profile' },
+  { key: 'warranty',  label: 'Warranty plans' },
+  { key: 'products',  label: 'Add-on products' },
+  { key: 'taxes',     label: 'Tax rates' },
+  { key: 'defaults',  label: 'Defaults' },
+  { key: 'guarantee', label: '30-Day Guarantee' },
+]
 
 // ── Toggle component ─────────────────────────────────────────────
 
@@ -102,22 +114,31 @@ function Crumbs({ items }: { items: { label: string; onClick?: () => void }[] })
 
 export default function ConfigurationPage() {
   const cfg = useDealerConfig()
-  const [tab, setTab] = useState<'warranty' | 'products' | 'taxes' | 'defaults' | 'guarantee'>('warranty')
+  const [tab, setTab] = useState<ConfigTab>('warranty')
 
-  const tabs: { key: typeof tab; label: string }[] = [
-    { key: 'warranty',  label: 'Warranty plans' },
-    { key: 'products',  label: 'Add-on products' },
-    { key: 'taxes',     label: 'Tax rates' },
-    { key: 'defaults',  label: 'Defaults' },
-    { key: 'guarantee', label: '30-Day Guarantee' },
-  ]
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const requestedTab = new URLSearchParams(window.location.search).get('tab') as ConfigTab | null
+    if (requestedTab && CONFIG_TABS.some((item) => item.key === requestedTab)) setTab(requestedTab)
+  }, [])
+
+  const selectTab = (nextTab: ConfigTab) => {
+    setTab(nextTab)
+    if (typeof window === 'undefined') return
+    const url = nextTab === 'warranty'
+      ? window.location.pathname
+      : `${window.location.pathname}?tab=${encodeURIComponent(nextTab)}`
+    window.history.replaceState(null, '', url)
+  }
+
+  const isCompanyTab = tab === 'company'
 
   return (
     <div className="min-h-screen bg-white">
       {/* Header */}
       <div className="px-6 lg:px-8 pt-8 pb-4 border-b border-slate-100">
         <h1 className="text-2xl font-bold text-slate-900">Configurations</h1>
-        <p className="text-sm text-slate-400 mt-0.5">Set retail pricing for warranty plans and dealer-managed add-on products.</p>
+        <p className="text-sm text-slate-400 mt-0.5">Manage company information, bill of sale details, pricing defaults, and dealer-managed products.</p>
       </div>
 
       {/* Info banner */}
@@ -130,25 +151,29 @@ export default function ConfigurationPage() {
             </svg>
           </div>
           <div>
-            <div className="font-semibold text-slate-900">Dealer Pricing Configuration</div>
+            <div className="font-semibold text-slate-900">{isCompanyTab ? 'Company Profile' : 'Dealer Pricing Configuration'}</div>
             <div className="text-sm text-slate-500 mt-0.5">
-              Mark up dealer cost to your retail price for every base term and add-on. Customers only see your retail prices — never your costs.
+              {isCompanyTab
+                ? 'These company details appear on generated bill of sale documents, including previews, emailed PDFs, and e-signature PDFs.'
+                : 'Mark up dealer cost to your retail price for every base term and add-on. Customers only see your retail prices - never your costs.'}
             </div>
           </div>
         </div>
-        <div className="flex items-center gap-3 rounded-full border border-slate-200 bg-white px-4 py-2">
-          <span className="text-sm font-medium text-slate-700">Show Retail to Customers</span>
-          <Toggle checked={cfg.showRetailToCustomers} onChange={setShowRetailToCustomers} />
-        </div>
+        {!isCompanyTab ? (
+          <div className="flex items-center gap-3 rounded-full border border-slate-200 bg-white px-4 py-2">
+            <span className="text-sm font-medium text-slate-700">Show Retail to Customers</span>
+            <Toggle checked={cfg.showRetailToCustomers} onChange={setShowRetailToCustomers} />
+          </div>
+        ) : null}
       </div>
 
       {/* Tabs */}
       <div className="px-6 lg:px-8 mt-6 flex items-center gap-2">
-        {tabs.map((t) => (
+        {CONFIG_TABS.map((t) => (
           <button
             key={t.key}
             type="button"
-            onClick={() => setTab(t.key)}
+            onClick={() => selectTab(t.key)}
             className={`px-4 py-1.5 rounded-full text-sm font-medium border transition-all ${
               tab === t.key
                 ? 'bg-[#0B1F3A] text-white border-[#0B1F3A]'
@@ -162,6 +187,7 @@ export default function ConfigurationPage() {
 
       {/* Content */}
       <div className="px-6 lg:px-8 py-6">
+        {tab === 'company'   && <CompanyProfileTab />}
         {tab === 'warranty'  && <WarrantyConfigTab />}
         {tab === 'products'  && <ProductCatalogTab />}
         {tab === 'taxes'     && <TaxRatesConfigTab />}

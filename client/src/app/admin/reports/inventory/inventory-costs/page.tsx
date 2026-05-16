@@ -20,7 +20,7 @@ type Row = {
 
 export default function InventoryCostsPage() {
   const permissionVisibility = usePermissionVisibility()
-  const canAccessAllInventoryReports = permissionVisibility.canShow('inventory_reports_access') || permissionVisibility.canShow('costs') || permissionVisibility.canShow('inventory')
+  const canAccessAllInventoryReports = permissionVisibility.canShow('inventory_reports_access') || permissionVisibility.canShow('view_costs') || permissionVisibility.canShow('inventory')
   const [status, setStatus] = useState('In Stock, Sold, Deal Pending In Trade, In Stock (No Deal)')
   const [query, setQuery] = useState('')
   const [perPage, setPerPage] = useState('50')

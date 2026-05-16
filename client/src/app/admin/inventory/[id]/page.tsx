@@ -5,6 +5,7 @@ import type { ComponentType } from 'react'
 import { useRouter, useParams, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabaseClient'
+import { usePermissionVisibility } from '@/lib/permissions'
 import {
   CarFront,
   ClipboardList,
@@ -117,6 +118,7 @@ export default function AdminEditVehiclePage() {
   const params = useParams()
   const router = useRouter()
   const searchParams = useSearchParams()
+  const permissionVisibility = usePermissionVisibility()
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [formData, setFormData] = useState<VehicleFormData>({})
@@ -128,6 +130,9 @@ export default function AdminEditVehiclePage() {
   const [saveModalMessage, setSaveModalMessage] = useState('')
 
   const [bucketImageCache] = useState(() => new Map<string, string[]>())
+  const permissionsReady = Boolean(permissionVisibility.session)
+  const canViewCosts = !permissionsReady || permissionVisibility.canShow('view_costs')
+  const canManageCosts = permissionsReady && permissionVisibility.canShow('costs')
 
   useEffect(() => {
     const sessionStr = localStorage.getItem('edc_admin_session')
@@ -157,6 +162,13 @@ export default function AdminEditVehiclePage() {
       setActiveTab(tab as TabType)
     }
   }, [searchParams])
+
+  useEffect(() => {
+    if (!permissionsReady) return
+    if (activeTab === 'costs' && !canViewCosts) {
+      setActiveTab('details')
+    }
+  }, [activeTab, canViewCosts, permissionsReady])
 
   const fetchVehicle = async () => {
     try {
@@ -405,6 +417,7 @@ export default function AdminEditVehiclePage() {
   }
 
   const vehicleTitle = `${formData.year} ${formData.make} ${formData.model}`
+  const visibleTabs = TABS.filter((tab) => tab.id !== 'costs' || canViewCosts)
 
   return (
     <div className="min-h-screen bg-gray-100">
@@ -447,7 +460,7 @@ export default function AdminEditVehiclePage() {
         {/* Tab Navigation */}
         <div className="w-full px-4 sm:px-6 lg:px-8 border-t border-gray-200">
           <nav className="flex gap-1 overflow-x-auto" aria-label="Tabs">
-            {TABS.map((tab) => {
+            {visibleTabs.map((tab) => {
               const Icon = tab.icon
               return (
                 <button
@@ -533,6 +546,7 @@ export default function AdminEditVehiclePage() {
             vehicleId={String(params.id)}
             vehiclePrice={formData.price || 0}
             stockNumber={formData.stockNumber || ''}
+            readOnly={!canManageCosts}
           />
         )}
 

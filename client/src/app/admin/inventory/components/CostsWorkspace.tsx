@@ -84,6 +84,7 @@ type CostsWorkspaceProps = {
   taxPresets: TaxPresetRow[]
   loadingTaxPresets: boolean
   emptyTaxOption: EmptyTaxOption
+  readOnly?: boolean
 }
 
 const currency = new Intl.NumberFormat('en-CA', {
@@ -220,11 +221,13 @@ function MoneyInput({
   name,
   value,
   onChange,
+  readOnly = false,
 }: {
   label: string
   name: 'listPrice' | 'salePrice' | 'msrp'
   value: number
   onChange: (event: React.ChangeEvent<HTMLInputElement>) => void
+  readOnly?: boolean
 }) {
   return (
     <label className="block">
@@ -238,7 +241,9 @@ function MoneyInput({
           name={name}
           value={value || ''}
           onChange={onChange}
-          className="min-w-0 flex-1 px-3 text-sm font-medium text-slate-900 outline-none placeholder:text-slate-400"
+          disabled={readOnly}
+          readOnly={readOnly}
+          className="min-w-0 flex-1 px-3 text-sm font-medium text-slate-900 outline-none placeholder:text-slate-400 disabled:bg-slate-50 disabled:text-slate-500"
         />
       </div>
     </label>
@@ -268,6 +273,7 @@ export default function CostsWorkspace({
   taxPresets,
   loadingTaxPresets,
   emptyTaxOption,
+  readOnly = false,
 }: CostsWorkspaceProps) {
   const normalizedQuery = searchQuery.trim().toLowerCase()
   const filteredExpenses = normalizedQuery
@@ -323,7 +329,14 @@ export default function CostsWorkspace({
 
             <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
               <div>
-                <h2 className="text-base font-semibold text-slate-900">Cost Items</h2>
+                <div className="flex flex-wrap items-center gap-2">
+                  <h2 className="text-base font-semibold text-slate-900">Cost Items</h2>
+                  {readOnly ? (
+                    <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-amber-700">
+                      View only
+                    </span>
+                  ) : null}
+                </div>
                 <p className="text-sm text-slate-500">{hasCosts ? `${costsData.additionalExpenses.length} item(s)` : 'No costs added yet'}</p>
               </div>
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
@@ -337,10 +350,12 @@ export default function CostsWorkspace({
                     className="edc-input h-10 pl-9"
                   />
                 </div>
-                <button type="button" onClick={onAddCost} className="edc-btn-primary h-10 px-4">
-                  <Plus className="h-4 w-4" />
-                  Add Cost
-                </button>
+                {!readOnly ? (
+                  <button type="button" onClick={onAddCost} className="edc-btn-primary h-10 px-4">
+                    <Plus className="h-4 w-4" />
+                    Add Cost
+                  </button>
+                ) : null}
               </div>
             </div>
           </div>
@@ -356,7 +371,7 @@ export default function CostsWorkspace({
                     <th className="text-right">Discount</th>
                     <th className="text-right">Tax</th>
                     <th className="text-right">Total</th>
-                    <th className="w-24 text-right">Actions</th>
+                    {!readOnly ? <th className="w-24 text-right">Actions</th> : null}
                   </tr>
                 </thead>
                 <tbody>
@@ -376,28 +391,30 @@ export default function CostsWorkspace({
                       <td className="text-right">{formatCurrency(Number(item.discount || 0), true)}</td>
                       <td className="text-right">{formatCurrency(Number(item.tax || 0), true)}</td>
                       <td className="text-right font-semibold text-slate-900">{formatCurrency(Number(item.total || 0), true)}</td>
-                      <td>
-                        <div className="flex justify-end gap-1.5">
-                          <button
-                            type="button"
-                            onClick={() => onEditCost(item)}
-                            className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-900"
-                            aria-label={`Edit ${item.name || 'cost'}`}
-                            title="Edit"
-                          >
-                            <Edit3 className="h-4 w-4" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => onRemoveCost(item)}
-                            className="rounded-lg p-2 text-red-500 hover:bg-red-50 hover:text-red-700"
-                            aria-label={`Delete ${item.name || 'cost'}`}
-                            title="Delete"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </button>
-                        </div>
-                      </td>
+                      {!readOnly ? (
+                        <td>
+                          <div className="flex justify-end gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => onEditCost(item)}
+                              className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-900"
+                              aria-label={`Edit ${item.name || 'cost'}`}
+                              title="Edit"
+                            >
+                              <Edit3 className="h-4 w-4" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => onRemoveCost(item)}
+                              className="rounded-lg p-2 text-red-500 hover:bg-red-50 hover:text-red-700"
+                              aria-label={`Delete ${item.name || 'cost'}`}
+                              title="Delete"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          </div>
+                        </td>
+                      ) : null}
                     </tr>
                   ))}
                 </tbody>
@@ -415,7 +432,7 @@ export default function CostsWorkspace({
                     ? 'Try a different name, group, vendor, or invoice reference.'
                     : 'Add reconditioning, transport, auction, inspection, and other inventory costs here.'}
                 </p>
-                {!hasCosts ? (
+                {!hasCosts && !readOnly ? (
                   <button type="button" onClick={onAddCost} className="edc-btn-primary mt-5 h-10 px-4">
                     <Plus className="h-4 w-4" />
                     Add Cost
@@ -461,12 +478,12 @@ export default function CostsWorkspace({
               <h2 className="text-base font-semibold text-slate-900">Pricing</h2>
             </div>
             <div className="space-y-4">
-              <MoneyInput label="List Price" name="listPrice" value={costsData.listPrice} onChange={onPriceChange} />
-              <MoneyInput label="Sale Price" name="salePrice" value={costsData.salePrice} onChange={onPriceChange} />
-              <MoneyInput label="MSRP" name="msrp" value={costsData.msrp} onChange={onPriceChange} />
+              <MoneyInput label="List Price" name="listPrice" value={costsData.listPrice} onChange={onPriceChange} readOnly={readOnly} />
+              <MoneyInput label="Sale Price" name="salePrice" value={costsData.salePrice} onChange={onPriceChange} readOnly={readOnly} />
+              <MoneyInput label="MSRP" name="msrp" value={costsData.msrp} onChange={onPriceChange} readOnly={readOnly} />
             </div>
 
-            {showSaveButton ? (
+            {showSaveButton && !readOnly ? (
               <div className="mt-5 flex justify-end border-t border-slate-100 pt-5">
                 <button type="button" onClick={onSave} disabled={saving} className="edc-btn-primary h-10 px-6">
                   {saving ? 'Saving...' : 'Update'}
@@ -477,7 +494,7 @@ export default function CostsWorkspace({
         </aside>
       </div>
 
-      {showModal ? (
+      {showModal && !readOnly ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm">
           <div className="edc-modal flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden" onClick={(event) => event.stopPropagation()}>
             <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">

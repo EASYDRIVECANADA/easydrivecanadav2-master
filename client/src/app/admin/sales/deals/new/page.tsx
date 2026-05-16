@@ -12,6 +12,7 @@ import WorksheetTab, { type WorksheetTabHandle } from './WorksheetTab'
 import { renderBillOfSalePdf, type BillOfSaleData } from './billOfSalePdf'
 import { buildBillOfSaleCustomerFields } from './billOfSaleCustomers'
 import { buildBillOfSaleSettlement } from './billOfSaleSettlement'
+import { fetchBillOfSaleDealerInfo } from './billOfSaleDealer'
 import { renderDisclosureFormPdf } from './disclosureFormPdf'
 import { supabase } from '@/lib/supabaseClient'
 
@@ -584,10 +585,12 @@ function SalesNewDealPageContent() {
       }
 
       const settlement = buildBillOfSaleSettlement(w, v.price)
+      const dealerInfo = await fetchBillOfSaleDealerInfo(deal)
 
       const billData: BillOfSaleData = {
         dealDate: dealDate ? new Date(dealDate + 'T00:00:00').toLocaleDateString('en-CA', { year: 'numeric', month: 'short', day: 'numeric' }) : '',
         invoiceNumber: String(dealId || ''),
+        dealer: dealerInfo,
         ...customerFields,
         stockNumber: v.stock_number,
         year: String(v.year),
@@ -825,10 +828,12 @@ function SalesNewDealPageContent() {
       }
 
       const settlement = buildBillOfSaleSettlement(w, v.price)
+      const dealerInfo = await fetchBillOfSaleDealerInfo(deal)
 
       const billData: BillOfSaleData = {
         dealDate: dealDate ? new Date(dealDate + 'T00:00:00').toLocaleDateString('en-CA', { year: 'numeric', month: 'short', day: 'numeric' }) : '',
         invoiceNumber: String(dealId || ''),
+        dealer: dealerInfo,
         ...customerFields,
         email: toEmail,
         stockNumber: v.stock_number,

@@ -101,6 +101,7 @@ const getVehicleListingBucket = (vehicle: Pick<Vehicle, 'category' | 'inventoryT
 export default function AdminInventoryPage() {
   const permissionVisibility = usePermissionVisibility()
   const canAccessAllInventory = permissionVisibility.canShow('inventory')
+  const canViewCosts = permissionVisibility.canShow('view_costs')
   const STATUS_OPTIONS = [
     'In Stock',
     'In Stock (No Feed)',
@@ -380,6 +381,15 @@ export default function AdminInventoryPage() {
   useEffect(() => {
     const stock = drawerVehicle?.stockNumber
     if (!stock) return
+    if (!canViewCosts) {
+      setDrawerCosts({
+        purchasePrice: 0,
+        actualCashValue: 0,
+        additionalExpenses: 0,
+        taxTotal: 0,
+      })
+      return
+    }
     setDrawerCosts({
       purchasePrice: 0,
       actualCashValue: 0,
@@ -407,7 +417,7 @@ export default function AdminInventoryPage() {
       supabase.removeChannel(ch1)
       supabase.removeChannel(ch2)
     }
-  }, [drawerVehicle?.id, drawerVehicle?.stockNumber])
+  }, [canViewCosts, drawerVehicle?.id, drawerVehicle?.stockNumber])
 
   useEffect(() => {
     // Check auth
@@ -1441,8 +1451,10 @@ export default function AdminInventoryPage() {
             </div>
           </div>
           <div className="p-5 overflow-y-auto">
-            <h4 className="text-base font-semibold text-slate-900 mb-4 text-center">Profit Analysis</h4>
-            {(() => {
+            {canViewCosts ? (
+              <>
+                <h4 className="text-base font-semibold text-slate-900 mb-4 text-center">Profit Analysis</h4>
+                {(() => {
               const purchasePrice = Number(drawerCosts.purchasePrice || 0)
               const additionalExpenses = Number(drawerCosts.additionalExpenses || 0)
               const acvDisplay = additionalExpenses // show ACV as total costs per request
@@ -1544,7 +1556,13 @@ export default function AdminInventoryPage() {
                   </div>
                 </div>
               )
-            })()}
+                })()}
+              </>
+            ) : (
+              <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-5 text-center text-sm text-slate-600">
+                Cost and profit information is hidden for this user.
+              </div>
+            )}
           </div>
         </div>
       )}

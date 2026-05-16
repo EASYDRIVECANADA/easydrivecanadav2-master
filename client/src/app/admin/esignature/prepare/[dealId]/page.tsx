@@ -7,6 +7,7 @@ import { supabase } from '@/lib/supabaseClient'
 import { renderBillOfSalePdf, type BillOfSaleData } from '../../../sales/deals/new/billOfSalePdf'
 import { buildBillOfSaleCustomerFields } from '../../../sales/deals/new/billOfSaleCustomers'
 import { buildBillOfSaleSettlement } from '../../../sales/deals/new/billOfSaleSettlement'
+import { fetchBillOfSaleDealerInfo } from '../../../sales/deals/new/billOfSaleDealer'
 
 declare global {
   interface Window {
@@ -706,12 +707,14 @@ export default function PrepareDocumentPage() {
         const disc = deal?.disclosures || {}
 
         const settlement = buildBillOfSaleSettlement(w, v.price)
+        const dealerInfo = await fetchBillOfSaleDealerInfo(deal)
 
         const toEmail = String(customerFields.email || c.email || '').trim().toLowerCase()
 
         const billData: BillOfSaleData = {
           dealDate: c.created_at ? new Date(c.created_at).toLocaleDateString('en-CA', { year: 'numeric', month: 'short', day: 'numeric' }) : '',
           invoiceNumber: String(dealId || ''),
+          dealer: dealerInfo,
           ...customerFields,
           email: toEmail,
           stockNumber: String(v.stock_number ?? ''),

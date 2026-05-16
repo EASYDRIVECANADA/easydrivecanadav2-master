@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabaseClient'
+import { usePermissionVisibility } from '@/lib/permissions'
 import {
   CarFront,
   ClipboardList,
@@ -28,6 +29,7 @@ const normalizeStockNumber = (raw: string) => {
 }
 
 export default function NewVehiclePage() {
+  const permissionVisibility = usePermissionVisibility()
   const [activeTab, setActiveTab] = useState<TabType>('details')
 
   // Generate a stable vehicleId once at page load — shared across ALL tabs
@@ -461,6 +463,16 @@ export default function NewVehiclePage() {
   }, [formData?.stockNumber, webhookUserId])
 
   const enableAllTabs = true
+  const permissionsReady = Boolean(permissionVisibility.session)
+  const canViewCosts = !permissionsReady || permissionVisibility.canShow('view_costs')
+  const canManageCosts = permissionsReady && permissionVisibility.canShow('costs')
+
+  useEffect(() => {
+    if (!permissionsReady) return
+    if (activeTab === 'costs' && !canViewCosts) {
+      setActiveTab('details')
+    }
+  }, [activeTab, canViewCosts, permissionsReady])
 
   useEffect(() => {
     if (!createdVehicleId) {
@@ -1204,19 +1216,21 @@ export default function NewVehiclePage() {
               <BadgeDollarSign className={`w-4 h-4 ${activeTab === 'purchase' ? 'text-black' : 'text-gray-500'}`} />
               Purchase
             </button>
-            <button
-              type="button"
-              onClick={() => enableAllTabs && setActiveTab('costs')}
-              disabled={!enableAllTabs}
-              className={`flex items-center gap-2 py-4 px-1 border-b-2 font-medium text-sm ${
-                activeTab === 'costs'
-                  ? 'border-black text-black'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              } ${!enableAllTabs ? 'opacity-50 cursor-not-allowed' : ''}`}
-            >
-              <Receipt className={`w-4 h-4 ${activeTab === 'costs' ? 'text-black' : 'text-gray-500'}`} />
-              Costs
-            </button>
+            {canViewCosts ? (
+              <button
+                type="button"
+                onClick={() => enableAllTabs && setActiveTab('costs')}
+                disabled={!enableAllTabs}
+                className={`flex items-center gap-2 py-4 px-1 border-b-2 font-medium text-sm ${
+                  activeTab === 'costs'
+                    ? 'border-black text-black'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                } ${!enableAllTabs ? 'opacity-50 cursor-not-allowed' : ''}`}
+              >
+                <Receipt className={`w-4 h-4 ${activeTab === 'costs' ? 'text-black' : 'text-gray-500'}`} />
+                Costs
+              </button>
+            ) : null}
             <button
               type="button"
               onClick={() => enableAllTabs && setActiveTab('warranty')}
@@ -1858,7 +1872,9 @@ export default function NewVehiclePage() {
                 vehiclePrice={parseFloat(String(formData.price || 0)) || 0}
                 stockNumber={formData.stockNumber || ''}
                 onError={(msg) => setError(msg)}
+                readOnly={!canManageCosts}
               />
+              {!canManageCosts ? null : (
               <div className="mt-6 flex justify-end">
                 <button
                   type="button"
@@ -1891,6 +1907,7 @@ export default function NewVehiclePage() {
                   {nextWarrantySaving ? (costsSaved ? 'Updating...' : 'Saving...') : (costsSaved ? 'Edit Costs' : 'Save Costs')}
                 </button>
               </div>
+              )}
             </div>
           )}
           {activeTab === 'warranty' && (

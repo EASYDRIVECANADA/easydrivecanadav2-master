@@ -43,13 +43,14 @@ interface CostsTabProps {
   vehiclePrice: number
   stockNumber?: string
   onError?: (message: string) => void
+  readOnly?: boolean
 }
 
 export interface CostsTabHandle {
   save: () => Promise<boolean>
 }
 
-const CostsTab = forwardRef<CostsTabHandle, CostsTabProps>(function CostsTab({ vehicleId, userId, vehiclePrice, stockNumber, onError }, ref) {
+const CostsTab = forwardRef<CostsTabHandle, CostsTabProps>(function CostsTab({ vehicleId, userId, vehiclePrice, stockNumber, onError, readOnly = false }, ref) {
   const [costsData, setCostsData] = useState<CostsData>({
     listPrice: vehiclePrice || 0,
     salePrice: 0,
@@ -354,6 +355,7 @@ const CostsTab = forwardRef<CostsTabHandle, CostsTabProps>(function CostsTab({ v
   }
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (readOnly) return
     const { name, value } = e.target
     setCostsData(prev => ({
       ...prev,
@@ -368,6 +370,7 @@ const CostsTab = forwardRef<CostsTabHandle, CostsTabProps>(function CostsTab({ v
   }
 
   const openAddModal = () => {
+    if (readOnly) return
     setEditingCost(null)
     setModalForm({
       date: new Date().toISOString().split('T')[0],
@@ -386,12 +389,14 @@ const CostsTab = forwardRef<CostsTabHandle, CostsTabProps>(function CostsTab({ v
   }
 
   const openEditModal = (item: CostItem) => {
+    if (readOnly) return
     setEditingCost(item)
     setModalForm(item)
     setShowModal(true)
   }
 
   const handleModalChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
+    if (readOnly) return
     const { name, value } = e.target
     setModalForm(prev => {
       const next: Partial<CostItem> = { ...prev }
@@ -415,6 +420,7 @@ const CostsTab = forwardRef<CostsTabHandle, CostsTabProps>(function CostsTab({ v
   }
 
   const handleModalSave = async () => {
+    if (readOnly) return
     const price = modalForm.price || 0
     const qty = modalForm.qty || 1
     const discount = modalForm.discount || 0
@@ -527,6 +533,7 @@ const CostsTab = forwardRef<CostsTabHandle, CostsTabProps>(function CostsTab({ v
   }
 
   const removeCostItem = async (item: CostItem) => {
+    if (readOnly) return
     // Optimistic UI update
     setCostsData(prev => ({
       ...prev,
@@ -555,6 +562,7 @@ const CostsTab = forwardRef<CostsTabHandle, CostsTabProps>(function CostsTab({ v
   }
 
   const handleSave = async (): Promise<boolean> => {
+    if (readOnly) return true
     setSaving(true)
     try {
       if (!vehicleId) return false
@@ -643,6 +651,7 @@ const CostsTab = forwardRef<CostsTabHandle, CostsTabProps>(function CostsTab({ v
       onEditCost={openEditModal}
       onRemoveCost={removeCostItem}
       onPriceChange={handleChange}
+      showSaveButton={!readOnly}
       showModal={showModal}
       editingCost={editingCost}
       modalForm={modalForm}
@@ -652,6 +661,7 @@ const CostsTab = forwardRef<CostsTabHandle, CostsTabProps>(function CostsTab({ v
       taxPresets={taxPresets}
       loadingTaxPresets={loadingTaxPresets}
       emptyTaxOption={{ value: '', label: 'No tax presets' }}
+      readOnly={readOnly}
     />
   )
 })

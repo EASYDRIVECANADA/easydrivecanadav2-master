@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useMemo } from 'react'
 import { supabase } from '@/lib/supabaseClient'
+import { usePermissionVisibility } from '@/lib/permissions'
 import type { ComponentType } from 'react'
 import {
   CarFront,
@@ -109,6 +110,10 @@ const TABS: { id: TabType; label: string; icon: TabIcon }[] = [
 ]
 
 export default function InventoryTab() {
+  const permissionVisibility = usePermissionVisibility()
+  const permissionsReady = Boolean(permissionVisibility.session)
+  const canViewCosts = !permissionsReady || permissionVisibility.canShow('view_costs')
+  const canManageCosts = permissionsReady && permissionVisibility.canShow('costs')
   const [rows, setRows] = useState<VehicleRow[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -130,6 +135,11 @@ export default function InventoryTab() {
   const [saveModalMessage, setSaveModalMessage] = useState('')
 
   useEffect(() => { fetchVehicles(); fetchUsers() }, [])
+
+  useEffect(() => {
+    if (!permissionsReady) return
+    if (activeTab === 'costs' && !canViewCosts) setActiveTab('details')
+  }, [activeTab, canViewCosts, permissionsReady])
 
   const fetchVehicles = async () => {
     setLoading(true)
@@ -414,7 +424,7 @@ export default function InventoryTab() {
           {/* Tab Navigation */}
           <div className="w-full px-4 sm:px-6 lg:px-8 border-t border-gray-200">
             <nav className="flex gap-1 overflow-x-auto" aria-label="Tabs">
-              {TABS.map((tab) => {
+            {TABS.filter((tab) => tab.id !== 'costs' || canViewCosts).map((tab) => {
                 const Icon = tab.icon
                 return (
                   <button
@@ -455,7 +465,14 @@ export default function InventoryTab() {
             {activeTab === 'disclosures' && <DisclosuresTab vehicleId={editingId} />}
             {activeTab === 'importantDisclosures' && <ImportantDisclosuresTab vehicleId={editingId} />}
             {activeTab === 'purchase' && <PurchaseTab vehicleId={editingId} stockNumber={formData.stockNumber || ''} />}
-            {activeTab === 'costs' && <CostsTab vehicleId={editingId} vehiclePrice={formData.price || 0} />}
+            {activeTab === 'costs' && (
+              <CostsTab
+                vehicleId={editingId}
+                vehiclePrice={formData.price || 0}
+                stockNumber={formData.stockNumber || ''}
+                readOnly={!canManageCosts}
+              />
+            )}
             {activeTab === 'warranty' && <WarrantyTab vehicleId={editingId} />}
             {activeTab === 'files' && <FilesTab vehicleId={editingId} />}
             {activeTab === 'carfax' && <CarfaxTab vehicleId={editingId} />}

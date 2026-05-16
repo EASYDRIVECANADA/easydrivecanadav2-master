@@ -1,9 +1,19 @@
 import jsPDF from 'jspdf'
 
+export interface BillOfSaleDealerInfo {
+  logoDataUrl?: string
+  companyName: string
+  addressLines: string[]
+  contactLine?: string
+  website?: string
+  registrationLine?: string
+}
+
 export interface BillOfSaleData {
   // Header
   dealDate: string
   invoiceNumber: string
+  dealer?: BillOfSaleDealerInfo
 
   // Purchaser
   fullName: string
@@ -114,6 +124,27 @@ function fmtMoneyNoSign(v: string | number | null | undefined): string {
   return n.toLocaleString('en-CA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
+const FALLBACK_DEALER_INFO: BillOfSaleDealerInfo = {
+  companyName: 'EASYDRIVE CANADA',
+  addressLines: ['4856 Bank St Unit A', 'Ottawa ON K1X 1G6'],
+  contactLine: 'P: 6138798355',
+  registrationLine: 'Tax: 728858937RT0001',
+}
+
+function compactLine(doc: jsPDF, text: string, maxWidth: number): string {
+  const value = fmt(text)
+  if (!value) return ''
+  const lines = doc.splitTextToSize(value, maxWidth)
+  return Array.isArray(lines) ? fmt(lines[0]) : value
+}
+
+function imageFormat(src: string): string {
+  const raw = src.toLowerCase()
+  if (raw.startsWith('data:image/jpeg') || raw.startsWith('data:image/jpg')) return 'JPEG'
+  if (raw.startsWith('data:image/webp')) return 'WEBP'
+  return 'PNG'
+}
+
 function htmlToPlainText(html: string | null | undefined): string {
   if (!html) return ''
 
@@ -178,31 +209,50 @@ export function renderBillOfSalePdf(
   // ─── PAGE 1 ───────────────────────────────────────────────────────
   let y = 40
 
-  // Logo placeholder (blue EDC text)
-  doc.setFont('helvetica', 'bold')
-  doc.setTextColor(41, 128, 205)
-  doc.setFontSize(24)
-  doc.text('EDC', ML, y + 22)
-  doc.setFont('helvetica', 'normal')
-  doc.setFontSize(6)
-  doc.text('EASYDRIVE CANADA', ML, y + 32)
+  const dealer = data.dealer?.companyName ? data.dealer : FALLBACK_DEALER_INFO
+
+  const drawFallbackLogo = () => {
+    doc.setFont('helvetica', 'bold')
+    doc.setTextColor(41, 128, 205)
+    doc.setFontSize(24)
+    doc.text('EDC', ML, y + 22)
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(6)
+    doc.text('EASYDRIVE CANADA', ML, y + 32)
+  }
+
+  if (dealer.logoDataUrl) {
+    try {
+      doc.addImage(dealer.logoDataUrl, imageFormat(dealer.logoDataUrl), ML, y + 4, 68, 38)
+    } catch {
+      drawFallbackLogo()
+    }
+  } else {
+    drawFallbackLogo()
+  }
 
   // Company info
   const headerTop = y
   const headerH = 56
   const leftX = ML + 88
   const rightX = W - MR
+  const dealerLineW = rightX - leftX - 118
+  const dealerLines = [
+    ...dealer.addressLines,
+    dealer.contactLine || '',
+    dealer.website || '',
+    dealer.registrationLine || '',
+  ].filter(Boolean).slice(0, 5)
 
   doc.setFontSize(9)
   doc.setFont('helvetica', 'bold')
   doc.setTextColor(DARK)
-  doc.text('EASYDRIVE CANADA', leftX, headerTop + 10)
+  doc.text(compactLine(doc, dealer.companyName, dealerLineW), leftX, headerTop + 10)
   doc.setFont('helvetica', 'normal')
-  doc.setFontSize(7)
-  doc.text('4856 Bank St Unit A', leftX, headerTop + 22)
-  doc.text('Ottawa ON K1X 1G6', leftX, headerTop + 32)
-  doc.text('P: 6138798355', leftX, headerTop + 44)
-  doc.text('Tax: 728858937RT0001', leftX, headerTop + 54)
+  doc.setFontSize(6.5)
+  dealerLines.forEach((line, idx) => {
+    doc.text(compactLine(doc, line, dealerLineW), leftX, headerTop + 21 + idx * 8)
+  })
 
   // Bill of Sale title (right side)
   doc.setFontSize(14)
@@ -651,10 +701,12 @@ export function renderBillOfSalePdf(
   const initLineH = 14
   const leftColMinH = 14 /* ew section header */ + leftColWarrantyRowsH + privacyLines.length * privacyLineH + initLineH + 8
 
-  // Right: Settlement terms rows
+  // Right: Modern settlement summary
   const stX = ML + leftColW
-  const stLabelEnd = stX + rightColW * 0.62   // labels right-align here
-  const stValueEnd = stX + rightColW - 6       // values right-align here
+  const stInnerX = stX + 8
+  const stInnerW = rightColW - 16
+  const stLabelX = stInnerX + 6
+  const stValueEnd = stInnerX + stInnerW - 6
   let stY = y + 4
 
   const omvicNumeric = Number(data.omvicFee)
@@ -705,51 +757,49 @@ export function renderBillOfSalePdf(
     ...(hasVal(data.taxOnInsurance) ? [['Tax on Insurance', fmtMoneyNoSign(data.taxOnInsurance)] as [string, string]] : []),
   ]
 
-  doc.setFontSize(7)
-  for (const [label, value, isSubRow] of settlementRows) {
-    if (isSubRow) {
-      // Accessory sub-row: smaller, grey label, no dotted separator, compact height
-      doc.setFontSize(6)
-      doc.setFont('helvetica', 'normal')
-      doc.setTextColor(100, 100, 100)
-      doc.text(label, stLabelEnd, stY + 9, { align: 'right' })
-      if (value) {
-        doc.setTextColor(DARK)
-        doc.text('$' + value, stValueEnd, stY + 9, { align: 'right' })
-      }
-      doc.setFontSize(7)
-      stY += 10
-      continue
-    }
+  const summaryLabels = new Set(['Subtotal', 'Total Tax', 'Total Before Payments'])
 
-    // Normal row
-    doc.setFont('helvetica', 'normal')
-    doc.setTextColor(DARK)
-    doc.text(label, stLabelEnd, stY + 11, { align: 'right' })
-
-    // Value (right-aligned to value column)
-    doc.setFont('helvetica', 'bold')
+  const drawSettlementRow = (label: string, value: string, opts?: { subRow?: boolean; summary?: boolean }) => {
+    const rowH = opts?.subRow ? 10 : opts?.summary ? 15 : 13
+    const rowTop = stY
+    const labelX = opts?.subRow ? stLabelX + 10 : stLabelX
     const displayValue = value.startsWith('-') ? '-$' + value.substring(1) : '$' + value
 
-    // Dotted separator
-    doc.setDrawColor(GRAY_LINE)
+    if (opts?.summary) {
+      doc.setFillColor(246, 248, 251)
+      doc.roundedRect(stInnerX, rowTop, stInnerW, rowH, 2, 2, 'F')
+    }
+
+    doc.setDrawColor(226, 232, 240)
     doc.setLineWidth(0.3)
-    doc.setLineDashPattern([1, 1], 0)
-    doc.line(stLabelEnd + 2, stY + 13, stValueEnd - doc.getTextWidth(displayValue) - 4, stY + 13)
-    doc.setLineDashPattern([], 0)
+    if (!opts?.subRow) doc.line(stInnerX, rowTop + rowH, stInnerX + stInnerW, rowTop + rowH)
 
-    doc.text(displayValue, stValueEnd, stY + 11, { align: 'right' })
+    doc.setFontSize(opts?.subRow ? 5.8 : 6.7)
+    doc.setFont('helvetica', opts?.summary ? 'bold' : 'normal')
+    doc.setTextColor(opts?.subRow ? 100 : DARK)
+    doc.text(compactLine(doc, label, stValueEnd - labelX - 84), labelX, rowTop + (opts?.subRow ? 7 : 9))
 
-    stY += 14
+    doc.setFont('helvetica', opts?.summary ? 'bold' : 'normal')
+    doc.setTextColor(DARK)
+    doc.text(displayValue, stValueEnd, rowTop + (opts?.subRow ? 7 : 9), { align: 'right' })
+
+    stY += rowH
   }
 
-  // Remaining Balance Due (bold, larger)
-  stY += 2
-  doc.setFontSize(8)
+  for (const [label, value, isSubRow] of settlementRows) {
+    drawSettlementRow(label, value, { subRow: isSubRow, summary: !isSubRow && summaryLabels.has(label) })
+  }
+
+  // Remaining Balance Due (emphasized)
+  stY += 4
+  doc.setFillColor(11, 31, 58)
+  doc.roundedRect(stInnerX, stY, stInnerW, 20, 3, 3, 'F')
+  doc.setFontSize(7.5)
   doc.setFont('helvetica', 'bold')
-  doc.setTextColor(DARK)
-  doc.text('Remaining Balance Due', stLabelEnd, stY + 11, { align: 'right' })
+  doc.setTextColor('#ffffff')
+  doc.text('Remaining Balance Due', stLabelX, stY + 13)
   doc.text('$' + fmtMoneyNoSign(data.totalBalanceDue), stValueEnd, stY + 11, { align: 'right' })
+  stY += 22
 
   // Draw border around the extended warranty + settlement section
   // Use max of right-column height and left-column minimum (warranty rows + privacy text + initial line)
