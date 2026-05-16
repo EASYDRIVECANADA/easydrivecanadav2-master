@@ -62,6 +62,7 @@ type LeadRow = {
 type FilterKey = 'finance' | 'insurance' | 'synced'
 type SourceKey = 'finance' | 'insurance' | 'contact' | 'unknown'
 type LeadDraftSource = SourceKey
+type ImportSourceMode = 'auto' | 'finance' | 'insurance'
 type LeadManagerStatus = 'AWAITING DECISION' | 'DECLINED' | 'PENDING' | 'PENDING (BHPH)'
 
 type LeadDraft = {
@@ -252,6 +253,13 @@ const normalizeImportSource = (value: unknown): LeadDraftSource => {
   return 'unknown'
 }
 
+const inferImportSourceFromFileName = (fileName: string): ImportSourceMode => {
+  const normalized = clean(fileName).toLowerCase()
+  if (normalized.includes('insurance')) return 'insurance'
+  if (normalized.includes('finance') || normalized.includes('financing')) return 'finance'
+  return 'auto'
+}
+
 const normalizeManagerStatus = (value: unknown): LeadManagerStatus | null => {
   const status = clean(value).toUpperCase()
   return MANAGER_STATUSES.includes(status as LeadManagerStatus) ? status as LeadManagerStatus : null
@@ -327,6 +335,7 @@ export default function AdminLeadsPage() {
   const [importOpen, setImportOpen] = useState(false)
   const [importRows, setImportRows] = useState<LeadDraft[]>([])
   const [importFileName, setImportFileName] = useState('')
+  const [importSourceMode, setImportSourceMode] = useState<ImportSourceMode>('auto')
   const [importError, setImportError] = useState('')
   const [importing, setImporting] = useState(false)
   const itemsPerPage = 20
@@ -591,6 +600,7 @@ export default function AdminLeadsPage() {
     setImportFileName(file.name)
     setImportRows([])
     setImportError('')
+    setImportSourceMode(inferImportSourceFromFileName(file.name))
 
     try {
       const XLSX = await import('xlsx-js-style')
@@ -652,7 +662,10 @@ export default function AdminLeadsPage() {
     setImportError('')
 
     try {
-      const inserts = importRows.map((row) => rowToLeadInsert(row, notesEnabled))
+      const rowsToImport = importRows.map((row) => (
+        importSourceMode === 'auto' ? row : { ...row, source: importSourceMode }
+      ))
+      const inserts = rowsToImport.map((row) => rowToLeadInsert(row, notesEnabled))
       const { data, error } = await supabase
         .from('edc_leads')
         .insert(inserts)
@@ -665,6 +678,7 @@ export default function AdminLeadsPage() {
       setImportOpen(false)
       setImportRows([])
       setImportFileName('')
+      setImportSourceMode('auto')
       setActiveFilter('finance')
       setCurrentPage(1)
     } catch (error) {
@@ -902,8 +916,10 @@ export default function AdminLeadsPage() {
 
       {importOpen && (
         <LeadImportModal
-          rows={importRows}
+          rows={importRows.map((row) => (importSourceMode === 'auto' ? row : { ...row, source: importSourceMode }))}
           fileName={importFileName}
+          sourceMode={importSourceMode}
+          onSourceModeChange={setImportSourceMode}
           error={importError}
           importing={importing}
           onFile={parseLeadImportFile}
@@ -1212,6 +1228,8 @@ function LeadFormModal({
 function LeadImportModal({
   rows,
   fileName,
+  sourceMode,
+  onSourceModeChange,
   error,
   importing,
   onFile,
@@ -1220,6 +1238,8 @@ function LeadImportModal({
 }: {
   rows: LeadDraft[]
   fileName: string
+  sourceMode: ImportSourceMode
+  onSourceModeChange: (mode: ImportSourceMode) => void
   error: string
   importing: boolean
   onFile: (file: File) => void
@@ -1266,6 +1286,35 @@ function LeadImportModal({
             <p className="mt-1 text-xs leading-5 text-slate-500">
               Name, first name, last name, email, phone, source, vehicle, message, notes, employment, monthly income, annual income, down payment, credit, and date.
             </p>
+          </div>
+
+          <div className="rounded-2xl border border-slate-200 bg-white p-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <div className="text-sm font-semibold text-slate-900">Import source</div>
+                <p className="mt-1 text-xs leading-5 text-slate-500">Choose Finance or Insurance when the spreadsheet source is missing or unknown.</p>
+              </div>
+              <div className="inline-flex rounded-xl border border-slate-200 bg-slate-50 p-1">
+                {([
+                  ['auto', 'Auto'],
+                  ['finance', 'Finance'],
+                  ['insurance', 'Insurance'],
+                ] as Array<[ImportSourceMode, string]>).map(([mode, label]) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    onClick={() => onSourceModeChange(mode)}
+                    className={
+                      sourceMode === mode
+                        ? 'h-8 rounded-lg bg-[#0B1F3A] px-3 text-xs font-semibold text-white shadow-sm'
+                        : 'h-8 rounded-lg px-3 text-xs font-semibold text-slate-600 transition-colors hover:bg-white'
+                    }
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
 
           {error ? <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div> : null}

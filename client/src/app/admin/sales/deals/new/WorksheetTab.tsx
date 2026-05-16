@@ -5,7 +5,12 @@ import { useEffect, useMemo, useRef, useState, forwardRef, useImperativeHandle }
 import { supabase } from '@/lib/supabaseClient'
 
 const DEFAULT_FEE_TAX_LABEL = 'Default Tax 0 %'
+const DEFAULT_ITEM_TAX_LABEL = 'HST 13 %'
 const roundMoney = (n: number) => Math.round((Number(n) || 0) * 100) / 100
+
+function defaultItemTaxSelection(): Record<string, boolean> {
+  return { [DEFAULT_ITEM_TAX_LABEL]: true }
+}
 
 // Normalize old-format tax keys (e.g. 'HST 13 %', 'HST 13.00 %') to full-precision format ('HST 13 %')
 // This prevents doubling when both old and new format keys are present
@@ -37,8 +42,11 @@ function normalizeFeeTaxSelection(selected?: Record<string, boolean>): Record<st
 
   const hasAnySelected = Object.values(next).some(Boolean)
   if (!hasAnySelected) {
-    return { [DEFAULT_FEE_TAX_LABEL]: true }
+    return defaultItemTaxSelection()
   }
+
+  const hasOnlyLegacyDefault = Object.entries(next).every(([k, v]) => !v || isDefaultTaxKey(k))
+  if (hasOnlyLegacyDefault) return defaultItemTaxSelection()
 
   return next
 }
@@ -53,12 +61,28 @@ function feeTaxSummaryLabel(selected?: Record<string, boolean>): string {
   if (selectedNonDefault.length > 0) return selectedNonDefault.join(', ')
   // Fall back to showing whatever default-tax key is selected
   const selectedDefault = Object.keys(normalized).filter((k) => isDefaultTaxKey(k) && normalized[k])
-  return selectedDefault.length > 0 ? selectedDefault[0] : DEFAULT_FEE_TAX_LABEL
+  return selectedDefault.length > 0 ? selectedDefault[0] : DEFAULT_ITEM_TAX_LABEL
 }
 
 function normalizeCardTaxSelection(selected?: Record<string, boolean>): Record<string, boolean> {
   const next = normalizeItemTaxKeys(selected)
-  return Object.values(next).some(Boolean) ? next : { [DEFAULT_FEE_TAX_LABEL]: true }
+  return normalizeFeeTaxSelection(next)
+}
+
+function taxSelectionFromPreset(defaultTaxRate?: string | null): Record<string, boolean> {
+  const labels = String(defaultTaxRate || '')
+    .split(',')
+    .map((label) => label.trim())
+    .filter(Boolean)
+
+  if (labels.length === 0) return defaultItemTaxSelection()
+
+  return normalizeFeeTaxSelection(
+    labels.reduce<Record<string, boolean>>((selected, label) => {
+      selected[label] = true
+      return selected
+    }, {})
+  )
 }
 
 function formatTaxRatePercent(rate: number): string {
@@ -112,10 +136,10 @@ const WorksheetTab = forwardRef<WorksheetTabHandle, {
   const [taxMenuOpen, setTaxMenuOpen] = useState(false)
   const [taxPresets, setTaxPresets] = useState<Array<{ id: string; name: string; rate: number; default_tax_rate?: boolean | null }>>([])
   const [taxPresetsLoading, setTaxPresetsLoading] = useState(false)
-  const [feePresets, setFeePresets] = useState<Array<{ id: string; name: string; description?: string; fee_amount?: number }>>([])
+  const [feePresets, setFeePresets] = useState<Array<{ id: string; name: string; description?: string; fee_amount?: number; default_tax_rate?: string }>>([])
   const [accessoryPresets, setAccessoryPresets] = useState<Array<{ id: string; name: string; description?: string; amount?: number; cost?: number; type?: string; default_tax_rate?: string }>>([])
   const [warrantyPresets, setWarrantyPresets] = useState<Array<{ id: string; name: string; description?: string; price?: number; cost?: number; duration?: string; distance?: string; deductible?: string; dealer_warranty?: boolean; default_tax_rate?: string }>>([])
-  const [insurancePresets, setInsurancePresets] = useState<Array<{ id: string; name: string; description?: string; price?: number }>>([])
+  const [insurancePresets, setInsurancePresets] = useState<Array<{ id: string; name: string; description?: string; price?: number; cost?: number; deductible?: string; duration?: string; type?: string; default_tax_rate?: string }>>([])
   const [taxOverride, setTaxOverride] = useState(d.tax_override === true || d.tax_override === 'true')
   const [taxManual, setTaxManual] = useState(d.tax_manual ?? '0')
   const [licenseFee, setLicenseFee] = useState(d.license_fee ?? '')
@@ -142,7 +166,7 @@ const WorksheetTab = forwardRef<WorksheetTabHandle, {
         desc: f.desc || '',
         amount: Number(f.amount) || 0,
         cost: Number(f.cost) || 0,
-        taxSelected: normalizeFeeTaxSelection(f.taxSelected || { [DEFAULT_FEE_TAX_LABEL]: true }),
+        taxSelected: normalizeFeeTaxSelection(f.taxSelected || defaultItemTaxSelection()),
         taxOverride: f.taxOverride || false,
         taxValues: f.taxValues || {},
       }))
@@ -154,7 +178,7 @@ const WorksheetTab = forwardRef<WorksheetTabHandle, {
   const [feeDetailsOpen, setFeeDetailsOpen] = useState(false)
   const [feeDetailsForId, setFeeDetailsForId] = useState<string | null>(null)
   const [feeTaxMenuOpen, setFeeTaxMenuOpen] = useState(false)
-  const [feeTaxSelected, setFeeTaxSelected] = useState<Record<string, boolean>>({ [DEFAULT_FEE_TAX_LABEL]: true })
+  const [feeTaxSelected, setFeeTaxSelected] = useState<Record<string, boolean>>(defaultItemTaxSelection())
   const [feeTaxOverride, setFeeTaxOverride] = useState(false)
   const [feeShowTaxDetails, setFeeShowTaxDetails] = useState(false)
   const [feeTaxValues, setFeeTaxValues] = useState<Record<string, string>>({})
@@ -198,7 +222,7 @@ const WorksheetTab = forwardRef<WorksheetTabHandle, {
   const [accDetailsForId, setAccDetailsForId] = useState<string | null>(null)
   const [accVehicleType, setAccVehicleType] = useState('')
   const [accTaxMenuOpen, setAccTaxMenuOpen] = useState(false)
-  const [accTaxSelected, setAccTaxSelected] = useState<Record<string, boolean>>({ [DEFAULT_FEE_TAX_LABEL]: true })
+  const [accTaxSelected, setAccTaxSelected] = useState<Record<string, boolean>>(defaultItemTaxSelection())
   const [accTaxOverride, setAccTaxOverride] = useState(false)
   const [accShowTaxDetails, setAccShowTaxDetails] = useState(false)
   const [accTaxValues, setAccTaxValues] = useState<Record<string, string>>({})
@@ -233,7 +257,7 @@ const WorksheetTab = forwardRef<WorksheetTabHandle, {
   const [warDistance, setWarDistance] = useState('')
   const [warDealerGuaranty, setWarDealerGuaranty] = useState(false)
   const [warTaxMenuOpen, setWarTaxMenuOpen] = useState(false)
-  const [warTaxSelected, setWarTaxSelected] = useState<Record<string, boolean>>({ [DEFAULT_FEE_TAX_LABEL]: true })
+  const [warTaxSelected, setWarTaxSelected] = useState<Record<string, boolean>>(defaultItemTaxSelection())
   const [warTaxOverride, setWarTaxOverride] = useState(false)
   const [warShowTaxDetails, setWarShowTaxDetails] = useState(false)
   const [warTaxValues, setWarTaxValues] = useState<Record<string, string>>({})
@@ -272,7 +296,7 @@ const WorksheetTab = forwardRef<WorksheetTabHandle, {
   const [insDuration, setInsDuration] = useState('')
   const [insType, setInsType] = useState('')
   const [insTaxMenuOpen, setInsTaxMenuOpen] = useState(false)
-  const [insTaxSelected, setInsTaxSelected] = useState<Record<string, boolean>>({ [DEFAULT_FEE_TAX_LABEL]: true })
+  const [insTaxSelected, setInsTaxSelected] = useState<Record<string, boolean>>(defaultItemTaxSelection())
   const [insTaxOverride, setInsTaxOverride] = useState(false)
   const [insShowTaxDetails, setInsShowTaxDetails] = useState(false)
   const [insTaxValues, setInsTaxValues] = useState<Record<string, string>>({})
@@ -281,27 +305,27 @@ const WorksheetTab = forwardRef<WorksheetTabHandle, {
   // Reactively sync tax selection to items so Total Balance Due updates immediately
   useEffect(() => {
     if (feeDetailsOpen && feeDetailsForId) {
-      setFees((prev) => prev.map((x) => x.id === feeDetailsForId ? { ...x, taxSelected: feeTaxSelected } : x))
+      setFees((prev) => prev.map((x) => x.id === feeDetailsForId ? { ...x, taxSelected: feeTaxSelected, taxOverride: feeTaxOverride, taxValues: feeTaxValues } : x))
     }
-  }, [feeTaxSelected, feeDetailsOpen, feeDetailsForId])
+  }, [feeTaxSelected, feeTaxOverride, feeTaxValues, feeDetailsOpen, feeDetailsForId])
 
   useEffect(() => {
     if (accDetailsOpen && accDetailsForId) {
-      setAccessories((prev) => prev.map((x) => x.id === accDetailsForId ? { ...x, taxSelected: accTaxSelected } : x))
+      setAccessories((prev) => prev.map((x) => x.id === accDetailsForId ? { ...x, taxSelected: accTaxSelected, taxOverride: accTaxOverride, taxValues: accTaxValues } : x))
     }
-  }, [accTaxSelected, accDetailsOpen, accDetailsForId])
+  }, [accTaxSelected, accTaxOverride, accTaxValues, accDetailsOpen, accDetailsForId])
 
   useEffect(() => {
     if (warDetailsOpen && warDetailsForId) {
-      setWarranties((prev) => prev.map((x) => x.id === warDetailsForId ? { ...x, taxSelected: warTaxSelected } : x))
+      setWarranties((prev) => prev.map((x) => x.id === warDetailsForId ? { ...x, taxSelected: warTaxSelected, taxOverride: warTaxOverride, taxValues: warTaxValues } : x))
     }
-  }, [warTaxSelected, warDetailsOpen, warDetailsForId])
+  }, [warTaxSelected, warTaxOverride, warTaxValues, warDetailsOpen, warDetailsForId])
 
   useEffect(() => {
     if (insDetailsOpen && insDetailsForId) {
-      setInsurances((prev) => prev.map((x) => x.id === insDetailsForId ? { ...x, taxSelected: insTaxSelected } : x))
+      setInsurances((prev) => prev.map((x) => x.id === insDetailsForId ? { ...x, taxSelected: insTaxSelected, taxOverride: insTaxOverride, taxValues: insTaxValues } : x))
     }
-  }, [insTaxSelected, insDetailsOpen, insDetailsForId])
+  }, [insTaxSelected, insTaxOverride, insTaxValues, insDetailsOpen, insDetailsForId])
 
   const closeAllDetails = () => {
     if (feeDetailsOpen && feeDetailsForId) {
@@ -330,7 +354,7 @@ const WorksheetTab = forwardRef<WorksheetTabHandle, {
       if (!(item as any).cost) {
         setFees((prev) => prev.map((x) => x.id === id ? { ...x, cost: x.amount } : x))
       }
-      setFeeTaxSelected(normalizeFeeTaxSelection(normalizeItemTaxKeys(item.taxSelected) || { [DEFAULT_FEE_TAX_LABEL]: true }))
+      setFeeTaxSelected(normalizeFeeTaxSelection(normalizeItemTaxKeys(item.taxSelected) || defaultItemTaxSelection()))
       setFeeTaxOverride(item.taxOverride || false)
       setFeeTaxValues(item.taxValues || {})
     }
@@ -480,7 +504,7 @@ const WorksheetTab = forwardRef<WorksheetTabHandle, {
     setFinanceRateType(nd.finance_rate_type || 'VAR')
     setFinanceCommission(nd.finance_commission ?? '')
 
-    setFees(Array.isArray(nd.fees) ? nd.fees.map((f: any) => ({ id: f.id || `fee_${Date.now()}`, name: f.name || '', desc: f.desc || '', amount: Number(f.amount) || 0, cost: Number(f.cost) || 0, taxSelected: normalizeFeeTaxSelection(f.taxSelected || { [DEFAULT_FEE_TAX_LABEL]: true }), taxOverride: f.taxOverride || false, taxValues: f.taxValues || {} })) : [])
+    setFees(Array.isArray(nd.fees) ? nd.fees.map((f: any) => ({ id: f.id || `fee_${Date.now()}`, name: f.name || '', desc: f.desc || '', amount: Number(f.amount) || 0, cost: Number(f.cost) || 0, taxSelected: normalizeFeeTaxSelection(f.taxSelected || defaultItemTaxSelection()), taxOverride: f.taxOverride || false, taxValues: f.taxValues || {} })) : [])
     setPayments(Array.isArray(nd.payments) ? nd.payments.map((p: any) => ({ id: p.id || `pay_${Date.now()}`, amount: Number(p.amount) || 0, type: p.type || 'Cash', desc: p.desc || '', category: p.category || 'Deposit' })) : [])
     setAccessories(Array.isArray(nd.accessories) ? nd.accessories.map((a: any) => ({ id: a.id || `acc_${Date.now()}`, name: a.name || '', desc: a.desc || '', price: Number(a.price) || 0, cost: Number(a.cost) || 0, vehicleType: a.vehicleType || a.vehicle_type || '', taxSelected: normalizeCardTaxSelection(a.taxSelected), taxOverride: a.taxOverride || false, taxValues: a.taxValues || {} })) : [])
     setWarranties(Array.isArray(nd.warranties) ? nd.warranties.map((w: any) => ({ id: w.id || `war_${Date.now()}`, name: w.name || '', desc: w.desc || '', amount: Number(w.amount) || 0, cost: Number(w.cost) || 0, duration: w.duration || '', distance: w.distance || '', isDealerGuaranty: w.isDealerGuaranty === true || w.is_dealer_guaranty === true, taxSelected: normalizeCardTaxSelection(w.taxSelected), taxOverride: w.taxOverride || false, taxValues: w.taxValues || {} })) : [])
@@ -540,7 +564,7 @@ const WorksheetTab = forwardRef<WorksheetTabHandle, {
     setFeeDetailsOpen(false)
     setFeeDetailsForId(null)
     setFeeTaxMenuOpen(false)
-    setFeeTaxSelected({ [DEFAULT_FEE_TAX_LABEL]: true })
+    setFeeTaxSelected(defaultItemTaxSelection())
     setFeeTaxOverride(false)
     setFeeShowTaxDetails(false)
     setFeeTaxValues({})
@@ -559,7 +583,7 @@ const WorksheetTab = forwardRef<WorksheetTabHandle, {
     setAccDetailsForId(null)
     setAccVehicleType('')
     setAccTaxMenuOpen(false)
-    setAccTaxSelected({ [DEFAULT_FEE_TAX_LABEL]: true })
+    setAccTaxSelected(defaultItemTaxSelection())
     setAccTaxOverride(false)
     setAccShowTaxDetails(false)
     setAccTaxValues({})
@@ -575,7 +599,7 @@ const WorksheetTab = forwardRef<WorksheetTabHandle, {
     setWarDistance('')
     setWarDealerGuaranty(false)
     setWarTaxMenuOpen(false)
-    setWarTaxSelected({ [DEFAULT_FEE_TAX_LABEL]: true })
+    setWarTaxSelected(defaultItemTaxSelection())
     setWarTaxOverride(false)
     setWarShowTaxDetails(false)
     setWarTaxValues({})
@@ -591,7 +615,7 @@ const WorksheetTab = forwardRef<WorksheetTabHandle, {
     setInsDuration('')
     setInsType('')
     setInsTaxMenuOpen(false)
-    setInsTaxSelected({ [DEFAULT_FEE_TAX_LABEL]: true })
+    setInsTaxSelected(defaultItemTaxSelection())
     setInsTaxOverride(false)
     setInsShowTaxDetails(false)
     setInsTaxValues({})
@@ -675,14 +699,17 @@ const WorksheetTab = forwardRef<WorksheetTabHandle, {
       .reduce((sum, k) => sum + amount * getFeeTaxRate(k), 0))
   }
 
+  const hasExplicitItemTaxSelection = (taxSelected: Record<string, boolean> = {}) =>
+    Object.entries(taxSelected).some(([key, selected]) => selected && !isDefaultTaxKey(key))
+
   const feesTotal = useMemo(() => roundMoney(fees.reduce((s, f) => s + (Number(f.amount) || 0), 0)), [fees])
   const feesTaxTotal = useMemo(() => roundMoney(fees.reduce((s, f) => s + computeItemTax(Number(f.amount) || 0, f.taxSelected || {}, f.taxOverride || false, f.taxValues || {}), 0)), [fees])
   const paymentsTotal = useMemo(() => roundMoney(payments.reduce((s, p) => s + (Number(p.amount) || 0), 0)), [payments])
   // Amount of each category that has its own tax (to exclude from vehicle HST base)
-  const feesSelfTaxedBase = useMemo(() => fees.reduce((s, f) => { const t = computeItemTax(Number(f.amount)||0, f.taxSelected||{}, f.taxOverride||false, f.taxValues||{}); return t > 0 ? s + (Number(f.amount)||0) : s }, 0), [fees])
-  const accessoriesSelfTaxedBase = useMemo(() => accessories.reduce((s, a) => { const t = computeItemTax(Number(a.price)||0, a.taxSelected||{}, a.taxOverride||false, a.taxValues||{}); return t > 0 ? s + (Number(a.price)||0) : s }, 0), [accessories])
-  const warrantiesSelfTaxedBase = useMemo(() => warranties.reduce((s, w) => { const t = computeItemTax(Number(w.amount)||0, w.taxSelected||{}, w.taxOverride||false, w.taxValues||{}); return t > 0 ? s + (Number(w.amount)||0) : s }, 0), [warranties])
-  const insurancesSelfTaxedBase = useMemo(() => insurances.reduce((s, i) => { const t = computeItemTax(Number(i.amount)||0, i.taxSelected||{}, i.taxOverride||false, i.taxValues||{}); return t > 0 ? s + (Number(i.amount)||0) : s }, 0), [insurances])
+  const feesSelfTaxedBase = useMemo(() => fees.reduce((s, f) => hasExplicitItemTaxSelection(f.taxSelected || {}) ? s + (Number(f.amount) || 0) : s, 0), [fees])
+  const accessoriesSelfTaxedBase = useMemo(() => accessories.reduce((s, a) => hasExplicitItemTaxSelection(a.taxSelected || {}) ? s + (Number(a.price) || 0) : s, 0), [accessories])
+  const warrantiesSelfTaxedBase = useMemo(() => warranties.reduce((s, w) => hasExplicitItemTaxSelection(w.taxSelected || {}) ? s + (Number(w.amount) || 0) : s, 0), [warranties])
+  const insurancesSelfTaxedBase = useMemo(() => insurances.reduce((s, i) => hasExplicitItemTaxSelection(i.taxSelected || {}) ? s + (Number(i.amount) || 0) : s, 0), [insurances])
   const filteredFees = useMemo(
     () =>
       fees.filter((f) =>
@@ -1345,15 +1372,15 @@ const WorksheetTab = forwardRef<WorksheetTabHandle, {
         if (!scopedUserId) return false
         try {
           const [fees, accs, wars, ins] = await Promise.all([
-            supabase.from('presets_fee').select('id, name, description, fee_amount').eq('user_id', scopedUserId).order('name', { ascending: true }),
+            supabase.from('presets_fee').select('id, name, description, fee_amount, default_tax_rate').eq('user_id', scopedUserId).order('name', { ascending: true }),
             supabase.from('presets_accessories').select('id, name, description, amount, cost, type, default_tax_rate').eq('user_id', scopedUserId).order('name', { ascending: true }),
             supabase.from('presets_warranty').select('id, name, description, price, cost, duration, distance, deductible, dealer_warranty, default_tax_rate').eq('user_id', scopedUserId).order('name', { ascending: true }),
-            supabase.from('presets_insurance').select('id, name, description, price').eq('user_id', scopedUserId).order('name', { ascending: true }),
+            supabase.from('presets_insurance').select('id, name, description, price, cost, deductible, duration, type, default_tax_rate').eq('user_id', scopedUserId).order('name', { ascending: true }),
           ])
-          if (!fees.error && Array.isArray(fees.data)) setFeePresets(fees.data.map((r: any) => ({ id: String(r.id), name: String(r.name ?? ''), description: String(r.description ?? ''), fee_amount: Number(r.fee_amount ?? 0) })).filter((r: any) => r.name))
+          if (!fees.error && Array.isArray(fees.data)) setFeePresets(fees.data.map((r: any) => ({ id: String(r.id), name: String(r.name ?? ''), description: String(r.description ?? ''), fee_amount: Number(r.fee_amount ?? 0), default_tax_rate: r.default_tax_rate ? String(r.default_tax_rate) : '' })).filter((r: any) => r.name))
           if (!accs.error && Array.isArray(accs.data)) setAccessoryPresets(accs.data.map((r: any) => ({ id: String(r.id), name: String(r.name ?? ''), description: String(r.description ?? ''), amount: Number(r.amount ?? 0), cost: Number(r.cost ?? 0), type: r.type ? String(r.type) : '', default_tax_rate: r.default_tax_rate ? String(r.default_tax_rate) : '' })).filter((r: any) => r.name))
           if (!wars.error && Array.isArray(wars.data)) setWarrantyPresets(wars.data.map((r: any) => ({ id: String(r.id), name: String(r.name ?? ''), description: String(r.description ?? ''), price: Number(r.price ?? 0), cost: Number(r.cost ?? 0), duration: r.duration ? String(r.duration) : '', distance: r.distance ? String(r.distance) : '', deductible: r.deductible ? String(r.deductible) : '', dealer_warranty: Boolean(r.dealer_warranty), default_tax_rate: r.default_tax_rate ? String(r.default_tax_rate) : '' })).filter((r: any) => r.name))
-          if (!ins.error && Array.isArray(ins.data)) setInsurancePresets(ins.data.map((r: any) => ({ id: String(r.id), name: String(r.name ?? ''), description: String(r.description ?? ''), price: Number(r.price ?? 0) })).filter((r: any) => r.name))
+          if (!ins.error && Array.isArray(ins.data)) setInsurancePresets(ins.data.map((r: any) => ({ id: String(r.id), name: String(r.name ?? ''), description: String(r.description ?? ''), price: Number(r.price ?? 0), cost: Number(r.cost ?? 0), deductible: r.deductible ? String(r.deductible) : '', duration: r.duration ? String(r.duration) : '', type: r.type ? String(r.type) : '', default_tax_rate: r.default_tax_rate ? String(r.default_tax_rate) : '' })).filter((r: any) => r.name))
           return true
         } catch (e) {
           console.error('[WorksheetTab] loadPresets error', e)
@@ -1372,8 +1399,8 @@ const WorksheetTab = forwardRef<WorksheetTabHandle, {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const addFeeFromPreset = (preset: { id: string; name: string; description?: string; fee_amount?: number }) => {
-    setFees((prev) => [{ id: `fee_${Date.now()}_${preset.id}`, name: preset.name, desc: preset.description || '', amount: Number(preset.fee_amount ?? 0), cost: 0 }, ...prev])
+  const addFeeFromPreset = (preset: { id: string; name: string; description?: string; fee_amount?: number; default_tax_rate?: string }) => {
+    setFees((prev) => [{ id: `fee_${Date.now()}_${preset.id}`, name: preset.name, desc: preset.description || '', amount: Number(preset.fee_amount ?? 0), cost: 0, taxSelected: taxSelectionFromPreset(preset.default_tax_rate) }, ...prev])
     setFeeSearch('')
   }
 
@@ -1386,6 +1413,7 @@ const WorksheetTab = forwardRef<WorksheetTabHandle, {
         price: Number(preset.amount ?? 0),
         cost: Number(preset.cost ?? 0),
         vehicleType: '',
+        taxSelected: taxSelectionFromPreset(preset.default_tax_rate),
       },
       ...prev,
     ])
@@ -1402,12 +1430,13 @@ const WorksheetTab = forwardRef<WorksheetTabHandle, {
       duration: preset.duration || '',
       distance: preset.distance || '',
       isDealerGuaranty: Boolean(preset.dealer_warranty),
+      taxSelected: taxSelectionFromPreset(preset.default_tax_rate),
     }, ...prev])
     setWarrantySearch('')
   }
 
-  const addInsuranceFromPreset = (preset: { id: string; name: string; description?: string; price?: number }) => {
-    setInsurances((prev) => [{ id: `ins_${Date.now()}_${preset.id}`, name: preset.name, desc: preset.description || '', amount: Number(preset.price ?? 0) }, ...prev])
+  const addInsuranceFromPreset = (preset: { id: string; name: string; description?: string; price?: number; cost?: number; deductible?: string; duration?: string; type?: string; default_tax_rate?: string }) => {
+    setInsurances((prev) => [{ id: `ins_${Date.now()}_${preset.id}`, name: preset.name, desc: preset.description || '', amount: Number(preset.price ?? 0), cost: Number(preset.cost ?? 0), deductible: preset.deductible || '0', duration: preset.duration || '', type: preset.type || '', taxSelected: taxSelectionFromPreset(preset.default_tax_rate) }, ...prev])
     setInsuranceSearch('')
   }
 

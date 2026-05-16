@@ -83,6 +83,20 @@ interface Vehicle {
   raw?: any
 }
 
+type ListingBucket = 'private' | 'premier' | 'fleet' | 'dealer' | ''
+type ListingTab = '' | 'premier' | 'fleet'
+
+const getVehicleListingBucket = (vehicle: Pick<Vehicle, 'category' | 'inventoryType'>): ListingBucket => {
+  const raw = String(vehicle.category || vehicle.inventoryType || '').trim().toLowerCase()
+
+  if (raw.includes('private')) return 'private'
+  if (raw.includes('premier') || raw.includes('premiere')) return 'premier'
+  if (raw.includes('fleet')) return 'fleet'
+  if (raw.includes('dealer')) return 'dealer'
+
+  return ''
+}
+
 export default function AdminInventoryPage() {
   const STATUS_OPTIONS = [
     'In Stock',
@@ -106,8 +120,8 @@ export default function AdminInventoryPage() {
   const [statusFilter, setStatusFilter] = useState<Set<string>>(new Set())
   const [statusFilterOpen, setStatusFilterOpen] = useState(false)
   const [itemsPerPage, setItemsPerPage] = useState(10)
-  // Premier-only category tabs (based on vehicles.categories)
-  const [categoryTab, setCategoryTab] = useState<'' | 'premier' | 'fleet'>('')
+  // Listing category tabs (based on category/categories with inventory_type fallback)
+  const [categoryTab, setCategoryTab] = useState<ListingTab>('')
   const [showAddModal, setShowAddModal] = useState(false)
   const [addSubmitting, setAddSubmitting] = useState(false)
   const [addError, setAddError] = useState('')
@@ -786,11 +800,8 @@ export default function AdminInventoryPage() {
       filtered = filtered.filter(vehicle => vehicle.inventoryType === inventoryTypeFilter)
     }
 
-    // If user is Premier and a category tab is selected, filter by vehicles.categories
-    const roleLower = String(accountRole || '').trim().toLowerCase()
-    if (roleLower === 'premier' && categoryTab) {
-      const want = categoryTab.toLowerCase()
-      filtered = filtered.filter(v => (v.category || '').toLowerCase() === want)
+    if (categoryTab) {
+      filtered = filtered.filter(v => getVehicleListingBucket(v) === categoryTab)
     }
 
     if (statusFilter.size > 0 && statusFilter.size < STATUS_OPTIONS.length) {
@@ -833,7 +844,7 @@ export default function AdminInventoryPage() {
     setFilteredVehicles(filtered)
     setTotalVehicles(filtered.length)
     setCurrentPage(1)
-  }, [searchQuery, inventoryTypeFilter, vehicles, statusFilter, accountRole, categoryTab])
+  }, [searchQuery, inventoryTypeFilter, vehicles, statusFilter, categoryTab])
 
   // Get paginated vehicles
   const paginatedVehicles = filteredVehicles.slice(
@@ -1535,9 +1546,9 @@ export default function AdminInventoryPage() {
           <div className="flex items-center gap-2">
             {(() => {
               const allCount = vehicles.length
-              const premierCount = vehicles.filter(v => (v.category || '').toLowerCase().includes('premier')).length
-              const fleetCount = vehicles.filter(v => (v.category || '').toLowerCase().includes('fleet')).length
-              const TabBtn = ({ label, val, count }: { label: string; val: '' | 'premier' | 'fleet'; count?: number }) => (
+              const premierCount = vehicles.filter(v => getVehicleListingBucket(v) === 'premier').length
+              const fleetCount = vehicles.filter(v => getVehicleListingBucket(v) === 'fleet').length
+              const TabBtn = ({ label, val, count }: { label: string; val: ListingTab; count?: number }) => (
                 <button
                   type="button"
                   onClick={() => setCategoryTab(val)}

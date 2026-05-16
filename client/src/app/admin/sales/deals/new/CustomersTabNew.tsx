@@ -2042,6 +2042,68 @@ const CustomersTabNew = forwardRef<CustomersTabHandle, {
 
               </div>
 
+              <div className="lg:col-span-2">
+
+                <div className="mb-1"><span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-gray-700">Driver's License #</span></div>
+
+                <IconInput
+
+                  label=""
+
+                  value={form.driversLicense}
+
+                  onChange={(v) => setForm((p) => ({ ...p, driversLicense: v }))}
+
+                  icon={
+
+                    <svg className="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h10M7 11h6M7 15h4" />
+
+                      <rect x="4" y="5" width="16" height="14" rx="2" strokeWidth={2} />
+
+                    </svg>
+
+                  }
+
+                  placeholder="Driver's license number"
+
+                />
+
+              </div>
+
+              <div className="lg:col-span-2">
+
+                <div className="mb-1"><span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-gray-700">DL Expiry</span></div>
+
+                <IconInput
+
+                  label=""
+
+                  value={form.expDate}
+
+                  onChange={(v) => setForm((p) => ({ ...p, expDate: v }))}
+
+                  icon={
+
+                    <svg className="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3M5 11h14" />
+
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+
+                    </svg>
+
+                  }
+
+                  placeholder="DL expiry"
+
+                  type="date"
+
+                />
+
+              </div>
+
 
 
             </>

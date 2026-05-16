@@ -1067,9 +1067,9 @@ function SalesNewDealPageContent() {
                   const docs = prefill?.submission?.order_data?.documents
                   const licFront = docs?.licenceFront?.dataUrl as string | undefined
                   const licBack = docs?.licenceBack?.dataUrl as string | undefined
-                  const dlNumber = c?.driverslicense || c?.driversLicense || ''
-                  const dlExpiry = c?.expdate || c?.expDate || ''
-                  const dob = c?.dateofbirth || c?.dateOfBirth || ''
+                  const dlNumber = c?.driverslicense || c?.driversLicense || c?.drivers_license || ''
+                  const dlExpiry = c?.expdate || c?.expDate || c?.dl_expiry || ''
+                  const dob = c?.dateofbirth || c?.dateOfBirth || c?.date_of_birth || ''
                   return (
                     <div className="bg-white rounded-xl shadow p-6 space-y-6">
                       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
