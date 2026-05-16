@@ -37,11 +37,31 @@ const clearDraft = () => {
   window.localStorage.removeItem(VERIFICATION_KEY)
 }
 
-const setStaffAdminSession = (email: string) => {
+const setStaffAdminSession = (email: string, userId?: string | null) => {
   if (typeof window === 'undefined') return
-  const session = { email: email.trim().toLowerCase(), role: 'STAFF' }
+  const session = { email: email.trim().toLowerCase(), role: 'STAFF', user_id: userId || undefined }
   window.localStorage.setItem('edc_admin_session', JSON.stringify(session))
   window.dispatchEvent(new Event('edc_admin_session_changed'))
+}
+
+const ownerPermissionDefaults = {
+  access_all_deals: true,
+  access_all_leads_customers: true,
+  administrator: true,
+  approver: true,
+  vendors: true,
+  delete_vendors: true,
+  view_costs: true,
+  costs: true,
+  customers: true,
+  delete_customers: true,
+  sales: true,
+  delete_sales: true,
+  inventory: true,
+  delete_inventory: true,
+  settings: true,
+  sales_reports_access: true,
+  inventory_reports_access: true,
 }
 
 export default function AccountVerificationPage() {
@@ -325,6 +345,59 @@ export default function AccountVerificationPage() {
     })
   }
 
+  const ensureOwnerUserRecord = async () => {
+    if (!userEmail) return null
+
+    const normalizedEmail = userEmail.trim().toLowerCase()
+    const ownerUserId =
+      typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random().toString(16).slice(2)}`
+
+    const baseRow = {
+      email: normalizedEmail,
+      first_name: fullName.trim().split(/\s+/)[0] || null,
+      last_name: fullName.trim().split(/\s+/).slice(1).join(' ') || null,
+      title: 'Owner',
+      role: 'private',
+      status: 'enable',
+      ...ownerPermissionDefaults,
+    }
+
+    const { data: existing } = await supabase
+      .from('users')
+      .select('id, user_id')
+      .ilike('email', normalizedEmail)
+      .limit(1)
+      .maybeSingle()
+
+    if ((existing as any)?.id) {
+      const scopedUserId = String((existing as any)?.user_id || ownerUserId).trim()
+      const { error } = await supabase
+        .from('users')
+        .update({
+          ...baseRow,
+          user_id: scopedUserId,
+        })
+        .eq('id', (existing as any).id)
+      if (error) throw error
+      return scopedUserId
+    }
+
+    const { data: inserted, error } = await supabase
+      .from('users')
+      .insert({
+        ...baseRow,
+        user_id: ownerUserId,
+        created_at: new Date().toISOString(),
+      })
+      .select('user_id')
+      .single()
+
+    if (error) throw error
+    return String((inserted as any)?.user_id || ownerUserId).trim()
+  }
+
   const handleInsertVerification = async () => {
     if (!userEmail || !licenseFile || !isLicenseImageValid) return
 
@@ -357,6 +430,8 @@ export default function AccountVerificationPage() {
         return
       }
 
+      const scopedUserId = await ensureOwnerUserRecord()
+
       setInsertSuccess(true)
       if (typeof window !== 'undefined') {
         window.localStorage.setItem(VERIFIED_KEY, 'true')
@@ -368,7 +443,7 @@ export default function AccountVerificationPage() {
       if (returnUrl && returnUrl.startsWith('/')) {
         router.push(returnUrl)
       } else {
-        setStaffAdminSession(userEmail)
+        setStaffAdminSession(userEmail, scopedUserId)
         router.push('/admin')
       }
     } catch {

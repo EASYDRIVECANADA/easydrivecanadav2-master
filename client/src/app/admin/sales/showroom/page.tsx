@@ -270,7 +270,23 @@ export default function CustomerShowroomPage() {
         }
         const storedSession = typeof window !== 'undefined' ? window.localStorage.getItem('edc_admin_session') : null
         const sessionData = storedSession ? (() => { try { return JSON.parse(storedSession) } catch { return null } })() : null
-        const userId = String(sessionData?.user_id ?? '').trim()
+        let userId = String(sessionData?.user_id ?? '').trim()
+        if (!userId) {
+          const email = String(sessionData?.email ?? '').trim().toLowerCase()
+          if (email) {
+            const { data } = await supabase
+              .from('users')
+              .select('user_id')
+              .ilike('email', email)
+              .limit(1)
+              .maybeSingle()
+            userId = String((data as any)?.user_id ?? '').trim()
+            if (userId && typeof window !== 'undefined') {
+              window.localStorage.setItem('edc_admin_session', JSON.stringify({ ...sessionData, user_id: userId }))
+              window.dispatchEvent(new Event('edc_admin_session_changed'))
+            }
+          }
+        }
         const res = await fetch(userId ? `/api/vehicles?user_id=${encodeURIComponent(userId)}` : '/api/vehicles', { cache: 'no-store' })
         const json = await res.json().catch(() => ({}))
         if (!res.ok || json.error) throw new Error(json.error || `Failed to fetch vehicles (${res.status})`)
