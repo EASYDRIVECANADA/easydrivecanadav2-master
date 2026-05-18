@@ -94,6 +94,8 @@ export default function DealsPage() {
   const [decliningId, setDecliningId] = useState<string | null>(null)
   const [declineTarget, setDeclineTarget] = useState<PurchaseSubmission | null>(null)
   const [declineReason, setDeclineReason] = useState('')
+  const [documentActionLoading, setDocumentActionLoading] = useState(false)
+  const [documentActionError, setDocumentActionError] = useState<string | null>(null)
 
 
   const getAdminHeaders = useCallback((): Record<string, string> => {
@@ -381,6 +383,85 @@ export default function DealsPage() {
 
   const handleOpenSignature = () => {
     router.push('/admin/sales/deals/signature')
+  }
+
+  const actionErrorMessage = (error: unknown, fallback: string) => (
+    error instanceof Error ? error.message : fallback
+  )
+
+  const loadOrGenerateDocumentPackage = async (dealId: string) => {
+    const getRes = await fetch(`/api/documents/purchase/deal/${encodeURIComponent(dealId)}`, { cache: 'no-store' })
+    if (getRes.ok) return getRes.json()
+    const postRes = await fetch(`/api/documents/purchase/deal/${encodeURIComponent(dealId)}`, { method: 'POST' })
+    const postJson = await postRes.json().catch(() => ({}))
+    if (!postRes.ok || postJson.error) throw new Error(postJson.error || 'Failed to generate document package')
+    return {
+      package: null,
+      packageLink: postJson.packageLink,
+    }
+  }
+
+  const handleOpenDocumentPackage = async (dealId: string) => {
+    setDocumentActionLoading(true)
+    setDocumentActionError(null)
+    try {
+      const json = await loadOrGenerateDocumentPackage(dealId)
+      const url = json.packageLink || (json.package?.token ? `/documents/purchase/${encodeURIComponent(json.package.token)}` : '')
+      if (!url) throw new Error('Document package link unavailable')
+      window.open(url, '_blank', 'noopener,noreferrer')
+    } catch (e: unknown) {
+      setDocumentActionError(actionErrorMessage(e, 'Failed to open document package'))
+    } finally {
+      setDocumentActionLoading(false)
+    }
+  }
+
+  const handleCopyDocumentPackage = async (dealId: string) => {
+    setDocumentActionLoading(true)
+    setDocumentActionError(null)
+    try {
+      const json = await loadOrGenerateDocumentPackage(dealId)
+      const url = json.packageLink || (json.package?.token ? `${window.location.origin}/documents/purchase/${encodeURIComponent(json.package.token)}` : '')
+      if (!url) throw new Error('Document package link unavailable')
+      await navigator.clipboard.writeText(url.startsWith('http') ? url : `${window.location.origin}${url}`)
+    } catch (e: unknown) {
+      setDocumentActionError(actionErrorMessage(e, 'Failed to copy document package link'))
+    } finally {
+      setDocumentActionLoading(false)
+    }
+  }
+
+  const handleRegenerateDocumentPackage = async (dealId: string) => {
+    setDocumentActionLoading(true)
+    setDocumentActionError(null)
+    try {
+      const res = await fetch(`/api/documents/purchase/deal/${encodeURIComponent(dealId)}`, { method: 'POST' })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok || json.error) throw new Error(json.error || 'Failed to regenerate document package')
+      window.open(json.packageLink, '_blank', 'noopener,noreferrer')
+    } catch (e: unknown) {
+      setDocumentActionError(actionErrorMessage(e, 'Failed to regenerate document package'))
+    } finally {
+      setDocumentActionLoading(false)
+    }
+  }
+
+  const handleEmailDocumentPackage = async (dealId: string) => {
+    setDocumentActionLoading(true)
+    setDocumentActionError(null)
+    try {
+      const res = await fetch(`/api/documents/purchase/deal/${encodeURIComponent(dealId)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ emailCustomer: true }),
+      })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok || json.error) throw new Error(json.error || 'Failed to email document package')
+    } catch (e: unknown) {
+      setDocumentActionError(actionErrorMessage(e, 'Failed to email document package'))
+    } finally {
+      setDocumentActionLoading(false)
+    }
   }
 
   const allSelected = selectedIds.size > 0 && paged.length > 0 && selectedIds.size === paged.length
@@ -950,6 +1031,48 @@ export default function DealsPage() {
                 </>
               )
             })()}
+          </div>
+
+          {/* Documents Section */}
+          <div className="px-6 py-4 border-b border-slate-100">
+            <div className="text-sm font-semibold text-slate-900 mb-3">Documents</div>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => handleOpenDocumentPackage(selectedDeal.dealId)}
+                disabled={documentActionLoading}
+                className="rounded-lg bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-800 disabled:opacity-50"
+              >
+                {documentActionLoading ? 'Working...' : 'Open package'}
+              </button>
+              <button
+                type="button"
+                onClick={() => handleCopyDocumentPackage(selectedDeal.dealId)}
+                disabled={documentActionLoading}
+                className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+              >
+                Copy link
+              </button>
+              <button
+                type="button"
+                onClick={() => handleRegenerateDocumentPackage(selectedDeal.dealId)}
+                disabled={documentActionLoading}
+                className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+              >
+                Regenerate
+              </button>
+              <button
+                type="button"
+                onClick={() => handleEmailDocumentPackage(selectedDeal.dealId)}
+                disabled={documentActionLoading}
+                className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+              >
+                Email customer
+              </button>
+            </div>
+            {documentActionError && (
+              <div className="mt-2 text-xs text-red-600">{documentActionError}</div>
+            )}
           </div>
 
           {/* Customers Section */}

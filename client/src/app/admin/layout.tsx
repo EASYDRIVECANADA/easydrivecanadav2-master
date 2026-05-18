@@ -261,6 +261,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
       { href: '/admin/vendors', label: 'Vendors', icon: 'briefcase', disabled: !isVerified, visible: canShow('vendors') },
       { href: '/admin/marketplace', label: 'Market Place', icon: 'market', disabled: !isVerified, visible: true },
       { href: '/admin/inventory', label: 'Inventory', icon: 'car', disabled: !isVerified, visible: canShow('inventory') },
+      { href: '/admin/good-buy-analyzer', label: 'Good Buy', icon: 'dollar', disabled: !isVerified, visible: canShow('inventory') },
       { href: '/admin/sales', label: 'Sales', icon: 'dollar', disabled: false, visible: canShow('sales') || canShow('access_all_deals') },
       { href: '/admin/esignature', label: 'E-Signature', icon: 'pen', disabled: !isVerified, visible: true },
       { href: '/admin/reports', label: 'Reports', icon: 'file', disabled: !isVerified, visible: canShow('sales_reports_access') || canShow('inventory_reports_access') },
