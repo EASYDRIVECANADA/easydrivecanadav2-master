@@ -6,6 +6,11 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabaseClient'
 import { usePermissionVisibility } from '@/lib/permissions'
+import {
+  scoreInventoryReadiness,
+  vehicleMatchesSearch,
+  type InventoryReadiness,
+} from '@/lib/dealerOpsReadiness.mjs'
 import * as XLSX from 'xlsx-js-style'
 
 const VEHICLE_LIMITS: Record<string, number> = {
@@ -142,6 +147,9 @@ export default function AdminInventoryPage() {
   const [canAddVehicle, setCanAddVehicle] = useState(true)
   const [addGateLoading, setAddGateLoading] = useState(false)
   const [addGateReason, setAddGateReason] = useState('')
+  const [readinessById, setReadinessById] = useState<Record<string, InventoryReadiness>>({})
+  const [opsVehicleById, setOpsVehicleById] = useState<Record<string, Record<string, unknown>>>({})
+  const [readinessLoading, setReadinessLoading] = useState(false)
   const [importing, setImporting] = useState(false)
   const importInputRef = useRef<HTMLInputElement | null>(null)
   const [addFormData, setAddFormData] = useState({
@@ -201,6 +209,16 @@ export default function AdminInventoryPage() {
     const r = String(accountRole || '').trim().toLowerCase()
     return ROLE_DISPLAY[r] || 'Private Seller'
   }, [accountRole])
+
+  const readinessSummary = useMemo(() => {
+    const rows = Object.values(readinessById)
+    return {
+      average: rows.length ? Math.round(rows.reduce((sum, row) => sum + row.score, 0) / rows.length) : 0,
+      ready: rows.filter((row) => row.score === 100).length,
+      missingCarfax: rows.filter((row) => row.missing.includes('carfax')).length,
+      missingPhotos: rows.filter((row) => row.missing.includes('photos')).length,
+    }
+  }, [readinessById])
   const [drawerVehicle, setDrawerVehicle] = useState<Vehicle | null>(null)
   const closeDrawer = () => setDrawerVehicle(null)
   const [drawerCosts, setDrawerCosts] = useState<any>({
@@ -434,6 +452,37 @@ export default function AdminInventoryPage() {
     }
     void boot()
   }, [canAccessAllInventory])
+
+  useEffect(() => {
+    const loadReadiness = async () => {
+      if (!canAccessAllInventory && !scopedUserId) return
+      setReadinessLoading(true)
+      try {
+        const qs = new URLSearchParams()
+        if (!canAccessAllInventory && scopedUserId) qs.set('user_id', scopedUserId)
+        const suffix = qs.toString() ? `?${qs.toString()}` : ''
+        const res = await fetch(`/api/admin/inventory/readiness${suffix}`, { cache: 'no-store' })
+        if (!res.ok) return
+        const payload: { vehicles?: Array<Record<string, unknown> & { readiness?: InventoryReadiness }> } = await res.json()
+        const nextReadiness: Record<string, InventoryReadiness> = {}
+        const nextVehicles: Record<string, Record<string, unknown>> = {}
+        if (Array.isArray(payload?.vehicles)) {
+          for (const row of payload.vehicles) {
+            const id = String(row?.id || '').trim()
+            if (!id) continue
+            nextVehicles[id] = row
+            if (row?.readiness) nextReadiness[id] = row.readiness
+          }
+        }
+        setReadinessById(nextReadiness)
+        setOpsVehicleById(nextVehicles)
+      } finally {
+        setReadinessLoading(false)
+      }
+    }
+
+    void loadReadiness()
+  }, [canAccessAllInventory, scopedUserId, vehicles.length])
 
   const checkCanAddVehicle = async (userId: string | null) => {
     try {
@@ -850,21 +899,23 @@ export default function AdminInventoryPage() {
     // Filter by search query
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase()
-      filtered = filtered.filter(vehicle => 
-        vehicle.make.toLowerCase().includes(query) ||
-        vehicle.model.toLowerCase().includes(query) ||
-        vehicle.year.toString().includes(query) ||
-        vehicle.stockNumber?.toLowerCase().includes(query) ||
-        vehicle.vin?.toLowerCase().includes(query) ||
-        vehicle.keyNumber?.toLowerCase().includes(query) ||
-        `${vehicle.year} ${vehicle.make} ${vehicle.model}`.toLowerCase().includes(query)
-      )
+      filtered = filtered.filter(vehicle => {
+        const opsVehicle = opsVehicleById[vehicle.id] || {}
+        return vehicleMatchesSearch({ ...vehicle.raw, ...vehicle, ...opsVehicle }, query) ||
+          vehicle.make.toLowerCase().includes(query) ||
+          vehicle.model.toLowerCase().includes(query) ||
+          vehicle.year.toString().includes(query) ||
+          vehicle.stockNumber?.toLowerCase().includes(query) ||
+          vehicle.vin?.toLowerCase().includes(query) ||
+          vehicle.keyNumber?.toLowerCase().includes(query) ||
+          `${vehicle.year} ${vehicle.make} ${vehicle.model}`.toLowerCase().includes(query)
+      })
     }
     
     setFilteredVehicles(filtered)
     setTotalVehicles(filtered.length)
     setCurrentPage(1)
-  }, [searchQuery, inventoryTypeFilter, vehicles, statusFilter, categoryTab])
+  }, [searchQuery, inventoryTypeFilter, vehicles, statusFilter, categoryTab, opsVehicleById])
 
   // Get paginated vehicles
   const paginatedVehicles = filteredVehicles.slice(
@@ -1652,6 +1703,20 @@ export default function AdminInventoryPage() {
           </div>
         </div>
 
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
+          {[
+            { label: 'Ready', value: readinessSummary.ready, tone: 'text-emerald-700 bg-emerald-50 border-emerald-200' },
+            { label: 'Avg readiness', value: `${readinessSummary.average}%`, tone: 'text-[#0B1F3A] bg-slate-50 border-slate-200' },
+            { label: 'Missing CARFAX', value: readinessSummary.missingCarfax, tone: readinessSummary.missingCarfax ? 'text-amber-700 bg-amber-50 border-amber-200' : 'text-slate-600 bg-slate-50 border-slate-200' },
+            { label: 'Missing photos', value: readinessSummary.missingPhotos, tone: readinessSummary.missingPhotos ? 'text-amber-700 bg-amber-50 border-amber-200' : 'text-slate-600 bg-slate-50 border-slate-200' },
+          ].map((item) => (
+            <div key={item.label} className={`rounded-xl border px-4 py-3 ${item.tone}`}>
+              <div className="text-[11px] font-semibold uppercase tracking-wide opacity-75">{item.label}</div>
+              <div className="mt-1 text-xl font-bold">{readinessLoading ? '...' : item.value}</div>
+            </div>
+          ))}
+        </div>
+
         {selectedIds.size > 0 && (
           <div className="bg-white rounded-2xl border border-slate-200/60 p-3 mb-5" style={{ boxShadow: '0 1px 3px rgba(0,0,0,.04)' }}>
             <div className="flex items-center justify-between gap-3 flex-wrap">
@@ -1729,6 +1794,7 @@ export default function AdminInventoryPage() {
                     <th className="px-4 py-3 text-left text-xs font-semibold text-slate-400 uppercase tracking-wide">Description</th>
                     <th className="px-4 py-3 text-left text-xs font-semibold text-slate-400 uppercase tracking-wide">Trim</th>
                     <th className="px-4 py-3 text-left text-xs font-semibold text-slate-400 uppercase tracking-wide">Listing</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-slate-400 uppercase tracking-wide">Readiness</th>
                     <th className="px-4 py-3 text-left text-xs font-semibold text-slate-400 uppercase tracking-wide">Odometer</th>
                     <th className="px-4 py-3 text-left text-xs font-semibold text-slate-400 uppercase tracking-wide">Sale Price</th>
                     <th className="px-4 py-3 text-left text-xs font-semibold text-slate-400 uppercase tracking-wide">Stock #</th>
@@ -1754,6 +1820,12 @@ export default function AdminInventoryPage() {
                       if (s === 'coming soon') return { label: vehicle.status, cls: 'bg-sky-50 text-sky-700 border-sky-200' }
                       return { label: vehicle.status || '—', cls: 'bg-slate-100 text-slate-500 border-slate-200' }
                     })()
+                    const readiness = readinessById[vehicle.id] || scoreInventoryReadiness({ ...vehicle.raw, ...vehicle })
+                    const readinessColor = readiness.score >= 90
+                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                      : readiness.score >= 70
+                        ? 'bg-sky-50 text-sky-700 border-sky-200'
+                        : 'bg-amber-50 text-amber-700 border-amber-200'
                     return (
                     <tr key={vehicle.id} className="hover:bg-slate-50/60 transition-colors cursor-pointer" onClick={() => setDrawerVehicle(vehicle)}>
                       <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
@@ -1773,6 +1845,18 @@ export default function AdminInventoryPage() {
                         <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${listingBadge.cls}`}>
                           {listingBadge.label}
                         </span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold border ${readinessColor}`}>
+                            {readiness.score}%
+                          </span>
+                          {readiness.missing.length ? (
+                            <span className="text-[11px] text-slate-400 truncate max-w-[8rem]" title={readiness.missing.join(', ')}>
+                              {readiness.missing.slice(0, 2).join(', ')}
+                            </span>
+                          ) : null}
+                        </div>
                       </td>
                       <td className="px-4 py-3 text-slate-600 whitespace-nowrap tabular-nums">
                         {typeof vehicle.odometer === 'number'

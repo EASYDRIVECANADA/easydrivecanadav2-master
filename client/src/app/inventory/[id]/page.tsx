@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import VehicleDetail from './VehicleDetail'
+import { buildVehicleJsonLd } from '@/lib/dealerOpsReadiness.mjs'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -112,6 +113,83 @@ export async function generateMetadata({
   }
 }
 
-export default function Page() {
-  return <VehicleDetail />
+export default async function Page({ params }: { params: { id: string } }) {
+  let jsonLd: Record<string, unknown> | null = null
+
+  try {
+    const id = params.id
+    if (id && SUPABASE_URL && SUPABASE_KEY) {
+      const vehicleRes = await fetch(
+        `${SUPABASE_URL}/rest/v1/edc_vehicles?id=eq.${encodeURIComponent(id)}&select=*`,
+        {
+          headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
+          cache: 'no-store',
+        }
+      )
+      const rows = vehicleRes.ok ? await vehicleRes.json() : []
+      const vehicle = Array.isArray(rows) && rows[0] ? rows[0] : null
+
+      if (vehicle) {
+        let imageUrl = ''
+        const photoRes = await fetch(
+          `${SUPABASE_URL}/storage/v1/object/list/vehicle-photos`,
+          {
+            method: 'POST',
+            headers: {
+              apikey: SUPABASE_KEY,
+              Authorization: `Bearer ${SUPABASE_KEY}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ prefix: `${id}/`, limit: 1, sortBy: { column: 'name', order: 'asc' } }),
+            cache: 'no-store',
+          }
+        ).catch(() => null)
+        if (photoRes?.ok) {
+          const files = await photoRes.json().catch(() => [])
+          const firstName = Array.isArray(files) && files[0]?.name && !String(files[0].name).endsWith('/')
+            ? String(files[0].name)
+            : ''
+          if (firstName) imageUrl = `${SUPABASE_URL}/storage/v1/object/public/vehicle-photos/${id}/${encodeURIComponent(firstName)}`
+        }
+
+        const carfaxRes = await fetch(
+          `${SUPABASE_URL}/storage/v1/object/list/Carfax`,
+          {
+            method: 'POST',
+            headers: {
+              apikey: SUPABASE_KEY,
+              Authorization: `Bearer ${SUPABASE_KEY}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ prefix: `${id}/`, limit: 1, sortBy: { column: 'name', order: 'asc' } }),
+            cache: 'no-store',
+          }
+        ).catch(() => null)
+        const carfaxFiles = carfaxRes?.ok ? await carfaxRes.json().catch(() => []) : []
+
+        jsonLd = buildVehicleJsonLd(
+          {
+            ...vehicle,
+            id,
+            carfax_count: Array.isArray(carfaxFiles) ? carfaxFiles.filter((file) => file?.name && !String(file.name).endsWith('/')).length : 0,
+          },
+          { siteUrl: SITE_URL, imageUrl }
+        )
+      }
+    }
+  } catch {
+    jsonLd = null
+  }
+
+  return (
+    <>
+      {jsonLd ? (
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+        />
+      ) : null}
+      <VehicleDetail />
+    </>
+  )
 }

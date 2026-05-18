@@ -206,6 +206,21 @@ type RecentDeal = {
   dateIso: string
 }
 
+type OpsCard = {
+  key: string
+  label: string
+  value: number
+}
+
+type OpsTask = {
+  id: string
+  type: string
+  title: string
+  detail: string
+  href: string
+  severity: string
+}
+
 export default function AdminPage() {
   const router = useRouter()
   const [isAuthenticated, setIsAuthenticated] = useState(false)
@@ -241,6 +256,12 @@ export default function AdminPage() {
   const [statsError, setStatsError] = useState<string | null>(null)
   const [statsLoading, setStatsLoading] = useState(false)
   const [recentActivity, setRecentActivity] = useState<RecentDeal[]>([])
+  const [opsLoading, setOpsLoading] = useState(false)
+  const [opsError, setOpsError] = useState<string | null>(null)
+  const [opsCards, setOpsCards] = useState<OpsCard[]>([])
+  const [opsTasks, setOpsTasks] = useState<OpsTask[]>([])
+  const [opsDealAverage, setOpsDealAverage] = useState<number>(0)
+  const [opsInventoryAverage, setOpsInventoryAverage] = useState<number>(0)
 
   useEffect(() => {
     checkAuth()
@@ -687,6 +708,50 @@ export default function AdminPage() {
     void loadStats()
   }, [isAdminRole, isAuthenticated, scopedUserId])
 
+  useEffect(() => {
+    if (!isAuthenticated) return
+
+    const loadOps = async () => {
+      setOpsLoading(true)
+      setOpsError(null)
+      try {
+        if (!isAdminRole && !scopedUserId) {
+          setOpsCards([])
+          setOpsTasks([])
+          setOpsDealAverage(0)
+          setOpsInventoryAverage(0)
+          return
+        }
+
+        const qs = new URLSearchParams()
+        if (!isAdminRole && scopedUserId) qs.set('user_id', scopedUserId)
+
+        const suffix = qs.toString() ? `?${qs.toString()}` : ''
+        const [summaryRes, tasksRes] = await Promise.all([
+          fetch(`/api/admin/ops/summary${suffix}`, { cache: 'no-store' }),
+          fetch(`/api/admin/ops/tasks${suffix}`, { cache: 'no-store' }),
+        ])
+        if (!summaryRes.ok) throw new Error(`Ops summary failed (${summaryRes.status})`)
+        if (!tasksRes.ok) throw new Error(`Ops tasks failed (${tasksRes.status})`)
+        const summary = await summaryRes.json()
+        const tasks = await tasksRes.json()
+
+        setOpsCards(Array.isArray(summary?.cards) ? summary.cards : [])
+        setOpsTasks(Array.isArray(tasks?.tasks) ? tasks.tasks.slice(0, 8) : [])
+        setOpsDealAverage(Number(summary?.dealReadiness?.averageScore || 0))
+        setOpsInventoryAverage(Number(summary?.inventory?.averageScore || 0))
+      } catch (e: unknown) {
+        setOpsError(e instanceof Error ? e.message : 'Failed to load operations')
+        setOpsCards([])
+        setOpsTasks([])
+      } finally {
+        setOpsLoading(false)
+      }
+    }
+
+    void loadOps()
+  }, [isAdminRole, isAuthenticated, scopedUserId])
+
   // Fetch visitor stats independently
   useEffect(() => {
     if (!isAuthenticated) return
@@ -915,6 +980,83 @@ export default function AdminPage() {
               </div>
             )
           })}
+        </div>
+
+        <div className="grid grid-cols-1 xl:grid-cols-[1fr_360px] gap-6 mb-8">
+          <div className="bg-white rounded-2xl border border-slate-200/60 p-6" style={{ boxShadow: '0 1px 3px rgba(0,0,0,.04)' }}>
+            <div className="flex items-center justify-between gap-3 mb-5">
+              <div>
+                <div className="text-sm font-bold text-[#0B1F3A]">Operations dashboard</div>
+                <div className="text-xs text-slate-500 mt-0.5">Checkout, document, lead, and inventory readiness</div>
+              </div>
+              <div className="flex items-center gap-2 text-xs text-slate-500">
+                <span>Deals {opsDealAverage}%</span>
+                <span className="text-slate-300">/</span>
+                <span>Inventory {opsInventoryAverage}%</span>
+              </div>
+            </div>
+            {opsError ? (
+              <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{opsError}</div>
+            ) : opsLoading ? (
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                {[1,2,3,4,5,6].map((i) => <div key={i} className="h-20 rounded-xl bg-slate-50 animate-pulse" />)}
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                {opsCards.map((card) => {
+                  const urgent = ['documentIssues', 'newSubmissions', 'missingCarfax', 'missingPhotos', 'staleLeads'].includes(card.key) && Number(card.value) > 0
+                  return (
+                    <div key={card.key} className={`rounded-xl border px-4 py-3 ${urgent ? 'border-amber-200 bg-amber-50/60' : 'border-slate-200/70 bg-slate-50/70'}`}>
+                      <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{card.label}</div>
+                      <div className={`mt-1 text-2xl font-bold ${urgent ? 'text-amber-700' : 'text-[#0B1F3A]'}`}>{Number(card.value || 0).toLocaleString()}</div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+
+          <div className="bg-white rounded-2xl border border-slate-200/60 p-6" style={{ boxShadow: '0 1px 3px rgba(0,0,0,.04)' }}>
+            <div className="flex items-center justify-between gap-3 mb-4">
+              <div>
+                <div className="text-sm font-bold text-[#0B1F3A]">Action center</div>
+                <div className="text-xs text-slate-500 mt-0.5">Generated follow-ups</div>
+              </div>
+              <Link href="/admin/leads" className="text-xs font-semibold text-[#1EA7FF] hover:text-[#0B1F3A] transition-colors px-3 py-1.5 rounded-lg hover:bg-[#1EA7FF]/5">
+                Leads
+              </Link>
+            </div>
+            {opsLoading ? (
+              <div className="space-y-3">
+                {[1,2,3].map((i) => <div key={i} className="h-14 rounded-lg bg-slate-50 animate-pulse" />)}
+              </div>
+            ) : opsTasks.length === 0 ? (
+              <div className="py-8 text-center text-sm text-slate-400">No generated follow-ups right now.</div>
+            ) : (
+              <div className="space-y-3 max-h-80 overflow-auto pr-1">
+                {opsTasks.map((task) => {
+                  const severityClass = task.severity === 'high'
+                    ? 'bg-red-50 text-red-700 border-red-200'
+                    : task.severity === 'medium'
+                      ? 'bg-amber-50 text-amber-700 border-amber-200'
+                      : 'bg-slate-100 text-slate-600 border-slate-200'
+                  return (
+                    <Link key={task.id} href={task.href} className="block rounded-xl border border-slate-200/70 bg-slate-50/70 px-4 py-3 hover:bg-white hover:border-[#1EA7FF]/40 transition-colors">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="text-sm font-semibold text-[#0B1F3A] truncate">{task.title}</div>
+                          <div className="text-xs text-slate-500 mt-1 leading-snug">{task.detail}</div>
+                        </div>
+                        <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-semibold capitalize ${severityClass}`}>
+                          {task.severity}
+                        </span>
+                      </div>
+                    </Link>
+                  )
+                })}
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
