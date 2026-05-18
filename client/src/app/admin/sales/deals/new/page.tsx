@@ -14,6 +14,7 @@ import { buildBillOfSaleCustomerFields } from './billOfSaleCustomers'
 import { buildBillOfSaleSettlement } from './billOfSaleSettlement'
 import { fetchBillOfSaleDealerInfo } from './billOfSaleDealer'
 import { renderDisclosureFormPdf } from './disclosureFormPdf'
+import { getCheckoutBillOfSaleSignature } from '@/lib/purchaseDocumentPackage.mjs'
 import { supabase } from '@/lib/supabaseClient'
 
 type DealTab = 'customers' | 'drivers-license' | 'vehicles' | 'worksheet' | 'disclosures' | 'delivery'
@@ -592,6 +593,7 @@ function SalesNewDealPageContent() {
         invoiceNumber: String(dealId || ''),
         dealer: dealerInfo,
         ...customerFields,
+        ...getCheckoutBillOfSaleSignature(subOrderData),
         stockNumber: v.stock_number,
         year: String(v.year),
         make: v.make,
@@ -835,6 +837,7 @@ function SalesNewDealPageContent() {
         invoiceNumber: String(dealId || ''),
         dealer: dealerInfo,
         ...customerFields,
+        ...getCheckoutBillOfSaleSignature(subOrderDataE),
         email: toEmail,
         stockNumber: v.stock_number,
         year: String(v.year),

@@ -101,6 +101,7 @@ export interface BillOfSaleData {
   // Signatures
   purchaserName: string
   purchaserSignatureB64?: string
+  purchaserSignatureText?: string
   salesperson: string
   salespersonRegNo: string
   acceptorName: string
@@ -890,7 +891,7 @@ export function renderBillOfSalePdf(
   const rightSigX1 = ML + CW * 0.52
   const rightSigX2 = ML + CW - 60
 
-  // Draw purchaser signature image if provided
+  // Draw purchaser signature image/text if provided
   if (data.purchaserSignatureB64) {
     try {
       const raw = String(data.purchaserSignatureB64)
@@ -920,6 +921,13 @@ export function renderBillOfSalePdf(
     } catch (err) {
       console.error('Failed to add purchaser signature to PDF:', err)
     }
+  } else if (fmt(data.purchaserSignatureText).trim()) {
+    doc.setFont('times', 'italic')
+    doc.setFontSize(18)
+    doc.setTextColor(DARK)
+    doc.text(fmt(data.purchaserSignatureText).trim(), leftSigX1 + 4, sigLineY - 5, {
+      maxWidth: Math.max(80, leftSigX2 - leftSigX1 - 8),
+    })
   }
 
   doc.setFontSize(6.5)

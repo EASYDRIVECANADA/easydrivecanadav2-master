@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import nodemailer from 'nodemailer'
+import { generatePurchaseDocumentPackage } from '@/lib/purchaseDocumentPackageServer'
 
 const supabaseUrl = (process.env.NEXT_PUBLIC_SUPABASE_URL || '').replace(/\/+$/, '')
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
@@ -216,7 +217,10 @@ export async function POST(req: Request) {
       await supabasePatch('edc_vehicles', `id=eq.${encodeURIComponent(sub.vehicle_id)}`, { status: 'Sold' })
     }
 
-    // 6. Send email to customer
+    // 6. Generate the customer BOS/CARFAX document package before emailing.
+    const documentPackage = await generatePurchaseDocumentPackage(submissionId)
+
+    // 7. Send email to customer
     const smtpHost = process.env.SMTP_HOST
     const smtpPort = parseInt(process.env.SMTP_PORT ?? '587', 10)
     const smtpUser = process.env.SMTP_USER
@@ -268,6 +272,14 @@ export async function POST(req: Request) {
                 </table>
               </div>
               <p style="color: #111827; font-size: 14px;">
+                Your signed purchase document package is ready. You can download and print your Bill of Sale and CARFAX files here:
+              </p>
+              <p style="margin: 18px 0;">
+                <a href="${documentPackage.packageLink}" style="display:inline-block;background:#0d182b;color:#ffffff;text-decoration:none;padding:12px 18px;border-radius:8px;font-size:14px;font-weight:700;">
+                  Open signed documents
+                </a>
+              </p>
+              <p style="color: #111827; font-size: 14px;">
                 A member of our team will be in touch shortly to arrange next steps. If you have any questions, reply to this email or call us directly.
               </p>
               <p style="color: #6b7280; font-size: 13px; margin-top: 24px;">Thank you for choosing EasyDrive Canada.</p>
@@ -277,7 +289,7 @@ export async function POST(req: Request) {
       })
     }
 
-    return NextResponse.json({ success: true, dealId })
+    return NextResponse.json({ success: true, dealId, documentPackageLink: documentPackage.packageLink })
   } catch (err: any) {
     console.error('[approve-submission] Error:', err)
     return NextResponse.json({ error: err?.message || 'Failed to approve' }, { status: 500 })
