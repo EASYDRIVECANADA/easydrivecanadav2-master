@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { describeGoodBuyError } from '@/lib/goodBuyAnalyzer.mjs'
+import { getGoodBuyRequestEmail, goodBuyForbiddenResponse, isGoodBuyEmailAllowed } from '@/lib/goodBuyAccess.mjs'
 import { clean, createGoodBuySupabase, fetchUploadWithRows } from '@/lib/goodBuyServer'
 
 export const runtime = 'nodejs'
@@ -41,12 +42,19 @@ const decodeBatch = async (rows: Array<{ id: string; vin: string; year: number }
   return byVin
 }
 
-export async function POST(_request: Request, { params }: { params: { id: string } }) {
+export async function POST(request: Request, { params }: { params: { id: string } }) {
   try {
     const uploadId = clean(params.id)
     if (!uploadId) return NextResponse.json({ error: 'Missing upload id' }, { status: 400 })
+    if (!isGoodBuyEmailAllowed(getGoodBuyRequestEmail(request))) {
+      return NextResponse.json(goodBuyForbiddenResponse(), { status: 403 })
+    }
     const supabase = createGoodBuySupabase()
-    const { rows } = await fetchUploadWithRows(supabase, uploadId)
+    const { upload, rows } = await fetchUploadWithRows(supabase, uploadId)
+    if (!upload) return NextResponse.json({ error: 'Upload not found' }, { status: 404 })
+    if (!isGoodBuyEmailAllowed((upload as { email?: unknown }).email)) {
+      return NextResponse.json(goodBuyForbiddenResponse(), { status: 403 })
+    }
     const decodeRows = ((rows || []) as GoodBuyRow[])
       .map((row) => ({ id: clean(row.id), vin: clean(row.vin).toUpperCase(), year: Number(row.year || 0), row }))
       .filter((row) => row.vin.length === 17)

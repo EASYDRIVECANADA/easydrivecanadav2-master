@@ -303,18 +303,22 @@ function AccountPageInner() {
       }
 
       if (customerCreateMode) {
-        const { error: signUpError } = await supabase.auth.signUp({
+        const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
           email,
           password: passwordOrAccessCode,
           options: {
-            emailRedirectTo: `${window.location.origin}/account`,
+            emailRedirectTo: `${window.location.origin}/account/verification`,
           },
         })
         if (signUpError) {
           setError(signUpError.message)
           return
         }
-        setError('Account created. Please check your email to confirm, then sign in.')
+        if (signUpData?.session) {
+          router.push('/account/verification')
+          return
+        }
+        setNotice('Account created. Please check your email to confirm, then continue to verification.')
         setCustomerCreateMode(false)
         return
       }
@@ -640,8 +644,12 @@ function AccountPageInner() {
               <span className="text-sm font-bold tracking-widest uppercase" style={{ color: '#1aa6ff' }}>EDC</span>
             </div>
 
-            <h1 className="text-3xl font-bold text-gray-900 mb-1">Welcome back</h1>
-            <p className="text-sm text-gray-500 mb-8">Sign in to your account.</p>
+            <h1 className="text-3xl font-bold text-gray-900 mb-1">
+              {customerCreateMode ? 'Create account' : 'Welcome back'}
+            </h1>
+            <p className="text-sm text-gray-500 mb-8">
+              {customerCreateMode ? 'Create your EDC account to start verification.' : 'Sign in to your account.'}
+            </p>
 
             {error && (
               <div className="bg-red-50 text-red-700 border border-red-200 rounded-lg px-4 py-3 text-sm mb-5">
@@ -689,7 +697,7 @@ function AccountPageInner() {
                   className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:border-transparent transition-all"
                   style={{ ['--tw-ring-color' as string]: '#1aa6ff' }}
                   placeholder="••••••••"
-                  autoComplete="current-password"
+                  autoComplete={customerCreateMode ? 'new-password' : 'current-password'}
                   required
                 />
               </div>
@@ -710,9 +718,33 @@ function AccountPageInner() {
                 className="w-full flex items-center justify-center gap-2 text-white font-semibold py-2.5 rounded-full transition-opacity hover:opacity-90 disabled:opacity-60"
                 style={{ background: '#1aa6ff' }}
               >
-                {loading ? 'Signing in…' : <>Sign in <span aria-hidden>→</span></>}
+                {loading
+                  ? (customerCreateMode ? 'Creating account…' : 'Signing in…')
+                  : customerCreateMode
+                    ? <>Create account <span aria-hidden>→</span></>
+                    : <>Sign in <span aria-hidden>→</span></>}
               </button>
             </form>
+
+            <div className="mt-6 text-center text-sm text-gray-600">
+              {customerCreateMode ? 'Already have an account?' : 'Need an account?'}
+              <button
+                type="button"
+                className="ml-1 font-semibold hover:underline"
+                style={{ color: '#1aa6ff' }}
+                onClick={() => {
+                  setError('')
+                  setNotice('')
+                  if (customerCreateMode) {
+                    setCustomerCreateMode(false)
+                  } else {
+                    setCustomerCreateMode(true)
+                  }
+                }}
+              >
+                {customerCreateMode ? 'Sign in' : 'Create account'}
+              </button>
+            </div>
 
 <div className="hidden">
             <div className="my-6 flex items-center gap-3">

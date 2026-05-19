@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { describeGoodBuyError, parseFleetWorkbook, scoreShortlistVehicle } from '@/lib/goodBuyAnalyzer.mjs'
+import { getGoodBuyRequestEmail, goodBuyForbiddenResponse, isGoodBuyEmailAllowed } from '@/lib/goodBuyAccess.mjs'
 import {
   clean,
   createGoodBuySupabase,
@@ -14,9 +15,12 @@ export const maxDuration = 60
 
 export async function GET(request: Request) {
   try {
-    const supabase = createGoodBuySupabase()
     const url = new URL(request.url)
-    const email = clean(url.searchParams.get('email')).toLowerCase()
+    const email = getGoodBuyRequestEmail(request) || clean(url.searchParams.get('email')).toLowerCase()
+    if (!isGoodBuyEmailAllowed(email)) {
+      return NextResponse.json(goodBuyForbiddenResponse(), { status: 403 })
+    }
+    const supabase = createGoodBuySupabase()
     const userId = clean(url.searchParams.get('user_id')) || await resolveAdminUserId(supabase, email)
     let query = supabase
       .from('edc_good_buy_uploads')
@@ -34,10 +38,12 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    const supabase = createGoodBuySupabase()
     const form = await request.formData()
     const file = form.get('file')
-    const email = clean(request.headers.get('x-admin-email') || form.get('email')).toLowerCase()
+    const email = getGoodBuyRequestEmail(request) || clean(form.get('email')).toLowerCase()
+    if (!isGoodBuyEmailAllowed(email)) {
+      return NextResponse.json(goodBuyForbiddenResponse(), { status: 403 })
+    }
     const region = clean(form.get('region')) || 'ON'
 
     if (!(file instanceof File)) {
@@ -49,6 +55,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Only .xlsx and .csv files are supported' }, { status: 400 })
     }
 
+    const supabase = createGoodBuySupabase()
     const userId = await resolveAdminUserId(supabase, email)
     if (!userId) return NextResponse.json({ error: 'Could not identify admin user' }, { status: 401 })
 

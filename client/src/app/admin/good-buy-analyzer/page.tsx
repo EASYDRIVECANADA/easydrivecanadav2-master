@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import * as XLSX from 'xlsx-js-style'
+import { isGoodBuyEmailAllowed } from '@/lib/goodBuyAccess.mjs'
 
 type UploadRow = {
   id: string
@@ -102,6 +103,7 @@ const recommendationNotes = (row: UploadRow) => {
 export default function GoodBuyAnalyzerPage() {
   const fileRef = useRef<HTMLInputElement | null>(null)
   const [email, setEmail] = useState('')
+  const [sessionLoaded, setSessionLoaded] = useState(false)
   const [region, setRegion] = useState('ON')
   const [uploads, setUploads] = useState<UploadRecord[]>([])
   const [upload, setUpload] = useState<UploadRecord | null>(null)
@@ -114,6 +116,7 @@ export default function GoodBuyAnalyzerPage() {
   const [compText, setCompText] = useState('')
   const [busy, setBusy] = useState('')
   const [error, setError] = useState('')
+  const hasGoodBuyAccess = isGoodBuyEmailAllowed(email)
 
   useEffect(() => {
     try {
@@ -122,6 +125,8 @@ export default function GoodBuyAnalyzerPage() {
       setEmail(String(parsed?.email || '').trim().toLowerCase())
     } catch {
       setEmail('')
+    } finally {
+      setSessionLoaded(true)
     }
   }, [])
 
@@ -156,19 +161,26 @@ export default function GoodBuyAnalyzerPage() {
   const loadUploads = useCallback(async (adminEmail = email) => {
     if (!adminEmail) return
     const qs = new URLSearchParams({ email: adminEmail })
-    const res = await fetch(`/api/admin/good-buy/uploads?${qs.toString()}`, { cache: 'no-store' })
+    const res = await fetch(`/api/admin/good-buy/uploads?${qs.toString()}`, {
+      cache: 'no-store',
+      headers: { 'x-admin-email': adminEmail },
+    })
     const payload = await res.json().catch(() => ({}))
     if (!res.ok) throw new Error(String(payload?.error || 'Failed to load uploads'))
     setUploads(Array.isArray(payload.uploads) ? payload.uploads : [])
   }, [email])
 
   useEffect(() => {
-    if (!email) return
+    if (!email || !hasGoodBuyAccess) return
     void loadUploads(email).catch((err) => setError(err instanceof Error ? err.message : 'Failed to load uploads'))
-  }, [email, loadUploads])
+  }, [email, hasGoodBuyAccess, loadUploads])
 
   const loadUpload = async (id: string) => {
-    const res = await fetch(`/api/admin/good-buy/uploads/${encodeURIComponent(id)}`, { cache: 'no-store' })
+    const qs = new URLSearchParams({ email })
+    const res = await fetch(`/api/admin/good-buy/uploads/${encodeURIComponent(id)}?${qs.toString()}`, {
+      cache: 'no-store',
+      headers: { 'x-admin-email': email },
+    })
     const payload = await res.json().catch(() => ({}))
     if (!res.ok) throw new Error(String(payload?.error || 'Failed to load upload'))
     setUpload(payload.upload || null)
@@ -215,7 +227,11 @@ export default function GoodBuyAnalyzerPage() {
     setBusy(action)
     setError('')
     try {
-      const res = await fetch(`/api/admin/good-buy/uploads/${upload.id}/${action}`, { method: 'POST' })
+      const qs = new URLSearchParams({ email })
+      const res = await fetch(`/api/admin/good-buy/uploads/${upload.id}/${action}?${qs.toString()}`, {
+        method: 'POST',
+        headers: { 'x-admin-email': email },
+      })
       const payload = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(String(payload?.error || `${action} failed`))
       await loadUpload(upload.id)
@@ -236,7 +252,7 @@ export default function GoodBuyAnalyzerPage() {
     try {
       const res = await fetch(`/api/admin/good-buy/uploads/${upload.id}/market-comps`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'x-admin-email': email },
         body: JSON.stringify({ manualComps }),
       })
       const payload = await res.json().catch(() => ({}))
@@ -257,7 +273,7 @@ export default function GoodBuyAnalyzerPage() {
     try {
       const res = await fetch(`/api/admin/good-buy/uploads/${upload.id}/import-selected`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'x-admin-email': email },
         body: JSON.stringify({ rowIds: Array.from(selectedIds) }),
       })
       const payload = await res.json().catch(() => ({}))
@@ -305,6 +321,21 @@ export default function GoodBuyAnalyzerPage() {
       else next.delete(id)
       return next
     })
+  }
+
+  if (sessionLoaded && !hasGoodBuyAccess) {
+    return (
+      <div className="min-h-screen bg-slate-50">
+        <div className="px-6 lg:px-8 pt-8 pb-4 border-b border-slate-200 bg-white">
+          <h1 className="text-2xl font-bold text-slate-900">Good Buy Analyzer</h1>
+        </div>
+        <div className="px-6 lg:px-8 py-6">
+          <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            Good Buy Analyzer is only available for info@easydrivecanada.com.
+          </div>
+        </div>
+      </div>
+    )
   }
 
   return (
