@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import VehicleDetail from './VehicleDetail'
 import { buildVehicleJsonLd } from '@/lib/dealerOpsReadiness.mjs'
+import { buildBreadcrumbJsonLd } from '@/lib/seo/json-ld'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -90,6 +91,9 @@ export async function generateMetadata({
     return {
       title,
       description,
+      alternates: {
+        canonical: `/inventory/${id}`,
+      },
       openGraph: {
         title,
         description,
@@ -115,6 +119,7 @@ export async function generateMetadata({
 
 export default async function Page({ params }: { params: { id: string } }) {
   let jsonLd: Record<string, unknown> | null = null
+  let breadcrumbJsonLd: Record<string, unknown> | null = null
 
   try {
     const id = params.id
@@ -175,10 +180,21 @@ export default async function Page({ params }: { params: { id: string } }) {
           },
           { siteUrl: SITE_URL, imageUrl }
         )
+
+        const vehicleName = [vehicle.year, vehicle.make, vehicle.model, vehicle.series]
+          .map((v) => (v == null ? '' : String(v).trim()))
+          .filter(Boolean)
+          .join(' ') || 'Vehicle'
+        breadcrumbJsonLd = buildBreadcrumbJsonLd([
+          { name: 'Home', url: `${SITE_URL}/` },
+          { name: 'Inventory', url: `${SITE_URL}/inventory` },
+          { name: vehicleName, url: `${SITE_URL}/inventory/${id}` },
+        ])
       }
     }
   } catch {
     jsonLd = null
+    breadcrumbJsonLd = null
   }
 
   return (
@@ -187,6 +203,12 @@ export default async function Page({ params }: { params: { id: string } }) {
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+        />
+      ) : null}
+      {breadcrumbJsonLd ? (
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbJsonLd) }}
         />
       ) : null}
       <VehicleDetail />
