@@ -63,3 +63,30 @@ export const appendLeadUpdateTranscriptNote = (existingNotes, update, timestamp 
     timestamp
   )
 }
+
+export const parseLeadTranscriptEntries = (notes) => {
+  const transcript = cleanLeadText(notes)
+  if (!transcript) return []
+
+  return transcript
+    .split(/\n{2,}/)
+    .map((entry) => cleanLeadText(entry))
+    .filter(Boolean)
+    .map((entry) => {
+      const timestampMatch = entry.match(/^\[([^\]]+)\]\s*([\s\S]*)$/)
+      if (!timestampMatch) {
+        return { timestamp: 'Legacy note', body: entry, isLegacy: true }
+      }
+
+      return {
+        timestamp: cleanLeadText(timestampMatch[1]),
+        body: cleanLeadText(timestampMatch[2]),
+        isLegacy: false,
+      }
+    })
+}
+
+export const shouldOpenLeadDetailsFromRowClick = (target) => {
+  if (!target || typeof target.closest !== 'function') return true
+  return !target.closest('[data-lead-row-action]')
+}

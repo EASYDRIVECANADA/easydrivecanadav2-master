@@ -4,6 +4,8 @@ import { test } from 'node:test'
 import {
   appendLeadTranscriptNote,
   appendLeadUpdateTranscriptNote,
+  parseLeadTranscriptEntries,
+  shouldOpenLeadDetailsFromRowClick,
   LEAD_MANAGER_STATUSES,
   normalizeLeadManagerStatus,
 } from './leadWorkflow.mjs'
@@ -67,4 +69,19 @@ test('labels cleared status updates clearly', () => {
     appendLeadUpdateTranscriptNote('', { field: 'Status', from: 'Booked', to: null }, 'May 26, 2026, 8:16 AM'),
     '[May 26, 2026, 8:16 AM] Status updated: Booked -> cleared'
   )
+})
+
+test('parses transcript entries into timestamp and body rows', () => {
+  assert.deepEqual(
+    parseLeadTranscriptEntries('[May 26, 2026, 7:59 AM] Called customer.\n\nLegacy imported note'),
+    [
+      { timestamp: 'May 26, 2026, 7:59 AM', body: 'Called customer.', isLegacy: false },
+      { timestamp: 'Legacy note', body: 'Legacy imported note', isLegacy: true },
+    ]
+  )
+})
+
+test('opens lead details from row clicks except nested lead actions', () => {
+  assert.equal(shouldOpenLeadDetailsFromRowClick({ closest: () => null }), true)
+  assert.equal(shouldOpenLeadDetailsFromRowClick({ closest: () => ({ tagName: 'BUTTON' }) }), false)
 })

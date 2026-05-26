@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState, type HTMLAttributes, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type HTMLAttributes, type MouseEvent, type ReactNode } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   BadgeCheck,
@@ -26,6 +26,8 @@ import {
   appendLeadUpdateTranscriptNote,
   LEAD_MANAGER_STATUSES,
   normalizeLeadManagerStatus,
+  parseLeadTranscriptEntries,
+  shouldOpenLeadDetailsFromRowClick,
 } from '@/lib/leadWorkflow.mjs'
 
 interface Lead {
@@ -1334,11 +1336,14 @@ function LeadRow({
 }) {
   const source = sourceFromLead(lead)
   const location = leadLocationDetails(lead)
+  const handleRowClick = (event: MouseEvent<HTMLTableRowElement>) => {
+    if (shouldOpenLeadDetailsFromRowClick(event.target)) onSelect(lead)
+  }
 
   return (
-    <tr className={selected ? 'bg-[#1EA7FF]/5' : ''}>
+    <tr onClick={handleRowClick} className={`cursor-pointer ${selected ? 'bg-[#1EA7FF]/5' : 'hover:bg-slate-50/70'}`}>
       {canDelete ? (
-        <td>
+        <td data-lead-row-action>
           <input
             type="checkbox"
             checked={bulkSelected}
@@ -1348,14 +1353,14 @@ function LeadRow({
           />
         </td>
       ) : null}
-      <td>
+      <td data-lead-row-action>
         <StatusBadge lead={lead} onClick={() => onEditStatus(lead)} />
       </td>
       <td>
         <div className="text-sm text-slate-600">{formatDate(lead.createdAt)}</div>
       </td>
       <td>
-        <button type="button" onClick={() => onSelect(lead)} className="group flex min-w-0 items-center gap-3 text-left">
+        <div className="group flex min-w-0 items-center gap-3 text-left">
           <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#0B1F3A] text-xs font-bold text-white">
             {leadInitials(lead)}
           </span>
@@ -1366,7 +1371,7 @@ function LeadRow({
               {sourceLabel(source)}
             </span>
           </span>
-        </button>
+        </div>
       </td>
       <td>
         <div className="max-w-[280px]">
@@ -1374,10 +1379,10 @@ function LeadRow({
           <div className="mt-1 truncate text-xs text-slate-500">{location.address}</div>
         </div>
       </td>
-      <td>
+      <td data-lead-row-action>
         <NotesPreviewButton lead={lead} onClick={() => onEditNotes(lead)} />
       </td>
-      <td>
+      <td data-lead-row-action>
         <div className="flex justify-end gap-1.5">
           <IconButton label="View details" onClick={() => onSelect(lead)} icon={Eye} />
           {canDelete ? <IconButton label="Delete lead" onClick={() => onDelete(lead)} icon={Trash2} danger /> : null}
@@ -1410,14 +1415,19 @@ function MobileLeadCard({
 }) {
   const source = sourceFromLead(lead)
   const location = leadLocationDetails(lead)
+  const handleCardClick = (event: MouseEvent<HTMLDivElement>) => {
+    if (shouldOpenLeadDetailsFromRowClick(event.target)) onSelect(lead)
+  }
 
   return (
-    <div className={`rounded-2xl border bg-white p-4 shadow-card ${selected ? 'border-[#1EA7FF]' : 'border-slate-200'}`}>
+    <div onClick={handleCardClick} className={`cursor-pointer rounded-2xl border bg-white p-4 shadow-card ${selected ? 'border-[#1EA7FF]' : 'border-slate-200 hover:border-slate-300'}`}>
       <div className="mb-3 flex items-center justify-between gap-3">
-        <StatusBadge lead={lead} onClick={() => onEditStatus(lead)} />
+        <div data-lead-row-action>
+          <StatusBadge lead={lead} onClick={() => onEditStatus(lead)} />
+        </div>
         <div className="flex items-center gap-3">
           {canDelete ? (
-            <label className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-2 py-1 text-[11px] font-semibold text-slate-500">
+            <label data-lead-row-action className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-2 py-1 text-[11px] font-semibold text-slate-500">
               <input
                 type="checkbox"
                 checked={bulkSelected}
@@ -1447,18 +1457,18 @@ function MobileLeadCard({
           </div>
 
           <div className="mt-3 space-y-1 text-sm">
-            {lead.email ? <a className="block truncate text-slate-800" href={`mailto:${lead.email}`}>{lead.email}</a> : null}
-            {lead.phone ? <a className="block text-slate-500" href={`tel:${lead.phone}`}>{lead.phone}</a> : null}
+            {lead.email ? <a data-lead-row-action className="block truncate text-slate-800" href={`mailto:${lead.email}`}>{lead.email}</a> : null}
+            {lead.phone ? <a data-lead-row-action className="block text-slate-500" href={`tel:${lead.phone}`}>{lead.phone}</a> : null}
             <div className="truncate font-medium text-slate-700">{location.city}</div>
             <div className="truncate text-slate-500">{location.address}</div>
           </div>
-          <div className="mt-3">
+          <div data-lead-row-action className="mt-3">
             <NotesPreviewButton lead={lead} onClick={() => onEditNotes(lead)} />
           </div>
         </div>
       </div>
 
-      <div className={`mt-4 grid overflow-hidden rounded-xl border border-slate-200 ${canDelete ? 'grid-cols-2' : 'grid-cols-1'}`}>
+      <div data-lead-row-action className={`mt-4 grid overflow-hidden rounded-xl border border-slate-200 ${canDelete ? 'grid-cols-2' : 'grid-cols-1'}`}>
         <ActionCell label="View" onClick={() => onSelect(lead)} icon={Eye} />
         {canDelete ? <ActionCell label="Delete" onClick={() => onDelete(lead)} icon={Trash2} danger /> : null}
       </div>
@@ -1849,9 +1859,7 @@ function LeadNotesModal({
         <div className="space-y-4 p-5 sm:p-6">
           <div className="rounded-xl border border-slate-200 bg-white p-3">
             <div className="mb-2 text-xs font-semibold uppercase text-slate-500">Transcript</div>
-            <div className={`max-h-56 overflow-y-auto whitespace-pre-wrap text-sm leading-6 ${hasTranscript ? 'text-slate-800' : 'text-slate-400'}`}>
-              {hasTranscript ? savedValue : 'No notes yet'}
-            </div>
+            <LeadTranscriptDisplay value={savedValue} emptyClassName="text-sm leading-6" maxHeightClassName="max-h-56" />
           </div>
           <textarea
             value={value}
@@ -2237,9 +2245,7 @@ function LeadNotesSection({
       <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
         <div className="mb-3 rounded-lg border border-slate-200 bg-slate-50/70 p-3">
           <div className="mb-2 text-[11px] font-semibold uppercase text-slate-500">Transcript</div>
-          <div className={`max-h-44 overflow-y-auto whitespace-pre-wrap text-sm leading-6 ${hasTranscript ? 'text-slate-800' : 'text-slate-400'}`}>
-            {hasTranscript ? savedValue : 'No notes yet'}
-          </div>
+          <LeadTranscriptDisplay value={savedValue} emptyClassName="text-sm leading-6" maxHeightClassName="max-h-44" />
         </div>
         <textarea
           value={value}
@@ -2257,6 +2263,35 @@ function LeadNotesSection({
         </div>
       </div>
     </section>
+  )
+}
+
+function LeadTranscriptDisplay({
+  value,
+  maxHeightClassName,
+  emptyClassName = '',
+}: {
+  value: string
+  maxHeightClassName: string
+  emptyClassName?: string
+}) {
+  const entries = parseLeadTranscriptEntries(value)
+
+  if (entries.length === 0) {
+    return <div className={`${emptyClassName} text-slate-400`}>No notes yet</div>
+  }
+
+  return (
+    <div className={`${maxHeightClassName} space-y-3 overflow-y-auto`}>
+      {entries.map((entry, index) => (
+        <div key={`${entry.timestamp}-${index}`} className="rounded-lg border border-slate-200 bg-white px-3 py-2">
+          <div className={`mb-1 text-[11px] font-semibold uppercase tracking-wide ${entry.isLegacy ? 'text-amber-600' : 'text-slate-500'}`}>
+            {entry.timestamp}
+          </div>
+          <div className="whitespace-pre-wrap text-sm leading-6 text-slate-800">{entry.body}</div>
+        </div>
+      ))}
+    </div>
   )
 }
 
