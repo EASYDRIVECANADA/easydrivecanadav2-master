@@ -48,3 +48,18 @@ export const appendLeadTranscriptNote = (existingNotes, note, timestamp = format
   const entry = `[${cleanLeadText(timestamp)}] ${text}`
   return current ? `${current}\n\n${entry}` : entry
 }
+
+const auditValue = (value) => cleanLeadText(value) || 'cleared'
+
+export const appendLeadUpdateTranscriptNote = (existingNotes, update, timestamp = formatLeadNoteTimestamp()) => {
+  const field = cleanLeadText(update?.field)
+  if (!field) return cleanLeadText(existingNotes) || null
+  const actor = cleanLeadText(update?.actor)
+  const actorText = actor ? ` by ${actor}` : ''
+
+  return appendLeadTranscriptNote(
+    existingNotes,
+    `${field} updated${actorText}: ${auditValue(update?.from)} -> ${auditValue(update?.to)}`,
+    timestamp
+  )
+}

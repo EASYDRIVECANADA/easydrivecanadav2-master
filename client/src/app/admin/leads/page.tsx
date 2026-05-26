@@ -23,6 +23,7 @@ import {
 import { supabase } from '@/lib/supabaseClient'
 import {
   appendLeadTranscriptNote,
+  appendLeadUpdateTranscriptNote,
   LEAD_MANAGER_STATUSES,
   normalizeLeadManagerStatus,
 } from '@/lib/leadWorkflow.mjs'
@@ -846,19 +847,24 @@ export default function AdminLeadsPage() {
 
     setSavingStatus(true)
     setStatusSaveError('')
+    const statusAuditNotes = notesEnabled
+      ? appendLeadUpdateTranscriptNote(lead.adminNotes, { field: 'Status', from: lead.managerStatus, to: status, actor: adminEmail })
+      : lead.adminNotes
+    const updatePayload: Record<string, string | null> = { manager_status: status }
+    if (notesEnabled) updatePayload.admin_notes = statusAuditNotes
 
     try {
       const { error } = await supabase
         .from('edc_leads')
-        .update({ manager_status: status })
+        .update(updatePayload)
         .eq('id', lead.id)
 
       if (error) throw error
 
-      setLeads((rows) => rows.map((row) => (row.id === lead.id ? { ...row, managerStatus: status } : row)))
-      setSelectedLead((current) => (current?.id === lead.id ? { ...current, managerStatus: status } : current))
-      setNotesModalLead((current) => (current?.id === lead.id ? { ...current, managerStatus: status } : current))
-      setStatusModalLead((current) => (current?.id === lead.id ? { ...current, managerStatus: status } : current))
+      setLeads((rows) => rows.map((row) => (row.id === lead.id ? { ...row, managerStatus: status, adminNotes: statusAuditNotes } : row)))
+      setSelectedLead((current) => (current?.id === lead.id ? { ...current, managerStatus: status, adminNotes: statusAuditNotes } : current))
+      setNotesModalLead((current) => (current?.id === lead.id ? { ...current, managerStatus: status, adminNotes: statusAuditNotes } : current))
+      setStatusModalLead((current) => (current?.id === lead.id ? { ...current, managerStatus: status, adminNotes: statusAuditNotes } : current))
     } catch (error) {
       console.error('Error saving lead status:', error)
       setStatusSaveError('Unable to update status. Check that manager_status exists on edc_leads.')
