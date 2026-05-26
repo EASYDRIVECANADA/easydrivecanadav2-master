@@ -14,6 +14,7 @@ import {
   sanitizePackageFileName,
   text,
 } from '@/lib/purchaseDocumentPackage.mjs'
+import { getSupabaseServerConfigFromEnv } from '@/lib/purchaseDocumentPackageServerConfig.mjs'
 
 const DOCUMENT_BUCKET = 'purchase-documents'
 const CARFAX_BUCKET = 'Carfax'
@@ -41,10 +42,7 @@ export type PurchaseDocumentPackageView = {
 }
 
 function getSupabaseServerConfig() {
-  const supabaseUrl = String(process.env.NEXT_PUBLIC_SUPABASE_URL || '').replace(/\/+$/, '')
-  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-  if (!supabaseUrl || !supabaseKey) throw new Error('Supabase server not configured')
-  return { supabaseUrl, supabaseKey }
+  return getSupabaseServerConfigFromEnv(process.env)
 }
 
 export function getPackageBaseUrl() {

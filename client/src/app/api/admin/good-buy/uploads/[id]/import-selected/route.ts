@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { describeGoodBuyError, validateGoodBuyImportSelection } from '@/lib/goodBuyAnalyzer.mjs'
+import { getGoodBuyRequestEmail, goodBuyForbiddenResponse, isGoodBuyEmailAllowed } from '@/lib/goodBuyAccess.mjs'
 import { clean, createGoodBuySupabase } from '@/lib/goodBuyServer'
 
 export const dynamic = 'force-dynamic'
@@ -25,6 +26,9 @@ export async function POST(request: Request, { params }: { params: { id: string 
   try {
     const uploadId = clean(params.id)
     if (!uploadId) return NextResponse.json({ error: 'Missing upload id' }, { status: 400 })
+    if (!isGoodBuyEmailAllowed(getGoodBuyRequestEmail(request))) {
+      return NextResponse.json(goodBuyForbiddenResponse(), { status: 403 })
+    }
     const body = await request.json().catch(() => ({}))
     const rowIds = Array.isArray(body?.rowIds) ? body.rowIds.map(clean).filter(Boolean) : []
     if (rowIds.length === 0) return NextResponse.json({ error: 'No rows selected' }, { status: 400 })
@@ -32,11 +36,14 @@ export async function POST(request: Request, { params }: { params: { id: string 
     const supabase = createGoodBuySupabase()
     const { data: upload, error: uploadError } = await supabase
       .from('edc_good_buy_uploads')
-      .select('user_id')
+      .select('email, user_id')
       .eq('id', uploadId)
       .maybeSingle()
     if (uploadError) throw uploadError
     if (!upload) return NextResponse.json({ error: 'Upload not found' }, { status: 404 })
+    if (!isGoodBuyEmailAllowed((upload as { email?: unknown }).email)) {
+      return NextResponse.json(goodBuyForbiddenResponse(), { status: 403 })
+    }
 
     const { data: rows, error: rowsError } = await supabase
       .from('edc_good_buy_rows')

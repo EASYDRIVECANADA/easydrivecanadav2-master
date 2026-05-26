@@ -11,9 +11,7 @@ import {
   Eye,
   FileSpreadsheet,
   Inbox,
-  Mail,
   MessageSquare,
-  Phone,
   Plus,
   Search,
   Trash2,
@@ -23,6 +21,11 @@ import {
   X,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
+import {
+  appendLeadTranscriptNote,
+  LEAD_MANAGER_STATUSES,
+  normalizeLeadManagerStatus,
+} from '@/lib/leadWorkflow.mjs'
 
 interface Lead {
   id: string
@@ -64,7 +67,7 @@ type FilterKey = 'finance' | 'insurance' | 'synced'
 type SourceKey = 'finance' | 'insurance' | 'contact' | 'unknown'
 type LeadDraftSource = SourceKey
 type ImportSourceMode = 'auto' | 'finance' | 'insurance'
-type LeadManagerStatus = 'AWAITING' | 'PENDING' | 'PROCESSING' | 'BOOKED' | 'DECLINED'
+type LeadManagerStatus = string
 
 type LeadDraft = {
   firstName: string
@@ -96,7 +99,7 @@ const FILTERS: Array<{ key: FilterKey; label: string }> = [
 const BASE_LEAD_SELECT = 'id, first_name, last_name, email, phone, vehicle_interest, message, employment_status, monthly_income, down_payment, credit_score, ghl_synced, created_at'
 const LEAD_SELECT_WITH_NOTES = `${BASE_LEAD_SELECT}, admin_notes`
 const LEAD_SELECT_FULL = `${LEAD_SELECT_WITH_NOTES}, manager_status`
-const MANAGER_STATUSES: LeadManagerStatus[] = ['AWAITING', 'PENDING', 'PROCESSING', 'BOOKED']
+const MANAGER_STATUSES = LEAD_MANAGER_STATUSES as LeadManagerStatus[]
 const LEAD_DELETE_ALLOWED_EMAIL = 'info@easydrivecanada.com'
 
 const clean = (value: unknown) => String(value ?? '').trim()
@@ -188,6 +191,11 @@ const leadInitials = (lead: Lead) => {
   const parts = name.split(/\s+/).filter(Boolean)
   if (parts.length >= 2) return `${parts[0][0]}${parts[1][0]}`.toUpperCase()
   return (parts[0]?.slice(0, 2) || 'LD').toUpperCase()
+}
+
+const latestLeadNotePreview = (notes: string | null) => {
+  const entries = clean(notes).split(/\n{2,}/).map(clean).filter(Boolean)
+  return entries.at(-1) || ''
 }
 
 const formatDate = (dateStr: string) =>
@@ -463,14 +471,6 @@ const inferImportSourceFromFileName = (fileName: string): ImportSourceMode => {
   return 'auto'
 }
 
-const normalizeManagerStatus = (value: unknown): LeadManagerStatus | null => {
-  const status = clean(value).toUpperCase()
-  if (status === 'AWAITING DECISION') return 'AWAITING'
-  if (status === 'PENDING (BHPH)') return 'PROCESSING'
-  if (status === 'DECLINED') return 'DECLINED'
-  return MANAGER_STATUSES.includes(status as LeadManagerStatus) ? status as LeadManagerStatus : null
-}
-
 const mapLeadRow = (l: LeadRow): Lead => ({
   id: l.id,
   firstName: l.first_name || '',
@@ -484,7 +484,7 @@ const mapLeadRow = (l: LeadRow): Lead => ({
   downPayment: l.down_payment ?? null,
   creditScore: l.credit_score ?? null,
   adminNotes: l.admin_notes ?? null,
-  managerStatus: normalizeManagerStatus(l.manager_status),
+  managerStatus: normalizeLeadManagerStatus(l.manager_status),
   ghlSynced: !!l.ghl_synced,
   createdAt: l.created_at,
 })
@@ -506,7 +506,7 @@ const rowToLeadInsert = (draft: LeadDraft, notesEnabled: boolean, createdAt = ne
   }
 
   if (notesEnabled) {
-    insert.admin_notes = clean(draft.adminNotes) || null
+    insert.admin_notes = appendLeadTranscriptNote(null, draft.adminNotes)
   }
 
   return insert
@@ -666,12 +666,12 @@ export default function AdminLeadsPage() {
   }, [activeFilter, searchQuery])
 
   useEffect(() => {
-    setNotesDraft(selectedLead?.adminNotes || '')
+    setNotesDraft('')
     setNotesSaveError('')
   }, [selectedLead?.id, selectedLead?.adminNotes])
 
   useEffect(() => {
-    setTableNotesDraft(notesModalLead?.adminNotes || '')
+    setTableNotesDraft('')
     setTableNotesError('')
   }, [notesModalLead?.id, notesModalLead?.adminNotes])
 
@@ -786,7 +786,7 @@ export default function AdminLeadsPage() {
     setSavingNotes(true)
     setNotesSaveError('')
 
-    const nextNotes = notesDraft.trim() || null
+    const nextNotes = appendLeadTranscriptNote(lead.adminNotes, notesDraft)
 
     try {
       const { error } = await supabase
@@ -798,6 +798,7 @@ export default function AdminLeadsPage() {
 
       setLeads((rows) => rows.map((row) => (row.id === lead.id ? { ...row, adminNotes: nextNotes } : row)))
       setSelectedLead((current) => (current?.id === lead.id ? { ...current, adminNotes: nextNotes } : current))
+      setNotesDraft('')
     } catch (error) {
       console.error('Error saving lead notes:', error)
       setNotesSaveError('Unable to save notes. Check that admin_notes exists on edc_leads.')
@@ -815,7 +816,7 @@ export default function AdminLeadsPage() {
     setSavingTableNotes(true)
     setTableNotesError('')
 
-    const nextNotes = tableNotesDraft.trim() || null
+    const nextNotes = appendLeadTranscriptNote(lead.adminNotes, tableNotesDraft)
 
     try {
       const { error } = await supabase
@@ -828,6 +829,7 @@ export default function AdminLeadsPage() {
       setLeads((rows) => rows.map((row) => (row.id === lead.id ? { ...row, adminNotes: nextNotes } : row)))
       setSelectedLead((current) => (current?.id === lead.id ? { ...current, adminNotes: nextNotes } : current))
       setNotesModalLead((current) => (current?.id === lead.id ? { ...current, adminNotes: nextNotes } : current))
+      setTableNotesDraft('')
     } catch (error) {
       console.error('Error saving lead notes:', error)
       setTableNotesError('Unable to save notes. Check that admin_notes exists on edc_leads.')
@@ -1499,6 +1501,7 @@ function LeadImportPreviewRow({ lead }: { lead: Lead }) {
 
 function NotesPreviewButton({ lead, onClick }: { lead: Lead; onClick: () => void }) {
   const hasNotes = !!clean(lead.adminNotes)
+  const preview = latestLeadNotePreview(lead.adminNotes)
 
   return (
     <button
@@ -1514,7 +1517,7 @@ function NotesPreviewButton({ lead, onClick }: { lead: Lead; onClick: () => void
       <MessageSquare className={`mt-0.5 h-4 w-4 shrink-0 ${hasNotes ? 'text-amber-600' : 'text-slate-400 group-hover:text-[#0877bd]'}`} />
       <span className="min-w-0">
         <span className={`block truncate text-xs font-medium ${hasNotes ? 'text-amber-800' : 'text-slate-400 group-hover:text-[#0877bd]'}`}>
-          {hasNotes ? lead.adminNotes : 'No notes yet'}
+          {hasNotes ? preview : 'No notes yet'}
         </span>
       </span>
     </button>
@@ -1523,6 +1526,7 @@ function NotesPreviewButton({ lead, onClick }: { lead: Lead; onClick: () => void
 
 function NotesPreviewStatic({ notes }: { notes: string | null }) {
   const hasNotes = !!clean(notes)
+  const preview = latestLeadNotePreview(notes)
 
   return (
     <div className={`flex w-full max-w-[260px] items-start gap-2 rounded-xl border px-3 py-2 text-left ${
@@ -1533,7 +1537,7 @@ function NotesPreviewStatic({ notes }: { notes: string | null }) {
       <MessageSquare className={`mt-0.5 h-4 w-4 shrink-0 ${hasNotes ? 'text-amber-600' : 'text-slate-400'}`} />
       <span className="min-w-0">
         <span className={`block truncate text-xs font-medium ${hasNotes ? 'text-amber-800' : 'text-slate-400'}`}>
-          {hasNotes ? notes : 'No notes yet'}
+          {hasNotes ? preview : 'No notes yet'}
         </span>
       </span>
     </div>
@@ -1814,7 +1818,8 @@ function LeadNotesModal({
   enabled: boolean
   error: string
 }) {
-  const isDirty = value.trim() !== savedValue.trim()
+  const isDirty = !!value.trim()
+  const hasTranscript = !!clean(savedValue)
 
   return (
     <ModalFrame maxWidth="max-w-2xl" onClose={onClose}>
@@ -1836,18 +1841,24 @@ function LeadNotesModal({
         </div>
 
         <div className="space-y-4 p-5 sm:p-6">
+          <div className="rounded-xl border border-slate-200 bg-white p-3">
+            <div className="mb-2 text-xs font-semibold uppercase text-slate-500">Transcript</div>
+            <div className={`max-h-56 overflow-y-auto whitespace-pre-wrap text-sm leading-6 ${hasTranscript ? 'text-slate-800' : 'text-slate-400'}`}>
+              {hasTranscript ? savedValue : 'No notes yet'}
+            </div>
+          </div>
           <textarea
             value={value}
             onChange={(event) => onChange(event.target.value)}
             disabled={!enabled}
             autoFocus
-            rows={9}
-            placeholder={enabled ? 'Add notes, next steps, call outcome, or reminders...' : 'Apply the admin_notes database column to enable lead notes.'}
-            className="min-h-[220px] w-full resize-y rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-3 text-sm text-slate-800 outline-none transition focus:border-[#1EA7FF]/50 focus:bg-white focus:ring-2 focus:ring-[#1EA7FF]/20 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+            rows={5}
+            placeholder={enabled ? 'Add the next note. Existing notes stay locked in the transcript above.' : 'Apply the admin_notes database column to enable lead notes.'}
+            className="min-h-[140px] w-full resize-y rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-3 text-sm text-slate-800 outline-none transition focus:border-[#1EA7FF]/50 focus:bg-white focus:ring-2 focus:ring-[#1EA7FF]/20 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
           />
           <div className="flex items-center justify-between gap-3 text-xs">
             <span className={error ? 'text-red-600' : 'text-slate-400'}>
-              {error || (isDirty ? 'Unsaved changes' : value.trim() ? 'Notes saved' : 'No notes yet')}
+              {error || (isDirty ? 'New note ready to add' : hasTranscript ? 'History cannot be edited or deleted' : 'No notes yet')}
             </span>
             <span className="shrink-0 text-slate-400">{value.length} chars</span>
           </div>
@@ -1861,7 +1872,7 @@ function LeadNotesModal({
             disabled={!enabled || !isDirty || saving}
             className="edc-btn-primary h-10 px-4 text-xs disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {saving ? 'Saving...' : 'Save notes'}
+            {saving ? 'Saving...' : 'Add note'}
           </button>
         </div>
       </div>
@@ -2198,7 +2209,8 @@ function LeadNotesSection({
   enabled: boolean
   error: string
 }) {
-  const isDirty = value.trim() !== savedValue.trim()
+  const isDirty = !!value.trim()
+  const hasTranscript = !!clean(savedValue)
 
   return (
     <section>
@@ -2213,21 +2225,27 @@ function LeadNotesSection({
           disabled={!enabled || !isDirty || saving}
           className="h-8 rounded-lg bg-[#0B1F3A] px-3 text-xs font-semibold text-white transition-colors hover:bg-[#12345d] disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400"
         >
-          {saving ? 'Saving...' : 'Save'}
+          {saving ? 'Saving...' : 'Add note'}
         </button>
       </div>
       <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+        <div className="mb-3 rounded-lg border border-slate-200 bg-slate-50/70 p-3">
+          <div className="mb-2 text-[11px] font-semibold uppercase text-slate-500">Transcript</div>
+          <div className={`max-h-44 overflow-y-auto whitespace-pre-wrap text-sm leading-6 ${hasTranscript ? 'text-slate-800' : 'text-slate-400'}`}>
+            {hasTranscript ? savedValue : 'No notes yet'}
+          </div>
+        </div>
         <textarea
           value={value}
           onChange={(event) => onChange(event.target.value)}
           disabled={!enabled}
           rows={5}
-          placeholder={enabled ? 'Add internal notes for this lead...' : 'Apply the admin_notes database column to enable lead notes.'}
+          placeholder={enabled ? 'Add the next internal note...' : 'Apply the admin_notes database column to enable lead notes.'}
           className="min-h-[132px] w-full resize-y rounded-lg border border-slate-200 bg-slate-50/70 px-3 py-2 text-sm text-slate-800 outline-none transition focus:border-[#1EA7FF]/50 focus:bg-white focus:ring-2 focus:ring-[#1EA7FF]/20 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
         />
         <div className="mt-2 flex items-center justify-between gap-3 text-xs">
           <span className={error ? 'text-red-600' : 'text-slate-400'}>
-            {error || (isDirty ? 'Unsaved changes' : value.trim() ? 'Notes saved' : 'No notes yet')}
+            {error || (isDirty ? 'New note ready to add' : hasTranscript ? 'History cannot be edited or deleted' : 'No notes yet')}
           </span>
           <span className="shrink-0 text-slate-400">{value.length} chars</span>
         </div>
@@ -2265,21 +2283,17 @@ function DetailRow({ label, value, href }: { label: string; value?: string | nul
 }
 
 const managerStatusClass = (status: LeadManagerStatus | null) => {
-  if (status === 'DECLINED') return 'bg-red-500 text-white ring-red-400'
-  if (status === 'BOOKED') return 'bg-slate-950 text-white ring-slate-800'
-  if (status === 'PROCESSING') return 'bg-amber-400 text-slate-950 ring-amber-300'
-  if (status === 'PENDING') return 'bg-orange-500 text-white ring-orange-400'
-  if (status === 'AWAITING') return 'bg-sky-500 text-white ring-sky-400'
+  if (status === 'Not Qualified') return 'bg-red-500 text-white ring-red-400'
+  if (status === 'Booked') return 'bg-slate-950 text-white ring-slate-800'
+  if (status === 'Conditional Approval') return 'bg-emerald-500 text-white ring-emerald-400'
+  if (status === 'App Submitted') return 'bg-sky-500 text-white ring-sky-400'
+  if (status === 'In Talks') return 'bg-orange-500 text-white ring-orange-400'
+  if (status === 'Need More Information') return 'bg-amber-400 text-slate-950 ring-amber-300'
+  if (status === 'No Contact') return 'bg-slate-500 text-white ring-slate-400'
   return 'bg-emerald-500 text-white ring-emerald-400'
 }
 
-const managerStatusLabel = (status: LeadManagerStatus) => {
-  if (status === 'AWAITING') return 'Awaiting'
-  if (status === 'PENDING') return 'Pending'
-  if (status === 'PROCESSING') return 'Processing'
-  if (status === 'BOOKED') return 'Booked'
-  return 'Declined'
-}
+const managerStatusLabel = (status: LeadManagerStatus) => status
 
 const defaultLeadStatusLabel = (lead: Lead) => {
   if (lead.managerStatus) return managerStatusLabel(lead.managerStatus)
@@ -2348,19 +2362,6 @@ function IconButton({
     >
       <Icon className="h-4 w-4" />
     </button>
-  )
-}
-
-function IconLink({ label, href, icon: Icon }: { label: string; href: string; icon: typeof Eye }) {
-  return (
-    <a
-      title={label}
-      aria-label={label}
-      href={href}
-      className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900"
-    >
-      <Icon className="h-4 w-4" />
-    </a>
   )
 }
 
@@ -2476,8 +2477,3 @@ function intentFallback(lead: Lead) {
   return 'No vehicle interest'
 }
 
-function messagePreview(lead: Lead) {
-  const { rows, notes } = parseMessageFields(lead.message)
-  const firstDetail = rows.find((row) => row.label.toLowerCase() !== 'source')
-  return firstDetail ? `${firstDetail.label}: ${firstDetail.value}` : notes[0] || 'No submitted details'
-}
