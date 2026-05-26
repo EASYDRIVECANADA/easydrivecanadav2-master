@@ -23,6 +23,12 @@ const TRUST_BULLETS = [
   { icon: CheckCircle, text: 'Trusted by hundreds of Canadian sellers' },
 ]
 
+type SellSubmission = {
+  vehicleId: string
+  verificationUrl: string
+  emailWarning?: string | null
+}
+
 export default function SellPage() {
   const [form, setForm] = useState({
     name: '',
@@ -33,6 +39,7 @@ export default function SellPage() {
   })
   const [submitting, setSubmitting] = useState(false)
   const [submitted, setSubmitted] = useState(false)
+  const [submission, setSubmission] = useState<SellSubmission | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -59,6 +66,11 @@ export default function SellPage() {
       if (!res.ok) {
         setError(data.error ?? 'Something went wrong. Please try again.')
       } else {
+        setSubmission({
+          vehicleId: String(data?.vehicleId || ''),
+          verificationUrl: String(data?.verificationUrl || '/account/verification'),
+          emailWarning: typeof data?.emailWarning === 'string' ? data.emailWarning : null,
+        })
         setSubmitted(true)
       }
     } catch {
@@ -134,13 +146,27 @@ export default function SellPage() {
                     <CheckCircle size={32} color="#059669" />
                   </div>
                   <h3 className="text-xl font-bold text-gray-900 mb-2">
-                    Inquiry received!
+                    Draft listing started
                   </h3>
                   <p className="text-gray-500 max-w-sm">
                     Thanks, <span className="font-medium text-gray-700">{form.name.split(' ')[0]}</span>!
-                    Our team will review your vehicle and get back to you within{' '}
-                    <span className="font-medium text-gray-700">24 hours</span>.
+                    Your private seller draft was created. Complete ID verification so the listing can be reviewed.
                   </p>
+                  {submission?.emailWarning && (
+                    <div className="mt-4 max-w-sm rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
+                      {submission.emailWarning}
+                    </div>
+                  )}
+                  <a
+                    href={submission?.verificationUrl || '/account/verification'}
+                    className="mt-6 inline-flex items-center justify-center rounded-xl px-6 py-3 text-sm font-semibold text-white transition-opacity hover:opacity-90"
+                    style={{ background: BRAND }}
+                  >
+                    Continue to verification
+                  </a>
+                  {submission?.vehicleId && (
+                    <p className="mt-3 text-xs text-gray-400">Draft ID: {submission.vehicleId}</p>
+                  )}
                 </div>
               ) : (
                 <form onSubmit={handleSubmit} className="space-y-5" noValidate>
@@ -261,7 +287,7 @@ export default function SellPage() {
                     className="w-full py-3 rounded-xl text-white font-semibold text-base transition-opacity disabled:opacity-60"
                     style={{ background: BRAND }}
                   >
-                    {submitting ? 'Sending…' : 'Send My Inquiry'}
+                    {submitting ? 'Starting draft...' : 'Start My Private Seller Listing'}
                   </button>
 
                   <p className="text-xs text-gray-400 text-center">
@@ -298,10 +324,10 @@ export default function SellPage() {
               <h3 className="font-bold text-gray-900 mb-4">How it works</h3>
               <ol className="space-y-4">
                 {[
-                  { step: '1', title: 'Submit the form', desc: 'Tell us your details and asking price.' },
-                  { step: '2', title: 'We review your car', desc: 'Our team checks the VIN and market value.' },
-                  { step: '3', title: 'Get an offer', desc: 'Receive a fair cash offer within 24 hours.' },
-                  { step: '4', title: 'Close the deal', desc: 'We handle the paperwork — you get paid.' },
+                  { step: '1', title: 'Start your draft', desc: 'Tell us your contact details, VIN, and asking price.' },
+                  { step: '2', title: 'Verify your ID', desc: 'Complete document verification before the listing is reviewed.' },
+                  { step: '3', title: 'Admin review', desc: 'Our team checks the VIN, ownership, and listing details.' },
+                  { step: '4', title: 'Listing goes live', desc: 'Approved private seller vehicles appear in the marketplace.' },
                 ].map(item => (
                   <li key={item.step} className="flex gap-3">
                     <div

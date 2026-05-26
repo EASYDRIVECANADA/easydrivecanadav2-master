@@ -10,5 +10,6 @@ test('account login page exposes create account mode', () => {
 })
 
 test('new signup sends users to verification flow', () => {
-  assert.match(source, /router\.push\('\/account\/verification'\)/)
+  assert.match(source, /const verificationTarget = safeReturnUrl/)
+  assert.match(source, /router\.push\(verificationTarget\)/)
 })

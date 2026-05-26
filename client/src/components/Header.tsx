@@ -229,6 +229,9 @@ export default function Header() {
                 <Link href="/sell" className={`rounded-full px-4 py-2 text-sm font-medium transition hover:text-gray-900 ${pathname === '/sell' ? 'bg-gray-100 text-gray-900' : 'text-gray-500'}`}>
                   Sell Your Car
                 </Link>
+                <Link href="/dealers" className={`rounded-full px-4 py-2 text-sm font-medium transition hover:text-gray-900 ${pathname === '/dealers' ? 'bg-gray-100 text-gray-900' : 'text-gray-500'}`}>
+                  For Dealers
+                </Link>
                 <Link href="/contact" className={`rounded-full px-4 py-2 text-sm font-medium transition hover:text-gray-900 ${pathname === '/contact' ? 'bg-gray-100 text-gray-900' : 'text-gray-500'}`}>
                   Contact
                 </Link>
@@ -315,6 +318,10 @@ export default function Header() {
                 </Link>
                 <Link href="/sell" onClick={() => setIsMenuOpen(false)} className="flex items-center justify-between px-3 py-3 rounded-xl text-gray-700 font-medium hover:bg-gray-50 transition-colors">
                   Sell Your Car
+                  <svg className="w-4 h-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7"/></svg>
+                </Link>
+                <Link href="/dealers" onClick={() => setIsMenuOpen(false)} className="flex items-center justify-between px-3 py-3 rounded-xl text-gray-700 font-medium hover:bg-gray-50 transition-colors">
+                  For Dealers
                   <svg className="w-4 h-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7"/></svg>
                 </Link>
                 <Link href="/contact" onClick={() => setIsMenuOpen(false)} className="flex items-center justify-between px-3 py-3 rounded-xl text-gray-700 font-medium hover:bg-gray-50 transition-colors">

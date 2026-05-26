@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useMemo, forwardRef, useImperativeHandle } from 'react'
 import { supabase } from '@/lib/supabaseClient'
+import { DIRECTORY_ACCOUNT_FILTERS, getDirectoryAccountType } from '@/lib/directoryAccountType.mjs'
 
 type UserRow = {
   id: string
@@ -12,16 +13,20 @@ type UserRow = {
   phone: string | null
   status: string | null
   title: string | null
+  account?: string | null
+  profile?: string | null
   created_at: string | null
 }
 
 export type UsersTabHandle = { openAdd: () => void }
+type AccountFilter = 'all' | 'private' | 'dealership' | 'staff'
 
 const UsersTab = forwardRef<UsersTabHandle>(function UsersTab(_, ref) {
   const [rows, setRows] = useState<UserRow[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [query, setQuery] = useState('')
+  const [accountFilter, setAccountFilter] = useState<AccountFilter>('all')
   const [pageSize, setPageSize] = useState(10)
   const [page, setPage] = useState(1)
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -107,12 +112,25 @@ const UsersTab = forwardRef<UsersTabHandle>(function UsersTab(_, ref) {
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
-    if (!q) return rows
     return rows.filter((r) => {
-      const searchText = [r.email, r.role, r.name, r.user_id].filter(Boolean).join(' ').toLowerCase()
+      const accountType = getDirectoryAccountType(r)
+      if (accountFilter === 'dealership' && accountType.bucket !== 'dealership' && accountType.bucket !== 'premier') return false
+      if (accountFilter !== 'all' && accountFilter !== 'dealership' && accountType.bucket !== accountFilter) return false
+      if (!q) return true
+      const searchText = [r.email, r.role, r.name, r.user_id, r.title, accountType.label].filter(Boolean).join(' ').toLowerCase()
       return searchText.includes(q)
     })
-  }, [rows, query])
+  }, [rows, query, accountFilter])
+
+  const accountCounts = useMemo(() => {
+    const counts: Record<string, number> = { all: rows.length, private: 0, dealership: 0, staff: 0 }
+    rows.forEach((row) => {
+      const bucket = getDirectoryAccountType(row).bucket
+      if (bucket === 'premier') counts.dealership += 1
+      else if (bucket in counts) counts[bucket] += 1
+    })
+    return counts
+  }, [rows])
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize))
   const safePage = Math.min(page, totalPages)
@@ -289,11 +307,36 @@ const UsersTab = forwardRef<UsersTabHandle>(function UsersTab(_, ref) {
 
       {error && <div className="text-sm text-red-600 bg-red-50 px-4 py-3 rounded-xl">{error}</div>}
 
+      <div className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-200/70 bg-white px-3 py-3">
+        {DIRECTORY_ACCOUNT_FILTERS.map((filter) => {
+          const active = accountFilter === filter.key
+          return (
+            <button
+              key={filter.key}
+              type="button"
+              onClick={() => { setAccountFilter(filter.key as AccountFilter); setPage(1) }}
+              className={`inline-flex h-9 items-center gap-2 rounded-lg border px-3 text-xs font-semibold transition-colors ${
+                active
+                  ? 'border-[#1EA7FF]/40 bg-[#1EA7FF]/10 text-slate-900'
+                  : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+              }`}
+            >
+              <span className={`h-2 w-2 rounded-full ${filter.dotClass}`} />
+              <span>{filter.label}</span>
+              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-500">
+                {accountCounts[filter.key] ?? 0}
+              </span>
+            </button>
+          )
+        })}
+      </div>
+
       <div className="rounded-2xl border border-slate-200 overflow-hidden">
         <table className="w-full text-sm">
           <thead className="bg-slate-50 border-b border-slate-100">
             <tr>
               <th className="px-5 py-3 text-left text-xs font-semibold text-slate-400 uppercase tracking-wide">Name</th>
+              <th className="px-5 py-3 text-left text-xs font-semibold text-slate-400 uppercase tracking-wide">Account Type</th>
               <th className="px-5 py-3 text-left text-xs font-semibold text-slate-400 uppercase tracking-wide">Role</th>
               <th className="px-5 py-3 text-left text-xs font-semibold text-slate-400 uppercase tracking-wide">Phone</th>
               <th className="px-5 py-3 text-left text-xs font-semibold text-slate-400 uppercase tracking-wide">Joined</th>
@@ -304,7 +347,7 @@ const UsersTab = forwardRef<UsersTabHandle>(function UsersTab(_, ref) {
           <tbody className="divide-y divide-slate-100">
             {loading ? (
               <tr>
-                <td className="px-5 py-8 text-center text-slate-400" colSpan={6}>
+                <td className="px-5 py-8 text-center text-slate-400" colSpan={7}>
                   <div className="inline-flex items-center gap-2">
                     <div className="animate-spin h-4 w-4 border-2 border-[#1EA7FF] border-t-transparent rounded-full" />
                     Loading...
@@ -313,7 +356,7 @@ const UsersTab = forwardRef<UsersTabHandle>(function UsersTab(_, ref) {
               </tr>
             ) : paged.length === 0 ? (
               <tr>
-                <td className="px-5 py-8 text-center text-slate-400" colSpan={6}>No users found.</td>
+                <td className="px-5 py-8 text-center text-slate-400" colSpan={7}>No users found.</td>
               </tr>
             ) : (
               paged.map((r) => (
@@ -331,6 +374,10 @@ const UsersTab = forwardRef<UsersTabHandle>(function UsersTab(_, ref) {
                         <div className="text-xs text-slate-400">{r.email || '—'}</div>
                       </div>
                     </div>
+                  </td>
+                  {/* ACCOUNT TYPE */}
+                  <td className="px-5 py-3">
+                    <AccountTypeBadge row={r} />
                   </td>
                   {/* ROLE */}
                   <td className="px-5 py-3">
@@ -352,7 +399,7 @@ const UsersTab = forwardRef<UsersTabHandle>(function UsersTab(_, ref) {
                   <td className="px-5 py-3">
                     {(() => {
                       const s = (r.status || 'active').toLowerCase()
-                      const isActive = s === 'active'
+                      const isActive = s === 'active' || s === 'enable' || s === 'enabled'
                       return (
                         <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${
                           isActive
@@ -844,5 +891,16 @@ const UsersTab = forwardRef<UsersTabHandle>(function UsersTab(_, ref) {
     </div>
   )
 })
+
+function AccountTypeBadge({ row }: { row: UserRow }) {
+  const type = getDirectoryAccountType(row)
+
+  return (
+    <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold ${type.badgeClass}`}>
+      <span className={`h-1.5 w-1.5 rounded-full ${type.dotClass}`} />
+      {type.label}
+    </span>
+  )
+}
 
 export default UsersTab

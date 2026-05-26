@@ -63,6 +63,7 @@ export default function Footer() {
                 { label: 'Apply for Financing', href: '/financing' },
                 { label: 'Insurance', href: INSURANCE_URL },
                 { label: 'Sell Your Car', href: '/sell' },
+                { label: 'For Dealers', href: '/dealers' },
                 { label: 'Contact Us', href: '/contact' },
                 { label: 'Warranty', href: '/warranty' },
               ].map((item) => (

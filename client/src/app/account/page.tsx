@@ -303,11 +303,18 @@ function AccountPageInner() {
       }
 
       if (customerCreateMode) {
+        const returnUrl = typeof window !== 'undefined'
+          ? new URLSearchParams(window.location.search).get('returnUrl')
+          : null
+        const safeReturnUrl = returnUrl && returnUrl.startsWith('/') ? returnUrl : null
+        const verificationTarget = safeReturnUrl
+          ? `/account/verification?returnUrl=${encodeURIComponent(safeReturnUrl)}`
+          : '/account/verification'
         const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
           email,
           password: passwordOrAccessCode,
           options: {
-            emailRedirectTo: `${window.location.origin}/account/verification`,
+            emailRedirectTo: `${window.location.origin}${verificationTarget}`,
           },
         })
         if (signUpError) {
@@ -315,7 +322,7 @@ function AccountPageInner() {
           return
         }
         if (signUpData?.session) {
-          router.push('/account/verification')
+          router.push(verificationTarget)
           return
         }
         setNotice('Account created. Please check your email to confirm, then continue to verification.')
