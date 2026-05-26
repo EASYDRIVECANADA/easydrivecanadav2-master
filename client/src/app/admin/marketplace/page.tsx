@@ -540,12 +540,6 @@ export default function MarketplacePage() {
   }
 
   const LISTING_TABS = ['All', 'EDC Premier', 'Dealer Select', 'Fleet Select', 'Private Seller']
-  const CHIP_STYLES: Record<string, string> = {
-    'EDC Premier': 'bg-[#1EA7FF] text-white',
-    'Dealer Select': 'bg-purple-600 text-white',
-    'Fleet Select': 'bg-slate-600 text-white',
-    'Private Seller': 'bg-amber-500 text-white',
-  }
   const DOT_COLORS: Record<string, string> = {
     'EDC Premier': 'bg-[#1EA7FF]',
     'Dealer Select': 'bg-purple-500',
@@ -557,30 +551,45 @@ export default function MarketplacePage() {
     return acc
   }, {})
   const tabFiltered = tab === 'All' ? filtered : filtered.filter((v) => getListingType(v) === tab)
+  const categories = unique(vehicles.map((v) => v.categories))
+  const activeFilterCount = [
+    make,
+    collection,
+    category,
+    bodyStyle,
+    exteriorColor,
+    feature,
+    minPrice,
+    maxPrice,
+    minYear,
+    maxYear,
+  ].filter((value) => String(value || '').trim()).length + quickFilters.sellerTypes.length +
+    (quickFilters.newListings ? 1 : 0) +
+    (quickFilters.dealOfWeek ? 1 : 0) +
+    (quickFilters.featured ? 1 : 0) +
+    (quickFilters.priceUnder !== null ? 1 : 0)
 
   return (
-    <div className="w-full">
-      {/* Page header */}
-      <div className="px-6 lg:px-8 py-6 flex flex-col gap-3 border-b border-slate-200 bg-white sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-[#0B1F3A]">Marketplace</h1>
-          <p className="mt-0.5 text-sm text-slate-500">
-            {loading
-              ? 'Loading vehicles…'
-              : `${tabFiltered.length} of ${vehicles.length} vehicles · published to AutoTrader, Kijiji & Facebook`}
-          </p>
+    <div className="min-h-screen bg-gray-50">
+      <section className="mx-auto max-w-7xl px-4 pb-5 pt-8 sm:px-6 lg:px-8">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900">Marketplace</h1>
+            <p className="mt-1 text-sm font-medium text-[#118df0]">
+              {loading
+                ? 'Loading vehicles...'
+                : `${tabFiltered.length} of ${vehicles.length} listings published to AutoTrader, Kijiji and Facebook`}
+            </p>
+          </div>
+          <button
+            type="button"
+            className="inline-flex h-10 items-center justify-center rounded-full bg-gray-900 px-5 text-sm font-semibold text-white transition-colors hover:bg-[#118df0]"
+          >
+            Sync now
+          </button>
         </div>
-        <button
-          type="button"
-          className="inline-flex h-10 items-center px-5 rounded-full bg-[#0B1F3A] text-white text-sm font-semibold hover:bg-[#1EA7FF] transition-colors self-start sm:self-auto"
-        >
-          Sync now
-        </button>
-      </div>
 
-      {/* Tab bar */}
-      <div className="border-b border-slate-200 bg-white">
-        <div className="flex flex-wrap gap-1.5 px-6 py-3">
+        <div className="mt-5 inline-flex max-w-full flex-wrap gap-1 rounded-xl border border-gray-200 bg-white p-1 shadow-sm">
           {LISTING_TABS.map((t) => {
             const active = tab === t
             return (
@@ -588,31 +597,151 @@ export default function MarketplacePage() {
                 key={t}
                 type="button"
                 onClick={() => setTab(t)}
-                className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold transition-all ${
+                className={`inline-flex min-h-9 items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold transition-colors ${
                   active
-                    ? 'border-[#1EA7FF] bg-[#1EA7FF] text-white'
-                    : 'border-slate-200 text-slate-500 hover:bg-slate-50'
+                    ? 'bg-gray-900 text-white'
+                    : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
                 }`}
               >
                 {t !== 'All' && (
                   <span className={`h-1.5 w-1.5 rounded-full ${DOT_COLORS[t] ?? 'bg-slate-400'}`} />
                 )}
                 {t}
-                <span
-                  className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold ${
-                    active ? 'bg-white/25 text-white' : 'bg-slate-100 text-slate-700'
-                  }`}
-                >
+                <span className={`text-[11px] ${active ? 'text-white/70' : 'text-gray-400'}`}>
                   {tabCounts[t] ?? 0}
                 </span>
               </button>
             )
           })}
         </div>
-      </div>
+      </section>
 
       {/* Grid area */}
-      <div className="p-6 lg:p-8">
+      <div className="mx-auto max-w-7xl px-4 pb-8 sm:px-6 lg:px-8">
+        <div className="grid gap-6 lg:grid-cols-[260px_minmax(0,1fr)]">
+          <aside className="lg:sticky lg:top-24 lg:self-start">
+            <button
+              type="button"
+              onClick={() => setSidebarCollapsed((value) => !value)}
+              className="mb-3 flex h-10 w-full items-center justify-between rounded-xl border border-gray-200 bg-white px-4 text-sm font-semibold text-gray-700 shadow-sm lg:hidden"
+            >
+              Filters
+              <span className="rounded-full bg-[#118df0] px-2 py-0.5 text-xs text-white">{activeFilterCount}</span>
+            </button>
+            <div className={`${sidebarCollapsed ? 'hidden lg:block' : 'block'} rounded-xl border border-gray-200 bg-white p-5 shadow-sm`}>
+              <div className="mb-5 flex items-center justify-between gap-3">
+                <div>
+                  <div className="text-sm font-bold text-gray-900">Refine listings</div>
+                  <div className="text-xs text-gray-500">{activeFilterCount} active filters</div>
+                </div>
+                <button type="button" onClick={clearAllFilters} className="text-xs font-semibold text-[#118df0] hover:text-gray-900">
+                  Reset
+                </button>
+              </div>
+
+              <div className="space-y-5">
+                <FilterSelect label="Make" value={make} onChange={setMake} options={makes} />
+                <FilterSelect label="Collection" value={collection} onChange={setCollection} options={collections} />
+                <FilterSelect label="Category" value={category} onChange={setCategory} options={categories} />
+                <FilterSelect label="Body style" value={bodyStyle} onChange={setBodyStyle} options={bodyStyles} />
+                <FilterSelect label="Exterior color" value={exteriorColor} onChange={setExteriorColor} options={colors} />
+                <FilterSelect label="Feature" value={feature} onChange={setFeature} options={features} />
+
+                <div>
+                  <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-500">Listing type</p>
+                  <div className="space-y-1.5">
+                    {[
+                      { key: 'premier', label: 'EDC Premier', color: '#118df0' },
+                      { key: 'dealer', label: 'Dealer Select', color: '#8b5cf6' },
+                      { key: 'fleet', label: 'Fleet Select', color: '#64748b' },
+                      { key: 'private', label: 'Private Seller', color: '#f59e0b' },
+                    ].map(({ key, label, color }) => (
+                      <label key={key} className="flex cursor-pointer items-center gap-2 text-sm text-gray-700">
+                        <input
+                          type="checkbox"
+                          checked={quickFilters.sellerTypes.includes(key)}
+                          onChange={() => toggleSellerType(key)}
+                          className="accent-[#118df0]"
+                        />
+                        <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: color }} />
+                        {label}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-500">Quick filters</p>
+                  <div className="flex flex-wrap gap-2">
+                    {[
+                      { key: 'newListings' as const, label: 'New' },
+                      { key: 'dealOfWeek' as const, label: 'Deal' },
+                      { key: 'featured' as const, label: 'Featured' },
+                    ].map((item) => (
+                      <button
+                        key={item.key}
+                        type="button"
+                        onClick={() => toggleQuickFilter(item.key)}
+                        className={`rounded-full border px-3 py-1 text-xs font-semibold transition-colors ${
+                          quickFilters[item.key]
+                            ? 'border-[#118df0] bg-[#118df0] text-white'
+                            : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
+                        }`}
+                      >
+                        {item.label}
+                      </button>
+                    ))}
+                    {[25000, 50000].map((amount) => (
+                      <button
+                        key={amount}
+                        type="button"
+                        onClick={() => toggleQuickFilter('priceUnder', amount)}
+                        className={`rounded-full border px-3 py-1 text-xs font-semibold transition-colors ${
+                          quickFilters.priceUnder === amount
+                            ? 'border-[#118df0] bg-[#118df0] text-white'
+                            : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
+                        }`}
+                      >
+                        Under ${amount / 1000}k
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-500">Price range</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    <input value={minPrice} onChange={(e) => setMinPrice(e.target.value.replace(/[^0-9]/g, ''))} placeholder="Min" className="h-9 rounded-lg border border-gray-200 px-3 text-sm outline-none focus:border-[#118df0] focus:ring-2 focus:ring-[#118df0]/20" />
+                    <input value={maxPrice} onChange={(e) => setMaxPrice(e.target.value.replace(/[^0-9]/g, ''))} placeholder="Max" className="h-9 rounded-lg border border-gray-200 px-3 text-sm outline-none focus:border-[#118df0] focus:ring-2 focus:ring-[#118df0]/20" />
+                  </div>
+                </div>
+
+                <div>
+                  <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-500">Year range</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    <input value={minYear} onChange={(e) => setMinYear(e.target.value.replace(/[^0-9]/g, ''))} placeholder="Min" className="h-9 rounded-lg border border-gray-200 px-3 text-sm outline-none focus:border-[#118df0] focus:ring-2 focus:ring-[#118df0]/20" />
+                    <input value={maxYear} onChange={(e) => setMaxYear(e.target.value.replace(/[^0-9]/g, ''))} placeholder="Max" className="h-9 rounded-lg border border-gray-200 px-3 text-sm outline-none focus:border-[#118df0] focus:ring-2 focus:ring-[#118df0]/20" />
+                  </div>
+                </div>
+
+                <div>
+                  <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-500">Sort by</p>
+                  <select value={sort} onChange={(e) => setSort(e.target.value as typeof sort)} className="h-9 w-full rounded-lg border border-gray-200 px-3 text-sm outline-none focus:border-[#118df0] focus:ring-2 focus:ring-[#118df0]/20">
+                    <option value="newest">Newest</option>
+                    <option value="price_asc">Price: low to high</option>
+                    <option value="price_desc">Price: high to low</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+          </aside>
+
+          <div className="min-w-0">
+            <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div className="text-sm text-gray-500">
+                Showing <span className="font-semibold text-gray-900">{tabFiltered.length}</span> listings
+              </div>
+            </div>
         {error ? (
           <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-600">{error}</div>
         ) : loading ? (
@@ -1136,7 +1265,39 @@ export default function MarketplacePage() {
         )
       }
 
+          </div>
+        </div>
       </div>
+    </div>
+  )
+}
+
+function FilterSelect({
+  label,
+  value,
+  onChange,
+  options,
+}: {
+  label: string
+  value: string
+  onChange: (value: string) => void
+  options: string[]
+}) {
+  return (
+    <div>
+      <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-500">{label}</p>
+      <select
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className="h-9 w-full rounded-lg border border-gray-200 bg-white px-3 text-sm text-gray-700 outline-none focus:border-[#118df0] focus:ring-2 focus:ring-[#118df0]/20"
+      >
+        <option value="">All</option>
+        {options.map((option) => (
+          <option key={option} value={option}>
+            {option}
+          </option>
+        ))}
+      </select>
     </div>
   )
 }

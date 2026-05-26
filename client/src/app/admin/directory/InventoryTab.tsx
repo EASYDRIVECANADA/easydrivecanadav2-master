@@ -3,6 +3,7 @@
 import { useEffect, useState, useMemo } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { usePermissionVisibility } from '@/lib/permissions'
+import { LISTING_FILTERS, getListingTypeMeta } from '@/lib/listingType.mjs'
 import type { ComponentType } from 'react'
 import {
   CarFront,
@@ -37,6 +38,7 @@ type VehicleRow = {
   odometer_unit: string | null
   status: string | null
   inventory_type: string | null
+  categories?: string | null
   condition: string | null
   created_at: string | null
   user_id: string | null
@@ -96,6 +98,7 @@ interface VehicleFormData {
 
 type TabType = 'details' | 'images' | 'disclosures' | 'importantDisclosures' | 'purchase' | 'costs' | 'warranty' | 'files' | 'carfax'
 type TabIcon = ComponentType<{ className?: string }>
+type ListingFilter = 'all' | 'premier' | 'dealer' | 'fleet' | 'private'
 
 const TABS: { id: TabType; label: string; icon: TabIcon }[] = [
   { id: 'details', label: 'Vehicle Details', icon: CarFront },
@@ -121,6 +124,7 @@ export default function InventoryTab() {
   const [pageSize, setPageSize] = useState(10)
   const [page, setPage] = useState(1)
   const [userFilter, setUserFilter] = useState<string>('')
+  const [listingFilter, setListingFilter] = useState<ListingFilter>('all')
   const [userOptions, setUserOptions] = useState<{ user_id: string; name: string }[]>([])
 
   // Edit state
@@ -147,7 +151,7 @@ export default function InventoryTab() {
     try {
       const { data, error: dbError } = await supabase
         .from('edc_vehicles')
-        .select('id, stock_number, make, model, year, vin, price, mileage, odometer, odometer_unit, status, inventory_type, condition, created_at, user_id')
+        .select('id, stock_number, make, model, year, vin, price, mileage, odometer, odometer_unit, status, inventory_type, categories, condition, created_at, user_id')
         .order('created_at', { ascending: false })
         .limit(1000)
       if (dbError) throw dbError
@@ -183,11 +187,27 @@ export default function InventoryTab() {
     const q = query.trim().toLowerCase()
     return rows.filter((r) => {
       if (userFilter && r.user_id !== userFilter) return false
+      const listingMeta = getListingTypeMeta(r)
+      if (listingFilter !== 'all' && listingMeta.bucket !== listingFilter) return false
       if (!q) return true
-      return [r.stock_number, r.make, r.model, String(r.year), r.vin, r.status]
+      return [r.stock_number, r.make, r.model, String(r.year), r.vin, r.status, r.inventory_type, r.categories, listingMeta.label]
         .filter(Boolean).join(' ').toLowerCase().includes(q)
     })
-  }, [rows, query, userFilter])
+  }, [rows, query, userFilter, listingFilter])
+
+  const listingBaseRows = useMemo(
+    () => rows.filter((r) => !userFilter || r.user_id === userFilter),
+    [rows, userFilter]
+  )
+
+  const listingCounts = useMemo(() => {
+    const counts: Record<string, number> = { all: listingBaseRows.length, premier: 0, dealer: 0, fleet: 0, private: 0 }
+    listingBaseRows.forEach((r) => {
+      const bucket = getListingTypeMeta(r).bucket
+      if (bucket in counts) counts[bucket] += 1
+    })
+    return counts
+  }, [listingBaseRows])
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize))
   const safePage = Math.min(page, totalPages)
@@ -383,6 +403,20 @@ export default function InventoryTab() {
     return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(price)
   }
 
+  const ListingTypeBadge = ({ row }: { row: VehicleRow }) => {
+    const meta = getListingTypeMeta(row)
+
+    return (
+      <span
+        className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold ${meta.badgeClass}`}
+        title={meta.raw || meta.label}
+      >
+        <span className={`h-1.5 w-1.5 rounded-full ${meta.dotClass}`} />
+        {meta.label}
+      </span>
+    )
+  }
+
   // --- Edit view ---
   if (editingId) {
     const vehicleTitle = [formData.year, formData.make, formData.model].filter(Boolean).join(' ')
@@ -532,6 +566,30 @@ export default function InventoryTab() {
         </select>
       </div>
 
+      <div className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-200/70 bg-white px-3 py-3">
+        {LISTING_FILTERS.map((filter) => {
+          const active = listingFilter === filter.key
+          return (
+            <button
+              key={filter.key}
+              type="button"
+              onClick={() => { setListingFilter(filter.key as ListingFilter); setPage(1) }}
+              className={`inline-flex h-9 items-center gap-2 rounded-lg border px-3 text-xs font-semibold transition-colors ${
+                active
+                  ? 'border-[#1EA7FF]/40 bg-[#1EA7FF]/10 text-slate-900'
+                  : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+              }`}
+            >
+              <span className={`h-2 w-2 rounded-full ${filter.dotClass}`} />
+              <span>{filter.label}</span>
+              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-500">
+                {listingCounts[filter.key] ?? 0}
+              </span>
+            </button>
+          )
+        })}
+      </div>
+
       {error && <div className="text-sm text-red-600 bg-red-50 px-4 py-3 rounded-xl">{error}</div>}
 
       <div className="overflow-hidden rounded-xl border border-slate-200/60">
@@ -544,7 +602,7 @@ export default function InventoryTab() {
               <th className="w-28 px-3 py-3 text-right font-semibold">PRICE</th>
               <th className="w-24 px-3 py-3 text-right font-semibold">ODOMETER</th>
               <th className="w-28 px-3 py-3 text-left font-semibold">STATUS</th>
-              <th className="w-24 px-3 py-3 text-left font-semibold">TYPE</th>
+              <th className="w-36 px-3 py-3 text-left font-semibold">LISTING TYPE</th>
               <th className="w-24 px-3 py-3 text-left font-semibold">CONDITION</th>
               <th className="w-28 px-3 py-3 text-center font-semibold">ACTIONS</th>
             </tr>
@@ -572,7 +630,7 @@ export default function InventoryTab() {
                       'bg-slate-100 text-slate-700'
                     }`}>{r.status || '-'}</span>
                   </td>
-                  <td className="px-3 py-2 text-slate-600 text-xs">{r.inventory_type || '-'}</td>
+                  <td className="px-3 py-2"><ListingTypeBadge row={r} /></td>
                   <td className="px-3 py-2 text-slate-600 text-xs">{r.condition || '-'}</td>
                   <td className="px-3 py-2 text-center">
                     <div className="flex items-center justify-center gap-3">
