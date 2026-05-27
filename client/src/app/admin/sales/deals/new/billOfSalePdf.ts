@@ -1,4 +1,5 @@
 import jsPDF from 'jspdf'
+import { fitPdfCellText } from '@/lib/pdfTextFit'
 
 export interface BillOfSaleDealerInfo {
   logoDataUrl?: string
@@ -137,6 +138,23 @@ function compactLine(doc: jsPDF, text: string, maxWidth: number): string {
   if (!value) return ''
   const lines = doc.splitTextToSize(value, maxWidth)
   return Array.isArray(lines) ? fmt(lines[0]) : value
+}
+
+function drawFittedText(
+  doc: jsPDF,
+  text: string,
+  x: number,
+  y: number,
+  maxWidth: number,
+  options?: { align?: 'left' | 'center' | 'right'; minFontSize?: number }
+) {
+  const fitted = fitPdfCellText(doc, text, maxWidth, { minFontSize: options?.minFontSize })
+  doc.setFontSize(fitted.fontSize)
+  if (options?.align) {
+    doc.text(fitted.text, x, y, { align: options.align })
+  } else {
+    doc.text(fitted.text, x, y)
+  }
 }
 
 function imageFormat(src: string): string {
@@ -614,10 +632,17 @@ export function renderBillOfSalePdf(
     // Duration / distance / base plan price — top-aligned in data row
     doc.setFont('helvetica', 'bold')
     doc.setFontSize(7)
-    if (ew.duration) doc.text(fmt(ew.duration), colDurX + colDurW / 2,  dataTextY, { align: 'center' })
-    if (ew.distance) doc.text(fmt(ew.distance), colDistX + colDistW / 2, dataTextY, { align: 'center' })
+    if (ew.duration) {
+      doc.setFontSize(7)
+      drawFittedText(doc, fmt(ew.duration), colDurX + colDurW / 2, dataTextY, colDurW - 4, { align: 'center', minFontSize: 4.8 })
+    }
+    if (ew.distance) {
+      doc.setFontSize(7)
+      drawFittedText(doc, fmt(ew.distance), colDistX + colDistW / 2, dataTextY, colDistW - 4, { align: 'center', minFontSize: 4.8 })
+    }
     if (planRowCostStr) {
-      doc.text(planRowCostStr, colRetX + colRetW - 2, dataTextY, { align: 'right' })
+      doc.setFontSize(7)
+      drawFittedText(doc, planRowCostStr, colRetX + colRetW - 2, dataTextY, colRetW - 4, { align: 'right', minFontSize: 4.8 })
     }
 
     // ── Add-on sub-rows (Zero Deductible, Hi-Tech Components, etc.) ──
@@ -636,14 +661,14 @@ export function renderBillOfSalePdf(
         doc.setFontSize(6.5)
         doc.setFont('helvetica', 'normal')
         doc.setTextColor(DARK)
-        doc.text(`• ${ao.label}`, ML + 6, addOnY + 8)
+        drawFittedText(doc, `• ${ao.label}`, ML + 6, addOnY + 8, colRetX - ML - 12, { minFontSize: 4.8 })
 
         // price (right-aligned in the retail value column)
         if (ao.price > 0) {
           const priceStr = `$${ao.price.toLocaleString('en-CA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
           doc.setFont('helvetica', 'bold')
           doc.setFontSize(6.5)
-          doc.text(priceStr, colRetX + colRetW - 2, addOnY + 8, { align: 'right' })
+          drawFittedText(doc, priceStr, colRetX + colRetW - 2, addOnY + 8, colRetW - 4, { align: 'right', minFontSize: 4.8 })
         }
 
         addOnY += addOnRowH
@@ -668,7 +693,8 @@ export function renderBillOfSalePdf(
       if (ew.cost) {
         const totalNum = Number(ew.cost)
         const totalStr = ew.cost.startsWith('$') ? ew.cost : !isNaN(totalNum) ? `$${totalNum.toLocaleString('en-CA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : ew.cost
-        doc.text(totalStr, colRetX + colRetW - 2, addOnY + 9, { align: 'right' })
+        doc.setFontSize(7)
+        drawFittedText(doc, totalStr, colRetX + colRetW - 2, addOnY + 9, colRetW - 4, { align: 'right', minFontSize: 4.8 })
       }
     }
     // privacy drawn below after section height is known
@@ -777,7 +803,11 @@ export function renderBillOfSalePdf(
 
     doc.setFontSize(opts?.subRow ? 5.8 : 6.7)
     doc.setFont('helvetica', opts?.summary ? 'bold' : 'normal')
-    doc.setTextColor(opts?.subRow ? 100 : DARK)
+    if (opts?.subRow) {
+      doc.setTextColor(100)
+    } else {
+      doc.setTextColor(DARK)
+    }
     doc.text(compactLine(doc, label, stValueEnd - labelX - 84), labelX, rowTop + (opts?.subRow ? 7 : 9))
 
     doc.setFont('helvetica', opts?.summary ? 'bold' : 'normal')
