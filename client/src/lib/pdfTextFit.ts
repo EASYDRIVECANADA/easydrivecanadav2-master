@@ -53,7 +53,6 @@ export function wrapPdfCellText(
 ): { lines: string[]; fontSize: number } {
   const text = value === null || value === undefined ? '' : String(value).trim()
   const fontSize = options.fontSize ?? doc.getFontSize?.() ?? 7
-  const maxLines = options.maxLines ?? 3
 
   if (!text || maxWidth <= 0) return { lines: [], fontSize }
 
@@ -62,7 +61,7 @@ export function wrapPdfCellText(
     ? doc.splitTextToSize(text, maxWidth)
     : splitByMeasuredWords(doc, text, maxWidth)
 
-  const lines = rawLines.flatMap((line) => splitWideLine(doc, line, maxWidth)).slice(0, maxLines)
+  const lines = rawLines.flatMap((line) => splitWideLine(doc, line, maxWidth))
   return { lines, fontSize }
 }
 

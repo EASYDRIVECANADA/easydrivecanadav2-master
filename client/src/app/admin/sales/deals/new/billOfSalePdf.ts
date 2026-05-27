@@ -170,6 +170,34 @@ function drawPdfCellLines(
   })
 }
 
+function formatWarrantyPlanRowCost(
+  ew: NonNullable<BillOfSaleData['extendedWarrantyData']>,
+  addOnRows: Array<{ label: string; price: number }>
+): string {
+  if (!ew.cost) return ''
+
+  if (addOnRows.length > 0 && ew.basePrice) {
+    const bpNum = Number(ew.basePrice)
+    return !isNaN(bpNum)
+      ? `$${bpNum.toLocaleString('en-CA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+      : ew.basePrice
+  }
+
+  if (addOnRows.length > 0) {
+    const addOnSum = addOnRows.reduce((s, a) => s + (a.price || 0), 0)
+    const totalNum = Number(ew.cost)
+    const baseNum = isNaN(totalNum) ? 0 : totalNum - addOnSum
+    return baseNum > 0 ? `$${baseNum.toLocaleString('en-CA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : ''
+  }
+
+  const costNum = Number(ew.cost)
+  return ew.cost.startsWith('$')
+    ? ew.cost
+    : !isNaN(costNum)
+      ? `$${costNum.toLocaleString('en-CA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+      : ew.cost
+}
+
 function imageFormat(src: string): string {
   const raw = src.toLowerCase()
   if (raw.startsWith('data:image/jpeg') || raw.startsWith('data:image/jpg')) return 'JPEG'
@@ -583,25 +611,7 @@ export function renderBillOfSalePdf(
     const addOnRowH  = 12  // height per add-on sub-row
     const totalRowH  = 13  // height for the "Total" footer row (only when add-ons exist)
 
-    // Determine the price to show in the main plan row:
-    // If add-ons exist, show the base plan price; otherwise show the full cost.
-    let planRowCostStr = ''
-    if (ew.cost) {
-      if (addOnRows.length > 0 && ew.basePrice) {
-        // Use explicit basePrice from order_data.warranty.baseTotal
-        const bpNum = Number(ew.basePrice)
-        planRowCostStr = !isNaN(bpNum) ? `$${bpNum.toLocaleString('en-CA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : ew.basePrice
-      } else if (addOnRows.length > 0) {
-        // Compute base price as total - sum(addOns)
-        const addOnSum = addOnRows.reduce((s, a) => s + (a.price || 0), 0)
-        const totalNum = Number(ew.cost)
-        const baseNum  = isNaN(totalNum) ? 0 : totalNum - addOnSum
-        planRowCostStr = baseNum > 0 ? `$${baseNum.toLocaleString('en-CA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : ''
-      } else {
-        const costNum = Number(ew.cost)
-        planRowCostStr = ew.cost.startsWith('$') ? ew.cost : !isNaN(costNum) ? `$${costNum.toLocaleString('en-CA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : ew.cost
-      }
-    }
+    const planRowCostStr = formatWarrantyPlanRowCost(ew, addOnRows)
 
     // Pre-measure description to size the main data row
     const descMaxW = colDescW - 8
@@ -610,9 +620,10 @@ export function renderBillOfSalePdf(
     doc.setFont('helvetica', 'normal')
     const descLines = doc.splitTextToSize(fmt(ew.description), descMaxW)
     doc.setFont('helvetica', 'bold')
-    const durationLines = wrapPdfCellText(doc, fmt(ew.duration), colDurW - 4, { fontSize: 6.2, maxLines: 3 }).lines
-    const distanceLines = wrapPdfCellText(doc, fmt(ew.distance), colDistW - 4, { fontSize: 6.2, maxLines: 3 }).lines
-    const narrowCellLines = Math.max(durationLines.length, distanceLines.length)
+    const durationLines = wrapPdfCellText(doc, fmt(ew.duration), colDurW - 4, { fontSize: 6.2 }).lines
+    const distanceLines = wrapPdfCellText(doc, fmt(ew.distance), colDistW - 4, { fontSize: 6.2 }).lines
+    const retailLines = wrapPdfCellText(doc, planRowCostStr, colRetW - 4, { fontSize: 6.2 }).lines
+    const narrowCellLines = Math.max(durationLines.length, distanceLines.length, retailLines.length)
     const dataRowH  = Math.max(24, descPadV + descLines.length * descLineH + 6, descPadV + narrowCellLines * compactCellLineH + 6)
 
     // ── Header row border + column dividers ──────────────────────────
@@ -652,10 +663,7 @@ export function renderBillOfSalePdf(
     doc.setFontSize(6.2)
     if (durationLines.length) drawPdfCellLines(doc, durationLines, colDurX + colDurW / 2, dataTextY, compactCellLineH, 'center')
     if (distanceLines.length) drawPdfCellLines(doc, distanceLines, colDistX + colDistW / 2, dataTextY, compactCellLineH, 'center')
-    if (planRowCostStr) {
-      doc.setFontSize(7)
-      drawFittedText(doc, planRowCostStr, colRetX + colRetW - 2, dataTextY, colRetW - 4, { align: 'right', minFontSize: 4.8 })
-    }
+    if (retailLines.length) drawPdfCellLines(doc, retailLines, colRetX + colRetW - 2, dataTextY, compactCellLineH, 'right')
 
     // ── Add-on sub-rows (Zero Deductible, Hi-Tech Components, etc.) ──
     if (addOnRows.length > 0) {
@@ -728,9 +736,12 @@ export function renderBillOfSalePdf(
     doc.setFont('helvetica', 'normal')
     const descLines2 = doc.splitTextToSize(fmt(ew.description), descMaxW2)
     doc.setFont('helvetica', 'bold')
-    const durationLines2 = wrapPdfCellText(doc, fmt(ew.duration), colDurW - 4, { fontSize: 6.2, maxLines: 3 }).lines
-    const distanceLines2 = wrapPdfCellText(doc, fmt(ew.distance), colDistW - 4, { fontSize: 6.2, maxLines: 3 }).lines
-    const narrowCellLines2 = Math.max(durationLines2.length, distanceLines2.length)
+    const ewAddOnRows2 = Array.isArray(ew.addOns) ? ew.addOns : []
+    const planRowCostStr2 = formatWarrantyPlanRowCost(ew, ewAddOnRows2)
+    const durationLines2 = wrapPdfCellText(doc, fmt(ew.duration), colDurW - 4, { fontSize: 6.2 }).lines
+    const distanceLines2 = wrapPdfCellText(doc, fmt(ew.distance), colDistW - 4, { fontSize: 6.2 }).lines
+    const retailLines2 = wrapPdfCellText(doc, planRowCostStr2, colRetW - 4, { fontSize: 6.2 }).lines
+    const narrowCellLines2 = Math.max(durationLines2.length, distanceLines2.length, retailLines2.length)
     const dataRowH2 = Math.max(24, 9 + descLines2.length * 5.5 + 6, 9 + narrowCellLines2 * 5.2 + 6)
     const ewAddOnCount2 = Array.isArray(ew.addOns) ? ew.addOns.length : 0
     leftColWarrantyRowsH = 14 /* column header */ + dataRowH2 + ewAddOnCount2 * 12 + (ewAddOnCount2 > 0 ? 13 : 0)

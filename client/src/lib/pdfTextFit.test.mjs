@@ -69,3 +69,14 @@ test('wrapPdfCellText preserves warranty ranges by wrapping across lines', () =>
   assert.ok(wrapped.lines.every((line) => doc.getTextWidth(line) <= 30))
   assert.equal(wrapped.fontSize, 6.5)
 })
+
+test('wrapPdfCellText does not drop warranty details when no line cap is set', () => {
+  const doc = mockDoc()
+  const value = '12 Mo / Unlimited (5,000 claim limit) $5,011.00'
+
+  const wrapped = wrapPdfCellText(doc, value, 34, { fontSize: 6.2 })
+
+  assert.equal(wrapped.lines.join(' '), value)
+  assert.ok(wrapped.lines.length > 3)
+  assert.ok(wrapped.lines.every((line) => doc.getTextWidth(line) <= 34))
+})
