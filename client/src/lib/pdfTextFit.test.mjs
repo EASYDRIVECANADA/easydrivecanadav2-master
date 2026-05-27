@@ -18,7 +18,7 @@ function loadTsModule(relativePath) {
   return mod.exports
 }
 
-const { fitPdfCellText } = loadTsModule('./pdfTextFit.ts')
+const { fitPdfCellText, wrapPdfCellText } = loadTsModule('./pdfTextFit.ts')
 
 function mockDoc() {
   let fontSize = 7
@@ -58,4 +58,14 @@ test('fitPdfCellText truncates only after reaching the minimum font size', () =>
   assert.ok(fitted.text.endsWith('...'))
   assert.ok(doc.getTextWidth(fitted.text) <= 42)
   assert.equal(fitted.fontSize, 5)
+})
+
+test('wrapPdfCellText preserves warranty ranges by wrapping across lines', () => {
+  const doc = mockDoc()
+
+  const wrapped = wrapPdfCellText(doc, '60,001 - 100,000', 30, { fontSize: 6.5, maxLines: 3 })
+
+  assert.equal(wrapped.lines.join(' '), '60,001 - 100,000')
+  assert.ok(wrapped.lines.every((line) => doc.getTextWidth(line) <= 30))
+  assert.equal(wrapped.fontSize, 6.5)
 })

@@ -1,5 +1,5 @@
 import jsPDF from 'jspdf'
-import { fitPdfCellText } from '@/lib/pdfTextFit'
+import { fitPdfCellText, wrapPdfCellText } from '@/lib/pdfTextFit'
 
 export interface BillOfSaleDealerInfo {
   logoDataUrl?: string
@@ -155,6 +155,19 @@ function drawFittedText(
   } else {
     doc.text(fitted.text, x, y)
   }
+}
+
+function drawPdfCellLines(
+  doc: jsPDF,
+  lines: string[],
+  x: number,
+  y: number,
+  lineH: number,
+  align: 'left' | 'center' | 'right' = 'left'
+) {
+  lines.forEach((line, idx) => {
+    doc.text(line, x, y + idx * lineH, { align })
+  })
 }
 
 function imageFormat(src: string): string {
@@ -592,10 +605,15 @@ export function renderBillOfSalePdf(
 
     // Pre-measure description to size the main data row
     const descMaxW = colDescW - 8
+    const compactCellLineH = 5.2
     doc.setFontSize(6.5)
     doc.setFont('helvetica', 'normal')
     const descLines = doc.splitTextToSize(fmt(ew.description), descMaxW)
-    const dataRowH  = Math.max(24, descPadV + descLines.length * descLineH + 6)
+    doc.setFont('helvetica', 'bold')
+    const durationLines = wrapPdfCellText(doc, fmt(ew.duration), colDurW - 4, { fontSize: 6.2, maxLines: 3 }).lines
+    const distanceLines = wrapPdfCellText(doc, fmt(ew.distance), colDistW - 4, { fontSize: 6.2, maxLines: 3 }).lines
+    const narrowCellLines = Math.max(durationLines.length, distanceLines.length)
+    const dataRowH  = Math.max(24, descPadV + descLines.length * descLineH + 6, descPadV + narrowCellLines * compactCellLineH + 6)
 
     // ── Header row border + column dividers ──────────────────────────
     doc.setDrawColor(GRAY_LINE)
@@ -631,15 +649,9 @@ export function renderBillOfSalePdf(
 
     // Duration / distance / base plan price — top-aligned in data row
     doc.setFont('helvetica', 'bold')
-    doc.setFontSize(7)
-    if (ew.duration) {
-      doc.setFontSize(7)
-      drawFittedText(doc, fmt(ew.duration), colDurX + colDurW / 2, dataTextY, colDurW - 4, { align: 'center', minFontSize: 4.8 })
-    }
-    if (ew.distance) {
-      doc.setFontSize(7)
-      drawFittedText(doc, fmt(ew.distance), colDistX + colDistW / 2, dataTextY, colDistW - 4, { align: 'center', minFontSize: 4.8 })
-    }
+    doc.setFontSize(6.2)
+    if (durationLines.length) drawPdfCellLines(doc, durationLines, colDurX + colDurW / 2, dataTextY, compactCellLineH, 'center')
+    if (distanceLines.length) drawPdfCellLines(doc, distanceLines, colDistX + colDistW / 2, dataTextY, compactCellLineH, 'center')
     if (planRowCostStr) {
       doc.setFontSize(7)
       drawFittedText(doc, planRowCostStr, colRetX + colRetW - 2, dataTextY, colRetW - 4, { align: 'right', minFontSize: 4.8 })
@@ -715,7 +727,11 @@ export function renderBillOfSalePdf(
     doc.setFontSize(6.5)
     doc.setFont('helvetica', 'normal')
     const descLines2 = doc.splitTextToSize(fmt(ew.description), descMaxW2)
-    const dataRowH2 = Math.max(24, 9 + descLines2.length * 5.5 + 6)
+    doc.setFont('helvetica', 'bold')
+    const durationLines2 = wrapPdfCellText(doc, fmt(ew.duration), colDurW - 4, { fontSize: 6.2, maxLines: 3 }).lines
+    const distanceLines2 = wrapPdfCellText(doc, fmt(ew.distance), colDistW - 4, { fontSize: 6.2, maxLines: 3 }).lines
+    const narrowCellLines2 = Math.max(durationLines2.length, distanceLines2.length)
+    const dataRowH2 = Math.max(24, 9 + descLines2.length * 5.5 + 6, 9 + narrowCellLines2 * 5.2 + 6)
     const ewAddOnCount2 = Array.isArray(ew.addOns) ? ew.addOns.length : 0
     leftColWarrantyRowsH = 14 /* column header */ + dataRowH2 + ewAddOnCount2 * 12 + (ewAddOnCount2 > 0 ? 13 : 0)
   } else {

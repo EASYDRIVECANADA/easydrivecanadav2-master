@@ -6,7 +6,6 @@ import { usePathname, useRouter } from 'next/navigation'
 import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { usePermissionVisibility } from '@/lib/permissions'
-import { isGoodBuyEmailAllowed } from '@/lib/goodBuyAccess.mjs'
 
 type AdminSession = {
   email?: string
@@ -229,7 +228,6 @@ export default function AdminLayoutClient({ children }: { children: ReactNode })
   }, [accountFirstName])
 
   const isAdminAccount = permissionVisibility.isAdmin || String(accountType || '').trim().toLowerCase() === 'admin'
-  const isGoodBuyAllowed = isGoodBuyEmailAllowed(session?.email)
 
   useEffect(() => {
     if (!accountMenuOpen) return
@@ -263,7 +261,6 @@ export default function AdminLayoutClient({ children }: { children: ReactNode })
       { href: '/admin/vendors', label: 'Vendors', icon: 'briefcase', disabled: !isVerified, visible: canShow('vendors') },
       { href: '/admin/marketplace', label: 'Market Place', icon: 'market', disabled: !isVerified, visible: true },
       { href: '/admin/inventory', label: 'Inventory', icon: 'car', disabled: !isVerified, visible: canShow('inventory') },
-      { href: '/admin/good-buy-analyzer', label: 'Good Buy', icon: 'dollar', disabled: !isVerified, visible: isGoodBuyAllowed },
       { href: '/admin/sales', label: 'Sales', icon: 'dollar', disabled: false, visible: canShow('sales') || canShow('access_all_deals') },
       { href: '/admin/esignature', label: 'E-Signature', icon: 'pen', disabled: !isVerified, visible: true },
       { href: '/admin/reports', label: 'Reports', icon: 'file', disabled: !isVerified, visible: canShow('sales_reports_access') || canShow('inventory_reports_access') },
@@ -280,7 +277,7 @@ export default function AdminLayoutClient({ children }: { children: ReactNode })
     }
 
     return items.filter((item) => item.visible)
-  }, [isVerified, isAdminAccount, isGoodBuyAllowed, permissionVisibility.canShow, session?.email])
+  }, [isVerified, isAdminAccount, permissionVisibility.canShow, session?.email])
 
   const salesSubItems = useMemo(
     () => [
