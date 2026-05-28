@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
+import { hasOnlinePurchaseSignatures } from '@/lib/purchaseResign'
 
 export default function DisclosuresTab({
   dealId,
@@ -12,6 +13,7 @@ export default function DisclosuresTab({
   initialData,
   autoSaved,
   submission,
+  onSignatureReset,
 }: {
   dealId?: string
   dealMode?: 'RTL' | 'WHL'
@@ -21,6 +23,7 @@ export default function DisclosuresTab({
   initialData?: any
   autoSaved?: boolean
   submission?: any
+  onSignatureReset?: () => void | Promise<void>
 }): JSX.Element {
   const getLoggedInAdminDbUserId = async (): Promise<string | null> => {
     try {
@@ -73,6 +76,7 @@ export default function DisclosuresTab({
   const [showSavedModal, setShowSavedModal] = useState(false)
   const [showSaveErrorModal, setShowSaveErrorModal] = useState(false)
   const [saveErrorModalMessage, setSaveErrorModalMessage] = useState<string>('Unsuccessful save')
+  const [resettingSignatures, setResettingSignatures] = useState(false)
   const [toolbarState, setToolbarState] = useState({
     bold: false,
     italic: false,
@@ -220,7 +224,43 @@ export default function DisclosuresTab({
   const subCarfax = od?.carfax ?? null
   const subBoSig = od?.signatures?.billOfSaleCustomer ?? null
   const subDgSig = od?.signatures?.dealerGuaranteeCustomer ?? null
-  const hasSubSigs = !!(subCarfax || subBoSig || subDgSig)
+  const hasSubSigs = hasOnlinePurchaseSignatures(od)
+
+  const getAdminEmail = () => {
+    try {
+      if (typeof window === 'undefined') return ''
+      const raw = window.localStorage.getItem('edc_admin_session')
+      const parsed = raw ? JSON.parse(raw) as { email?: string } : null
+      return String(parsed?.email || '').trim()
+    } catch {
+      return ''
+    }
+  }
+
+  const handleResetSignatures = async () => {
+    if (!submission?.id || resettingSignatures) return
+    const ok = window.confirm('Clear the customer online-purchase signatures so they can re-sign? This removes the current BOS, dealer guarantee, and CARFAX signature values from this deal.')
+    if (!ok) return
+
+    setResettingSignatures(true)
+    try {
+      const res = await fetch(`/api/purchase-submissions/${encodeURIComponent(String(submission.id))}/resign`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ adminEmail: getAdminEmail() }),
+      })
+      const data = await res.json().catch(() => null)
+      if (!res.ok || data?.error) throw new Error(String(data?.error || `Reset failed (${res.status})`))
+      await onSignatureReset?.()
+    } catch (e: any) {
+      const msg = e?.message || 'Failed to reset signatures'
+      setSaveError(msg)
+      setSaveErrorModalMessage(msg)
+      setShowSaveErrorModal(true)
+    } finally {
+      setResettingSignatures(false)
+    }
+  }
 
   const renderSigCard = (label: string, color: string, sig: { typedName?: string; drawnDataUrl?: string; signedAt?: string } | null, initials?: string | null, fallbackAt?: string | null) => (
     <div key={label} className="flex-1 min-w-[180px] border border-gray-200 rounded-lg p-3 bg-white shadow-sm">
@@ -285,9 +325,19 @@ export default function DisclosuresTab({
 
       {hasSubSigs && (
         <div className="mb-6 p-4 border border-blue-100 rounded-xl bg-blue-50/40">
-          <div className="text-xs font-semibold text-blue-700 mb-3 flex items-center gap-1.5">
-            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-            Customer Signatures — Online Purchase
+          <div className="text-xs font-semibold text-blue-700 mb-3 flex items-center gap-2">
+            <div className="flex flex-1 items-center gap-1.5">
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+              Customer Signatures — Online Purchase
+            </div>
+            <button
+              type="button"
+              onClick={handleResetSignatures}
+              disabled={resettingSignatures}
+              className="h-7 rounded border border-blue-200 bg-white px-3 text-[11px] font-semibold text-blue-700 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {resettingSignatures ? 'Resetting...' : 'Clear for re-sign'}
+            </button>
           </div>
           <div className="flex flex-wrap gap-3">
             {subCarfax && renderSigCard(

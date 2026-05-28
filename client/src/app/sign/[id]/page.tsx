@@ -2,6 +2,14 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useParams, useSearchParams } from 'next/navigation'
+import {
+  buildRenderedPageSequence,
+  getFieldsForRenderedPage,
+  getNextRequiredField,
+  getRequiredFieldsInSigningOrder,
+  parseEnvelopeDocuments,
+  type RenderedPage,
+} from '@/lib/eSignatureDocuments'
 
 declare global {
   interface Window { pdfjsLib?: any }
@@ -9,6 +17,9 @@ declare global {
 
 type FieldType = 'signature' | 'initial' | 'stamp' | 'dateSigned' | 'name' | 'company' | 'title' | 'text' | 'checkbox'
 type Field = { id: string; type: FieldType; x: number; y: number; width: number; height: number; page: number; value?: string; fileIndex?: number; recipientIndex?: number }
+
+const fieldKey = (field: Pick<Field, 'id' | 'fileIndex' | 'recipientIndex'>) =>
+  `${field.id}::r${field.recipientIndex ?? 0}::f${field.fileIndex ?? 0}`
 
 const PAGE_WIDTH = 816
 const PAGE_HEIGHT = 1056
@@ -194,7 +205,7 @@ export default function SignPage() {
   const [error, setError] = useState('')
   const [sigRecord, setSigRecord] = useState<any>(null)
   const [fields, setFields] = useState<Field[]>([])
-  const [pageUrls, setPageUrls] = useState<string[]>([])
+  const [renderedPages, setRenderedPages] = useState<RenderedPage[]>([])
   const [sigPadField, setSigPadField] = useState<string | null>(null)
   const [signatureData, setSignatureData] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -210,6 +221,7 @@ export default function SignPage() {
     : Number(sigRecord?.recipient_index ?? 0)
 
   const pageRefs = useRef<(HTMLDivElement | null)[]>([])
+  const fieldRefs = useRef<Record<string, HTMLDivElement | null>>({})
   const contentRef = useRef<HTMLDivElement>(null)
 
   // Load signature record + fields
@@ -227,7 +239,8 @@ export default function SignPage() {
           ? Number(recipientIdxParam)
           : Number(sigData?.recipient_index ?? 0)
 
-        const fieldsRes = await fetch(`/api/esignature/fields?dealId=${encodeURIComponent(id)}`, { cache: 'no-store' })
+        const envelopeId = String(sigData?.deal_id || id)
+        const fieldsRes = await fetch(`/api/esignature/fields?dealId=${encodeURIComponent(envelopeId)}`, { cache: 'no-store' })
         const fieldsJson = await fieldsRes.json()
         let allFields: Field[] = Array.isArray(fieldsJson.fields) ? fieldsJson.fields : []
         const myFields = allFields.filter(f => (f.recipientIndex ?? 0) === recipientIdx)
@@ -242,26 +255,16 @@ export default function SignPage() {
         })
         setFields(autoFilled)
 
-        const docFile = sigData.document_file
-        if (docFile) {
-          let fileUrl = ''
-          try {
-            const parsed = JSON.parse(docFile)
-            const first = Array.isArray(parsed) ? parsed[0] : parsed
-            fileUrl = first?.url || first?.file_b64 || ''
-          } catch {
-            fileUrl = docFile
-          }
-          const norm = normalizeToDataUrl(fileUrl, 'application/pdf')
-          if (norm) {
-            const mime = norm.mime
-            if (mime === 'application/pdf' || fileUrl.endsWith('.pdf')) {
-              const pages = await renderPdfToImages(norm.url)
-              setPageUrls(pages)
-            } else {
-              setPageUrls([norm.url])
-            }
-          }
+        const documents = parseEnvelopeDocuments(sigData.document_file)
+        if (documents.length > 0) {
+          const renderedDocuments = await Promise.all(documents.map(async (doc) => {
+            const norm = normalizeToDataUrl(doc.source, doc.mime || 'application/pdf')
+            if (!norm) return { fileIndex: doc.fileIndex, name: doc.name, pages: [] }
+            const isPdf = norm.mime === 'application/pdf' || doc.source.toLowerCase().includes('.pdf')
+            const pages = isPdf ? await renderPdfToImages(norm.url) : [norm.url]
+            return { fileIndex: doc.fileIndex, name: doc.name, pages }
+          }))
+          setRenderedPages(buildRenderedPageSequence(renderedDocuments))
         }
       } catch (e: any) {
         setError(e.message || 'Failed to load document')
@@ -273,20 +276,37 @@ export default function SignPage() {
 
   const handleFieldClick = useCallback((field: Field) => {
     if (field.type === 'signature' || field.type === 'initial') {
-      setSigPadField(field.id)
+      setSigPadField(fieldKey(field))
     } else if (field.type === 'checkbox') {
-      setFields(prev => prev.map(f => f.id === field.id ? { ...f, value: f.value === 'true' ? '' : 'true' } : f))
+      const key = fieldKey(field)
+      setFields(prev => prev.map(f => fieldKey(f) === key ? { ...f, value: f.value === 'true' ? '' : 'true' } : f))
     } else if (field.type === 'text' || field.type === 'name' || field.type === 'company' || field.type === 'title') {
-      setEditingTextField(field.id)
+      setEditingTextField(fieldKey(field))
     }
   }, [])
+
+  const scrollToField = useCallback((field: Field | null) => {
+    if (!field) return
+    const key = fieldKey(field)
+    window.setTimeout(() => {
+      fieldRefs.current[key]?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }, 80)
+  }, [])
+
+  const handleNextRequiredField = useCallback(() => {
+    scrollToField(getNextRequiredField(fields) as Field | null)
+  }, [fields, scrollToField])
 
   const handleSignatureApply = useCallback((dataUrl: string) => {
     if (!sigPadField) return
     setSignatureData(dataUrl)
-    setFields(prev => prev.map(f => f.id === sigPadField ? { ...f, value: dataUrl } : f))
+    setFields(prev => {
+      const updated = prev.map(f => fieldKey(f) === sigPadField ? { ...f, value: dataUrl } : f)
+      scrollToField(getNextRequiredField(updated) as Field | null)
+      return updated
+    })
     setSigPadField(null)
-  }, [sigPadField])
+  }, [sigPadField, scrollToField])
 
   const handleSubmit = async () => {
     setSubmitting(true)
@@ -303,7 +323,7 @@ export default function SignPage() {
           status: 'completed',
           fields_data: JSON.stringify(fields),
           recipient_index: recipientIdx,
-          deal_id: id,
+          deal_id: sigRecord?.deal_id || id,
         }),
       })
       if (!res.ok) throw new Error('Failed to submit signature')
@@ -313,7 +333,7 @@ export default function SignPage() {
           fetch('/api/esignature/fields', {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ dealId: id, fieldId: f.id, value: f.value, signedAt: now }),
+            body: JSON.stringify({ dealId: sigRecord?.deal_id || id, fieldId: f.id, value: f.value, signedAt: now, recipientIndex: f.recipientIndex, fileIndex: f.fileIndex }),
           }).catch(() => null)
         )
       await Promise.all(fieldUpdates)
@@ -326,9 +346,9 @@ export default function SignPage() {
   }
 
   const handleDownload = () => {
-    if (!pageUrls.length) return
+    if (!renderedPages.length) return
     const link = document.createElement('a')
-    link.href = pageUrls[0]
+    link.href = renderedPages[0].url
     link.download = `document-${id}.png`
     link.click()
   }
@@ -401,7 +421,8 @@ export default function SignPage() {
     )
   }
 
-  const requiredFields = fields.filter(f => f.type === 'signature' || f.type === 'initial')
+  const requiredFields = getRequiredFieldsInSigningOrder(fields) as Field[]
+  const remainingRequired = requiredFields.filter(f => !String(f.value || '').trim())
   const allSigned = requiredFields.every(f => f.value && f.value.length > 0)
   const recipient = sigRecord
 
@@ -423,8 +444,20 @@ export default function SignPage() {
       </div>
 
       {/* Instructions bar */}
-      <div className={`${dark ? 'bg-blue-900/40 border-blue-800 text-blue-300' : 'bg-blue-50 border-blue-100 text-blue-700'} border-b px-4 py-2 text-xs shrink-0`}>
-        Click on each highlighted field to fill it in. When all required fields are complete, click <strong>Finish &amp; Submit</strong>.
+      <div className={`${dark ? 'bg-blue-900/40 border-blue-800 text-blue-300' : 'bg-blue-50 border-blue-100 text-blue-700'} border-b px-4 py-2 text-xs shrink-0 flex items-center justify-between gap-3`}>
+        <span>
+          {remainingRequired.length > 0
+            ? `${remainingRequired.length} required signature${remainingRequired.length === 1 ? '' : 's'} remaining. Tap a highlighted field or use Next.`
+            : 'All required signatures are complete. Finish and submit when ready.'}
+        </span>
+        <button
+          type="button"
+          onClick={handleNextRequiredField}
+          disabled={remainingRequired.length === 0}
+          className="shrink-0 rounded-md bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          Next required field
+        </button>
       </div>
 
       {/* Body: sidebar + content */}
@@ -449,14 +482,14 @@ export default function SignPage() {
               <div className={`absolute left-full top-0 ml-2 ${popoverBg} border rounded-xl shadow-xl w-52 p-3 z-50`}>
                 <p className={`text-xs font-semibold mb-2 ${popoverText}`}>Jump to Page</p>
                 <div className="flex flex-col gap-1.5 max-h-72 overflow-y-auto">
-                  {pageUrls.map((url, idx) => (
+                  {renderedPages.map((page, idx) => (
                     <button
                       key={idx}
                       onClick={() => scrollToPage(idx)}
                       className={`flex items-center gap-2 rounded-lg p-1.5 ${popoverHover} transition-colors w-full text-left`}
                     >
-                      <img src={url} alt={`Page ${idx + 1}`} className="w-10 h-14 object-cover rounded border border-gray-200 shrink-0" />
-                      <span className={`text-xs font-medium ${popoverText}`}>Page {idx + 1}</span>
+                      <img src={page.url} alt={`Page ${idx + 1}`} className="w-10 h-14 object-cover rounded border border-gray-200 shrink-0" />
+                      <span className={`text-xs font-medium ${popoverText}`}>{page.documentName} p. {page.pageNumber}</span>
                     </button>
                   ))}
                 </div>
@@ -468,7 +501,7 @@ export default function SignPage() {
           <button
             onClick={handleDownload}
             title="Download"
-            disabled={!pageUrls.length}
+            disabled={!renderedPages.length}
             className={`flex flex-col items-center gap-1 py-2 w-full ${sidebarText} ${sidebarHover} disabled:opacity-40 transition-colors rounded-lg mx-1`}
           >
             <IconDownload />
@@ -528,11 +561,11 @@ export default function SignPage() {
 
         {/* ── Document canvas ───────────────────────────────────────────────── */}
         <div ref={contentRef} className="flex-1 overflow-auto py-6 px-4 flex flex-col items-center gap-4">
-          {pageUrls.length === 0 && (
+          {renderedPages.length === 0 && (
             <div className={`text-sm mt-10 ${dark ? 'text-gray-500' : 'text-gray-400'}`}>No document pages to display.</div>
           )}
-          {pageUrls.map((pageUrl, pageIdx) => {
-            const pageFields = fields.filter(f => (f.page ?? 1) === pageIdx + 1)
+          {renderedPages.map((page, pageIdx) => {
+            const pageFields = getFieldsForRenderedPage(fields, page) as Field[]
             return (
               <div
                 key={pageIdx}
@@ -547,19 +580,21 @@ export default function SignPage() {
                 }}
               >
                 <img
-                  src={pageUrl}
-                  alt={`Page ${pageIdx + 1}`}
+                  src={page.url}
+                  alt={`${page.documentName} page ${page.pageNumber}`}
                   className="w-full block"
                   draggable={false}
                   style={{ aspectRatio: `${PAGE_WIDTH} / ${PAGE_HEIGHT}` }}
                 />
                 {pageFields.map(field => {
+                  const key = fieldKey(field)
                   const isEmpty = !field.value || field.value.length === 0
                   const isCheckbox = field.type === 'checkbox'
                   const checked = field.value === 'true'
                   return (
                     <div
-                      key={field.id}
+                      key={key}
+                      ref={el => { fieldRefs.current[key] = el }}
                       onClick={() => handleFieldClick(field)}
                       className={`absolute cursor-pointer transition-all ${
                         isEmpty && !isCheckbox
@@ -586,12 +621,12 @@ export default function SignPage() {
                           )}
                         </div>
                       ) : field.type === 'name' || field.type === 'company' || field.type === 'title' || field.type === 'text' ? (
-                        editingTextField === field.id ? (
+                        editingTextField === key ? (
                           <input
                             autoFocus
                             className="w-full h-full px-1 text-xs text-gray-900 bg-white border-0 outline-none"
                             value={field.value || ''}
-                            onChange={e => setFields(prev => prev.map(f => f.id === field.id ? { ...f, value: e.target.value } : f))}
+                            onChange={e => setFields(prev => prev.map(f => fieldKey(f) === key ? { ...f, value: e.target.value } : f))}
                             onBlur={() => setEditingTextField(null)}
                             onClick={e => e.stopPropagation()}
                           />
@@ -616,7 +651,7 @@ export default function SignPage() {
                       ) : (
                         <input
                           value={field.value || ''}
-                          onChange={e => setFields(prev => prev.map(f => f.id === field.id ? { ...f, value: e.target.value } : f))}
+                          onChange={e => setFields(prev => prev.map(f => fieldKey(f) === key ? { ...f, value: e.target.value } : f))}
                           onMouseDown={e => e.stopPropagation()}
                           placeholder={field.type}
                           className="w-full h-full px-2 text-xs bg-transparent outline-none text-gray-800"

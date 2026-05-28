@@ -13,6 +13,12 @@ import { renderBillOfSalePdf, type BillOfSaleData } from './billOfSalePdf'
 import { buildBillOfSaleCustomerFields } from './billOfSaleCustomers'
 import { buildBillOfSaleSettlement } from './billOfSaleSettlement'
 import { fetchBillOfSaleDealerInfo } from './billOfSaleDealer'
+import {
+  buildDriverLicensePrintHtml,
+  getDriverLicenseDownloadName,
+  normalizeDriverLicensePhoto,
+  type DriverLicensePhoto,
+} from '@/lib/driverLicenseDocuments'
 import { renderDisclosureFormPdf } from './disclosureFormPdf'
 import { getCheckoutBillOfSaleSignature } from '@/lib/purchaseDocumentPackage.mjs'
 import { supabase } from '@/lib/supabaseClient'
@@ -77,6 +83,7 @@ function SalesNewDealPageContent() {
   const [pdfObjectUrl, setPdfObjectUrl] = useState<string | null>(null)
   const [pdfLoading, setPdfLoading] = useState(false)
   const [emailLoading, setEmailLoading] = useState(false)
+  const [licensePreview, setLicensePreview] = useState<DriverLicensePhoto | null>(null)
   const printMenuRef = useRef<HTMLDivElement>(null)
   const vehiclesTabRef = useRef<VehiclesTabHandle>(null)
   const customersTabRef = useRef<CustomersTabHandle>(null)
@@ -659,6 +666,21 @@ function SalesNewDealPageContent() {
     }
   }
 
+  const handleDownloadLicensePhoto = (photo: DriverLicensePhoto, idNumber: string) => {
+    const link = document.createElement('a')
+    link.href = photo.src
+    link.download = getDriverLicenseDownloadName(photo.side, idNumber)
+    link.click()
+  }
+
+  const handlePrintLicensePhoto = (photo: DriverLicensePhoto) => {
+    const win = window.open('', '_blank')
+    if (!win) return
+    win.document.open()
+    win.document.write(buildDriverLicensePrintHtml(photo))
+    win.document.close()
+  }
+
   const handleEmail = async () => {
     if (emailLoading) return
     setEmailLoading(true)
@@ -1079,8 +1101,8 @@ function SalesNewDealPageContent() {
                 {(() => {
                   const c = prefill?.customers?.[0] ?? prefill?.customer
                   const docs = prefill?.submission?.order_data?.documents
-                  const licFront = docs?.licenceFront?.dataUrl as string | undefined
-                  const licBack = docs?.licenceBack?.dataUrl as string | undefined
+                  const licFront = normalizeDriverLicensePhoto('front', docs?.licenceFront?.dataUrl)
+                  const licBack = normalizeDriverLicensePhoto('back', docs?.licenceBack?.dataUrl)
                   const dlNumber = c?.driverslicense || c?.driversLicense || c?.drivers_license || ''
                   const dlExpiry = c?.expdate || c?.expDate || c?.dl_expiry || ''
                   const dob = c?.dateofbirth || c?.dateOfBirth || c?.date_of_birth || ''
@@ -1108,17 +1130,25 @@ function SalesNewDealPageContent() {
                             {licFront && (
                               <div className="flex flex-col items-center gap-2">
                                 <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Front</span>
-                                <a href={licFront} target="_blank" rel="noopener noreferrer">
-                                  <img src={licFront} alt="Licence front" className="h-44 w-auto rounded-lg border border-gray-200 object-cover cursor-pointer hover:opacity-80 transition shadow-sm" />
-                                </a>
+                                <button type="button" onClick={() => setLicensePreview(licFront)} className="group text-left">
+                                  <img src={licFront.src} alt="Licence front" className="h-44 w-auto rounded-lg border border-gray-200 object-cover cursor-pointer transition shadow-sm group-hover:opacity-80" />
+                                </button>
+                                <div className="flex items-center gap-2">
+                                  <button type="button" onClick={() => setLicensePreview(licFront)} className="h-7 px-3 rounded border border-gray-200 text-xs font-semibold text-gray-700 hover:bg-gray-50">View</button>
+                                  <button type="button" onClick={() => handlePrintLicensePhoto(licFront)} className="h-7 px-3 rounded border border-gray-200 text-xs font-semibold text-gray-700 hover:bg-gray-50">Print</button>
+                                </div>
                               </div>
                             )}
                             {licBack && (
                               <div className="flex flex-col items-center gap-2">
                                 <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Back</span>
-                                <a href={licBack} target="_blank" rel="noopener noreferrer">
-                                  <img src={licBack} alt="Licence back" className="h-44 w-auto rounded-lg border border-gray-200 object-cover cursor-pointer hover:opacity-80 transition shadow-sm" />
-                                </a>
+                                <button type="button" onClick={() => setLicensePreview(licBack)} className="group text-left">
+                                  <img src={licBack.src} alt="Licence back" className="h-44 w-auto rounded-lg border border-gray-200 object-cover cursor-pointer transition shadow-sm group-hover:opacity-80" />
+                                </button>
+                                <div className="flex items-center gap-2">
+                                  <button type="button" onClick={() => setLicensePreview(licBack)} className="h-7 px-3 rounded border border-gray-200 text-xs font-semibold text-gray-700 hover:bg-gray-50">View</button>
+                                  <button type="button" onClick={() => handlePrintLicensePhoto(licBack)} className="h-7 px-3 rounded border border-gray-200 text-xs font-semibold text-gray-700 hover:bg-gray-50">Print</button>
+                                </div>
                               </div>
                             )}
                           </div>
@@ -1270,6 +1300,7 @@ function SalesNewDealPageContent() {
                   autoSaved={false}
                   initialData={prefill?.disclosures ?? null}
                   submission={prefill?.submission ?? null}
+                  onSignatureReset={fetchPrefill}
                 />
               </div>
               <div style={{ display: activeTab === 'delivery' ? 'block' : 'none' }}>
@@ -1329,6 +1360,52 @@ function SalesNewDealPageContent() {
                 className="w-full h-full rounded border border-gray-200 bg-white"
                 title="Bill of Sale Preview"
               />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {licensePreview && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <button
+            type="button"
+            aria-label="Close license preview"
+            className="absolute inset-0 bg-black/50"
+            onClick={() => setLicensePreview(null)}
+          />
+          <div className="relative flex max-h-[92vh] w-full max-w-4xl flex-col overflow-hidden rounded-xl border border-gray-200 bg-white shadow-xl">
+            <div className="flex items-center justify-between gap-3 border-b border-gray-200 px-5 py-3">
+              <div className="text-sm font-semibold text-gray-900">{licensePreview.title}</div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleDownloadLicensePhoto(licensePreview, (() => {
+                    const c = prefill?.customers?.[0] ?? prefill?.customer
+                    return c?.driverslicense || c?.driversLicense || c?.drivers_license || ''
+                  })())}
+                  className="h-8 px-3 rounded border border-gray-300 text-xs font-semibold text-gray-700 hover:bg-gray-50"
+                >
+                  Download
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handlePrintLicensePhoto(licensePreview)}
+                  className="h-8 px-3 rounded bg-[#118df0] text-xs font-semibold text-white hover:bg-[#0d6ebd]"
+                >
+                  Print
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setLicensePreview(null)}
+                  className="h-8 w-8 rounded border border-gray-300 text-lg leading-none text-gray-500 hover:bg-gray-50"
+                  aria-label="Close"
+                >
+                  &times;
+                </button>
+              </div>
+            </div>
+            <div className="flex-1 overflow-auto bg-gray-100 p-4">
+              <img src={licensePreview.src} alt={licensePreview.title} className="mx-auto max-h-[78vh] max-w-full rounded bg-white object-contain shadow" />
             </div>
           </div>
         </div>

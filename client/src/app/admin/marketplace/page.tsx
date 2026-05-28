@@ -1,8 +1,9 @@
 "use client"
 
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import VehicleCard from '@/components/VehicleCard'
 import { supabase } from '@/lib/supabaseClient'
+import { buildVehiclePhotoUrls, normalizeVehicleImageList } from '@/lib/vehiclePhotoUrls.mjs'
 
 type MarketVehicle = {
   id: string
@@ -89,6 +90,35 @@ export default function MarketplacePage() {
   const [importantDisclosureLoading, setImportantDisclosureLoading] = useState(false)
 
   const [bucketImageCache] = useState(() => new Map<string, string[]>())
+
+  const loadBucketImages = useCallback(async (vehicleId: string): Promise<string[]> => {
+    const id = String(vehicleId || '').trim()
+    if (!id) return []
+    const cached = bucketImageCache.get(id)
+    if (cached) return cached
+
+    try {
+      const { data, error: listError } = await supabase.storage
+        .from('vehicle-photos')
+        .list(id, {
+          limit: 100,
+          sortBy: { column: 'name', order: 'asc' },
+        })
+
+      const urls = listError
+        ? []
+        : buildVehiclePhotoUrls(id, data, (path) => {
+            const pub = supabase.storage.from('vehicle-photos').getPublicUrl(path)
+            return String(pub?.data?.publicUrl || '').trim()
+          })
+
+      bucketImageCache.set(id, urls)
+      return urls
+    } catch {
+      bucketImageCache.set(id, [])
+      return []
+    }
+  }, [bucketImageCache])
 
   const [make, setMake] = useState('')
   const [collection, setCollection] = useState('')
@@ -219,73 +249,6 @@ export default function MarketplacePage() {
 
   useEffect(() => {
     let cancelled = false
-    const normalizeImages = (raw: any): string[] => {
-      if (!raw) return []
-      if (Array.isArray(raw)) return raw.map(String).filter(Boolean)
-      if (typeof raw === 'string') {
-        const s = raw.trim()
-        if (!s) return []
-        try {
-          const parsed = JSON.parse(s)
-          if (Array.isArray(parsed)) return parsed.map(String).filter(Boolean)
-        } catch {
-          // ignore
-        }
-        return s
-          .split(',')
-          .map((x) => x.trim())
-          .filter(Boolean)
-      }
-      return []
-    }
-
-    const loadBucketImages = async (vehicleId: string): Promise<string[]> => {
-      const id = String(vehicleId || '').trim()
-      if (!id) return []
-      const cached = bucketImageCache.get(id)
-      if (cached) return cached
-
-      try {
-        const { data, error: listError } = await supabase.storage
-          .from('vehicle-photos')
-          .list(id, {
-            limit: 100,
-            sortBy: { column: 'name', order: 'asc' },
-          })
-
-        if (listError || !Array.isArray(data) || data.length === 0) {
-          bucketImageCache.set(id, [])
-          return []
-        }
-
-        const files = data
-          .filter((f) => !!f?.name && !String(f.name).endsWith('/'))
-          .map((f) => `${id}/${f.name}`)
-
-        const urls: string[] = []
-        for (const path of files) {
-          const pub = supabase.storage.from('vehicle-photos').getPublicUrl(path)
-          const publicUrl = String(pub?.data?.publicUrl || '').trim()
-          if (publicUrl) {
-            urls.push(publicUrl)
-            continue
-          }
-
-          const { data: signed } = await supabase.storage
-            .from('vehicle-photos')
-            .createSignedUrl(path, 60 * 60)
-          const signedUrl = String((signed as any)?.signedUrl || '').trim()
-          if (signedUrl) urls.push(signedUrl)
-        }
-
-        bucketImageCache.set(id, urls)
-        return urls
-      } catch {
-        bucketImageCache.set(id, [])
-        return []
-      }
-    }
-
     const normalizeFeatures = (raw: any): string[] => {
       if (!raw) return []
       if (Array.isArray(raw)) return raw.map(String).map((s) => s.trim()).filter(Boolean)
@@ -318,12 +281,11 @@ export default function MarketplacePage() {
         const json = await res.json().catch(() => null)
         const data = Array.isArray(json?.vehicles) ? json.vehicles : []
         if (cancelled) return
-        const mapped: MarketVehicle[] = await Promise.all(
-          (data || []).map(async (r: any) => {
+        const mapped: MarketVehicle[] =
+          (data || []).map((r: any) => {
             const id = String(r.id)
-            const imgs = normalizeImages(r.images ?? r.image_urls ?? r.image)
+            const imgs = normalizeVehicleImageList(r.images ?? r.image_urls ?? r.image)
             const features = normalizeFeatures(r.features)
-            const bucketImgs = imgs.length === 0 ? await loadBucketImages(id) : []
             return {
               id,
               make: r.make || '',
@@ -334,7 +296,7 @@ export default function MarketplacePage() {
               mileage: Number(r.mileage ?? r.odometer ?? 0) || 0,
               fuelType: r.fuelType || r.fuel_type || '',
               transmission: r.transmission || '',
-              images: imgs.length ? imgs : bucketImgs,
+              images: imgs,
               bodyStyle: r.body_style || r.bodyStyle || '',
               exteriorColor: r.exterior_color || r.color || '',
               interiorColor: r.interior_color || '',
@@ -350,8 +312,6 @@ export default function MarketplacePage() {
               status: r.status || '',
             }
           })
-        )
-        console.log('[Marketplace] sample vehicle fields:', mapped.slice(0, 3).map(v => ({ id: v.id, collection: v.collection, categories: v.categories })))
         setVehicles(mapped)
       } catch (e: any) {
         if (!cancelled) setError(e?.message || 'Failed to load vehicles')
@@ -551,7 +511,43 @@ export default function MarketplacePage() {
     return acc
   }, {})
   const tabFiltered = tab === 'All' ? filtered : filtered.filter((v) => getListingType(v) === tab)
+  const photoListings = tab === 'Fleet Select' ? [] : tabFiltered.filter((v) => getListingType(v) !== 'Fleet Select')
+  const fleetListings = tab === 'All'
+    ? tabFiltered.filter((v) => getListingType(v) === 'Fleet Select')
+    : tab === 'Fleet Select'
+      ? tabFiltered
+      : []
+  const visiblePhotoListings = photoListings
   const categories = unique(vehicles.map((v) => v.categories))
+
+  useEffect(() => {
+    const targets = visiblePhotoListings.slice(0, 24).filter((vehicle) =>
+      (!vehicle.images || vehicle.images.length === 0) &&
+      !bucketImageCache.has(vehicle.id)
+    )
+    if (targets.length === 0) return
+
+    let cancelled = false
+    void Promise.all(targets.map(async (vehicle) => ({ id: vehicle.id, images: await loadBucketImages(vehicle.id) })))
+      .then((loaded) => {
+        if (cancelled) return
+        const imagesById = new Map(loaded.map((entry) => [entry.id, entry.images]))
+        setVehicles((current) => current.map((vehicle) => {
+          const images = imagesById.get(vehicle.id)
+          return images ? { ...vehicle, images } : vehicle
+        }))
+        setSelected((current) => {
+          if (!current) return current
+          const images = imagesById.get(current.id)
+          return images ? { ...current, images } : current
+        })
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [bucketImageCache, loadBucketImages, visiblePhotoListings])
+
   const activeFilterCount = [
     make,
     collection,
@@ -774,15 +770,78 @@ export default function MarketplacePage() {
           </div>
         ) : (
           <>
-          <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-            {tabFiltered.map((v) => (
-              <VehicleCard
-                key={v.id}
-                vehicle={v}
-                onClick={() => { setSelected(v); setSelectedImageIndex(0) }}
-              />
-            ))}
-          </section>
+          {visiblePhotoListings.length > 0 ? (
+            <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+              {visiblePhotoListings.map((v) => (
+                <VehicleCard
+                  key={v.id}
+                  vehicle={v}
+                  onClick={() => { setSelected(v); setSelectedImageIndex(0) }}
+                />
+              ))}
+            </section>
+          ) : null}
+
+          {fleetListings.length > 0 ? (
+            <section className={visiblePhotoListings.length > 0 ? 'mt-6' : ''}>
+              <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+                <div>
+                  <h2 className="text-base font-bold text-slate-900">Fleet Select</h2>
+                  <p className="text-xs text-slate-500">{fleetListings.length} bulk-imported listings shown in compact view</p>
+                </div>
+                {tab === 'All' ? (
+                  <button
+                    type="button"
+                    onClick={() => setTab('Fleet Select')}
+                    className="h-8 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                  >
+                    View fleet only
+                  </button>
+                ) : null}
+              </div>
+              <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+                <div className="max-h-[520px] overflow-y-auto">
+                  <table className="min-w-full text-sm">
+                    <thead className="sticky top-0 z-10 bg-slate-50 text-left text-[11px] font-bold uppercase tracking-wide text-slate-500">
+                      <tr>
+                        <th className="px-4 py-3">Vehicle</th>
+                        <th className="px-4 py-3">Odometer</th>
+                        <th className="px-4 py-3">Price</th>
+                        <th className="px-4 py-3">Status</th>
+                        <th className="px-4 py-3 text-right">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {fleetListings.map((v) => (
+                        <tr key={v.id} className="hover:bg-slate-50">
+                          <td className="px-4 py-3">
+                            <div className="font-semibold text-slate-900">{v.year} {v.make} {v.model}{v.series ? ` ${v.series}` : ''}</div>
+                            <div className="mt-0.5 text-xs text-slate-500">{v.vin || v.collection || 'Fleet Select'}</div>
+                          </td>
+                          <td className="px-4 py-3 text-slate-600">{Number(v.odometer ?? v.mileage ?? 0).toLocaleString()} km</td>
+                          <td className="px-4 py-3 font-semibold text-slate-900">${Number(v.price || 0).toLocaleString()}</td>
+                          <td className="px-4 py-3">
+                            <span className="inline-flex rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">
+                              {v.status || 'Listed'}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            <button
+                              type="button"
+                              onClick={() => { setSelected(v); setSelectedImageIndex(0) }}
+                              className="inline-flex h-8 items-center justify-center rounded-lg border border-slate-200 px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                            >
+                              View listing
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </section>
+          ) : null}
 
           {selected ? (
             <div

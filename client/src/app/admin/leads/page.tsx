@@ -27,6 +27,7 @@ import {
   LEAD_MANAGER_STATUSES,
   normalizeLeadManagerStatus,
   parseLeadTranscriptEntries,
+  resolveLeadFinanceManager,
   shouldOpenLeadDetailsFromRowClick,
 } from '@/lib/leadWorkflow.mjs'
 
@@ -44,6 +45,7 @@ interface Lead {
   creditScore: string | null
   adminNotes: string | null
   managerStatus: LeadManagerStatus | null
+  financeManager: string | null
   ghlSynced: boolean
   createdAt: string
 }
@@ -62,6 +64,7 @@ type LeadRow = {
   credit_score: string | null
   admin_notes?: string | null
   manager_status?: string | null
+  finance_manager?: string | null
   ghl_synced: boolean | null
   created_at: string
 }
@@ -101,7 +104,8 @@ const FILTERS: Array<{ key: FilterKey; label: string }> = [
 
 const BASE_LEAD_SELECT = 'id, first_name, last_name, email, phone, vehicle_interest, message, employment_status, monthly_income, down_payment, credit_score, ghl_synced, created_at'
 const LEAD_SELECT_WITH_NOTES = `${BASE_LEAD_SELECT}, admin_notes`
-const LEAD_SELECT_FULL = `${LEAD_SELECT_WITH_NOTES}, manager_status`
+const LEAD_SELECT_WITH_STATUS = `${LEAD_SELECT_WITH_NOTES}, manager_status`
+const LEAD_SELECT_FULL = `${LEAD_SELECT_WITH_STATUS}, finance_manager`
 const MANAGER_STATUSES = LEAD_MANAGER_STATUSES as LeadManagerStatus[]
 const LEAD_DELETE_ALLOWED_EMAIL = 'info@easydrivecanada.com'
 
@@ -194,6 +198,18 @@ const leadInitials = (lead: Lead) => {
   const parts = name.split(/\s+/).filter(Boolean)
   if (parts.length >= 2) return `${parts[0][0]}${parts[1][0]}`.toUpperCase()
   return (parts[0]?.slice(0, 2) || 'LD').toUpperCase()
+}
+
+const financeManagerLabel = (value: string | null) => {
+  const manager = clean(value)
+  if (!manager) return 'Unassigned'
+  const emailMatch = manager.match(/^([^@]+)@(.+)$/)
+  if (!emailMatch) return manager
+  return emailMatch[1]
+    .split(/[._-]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ') || manager
 }
 
 const latestLeadNotePreview = (notes: string | null) => {
@@ -445,7 +461,8 @@ const leadFromDraftPreview = (draft: LeadDraft, index: number): Lead => {
     downPayment: toNumberOrNull(draft.downPayment),
     creditScore: clean(draft.creditScore) || null,
     adminNotes: clean(draft.adminNotes) || null,
-    managerStatus: normalizeManagerStatus(findSubmittedValue(parseMessageFields(message).rows, ['Submitted status', 'Status'])),
+    managerStatus: normalizeLeadManagerStatus(findSubmittedValue(parseMessageFields(message).rows, ['Submitted status', 'Status'])),
+    financeManager: null,
     ghlSynced: false,
     createdAt: toDateIsoOrNull(draft.createdAt) || new Date().toISOString(),
   }
@@ -488,6 +505,7 @@ const mapLeadRow = (l: LeadRow): Lead => ({
   creditScore: l.credit_score ?? null,
   adminNotes: l.admin_notes ?? null,
   managerStatus: normalizeLeadManagerStatus(l.manager_status),
+  financeManager: clean(l.finance_manager) || null,
   ghlSynced: !!l.ghl_synced,
   createdAt: l.created_at,
 })
@@ -531,6 +549,9 @@ export default function AdminLeadsPage() {
   const [savingStatus, setSavingStatus] = useState(false)
   const [statusEnabled, setStatusEnabled] = useState(true)
   const [statusSaveError, setStatusSaveError] = useState('')
+  const [financeManagerEnabled, setFinanceManagerEnabled] = useState(true)
+  const [savingFinanceManagerId, setSavingFinanceManagerId] = useState('')
+  const [financeManagerSaveError, setFinanceManagerSaveError] = useState('')
   const [searchQuery, setSearchQuery] = useState('')
   const [activeFilter, setActiveFilter] = useState<FilterKey>('finance')
   const [currentPage, setCurrentPage] = useState(1)
@@ -583,12 +604,30 @@ export default function AdminLeadsPage() {
         .select(LEAD_SELECT_FULL)
         .order('created_at', { ascending: false })
 
+      if (result.error && /finance_manager|column|schema cache/i.test(result.error.message || '')) {
+        setFinanceManagerEnabled(false)
+        result = await supabase
+          .from('edc_leads')
+          .select(LEAD_SELECT_WITH_STATUS)
+          .order('created_at', { ascending: false })
+      } else {
+        setFinanceManagerEnabled(true)
+      }
+
       if (result.error && /manager_status|column|schema cache/i.test(result.error.message || '')) {
         setStatusEnabled(false)
         result = await supabase
           .from('edc_leads')
-          .select(LEAD_SELECT_WITH_NOTES)
+          .select(`${LEAD_SELECT_WITH_NOTES}, finance_manager`)
           .order('created_at', { ascending: false })
+
+        if (result.error && /finance_manager|column|schema cache/i.test(result.error.message || '')) {
+          setFinanceManagerEnabled(false)
+          result = await supabase
+            .from('edc_leads')
+            .select(LEAD_SELECT_WITH_NOTES)
+            .order('created_at', { ascending: false })
+        }
       } else {
         setStatusEnabled(true)
       }
@@ -652,6 +691,8 @@ export default function AdminLeadsPage() {
         lead.message,
         lead.adminNotes,
         lead.managerStatus,
+        lead.financeManager,
+        financeManagerLabel(lead.financeManager),
         sourceLabel(source),
         lead.employmentStatus,
         lead.creditScore,
@@ -671,6 +712,7 @@ export default function AdminLeadsPage() {
   useEffect(() => {
     setNotesDraft('')
     setNotesSaveError('')
+    setFinanceManagerSaveError('')
   }, [selectedLead?.id, selectedLead?.adminNotes])
 
   useEffect(() => {
@@ -789,18 +831,22 @@ export default function AdminLeadsPage() {
     setSavingNotes(true)
     setNotesSaveError('')
 
-    const nextNotes = appendLeadTranscriptNote(lead.adminNotes, notesDraft)
+    const nextNotes = appendLeadTranscriptNote(lead.adminNotes, notesDraft, undefined, adminEmail)
+    const nextFinanceManager = resolveLeadFinanceManager(lead.financeManager, adminEmail)
+    const updatePayload: Record<string, string | null> = { admin_notes: nextNotes }
+    if (financeManagerEnabled) updatePayload.finance_manager = nextFinanceManager
 
     try {
       const { error } = await supabase
         .from('edc_leads')
-        .update({ admin_notes: nextNotes })
+        .update(updatePayload)
         .eq('id', lead.id)
 
       if (error) throw error
 
-      setLeads((rows) => rows.map((row) => (row.id === lead.id ? { ...row, adminNotes: nextNotes } : row)))
-      setSelectedLead((current) => (current?.id === lead.id ? { ...current, adminNotes: nextNotes } : current))
+      const localUpdate = { adminNotes: nextNotes, financeManager: nextFinanceManager }
+      setLeads((rows) => rows.map((row) => (row.id === lead.id ? { ...row, ...localUpdate } : row)))
+      setSelectedLead((current) => (current?.id === lead.id ? { ...current, ...localUpdate } : current))
       setNotesDraft('')
     } catch (error) {
       console.error('Error saving lead notes:', error)
@@ -819,19 +865,23 @@ export default function AdminLeadsPage() {
     setSavingTableNotes(true)
     setTableNotesError('')
 
-    const nextNotes = appendLeadTranscriptNote(lead.adminNotes, tableNotesDraft)
+    const nextNotes = appendLeadTranscriptNote(lead.adminNotes, tableNotesDraft, undefined, adminEmail)
+    const nextFinanceManager = resolveLeadFinanceManager(lead.financeManager, adminEmail)
+    const updatePayload: Record<string, string | null> = { admin_notes: nextNotes }
+    if (financeManagerEnabled) updatePayload.finance_manager = nextFinanceManager
 
     try {
       const { error } = await supabase
         .from('edc_leads')
-        .update({ admin_notes: nextNotes })
+        .update(updatePayload)
         .eq('id', lead.id)
 
       if (error) throw error
 
-      setLeads((rows) => rows.map((row) => (row.id === lead.id ? { ...row, adminNotes: nextNotes } : row)))
-      setSelectedLead((current) => (current?.id === lead.id ? { ...current, adminNotes: nextNotes } : current))
-      setNotesModalLead((current) => (current?.id === lead.id ? { ...current, adminNotes: nextNotes } : current))
+      const localUpdate = { adminNotes: nextNotes, financeManager: nextFinanceManager }
+      setLeads((rows) => rows.map((row) => (row.id === lead.id ? { ...row, ...localUpdate } : row)))
+      setSelectedLead((current) => (current?.id === lead.id ? { ...current, ...localUpdate } : current))
+      setNotesModalLead((current) => (current?.id === lead.id ? { ...current, ...localUpdate } : current))
       setTableNotesDraft('')
     } catch (error) {
       console.error('Error saving lead notes:', error)
@@ -852,8 +902,10 @@ export default function AdminLeadsPage() {
     const statusAuditNotes = notesEnabled
       ? appendLeadUpdateTranscriptNote(lead.adminNotes, { field: 'Status', from: lead.managerStatus, to: status, actor: adminEmail })
       : lead.adminNotes
+    const nextFinanceManager = resolveLeadFinanceManager(lead.financeManager, adminEmail)
     const updatePayload: Record<string, string | null> = { manager_status: status }
     if (notesEnabled) updatePayload.admin_notes = statusAuditNotes
+    if (financeManagerEnabled) updatePayload.finance_manager = nextFinanceManager
 
     try {
       const { error } = await supabase
@@ -863,15 +915,51 @@ export default function AdminLeadsPage() {
 
       if (error) throw error
 
-      setLeads((rows) => rows.map((row) => (row.id === lead.id ? { ...row, managerStatus: status, adminNotes: statusAuditNotes } : row)))
-      setSelectedLead((current) => (current?.id === lead.id ? { ...current, managerStatus: status, adminNotes: statusAuditNotes } : current))
-      setNotesModalLead((current) => (current?.id === lead.id ? { ...current, managerStatus: status, adminNotes: statusAuditNotes } : current))
-      setStatusModalLead((current) => (current?.id === lead.id ? { ...current, managerStatus: status, adminNotes: statusAuditNotes } : current))
+      const localUpdate = { managerStatus: status, adminNotes: statusAuditNotes, financeManager: nextFinanceManager }
+      setLeads((rows) => rows.map((row) => (row.id === lead.id ? { ...row, ...localUpdate } : row)))
+      setSelectedLead((current) => (current?.id === lead.id ? { ...current, ...localUpdate } : current))
+      setNotesModalLead((current) => (current?.id === lead.id ? { ...current, ...localUpdate } : current))
+      setStatusModalLead((current) => (current?.id === lead.id ? { ...current, ...localUpdate } : current))
     } catch (error) {
       console.error('Error saving lead status:', error)
       setStatusSaveError('Unable to update status. Check that manager_status exists on edc_leads.')
     } finally {
       setSavingStatus(false)
+    }
+  }
+
+  const handleAssignFinanceManager = async (lead: Lead) => {
+    if (!financeManagerEnabled) {
+      setFinanceManagerSaveError('Apply the finance_manager database column before assigning leads.')
+      return
+    }
+
+    const nextFinanceManager = clean(adminEmail)
+    if (!nextFinanceManager) {
+      setFinanceManagerSaveError('Sign in again before assigning a finance manager.')
+      return
+    }
+
+    setSavingFinanceManagerId(lead.id)
+    setFinanceManagerSaveError('')
+
+    try {
+      const { error } = await supabase
+        .from('edc_leads')
+        .update({ finance_manager: nextFinanceManager })
+        .eq('id', lead.id)
+
+      if (error) throw error
+
+      setLeads((rows) => rows.map((row) => (row.id === lead.id ? { ...row, financeManager: nextFinanceManager } : row)))
+      setSelectedLead((current) => (current?.id === lead.id ? { ...current, financeManager: nextFinanceManager } : current))
+      setNotesModalLead((current) => (current?.id === lead.id ? { ...current, financeManager: nextFinanceManager } : current))
+      setStatusModalLead((current) => (current?.id === lead.id ? { ...current, financeManager: nextFinanceManager } : current))
+    } catch (error) {
+      console.error('Error assigning finance manager:', error)
+      setFinanceManagerSaveError('Unable to assign finance manager. Check that finance_manager exists on edc_leads.')
+    } finally {
+      setSavingFinanceManagerId('')
     }
   }
 
@@ -1123,7 +1211,7 @@ export default function AdminLeadsPage() {
                   <div className="text-xs text-slate-500">Sorted by newest first</div>
                 </div>
                 <div className="overflow-x-auto">
-                  <table className="edc-table min-w-[1120px]">
+                  <table className="edc-table min-w-[1240px]">
                     <thead>
                       <tr>
                         {canDeleteLeads ? (
@@ -1141,6 +1229,7 @@ export default function AdminLeadsPage() {
                         <th>Received</th>
                         <th>Contact Name</th>
                         <th>City / Address</th>
+                        <th>Finance Manager</th>
                         <th>Notes</th>
                         <th className="text-right">Actions</th>
                       </tr>
@@ -1216,6 +1305,11 @@ export default function AdminLeadsPage() {
               savingNotes={savingNotes}
               notesEnabled={notesEnabled}
               notesSaveError={notesSaveError}
+              adminEmail={adminEmail}
+              financeManagerEnabled={financeManagerEnabled}
+              savingFinanceManager={savingFinanceManagerId === selectedLead.id}
+              financeManagerSaveError={financeManagerSaveError}
+              onAssignFinanceManager={handleAssignFinanceManager}
             />
           </div>
         </div>
@@ -1379,6 +1473,9 @@ function LeadRow({
           <div className="mt-1 truncate text-xs text-slate-500">{location.address}</div>
         </div>
       </td>
+      <td>
+        <FinanceManagerPill lead={lead} />
+      </td>
       <td data-lead-row-action>
         <NotesPreviewButton lead={lead} onClick={() => onEditNotes(lead)} />
       </td>
@@ -1462,6 +1559,9 @@ function MobileLeadCard({
             <div className="truncate font-medium text-slate-700">{location.city}</div>
             <div className="truncate text-slate-500">{location.address}</div>
           </div>
+          <div className="mt-3">
+            <FinanceManagerPill lead={lead} />
+          </div>
           <div data-lead-row-action className="mt-3">
             <NotesPreviewButton lead={lead} onClick={() => onEditNotes(lead)} />
           </div>
@@ -1512,6 +1612,25 @@ function LeadImportPreviewRow({ lead }: { lead: Lead }) {
         <NotesPreviewStatic notes={lead.adminNotes} />
       </td>
     </tr>
+  )
+}
+
+function FinanceManagerPill({ lead }: { lead: Lead }) {
+  const assigned = !!clean(lead.financeManager)
+  const label = financeManagerLabel(lead.financeManager)
+
+  return (
+    <div
+      title={assigned ? lead.financeManager || label : 'Unassigned'}
+      className={`inline-flex max-w-[220px] items-center gap-2 rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ring-inset ${
+        assigned
+          ? 'bg-indigo-50 text-indigo-700 ring-indigo-200'
+          : 'bg-slate-50 text-slate-500 ring-slate-200'
+      }`}
+    >
+      <Users className="h-3.5 w-3.5 shrink-0" />
+      <span className="truncate">{label}</span>
+    </div>
   )
 }
 
@@ -2028,6 +2147,11 @@ function LeadDetailPanel({
   savingNotes,
   notesEnabled,
   notesSaveError,
+  adminEmail,
+  financeManagerEnabled,
+  savingFinanceManager,
+  financeManagerSaveError,
+  onAssignFinanceManager,
 }: {
   lead: Lead
   fields: { rows: Array<{ label: string; value: string }>; notes: string[] }
@@ -2040,6 +2164,11 @@ function LeadDetailPanel({
   savingNotes: boolean
   notesEnabled: boolean
   notesSaveError: string
+  adminEmail: string
+  financeManagerEnabled: boolean
+  savingFinanceManager: boolean
+  financeManagerSaveError: string
+  onAssignFinanceManager: (lead: Lead) => void
 }) {
   const source = sourceFromLead(lead)
   const primaryIntent = lead.vehicleInterest || intentFallback(lead)
@@ -2051,6 +2180,7 @@ function LeadDetailPanel({
       : source === 'insurance'
         ? 'Full insurance application'
         : 'Submitted details'
+  const assignedToCurrentUser = !!clean(adminEmail) && clean(lead.financeManager).toLowerCase() === clean(adminEmail).toLowerCase()
 
   return (
     <div className="max-h-[94vh] overflow-y-auto bg-slate-50/70">
@@ -2083,7 +2213,7 @@ function LeadDetailPanel({
 
       <div className="grid gap-5 p-4 sm:p-6 xl:grid-cols-[minmax(0,1fr)_360px]">
         <div className="min-w-0 space-y-5">
-          <div className="grid gap-3 lg:grid-cols-3">
+          <div className="grid gap-3 lg:grid-cols-4">
             <LeadSummaryCard
               icon={UserRound}
               label="Contact"
@@ -2103,6 +2233,12 @@ function LeadDetailPanel({
               primary={formatMoney(lead.monthlyIncome)}
               secondary={lead.creditScore ? `Credit: ${lead.creditScore}` : ''}
               tertiary={formatMoney(lead.downPayment) ? `Down: ${formatMoney(lead.downPayment)}` : ''}
+            />
+            <LeadSummaryCard
+              icon={Users}
+              label="Manager"
+              primary={financeManagerLabel(lead.financeManager)}
+              secondary={clean(lead.financeManager) || (financeManagerEnabled ? 'Not assigned' : 'Column not enabled')}
             />
           </div>
 
@@ -2140,6 +2276,38 @@ function LeadDetailPanel({
         </div>
 
         <aside className="space-y-5 xl:sticky xl:top-24 xl:self-start">
+          <DetailSection title="Finance manager" icon={Users}>
+            <div className="space-y-3 p-3">
+              <div className="rounded-lg border border-slate-200 bg-slate-50/70 px-3 py-2">
+                <div className="text-[11px] font-bold uppercase text-slate-500">Assigned to</div>
+                <div className={`mt-1 break-words text-sm font-semibold ${clean(lead.financeManager) ? 'text-slate-950' : 'text-slate-400'}`}>
+                  {financeManagerLabel(lead.financeManager)}
+                </div>
+                {clean(lead.financeManager) ? (
+                  <div className="mt-1 break-words text-xs text-slate-500">{lead.financeManager}</div>
+                ) : null}
+              </div>
+              {financeManagerSaveError ? (
+                <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{financeManagerSaveError}</div>
+              ) : null}
+              <button
+                type="button"
+                onClick={() => onAssignFinanceManager(lead)}
+                disabled={!financeManagerEnabled || !clean(adminEmail) || savingFinanceManager || assignedToCurrentUser}
+                className="edc-btn-primary h-10 w-full text-xs disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <Users className="h-4 w-4" />
+                {savingFinanceManager
+                  ? 'Assigning...'
+                  : assignedToCurrentUser
+                    ? 'Assigned to you'
+                    : clean(lead.financeManager)
+                      ? 'Reassign to me'
+                      : 'Assign to me'}
+              </button>
+            </div>
+          </DetailSection>
+
           <LeadNotesSection
             value={notesDraft}
             savedValue={lead.adminNotes || ''}
@@ -2282,15 +2450,35 @@ function LeadTranscriptDisplay({
   }
 
   return (
-    <div className={`${maxHeightClassName} space-y-3 overflow-y-auto`}>
-      {entries.map((entry, index) => (
-        <div key={`${entry.timestamp}-${index}`} className="rounded-lg border border-slate-200 bg-white px-3 py-2">
-          <div className={`mb-1 text-[11px] font-semibold uppercase tracking-wide ${entry.isLegacy ? 'text-amber-600' : 'text-slate-500'}`}>
-            {entry.timestamp}
+    <div className={`${maxHeightClassName} space-y-2 overflow-y-auto pr-1`}>
+      {entries.map((entry, index) => {
+        const kindLabel = entry.kind === 'status'
+          ? 'Status update'
+          : entry.kind === 'legacy'
+            ? 'Legacy note'
+            : 'Internal note'
+        const kindClass = entry.kind === 'status'
+          ? 'bg-sky-50 text-sky-700 ring-sky-100'
+          : entry.kind === 'legacy'
+            ? 'bg-amber-50 text-amber-700 ring-amber-100'
+            : 'bg-slate-100 text-slate-700 ring-slate-200'
+        const author = clean(entry.actor) || 'Unknown author'
+
+        return (
+          <div key={`${entry.timestamp}-${index}`} className="rounded-lg border border-slate-200 bg-white px-3 py-2.5 shadow-sm">
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+              <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ring-1 ring-inset ${kindClass}`}>
+                {kindLabel}
+              </span>
+              <span className="text-[11px] font-semibold text-slate-500">{entry.timestamp}</span>
+            </div>
+            <div className="mb-1 text-[11px] text-slate-500">
+              By <span className="font-semibold text-slate-700">{author}</span>
+            </div>
+            <div className="whitespace-pre-wrap rounded-md bg-slate-50/70 px-2.5 py-2 text-sm leading-6 text-slate-800">{entry.body}</div>
           </div>
-          <div className="whitespace-pre-wrap text-sm leading-6 text-slate-800">{entry.body}</div>
-        </div>
-      ))}
+        )
+      })}
     </div>
   )
 }

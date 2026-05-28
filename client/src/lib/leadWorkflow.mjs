@@ -31,6 +31,14 @@ export const normalizeLeadManagerStatus = (value) => {
   return LEGACY_STATUS_MAP.get(raw.toUpperCase()) ?? null
 }
 
+export const resolveLeadFinanceManager = (currentManager, actor) => {
+  const existing = cleanLeadText(currentManager)
+  if (existing) return existing
+
+  const next = cleanLeadText(actor)
+  return next || null
+}
+
 export const formatLeadNoteTimestamp = (date = new Date()) =>
   date.toLocaleString('en-CA', {
     year: 'numeric',
@@ -40,12 +48,14 @@ export const formatLeadNoteTimestamp = (date = new Date()) =>
     minute: '2-digit',
   })
 
-export const appendLeadTranscriptNote = (existingNotes, note, timestamp = formatLeadNoteTimestamp()) => {
+export const appendLeadTranscriptNote = (existingNotes, note, timestamp = formatLeadNoteTimestamp(), actor = '') => {
   const current = cleanLeadText(existingNotes)
   const text = cleanLeadText(note)
   if (!text) return current || null
 
-  const entry = `[${cleanLeadText(timestamp)}] ${text}`
+  const author = cleanLeadText(actor)
+  const entryText = author ? `Note by ${author}: ${text}` : text
+  const entry = `[${cleanLeadText(timestamp)}] ${entryText}`
   return current ? `${current}\n\n${entry}` : entry
 }
 
@@ -75,13 +85,37 @@ export const parseLeadTranscriptEntries = (notes) => {
     .map((entry) => {
       const timestampMatch = entry.match(/^\[([^\]]+)\]\s*([\s\S]*)$/)
       if (!timestampMatch) {
-        return { timestamp: 'Legacy note', body: entry, isLegacy: true }
+        return { timestamp: 'Legacy note', body: entry, isLegacy: true, kind: 'legacy', actor: 'Unknown author' }
+      }
+      const body = cleanLeadText(timestampMatch[2])
+      const noteMatch = body.match(/^Note by ([^:]+):\s*([\s\S]*)$/i)
+      if (noteMatch) {
+        return {
+          timestamp: cleanLeadText(timestampMatch[1]),
+          body: cleanLeadText(noteMatch[2]),
+          isLegacy: false,
+          kind: 'note',
+          actor: cleanLeadText(noteMatch[1]) || 'Unknown author',
+        }
+      }
+
+      const statusMatch = body.match(/^Status updated(?: by ([^:]+))?:\s*([\s\S]*)$/i)
+      if (statusMatch) {
+        return {
+          timestamp: cleanLeadText(timestampMatch[1]),
+          body: cleanLeadText(statusMatch[2]),
+          isLegacy: false,
+          kind: 'status',
+          actor: cleanLeadText(statusMatch[1]) || 'Unknown author',
+        }
       }
 
       return {
         timestamp: cleanLeadText(timestampMatch[1]),
-        body: cleanLeadText(timestampMatch[2]),
+        body,
         isLegacy: false,
+        kind: 'note',
+        actor: 'Unknown author',
       }
     })
 }

@@ -1,4 +1,11 @@
 import { NextResponse } from 'next/server'
+import nodemailer from 'nodemailer'
+import {
+  buildCompletionNotificationEmail,
+  collectCompletionNotificationRecipients,
+  shouldSendCompletionNotification,
+} from '@/lib/eSignatureCompletion'
+import { parseEnvelopeDocuments } from '@/lib/eSignatureDocuments'
 
 export const dynamic = 'force-dynamic'
 
@@ -16,6 +23,30 @@ const numberOrZero = (value: unknown) => {
   const parsed = Number(value)
   return Number.isFinite(parsed) ? parsed : 0
 }
+
+type SignatureField = {
+  id?: string
+  type?: string
+  value?: unknown
+  recipientIndex?: unknown
+  fileIndex?: unknown
+}
+
+type SignatureRow = {
+  id?: string
+  status?: string
+  signed_at?: string | null
+  email?: string
+  full_name?: string
+  user_id?: string
+  document_file?: unknown
+}
+
+const isSignatureField = (value: unknown): value is SignatureField =>
+  Boolean(value && typeof value === 'object')
+
+const errorMessage = (error: unknown, fallback: string) =>
+  error instanceof Error ? error.message : fallback
 
 const requestIp = (request: Request, fallback?: unknown) =>
   String(
@@ -67,6 +98,79 @@ const insertAuditEvent = async (payload: Record<string, unknown>) => {
   }
 }
 
+const getSiteOrigin = (request: Request) =>
+  String(process.env.NEXT_PUBLIC_SITE_URL || request.headers.get('origin') || '').replace(/\/+$/, '')
+
+const getEnvelopeDocumentTitle = (documentFile: unknown) => {
+  const docs = parseEnvelopeDocuments(documentFile)
+  return docs[0]?.name || 'Document'
+}
+
+const getOwnerEmailByUserId = async (userId: unknown): Promise<string> => {
+  const id = String(userId || '').trim()
+  if (!id || !baseUrl || !apiKey) return ''
+  const res = await fetch(
+    `${baseUrl}/rest/v1/users?select=email&or=(user_id.eq.${encodeURIComponent(id)},id.eq.${encodeURIComponent(id)})&limit=1`,
+    { method: 'GET', headers: hdrs(), cache: 'no-store' }
+  ).catch(() => null)
+  if (!res?.ok) return ''
+  const rows = await res.json().catch(() => [])
+  return String(Array.isArray(rows) ? rows[0]?.email || '' : '').trim()
+}
+
+const getCompletionNotificationEvents = async (envelopeId: string) => {
+  if (!baseUrl || !apiKey) return []
+  const res = await fetch(
+    `${baseUrl}/rest/v1/edc_signature_events?signature_id=eq.${encodeURIComponent(envelopeId)}&action=eq.${encodeURIComponent('Completion Notification Sent')}&select=action&limit=1`,
+    { method: 'GET', headers: hdrs(), cache: 'no-store' }
+  ).catch(() => null)
+  if (!res?.ok) return []
+  const rows = await res.json().catch(() => [])
+  return Array.isArray(rows) ? rows : []
+}
+
+const sendCompletionNotificationEmail = async ({
+  to,
+  subject,
+  text,
+  html,
+}: {
+  to: string[]
+  subject: string
+  text: string
+  html: string
+}) => {
+  const smtpHost = process.env.SMTP_HOST
+  const smtpPort = parseInt(process.env.SMTP_PORT ?? '587', 10)
+  const smtpUser = process.env.SMTP_USER
+  const smtpPass = process.env.SMTP_PASS
+  const smtpFrom = process.env.SMTP_FROM ?? smtpUser
+
+  if (!smtpHost || !smtpUser || !smtpPass || !smtpFrom || to.length === 0) {
+    return { sent: false, reason: 'SMTP is not configured.' }
+  }
+
+  const transporter = nodemailer.createTransport({
+    host: smtpHost,
+    port: smtpPort,
+    secure: smtpPort === 465,
+    auth: {
+      user: smtpUser,
+      pass: smtpPass,
+    },
+  })
+
+  await transporter.sendMail({
+    from: `"EasyDrive Canada" <${smtpFrom}>`,
+    to,
+    subject,
+    text,
+    html,
+  })
+
+  return { sent: true, reason: '' }
+}
+
 export async function PATCH(
   request: Request,
   { params }: { params: { id: string } }
@@ -94,24 +198,25 @@ export async function PATCH(
     const signedAt = signed_at || now
 
     // Parse fields array
-    let fields: any[] = []
+    let fields: SignatureField[] = []
     try {
-      fields = fields_data ? (typeof fields_data === 'string' ? JSON.parse(fields_data) : fields_data) : []
+      const parsedFields = fields_data ? (typeof fields_data === 'string' ? JSON.parse(fields_data) : fields_data) : []
+      fields = Array.isArray(parsedFields) ? parsedFields.filter(isSignatureField) : []
     } catch { fields = [] }
 
     // Extract per-field-type values from the fields array
-    const sigField     = fields.find((f: any) => f.type === 'signature')
-    const initialField = fields.find((f: any) => f.type === 'initial')
-    const stampField   = fields.find((f: any) => f.type === 'stamp')
-    const dateField    = fields.find((f: any) => f.type === 'dateSigned')
-    const nameField    = fields.find((f: any) => f.type === 'name')
-    const companyField = fields.find((f: any) => f.type === 'company')
-    const titleField   = fields.find((f: any) => f.type === 'title')
-    const textField    = fields.find((f: any) => f.type === 'text')
-    const checkField   = fields.find((f: any) => f.type === 'checkbox')
+    const sigField     = fields.find((f) => f.type === 'signature')
+    const initialField = fields.find((f) => f.type === 'initial')
+    const stampField   = fields.find((f) => f.type === 'stamp')
+    const dateField    = fields.find((f) => f.type === 'dateSigned')
+    const nameField    = fields.find((f) => f.type === 'name')
+    const companyField = fields.find((f) => f.type === 'company')
+    const titleField   = fields.find((f) => f.type === 'title')
+    const textField    = fields.find((f) => f.type === 'text')
+    const checkField   = fields.find((f) => f.type === 'checkbox')
 
     // Build signature table payload — each recipient gets their own unique values
-    const payload: Record<string, any> = {
+    const payload: Record<string, unknown> = {
       status: status || 'completed',
       updated_at: now,
       signed_at: signedAt,
@@ -165,11 +270,16 @@ export async function PATCH(
       )
     }
 
+    const updatedRows = await res.json().catch(() => null)
+    if (Array.isArray(updatedRows) && updatedRows.length === 0) {
+      return NextResponse.json({ error: 'Signature not found' }, { status: 404 })
+    }
+
     // Also update each individual field row in edc_esignature_fields with its value + signed_at
     if (deal_id && fields.length > 0) {
       const fieldUpdates = fields
-        .filter((f: any) => f.id && f.value !== undefined && f.value !== null && f.value !== '')
-        .map((f: any) => {
+        .filter((f) => f.id && f.value !== undefined && f.value !== null && f.value !== '')
+        .map((f) => {
           const filters = [
             `deal_id=eq.${encodeURIComponent(deal_id)}`,
             `field_id=eq.${encodeURIComponent(f.id)}`,
@@ -222,13 +332,13 @@ export async function PATCH(
     })
 
     const groupRes = await fetch(
-      `${baseUrl}/rest/v1/signature?deal_id=eq.${encodeURIComponent(envelopeId)}&select=id,status,signed_at`,
+      `${baseUrl}/rest/v1/signature?deal_id=eq.${encodeURIComponent(envelopeId)}&select=id,status,signed_at,email,full_name,user_id,document_file`,
       { method: 'GET', headers: hdrs(), cache: 'no-store' }
     ).catch(() => null)
     if (groupRes?.ok) {
       const group = await groupRes.json().catch(() => [])
-      const rows = Array.isArray(group) ? group : []
-      const allComplete = rows.length > 0 && rows.every((row: any) => {
+      const rows: SignatureRow[] = Array.isArray(group) ? group.filter((row): row is SignatureRow => isSignatureField(row)) : []
+      const allComplete = rows.length > 0 && rows.every((row) => {
         const rowStatus = String(row?.status || '').toLowerCase()
         return row?.signed_at || rowStatus === 'completed' || rowStatus === 'signed'
       })
@@ -247,11 +357,51 @@ export async function PATCH(
             recipient_count: rows.length,
           },
         })
+
+        const completionEvents = await getCompletionNotificationEvents(envelopeId)
+        if (shouldSendCompletionNotification(rows, completionEvents)) {
+          const primaryRow = rows[0] || {}
+          const ownerEmail = await getOwnerEmailByUserId(primaryRow.user_id)
+          const recipients = collectCompletionNotificationRecipients(ownerEmail, 'info@easydrivecanada.com')
+          const origin = getSiteOrigin(request)
+          const adminUrl = origin
+            ? `${origin}/admin/esignature/prepare/${encodeURIComponent(envelopeId)}`
+            : `/admin/esignature/prepare/${encodeURIComponent(envelopeId)}`
+          const email = buildCompletionNotificationEmail({
+            envelopeId,
+            documentTitle: getEnvelopeDocumentTitle(primaryRow.document_file),
+            adminUrl,
+            recipients: rows,
+          })
+
+          const sendResult = await sendCompletionNotificationEmail({ to: recipients, ...email }).catch((err: unknown) => ({
+            sent: false,
+            reason: errorMessage(err, 'Failed to send notification.'),
+          }))
+
+          await insertAuditEvent({
+            signature_id: envelopeId,
+            deal_id: envelopeId,
+            user_name: 'EasyDrive Canada',
+            user_email: recipients.join(', '),
+            action: sendResult.sent ? 'Completion Notification Sent' : 'Completion Notification Skipped',
+            activity: sendResult.sent
+              ? `Completion notification sent to ${recipients.join(', ')}.`
+              : `Completion notification was not sent: ${sendResult.reason}`,
+            status: sendResult.sent ? 'Sent' : 'Skipped',
+            ip_address: requestIp(request, ip_address),
+            user_agent: String(user_agent || request.headers.get('user-agent') || ''),
+            metadata: {
+              recipients,
+              reason: sendResult.reason,
+            },
+          })
+        }
       }
     }
 
     return NextResponse.json({ success: true })
-  } catch (err: any) {
-    return NextResponse.json({ error: err?.message || 'Failed to complete signature' }, { status: 500 })
+  } catch (err: unknown) {
+    return NextResponse.json({ error: errorMessage(err, 'Failed to complete signature') }, { status: 500 })
   }
 }

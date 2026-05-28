@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef, useMemo } from 'react'
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { motion } from 'framer-motion'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
@@ -11,6 +11,12 @@ import {
   vehicleMatchesSearch,
   type InventoryReadiness,
 } from '@/lib/dealerOpsReadiness.mjs'
+import {
+  filterInventoryVehicles,
+  getVehicleListingBucket,
+  type InventoryListingTab,
+} from '@/lib/inventoryFilters'
+import { buildVehiclePhotoUrls } from '@/lib/vehiclePhotoUrls.mjs'
 import * as XLSX from 'xlsx-js-style'
 
 const VEHICLE_LIMITS: Record<string, number> = {
@@ -29,22 +35,6 @@ const ROLE_DISPLAY: Record<string, string> = {
   'medium dealership': 'Medium Dealer',
   'large dealership': 'Large Dealer',
   'premier': 'Premier',
-}
-
-const CLOSED_INVENTORY_STATUSES = new Set(['sold', 'closed'])
-
-const isClosedInventoryStatus = (status: unknown) =>
-  CLOSED_INVENTORY_STATUSES.has(String(status ?? '').trim().toLowerCase())
-
-const matchesStockOrVin = (vehicle: { stockNumber?: unknown; vin?: unknown }, search: string) => {
-  const query = search.trim().toLowerCase()
-  if (!query) return false
-  const stock = String(vehicle.stockNumber ?? '').trim().toLowerCase()
-  const vin = String(vehicle.vin ?? '').trim().toLowerCase()
-  return Boolean(
-    (stock && stock.includes(query)) ||
-    (vin && query.length >= 3 && vin.includes(query))
-  )
 }
 
 interface Vehicle {
@@ -89,20 +79,6 @@ interface Vehicle {
   raw?: any
 }
 
-type ListingBucket = 'private' | 'premier' | 'fleet' | 'dealer' | ''
-type ListingTab = '' | 'premier' | 'fleet'
-
-const getVehicleListingBucket = (vehicle: Pick<Vehicle, 'category' | 'inventoryType'>): ListingBucket => {
-  const raw = String(vehicle.category || vehicle.inventoryType || '').trim().toLowerCase()
-
-  if (raw.includes('private')) return 'private'
-  if (raw.includes('premier') || raw.includes('premiere')) return 'premier'
-  if (raw.includes('fleet')) return 'fleet'
-  if (raw.includes('dealer')) return 'dealer'
-
-  return ''
-}
-
 export default function AdminInventoryPage() {
   const permissionVisibility = usePermissionVisibility()
   const canAccessAllInventory = permissionVisibility.canShow('inventory')
@@ -130,7 +106,7 @@ export default function AdminInventoryPage() {
   const [statusFilterOpen, setStatusFilterOpen] = useState(false)
   const [itemsPerPage, setItemsPerPage] = useState(10)
   // Listing category tabs (based on category/categories with inventory_type fallback)
-  const [categoryTab, setCategoryTab] = useState<ListingTab>('')
+  const [categoryTab, setCategoryTab] = useState<InventoryListingTab>('')
   const [showAddModal, setShowAddModal] = useState(false)
   const [addSubmitting, setAddSubmitting] = useState(false)
   const [addError, setAddError] = useState('')
@@ -227,6 +203,35 @@ export default function AdminInventoryPage() {
     additionalExpenses: 0,
     taxTotal: 0,
   })
+
+  const loadBucketImages = useCallback(async (vehicleId: string): Promise<string[]> => {
+    const id = String(vehicleId || '').trim()
+    if (!id) return []
+    const cached = bucketImageCache.get(id)
+    if (cached) return cached
+
+    try {
+      const { data, error: listError } = await supabase.storage
+        .from('vehicle-photos')
+        .list(id, {
+          limit: 100,
+          sortBy: { column: 'name', order: 'asc' },
+        })
+
+      const urls = listError
+        ? []
+        : buildVehiclePhotoUrls(id, data, (path) => {
+            const pub = supabase.storage.from('vehicle-photos').getPublicUrl(path)
+            return String(pub?.data?.publicUrl || '').trim()
+          })
+
+      bucketImageCache.set(id, urls)
+      return urls
+    } catch {
+      bucketImageCache.set(id, [])
+      return []
+    }
+  }, [bucketImageCache])
 
   const parseCostsData = (val: any) => {
     if (!val) return undefined
@@ -660,53 +665,6 @@ export default function AdminInventoryPage() {
   const fetchVehicles = async (userId: string | null) => {
     setLoading(true)
     try {
-      const loadBucketImages = async (vehicleId: string): Promise<string[]> => {
-        const id = String(vehicleId || '').trim()
-        if (!id) return []
-        const cached = bucketImageCache.get(id)
-        if (cached) return cached
-
-        try {
-          const { data, error: listError } = await supabase.storage
-            .from('vehicle-photos')
-            .list(id, {
-              limit: 100,
-              sortBy: { column: 'name', order: 'asc' },
-            })
-
-          if (listError || !Array.isArray(data) || data.length === 0) {
-            bucketImageCache.set(id, [])
-            return []
-          }
-
-          const files = data
-            .filter((f) => !!f?.name && !String(f.name).endsWith('/'))
-            .map((f) => `${id}/${f.name}`)
-
-          const urls: string[] = []
-          for (const path of files) {
-            const pub = supabase.storage.from('vehicle-photos').getPublicUrl(path)
-            const publicUrl = String(pub?.data?.publicUrl || '').trim()
-            if (publicUrl) {
-              urls.push(publicUrl)
-              continue
-            }
-
-            const { data: signed } = await supabase.storage
-              .from('vehicle-photos')
-              .createSignedUrl(path, 60 * 60)
-            const signedUrl = String((signed as any)?.signedUrl || '').trim()
-            if (signedUrl) urls.push(signedUrl)
-          }
-
-          bucketImageCache.set(id, urls)
-          return urls
-        } catch {
-          bucketImageCache.set(id, [])
-          return []
-        }
-      }
-
       let q = supabase
         .from('edc_vehicles')
         .select('*')
@@ -762,7 +720,7 @@ export default function AdminInventoryPage() {
         }
       }
 
-      const mapped = await Promise.all(vehiclesRaw.map(async (v: any) => {
+      const mapped = vehiclesRaw.map((v: any) => {
         const safe = (x: any) => (x === null || x === undefined ? '' : String(x))
         const stockNumber = safe(v.stock_number)
 
@@ -804,7 +762,7 @@ export default function AdminInventoryPage() {
             const vt = String((v as any).vehicle_type ?? (v as any).vehicletype ?? (v as any).type ?? '').trim()
             return vt || undefined
           })(),
-          images: await loadBucketImages(String(v.id)),
+          images: [],
           photos: Array.isArray((v as any).photos) ? (v as any).photos : undefined,
           keyNumber: safe((v as any).key_number) || undefined,
           vin: safe((v as any).vin) || undefined,
@@ -834,7 +792,7 @@ export default function AdminInventoryPage() {
           certified: safe((v as any).certified) || undefined,
           raw: v,
         } as Vehicle
-      }))
+      })
 
       const toNum = (s: any) => {
         const n = Number(String(s ?? '').replace(/[^0-9.]/g, ''))
@@ -859,58 +817,16 @@ export default function AdminInventoryPage() {
 
   // Search and filter vehicles
   useEffect(() => {
-    let filtered = vehicles
-    const stockOrVinLookup = searchQuery.trim()
-      ? (vehicle: Vehicle) => matchesStockOrVin(vehicle, searchQuery)
-      : () => false
-
-    // Filter by inventory type
-    if (inventoryTypeFilter) {
-      filtered = filtered.filter(vehicle => vehicle.inventoryType === inventoryTypeFilter)
-    }
-
-    if (categoryTab) {
-      filtered = filtered.filter(v => getVehicleListingBucket(v) === categoryTab)
-    }
-
-    if (statusFilter.size > 0 && statusFilter.size < STATUS_OPTIONS.length) {
-      const known = new Set<string>(STATUS_OPTIONS.filter((s) => s !== 'Other') as unknown as string[])
-      filtered = filtered.filter((vehicle) => {
-        const normalized = normalizeStatus(vehicle.status)
-        // If status matches selected options
-        if (statusFilter.has(normalized)) return true
-        // Treat empty or unknown statuses as 'Other' when 'Other' is selected
-        if (statusFilter.has('Other') && (!normalized || !known.has(normalized))) return true
-        return false
-      })
-    }
-
-    // Closed/sold inventory should be removed from normal browsing. Stock/VIN lookup
-    // is the exception so staff can still find the record when reconciling reports.
-    const explicitlyShowingClosedStatus =
-      statusFilter.size > 0 &&
-      statusFilter.size < STATUS_OPTIONS.length &&
-      (statusFilter.has('Sold') || statusFilter.has('Void'))
-
-    if (!explicitlyShowingClosedStatus) {
-      filtered = filtered.filter((vehicle) => !isClosedInventoryStatus(vehicle.status) || stockOrVinLookup(vehicle))
-    }
-
-    // Filter by search query
-    if (searchQuery.trim()) {
-      const query = searchQuery.toLowerCase()
-      filtered = filtered.filter(vehicle => {
-        const opsVehicle = opsVehicleById[vehicle.id] || {}
-        return vehicleMatchesSearch({ ...vehicle.raw, ...vehicle, ...opsVehicle }, query) ||
-          vehicle.make.toLowerCase().includes(query) ||
-          vehicle.model.toLowerCase().includes(query) ||
-          vehicle.year.toString().includes(query) ||
-          vehicle.stockNumber?.toLowerCase().includes(query) ||
-          vehicle.vin?.toLowerCase().includes(query) ||
-          vehicle.keyNumber?.toLowerCase().includes(query) ||
-          `${vehicle.year} ${vehicle.make} ${vehicle.model}`.toLowerCase().includes(query)
-      })
-    }
+    const filtered = filterInventoryVehicles(vehicles, {
+      categoryTab,
+      inventoryTypeFilter,
+      statusFilter,
+      statusOptions: STATUS_OPTIONS,
+      searchQuery,
+      opsVehicleById,
+      normalizeStatus,
+      vehicleMatchesSearch,
+    })
     
     setFilteredVehicles(filtered)
     setTotalVehicles(filtered.length)
@@ -922,6 +838,29 @@ export default function AdminInventoryPage() {
     (currentPage - 1) * itemsPerPage,
     currentPage * itemsPerPage
   )
+
+  useEffect(() => {
+    const targets = paginatedVehicles.filter((vehicle) =>
+      (!vehicle.images || vehicle.images.length === 0) &&
+      !bucketImageCache.has(vehicle.id)
+    )
+    if (targets.length === 0) return
+
+    let cancelled = false
+    void Promise.all(targets.map(async (vehicle) => ({ id: vehicle.id, images: await loadBucketImages(vehicle.id) })))
+      .then((loaded) => {
+        if (cancelled) return
+        const imagesById = new Map(loaded.map((entry) => [entry.id, entry.images]))
+        setVehicles((current) => current.map((vehicle) => {
+          const images = imagesById.get(vehicle.id)
+          return images ? { ...vehicle, images } : vehicle
+        }))
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [bucketImageCache, loadBucketImages, paginatedVehicles])
   
   const totalPages = Math.ceil(totalVehicles / itemsPerPage)
 
@@ -1619,48 +1558,59 @@ export default function AdminInventoryPage() {
       )}
 
       <div className="px-6 py-6">
-        {/* Tab bar + search row */}
-        <div className="flex items-center justify-between gap-4 mb-5 flex-wrap">
-          {/* Category tabs */}
-          <div className="flex items-center gap-2">
-            {(() => {
-              const allCount = vehicles.length
-              const premierCount = vehicles.filter(v => getVehicleListingBucket(v) === 'premier').length
-              const fleetCount = vehicles.filter(v => getVehicleListingBucket(v) === 'fleet').length
-              const TabBtn = ({ label, val, count }: { label: string; val: ListingTab; count?: number }) => (
-                <button
-                  type="button"
-                  onClick={() => setCategoryTab(val)}
-                  className={`px-4 py-1.5 rounded-full text-sm font-medium border transition-all ${
-                    categoryTab === val
-                      ? 'bg-[#0B1F3A] text-white border-[#0B1F3A]'
-                      : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
-                  }`}
-                >
-                  {label}
-                </button>
-              )
-              return (
-                <>
-                  <TabBtn label="All" val="" count={allCount} />
-                  <TabBtn label="Premier" val="premier" count={premierCount} />
-                  <TabBtn label="Fleet" val="fleet" count={fleetCount} />
-                </>
-              )
-            })()}
-          </div>
+        <div className="mb-5 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+          <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+            <div className="flex flex-wrap items-center gap-2">
+              {(() => {
+                const counts = vehicles.reduce<Record<InventoryListingTab, number>>(
+                  (acc, vehicle) => {
+                    acc[''] += 1
+                    const bucket = getVehicleListingBucket(vehicle)
+                    if (bucket === 'premier' || bucket === 'fleet') acc[bucket] += 1
+                    return acc
+                  },
+                  { '': 0, premier: 0, fleet: 0 }
+                )
+                const TabBtn = ({ label, val }: { label: string; val: InventoryListingTab }) => {
+                  const active = categoryTab === val
+                  return (
+                    <button
+                      type="button"
+                      onClick={() => setCategoryTab(val)}
+                      aria-pressed={active}
+                      className={`h-10 rounded-xl border px-4 text-sm font-semibold transition-all ${
+                        active
+                          ? 'border-[#0B1F3A] bg-[#0B1F3A] text-white shadow-sm'
+                          : 'border-slate-200 bg-slate-50 text-slate-600 hover:border-slate-300 hover:bg-white'
+                      }`}
+                    >
+                      <span>{label}</span>
+                      <span className={`ml-2 rounded-full px-2 py-0.5 text-[11px] ${active ? 'bg-white/15 text-white' : 'bg-white text-slate-500'}`}>
+                        {counts[val]}
+                      </span>
+                    </button>
+                  )
+                }
+                return (
+                  <>
+                    <TabBtn label="All" val="" />
+                    <TabBtn label="Premier" val="premier" />
+                    <TabBtn label="Fleet" val="fleet" />
+                  </>
+                )
+              })()}
+            </div>
 
-          {/* Right: search + status dropdown */}
-          <div className="flex items-center gap-2">
-            <div className="relative">
+            <div className="flex w-full flex-col gap-2 sm:flex-row xl:w-auto xl:min-w-[560px]">
+              <div className="relative flex-1">
               <input
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search inventory..."
-                className="h-9 pl-9 pr-4 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-[#1EA7FF]/30 w-56"
+                placeholder="Search stock, VIN, year, make, model..."
+                className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-4 text-sm text-slate-800 outline-none transition focus:border-[#1EA7FF] focus:bg-white focus:ring-2 focus:ring-[#1EA7FF]/20"
               />
-              <svg className="absolute left-3 top-2.5 w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="absolute left-3 top-3.5 h-4 w-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
               </svg>
             </div>
@@ -1669,7 +1619,7 @@ export default function AdminInventoryPage() {
               <button
                 type="button"
                 onClick={() => setStatusFilterOpen((v) => !v)}
-                className="h-9 px-3 text-sm border border-slate-200 rounded-lg bg-white text-slate-600 hover:bg-slate-50 transition-colors inline-flex items-center gap-1.5"
+                className="inline-flex h-11 w-full items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-600 transition-colors hover:bg-slate-50 sm:w-auto"
               >
                 {selectedStatusLabel}
                 <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1701,6 +1651,7 @@ export default function AdminInventoryPage() {
               )}
             </div>
           </div>
+        </div>
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">

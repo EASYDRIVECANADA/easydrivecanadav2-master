@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { Gauge, Settings2, Fuel } from 'lucide-react'
+import { buildVehiclePhotoUrls } from '@/lib/vehiclePhotoUrls.mjs'
 
 interface Vehicle {
   id: string
@@ -52,6 +53,7 @@ const categoryLabel: Record<string, string> = {
 export default function HomePage() {
   const [vehicles, setVehicles] = useState<Vehicle[]>([])
   const [openFaq, setOpenFaq] = useState<number | null>(null)
+  const [imageCache] = useState(() => new Map<string, string>())
 
   useEffect(() => {
     const loadVehicles = async () => {
@@ -63,19 +65,9 @@ export default function HomePage() {
 
       if (error || !data) return
 
-      const withImages = await Promise.all(
-        (data as VehicleRow[]).map(async (v) => {
+      const rows = (data as VehicleRow[])
+        .map((v) => {
           const id = String(v.id || '').trim()
-          let imageUrl = ''
-          try {
-            const { data: files } = await supabase.storage
-              .from('vehicle-photos')
-              .list(id, { limit: 1, sortBy: { column: 'name', order: 'asc' } })
-            if (files && files.length > 0 && files[0].name) {
-              const pub = supabase.storage.from('vehicle-photos').getPublicUrl(`${id}/${files[0].name}`)
-              imageUrl = pub?.data?.publicUrl || ''
-            }
-          } catch { /* no image */ }
           return {
             id,
             make: String(v.make || ''),
@@ -87,18 +79,45 @@ export default function HomePage() {
             transmission: v.transmission || null,
             category: v.categories || null,
             status: v.status || '',
-            imageUrl,
+            imageUrl: '',
           }
         })
-      )
-      const imageFirst = withImages
-        .sort((a, b) => Number(Boolean(b.imageUrl)) - Number(Boolean(a.imageUrl)))
-        .slice(0, 8)
 
-      setVehicles(imageFirst)
+      setVehicles(rows.slice(0, 8))
     }
     loadVehicles()
   }, [])
+
+  useEffect(() => {
+    const targets = vehicles.filter((vehicle) => !vehicle.imageUrl && !imageCache.has(vehicle.id))
+    if (targets.length === 0) return
+
+    let cancelled = false
+    void Promise.all(targets.map(async (vehicle) => {
+      try {
+        const { data: files } = await supabase.storage
+          .from('vehicle-photos')
+          .list(vehicle.id, { limit: 1, sortBy: { column: 'name', order: 'asc' } })
+        const [imageUrl = ''] = buildVehiclePhotoUrls(vehicle.id, files, (path) => {
+          const pub = supabase.storage.from('vehicle-photos').getPublicUrl(path)
+          return pub?.data?.publicUrl || ''
+        })
+        imageCache.set(vehicle.id, imageUrl)
+        return { id: vehicle.id, imageUrl }
+      } catch {
+        imageCache.set(vehicle.id, '')
+        return { id: vehicle.id, imageUrl: '' }
+      }
+    })).then((loaded) => {
+      if (cancelled) return
+      const imagesById = new Map(loaded.map((entry) => [entry.id, entry.imageUrl]))
+      setVehicles((current) => current.map((vehicle) => ({ ...vehicle, imageUrl: imagesById.get(vehicle.id) ?? vehicle.imageUrl })))
+    })
+
+    return () => {
+      cancelled = true
+    }
+  }, [imageCache, vehicles])
 
   return (
     <div className="flex flex-col bg-white">

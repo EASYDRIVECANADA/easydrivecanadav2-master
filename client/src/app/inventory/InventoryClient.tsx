@@ -1,8 +1,9 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabaseClient'
+import { buildVehiclePhotoUrls } from '@/lib/vehiclePhotoUrls.mjs'
 // phase3Mock removed — reservation status now comes from edc_vehicles.status
 
 interface Vehicle {
@@ -122,6 +123,35 @@ export default function InventoryClient() {
 
   const [bucketImageCache] = useState(() => new Map<string, string[]>())
 
+  const loadBucketImages = useCallback(async (vehicleId: string): Promise<string[]> => {
+    const id = String(vehicleId || '').trim()
+    if (!id) return []
+    const cached = bucketImageCache.get(id)
+    if (cached) return cached
+
+    try {
+      const { data, error: listError } = await supabase.storage
+        .from('vehicle-photos')
+        .list(id, {
+          limit: 100,
+          sortBy: { column: 'name', order: 'asc' },
+        })
+
+      const urls = listError
+        ? []
+        : buildVehiclePhotoUrls(id, data, (path) => {
+            const pub = supabase.storage.from('vehicle-photos').getPublicUrl(path)
+            return String(pub?.data?.publicUrl || '').trim()
+          })
+
+      bucketImageCache.set(id, urls)
+      return urls
+    } catch {
+      bucketImageCache.set(id, [])
+      return []
+    }
+  }, [bucketImageCache])
+
   const toImageSrc = (value: string) => {
     const v = String(value || '').trim()
     if (!v) return ''
@@ -197,55 +227,8 @@ export default function InventoryClient() {
 
       if (error) throw error
 
-      const loadBucketImages = async (vehicleId: string): Promise<string[]> => {
-        const id = String(vehicleId || '').trim()
-        if (!id) return []
-        const cached = bucketImageCache.get(id)
-        if (cached) return cached
-
-        try {
-          const { data, error: listError } = await supabase.storage
-            .from('vehicle-photos')
-            .list(id, {
-              limit: 100,
-              sortBy: { column: 'name', order: 'asc' },
-            })
-
-          if (listError || !Array.isArray(data) || data.length === 0) {
-            bucketImageCache.set(id, [])
-            return []
-          }
-
-          const files = data
-            .filter((f) => !!f?.name && !String(f.name).endsWith('/'))
-            .map((f) => `${id}/${f.name}`)
-
-          const urls: string[] = []
-          for (const path of files) {
-            const pub = supabase.storage.from('vehicle-photos').getPublicUrl(path)
-            const publicUrl = String(pub?.data?.publicUrl || '').trim()
-            if (publicUrl) {
-              urls.push(publicUrl)
-              continue
-            }
-
-            const { data: signed } = await supabase.storage
-              .from('vehicle-photos')
-              .createSignedUrl(path, 60 * 60)
-            const signedUrl = String((signed as { signedUrl?: string } | null)?.signedUrl || '').trim()
-            if (signedUrl) urls.push(signedUrl)
-          }
-
-          bucketImageCache.set(id, urls)
-          return urls
-        } catch {
-          bucketImageCache.set(id, [])
-          return []
-        }
-      }
-
-      const mapped: Vehicle[] = await Promise.all(
-        ((data || []) as SupabaseVehicleRow[]).map(async (v) => {
+      const mapped: Vehicle[] =
+        ((data || []) as SupabaseVehicleRow[]).map((v) => {
           const baseVehicle: Omit<Vehicle, 'images'> = {
             id: v.id,
             stockNumber: v.stock_number || undefined,
@@ -272,10 +255,9 @@ export default function InventoryClient() {
 
           return {
             ...baseVehicle,
-            images: isFleetVehicle(baseVehicle) ? [] : await loadBucketImages(String(v.id)),
+            images: [],
           }
         })
-      )
 
       setVehicles(mapped.filter((vehicle) => !isClosedInventoryStatus(vehicle.status)))
     } catch (_error) {
@@ -439,6 +421,30 @@ export default function InventoryClient() {
   const startIndex = (currentPage - 1) * itemsPerPage
   const endIndex = startIndex + itemsPerPage
   const paginatedVehicles = filteredVehicles.slice(startIndex, endIndex)
+
+  useEffect(() => {
+    const targets = paginatedVehicles.filter((vehicle) =>
+      !isFleetVehicle(vehicle) &&
+      (!vehicle.images || vehicle.images.length === 0) &&
+      !bucketImageCache.has(vehicle.id)
+    )
+    if (targets.length === 0) return
+
+    let cancelled = false
+    void Promise.all(targets.map(async (vehicle) => ({ id: vehicle.id, images: await loadBucketImages(vehicle.id) })))
+      .then((loaded) => {
+        if (cancelled) return
+        const imagesById = new Map(loaded.map((entry) => [entry.id, entry.images]))
+        setVehicles((current) => current.map((vehicle) => {
+          const images = imagesById.get(vehicle.id)
+          return images ? { ...vehicle, images } : vehicle
+        }))
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [bucketImageCache, loadBucketImages, paginatedVehicles])
   const displayStart = filteredVehicles.length === 0 ? 0 : startIndex + 1
   const activeViewLabel = activeView === 'fleet' ? 'Fleet Select vehicles' : 'vehicles'
 

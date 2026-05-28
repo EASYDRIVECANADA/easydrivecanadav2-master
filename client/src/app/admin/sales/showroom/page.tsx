@@ -1,10 +1,11 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
 import { resolveShowroomVehicleScope } from '@/lib/accountScope.mjs'
+import { mapShowroomVehicle } from '@/lib/showroomVehicles.mjs'
 
 type ShowroomVehicle = {
   id: string
@@ -25,15 +26,37 @@ type ShowroomVehicle = {
 }
 
 type ListingTypeFilter = 'premier' | 'dealer' | 'private' | 'fleet'
+type PaymentFrequency = 'Monthly' | 'Bi-Weekly' | 'Weekly' | 'Semi-Monthly'
 
-const getCategoryBadge = (categories?: string) => {
-  const raw = String(categories ?? '').trim().toLowerCase()
-  if (!raw) return null
-  if (raw.includes('private')) return { label: 'Private', src: '/images/Private.png' }
-  if (raw.includes('dealer')) return { label: 'Dealership', src: '/images/Dealership.png' }
-  if (raw.includes('premier') || raw.includes('premiere')) return { label: 'Premier', src: '/images/Premier.png' }
-  if (raw.includes('fleet')) return { label: 'Fleet Cars', src: '/images/Fleet%20Cars.png' }
-  return null
+type AdminSession = {
+  email?: string
+  user_id?: string
+}
+
+type UserScopeRow = {
+  id?: string | null
+  user_id?: string | null
+  administrator?: boolean | null
+  access_all_deals?: boolean | null
+  sales?: boolean | null
+}
+
+type AccountVerificationRow = {
+  full_name?: string | null
+}
+
+type InsertedUserRow = {
+  user_id?: string | null
+}
+
+const parseAdminSession = (value: string | null): AdminSession | null => {
+  if (!value) return null
+  try {
+    const parsed = JSON.parse(value) as AdminSession
+    return parsed && typeof parsed === 'object' ? parsed : null
+  } catch {
+    return null
+  }
 }
 
 const getListingType = (vehicle: ShowroomVehicle): ListingTypeFilter | '' => {
@@ -126,11 +149,10 @@ export default function CustomerShowroomPage() {
     activeIndex: number
   }>({ open: false, loading: false, files: [], activeIndex: 0 })
   const [carfaxAvailable, setCarfaxAvailable] = useState<boolean | null>(null)
-  const [carfaxMap, setCarfaxMap] = useState<Map<string, boolean>>(new Map())
-  const [disclosureMap, setDisclosureMap] = useState<Map<string, boolean>>(new Map())
   const [disclosureAvailable, setDisclosureAvailable] = useState<boolean | null>(null)
+  const [selectedImagesLoading, setSelectedImagesLoading] = useState(false)
   const [termMonths, setTermMonths] = useState<number>(96)
-  const [frequency, setFrequency] = useState<'Monthly' | 'Bi-Weekly' | 'Weekly' | 'Semi-Monthly'>('Bi-Weekly')
+  const [frequency, setFrequency] = useState<PaymentFrequency>('Bi-Weekly')
   const [interestRateStr, setInterestRateStr] = useState<string>('')
   const [downPaymentStr, setDownPaymentStr] = useState<string>('')
   const downPaymentCap = useMemo(() => getDownPaymentCap(selected?.price || 0), [selected?.price])
@@ -205,6 +227,42 @@ export default function CustomerShowroomPage() {
     setMounted(true)
   }, [])
 
+  const loadBucketImages = useCallback(async (vehicleId: string): Promise<string[]> => {
+    const id = String(vehicleId || '').trim()
+    if (!id) return []
+    const cached = bucketImageCache.get(id)
+    if (cached) return cached
+
+    try {
+      const { data, error: listError } = await supabase.storage
+        .from('vehicle-photos')
+        .list(id, {
+          limit: 100,
+          sortBy: { column: 'name', order: 'asc' },
+        })
+
+      if (listError || !Array.isArray(data) || data.length === 0) {
+        bucketImageCache.set(id, [])
+        return []
+      }
+
+      const urls = data
+        .filter((file) => !!file?.name && !String(file.name).endsWith('/'))
+        .map((file) => {
+          const path = `${id}/${file.name}`
+          const pub = supabase.storage.from('vehicle-photos').getPublicUrl(path)
+          return String(pub?.data?.publicUrl || '').trim()
+        })
+        .filter(Boolean)
+
+      bucketImageCache.set(id, urls)
+      return urls
+    } catch {
+      bucketImageCache.set(id, [])
+      return []
+    }
+  }, [bucketImageCache])
+
   // Check carfax + disclosure availability for selected vehicle
   useEffect(() => {
     if (!selected) { setCarfaxAvailable(null); setDisclosureAvailable(null); return }
@@ -216,24 +274,30 @@ export default function CustomerShowroomPage() {
       .catch(() => setDisclosureAvailable(false))
   }, [selected])
 
-  // Bulk check carfax + disclosure for all rows
   useEffect(() => {
-    if (rows.length === 0) return
-    const newCarfax = new Map<string, boolean>()
-    const newDisc = new Map<string, boolean>()
-    const carfaxChecks = rows.map((r) =>
-      Promise.resolve(supabase.storage.from('Carfax').list(r.id, { limit: 1 }))
-        .then(({ data }) => { newCarfax.set(r.id, Array.isArray(data) && data.some((f) => !!f?.name && !String(f.name).endsWith('/'))) })
-        .catch(() => { newCarfax.set(r.id, false) })
-    )
-    const discChecks = rows.map((r) =>
-      Promise.resolve(supabase.from('edc_disclosures').select('id', { count: 'exact', head: true }).eq('vehicleId', r.id))
-        .then(({ count }) => { newDisc.set(r.id, (count ?? 0) > 0) })
-        .catch(() => { newDisc.set(r.id, false) })
-    )
-    Promise.all(carfaxChecks).then(() => setCarfaxMap(new Map(newCarfax)))
-    Promise.all(discChecks).then(() => setDisclosureMap(new Map(newDisc)))
-  }, [rows])
+    if (!selected?.id) {
+      setSelectedImagesLoading(false)
+      return
+    }
+    if (bucketImageCache.has(selected.id) || (selected.images && selected.images.length > 0)) return
+
+    let cancelled = false
+    setSelectedImagesLoading(true)
+    void loadBucketImages(selected.id)
+      .then((images) => {
+        if (cancelled) return
+        setRows((current) => current.map((row) => (row.id === selected.id ? { ...row, images } : row)))
+        setSelected((current) => (current?.id === selected.id ? { ...current, images } : current))
+        setImageIdx(0)
+      })
+      .finally(() => {
+        if (!cancelled) setSelectedImagesLoading(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [bucketImageCache, loadBucketImages, selected?.id, selected?.images])
 
   useEffect(() => {
     let cancelled = false
@@ -243,54 +307,8 @@ export default function CustomerShowroomPage() {
         setLoading(true)
         setFetchError(null)
 
-        const loadBucketImages = async (vehicleId: string): Promise<string[]> => {
-          const id = String(vehicleId || '').trim()
-          if (!id) return []
-          const cached = bucketImageCache.get(id)
-          if (cached) return cached
-
-          try {
-            const { data, error: listError } = await supabase.storage
-              .from('vehicle-photos')
-              .list(id, {
-                limit: 100,
-                sortBy: { column: 'name', order: 'asc' },
-              })
-
-            if (listError || !Array.isArray(data) || data.length === 0) {
-              bucketImageCache.set(id, [])
-              return []
-            }
-
-            const files = data
-              .filter((f) => !!f?.name && !String(f.name).endsWith('/'))
-              .map((f) => `${id}/${f.name}`)
-
-            const urls: string[] = []
-            for (const path of files) {
-              const pub = supabase.storage.from('vehicle-photos').getPublicUrl(path)
-              const publicUrl = String(pub?.data?.publicUrl || '').trim()
-              if (publicUrl) {
-                urls.push(publicUrl)
-                continue
-              }
-
-              const { data: signed } = await supabase.storage
-                .from('vehicle-photos')
-                .createSignedUrl(path, 60 * 60)
-              const signedUrl = String((signed as any)?.signedUrl || '').trim()
-              if (signedUrl) urls.push(signedUrl)
-            }
-
-            bucketImageCache.set(id, urls)
-            return urls
-          } catch {
-            bucketImageCache.set(id, [])
-            return []
-          }
-        }
         const storedSession = typeof window !== 'undefined' ? window.localStorage.getItem('edc_admin_session') : null
-        const sessionData = storedSession ? (() => { try { return JSON.parse(storedSession) } catch { return null } })() : null
+        const sessionData = parseAdminSession(storedSession)
         const sessionUserId = String(sessionData?.user_id ?? '').trim()
         let userId = sessionUserId
         let shouldFilterByUserId = Boolean(userId)
@@ -302,11 +320,12 @@ export default function CustomerShowroomPage() {
             .ilike('email', email)
             .limit(1)
             .maybeSingle()
+          const userRow = data as UserScopeRow | null
           const scope = resolveShowroomVehicleScope({
             sessionUserId,
-            rowUserId: (data as any)?.user_id,
-            rowId: (data as any)?.id,
-            canViewAllShowroomVehicles: Boolean((data as any)?.administrator || (data as any)?.access_all_deals || (data as any)?.sales),
+            rowUserId: userRow?.user_id,
+            rowId: userRow?.id,
+            canViewAllShowroomVehicles: Boolean(userRow?.administrator || userRow?.access_all_deals || userRow?.sales),
           })
           userId = scope.userId
           shouldFilterByUserId = scope.shouldFilterByUserId
@@ -319,11 +338,12 @@ export default function CustomerShowroomPage() {
               .limit(1)
               .maybeSingle()
             if (verification) {
+              const verificationRow = verification as AccountVerificationRow
               const generatedUserId =
                 typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
                   ? crypto.randomUUID()
                   : `${Date.now()}-${Math.random().toString(16).slice(2)}`
-              const fullName = String((verification as any)?.full_name || '').trim()
+              const fullName = String(verificationRow.full_name || '').trim()
               const { data: inserted } = await supabase
                 .from('users')
                 .insert({
@@ -339,7 +359,8 @@ export default function CustomerShowroomPage() {
                 })
                 .select('user_id')
                 .single()
-              userId = String((inserted as any)?.user_id || generatedUserId).trim()
+              const insertedRow = inserted as InsertedUserRow | null
+              userId = String(insertedRow?.user_id || generatedUserId).trim()
               shouldFilterByUserId = Boolean(userId)
             }
           }
@@ -350,109 +371,16 @@ export default function CustomerShowroomPage() {
         }
         const vehiclesUrl = shouldFilterByUserId && userId ? `/api/vehicles?user_id=${encodeURIComponent(userId)}` : '/api/vehicles'
         const res = await fetch(vehiclesUrl, { cache: 'no-store' })
-        const json = await res.json().catch(() => ({}))
+        const json = await res.json().catch(() => ({})) as { error?: string; vehicles?: unknown[] }
         if (!res.ok || json.error) throw new Error(json.error || `Failed to fetch vehicles (${res.status})`)
 
         const vehicles = Array.isArray(json.vehicles) ? json.vehicles : []
-        const mapped: ShowroomVehicle[] = await Promise.all(vehicles.map(async (v: any) => {
-          const toNumber = (val: any) => {
-            if (val === null || val === undefined) return 0
-            if (typeof val === 'number') return Number.isFinite(val) ? val : 0
-            const s = String(val).trim()
-            if (!s) return 0
-            const cleaned = s.replace(/[^0-9.-]/g, '')
-            const n = cleaned ? Number(cleaned) : NaN
-            return Number.isFinite(n) ? n : 0
-          }
-
-          const pickNumber = (...vals: any[]) => {
-            let firstDefined = 0
-            let hasDefined = false
-
-            for (const val of vals) {
-              if (val === null || val === undefined) continue
-              if (typeof val === 'string' && val.trim() === '') continue
-              const num = toNumber(val)
-              if (!hasDefined) {
-                firstDefined = num
-                hasDefined = true
-              }
-              if (num > 0) return num
-            }
-
-            return hasDefined ? firstDefined : 0
-          }
-
-          const year = v.year ? String(v.year) : ''
-          const make = v.make || ''
-          const model = v.model || ''
-          const trim = v.trim || ''
-          const label = [year, make, model, trim].filter(Boolean).join(' ').trim() || v.vin || ''
-
-          const drive = (v.drivetrain || v.drive || '').toString().trim()
-          const trans = (v.transmission || '').toString().trim()
-          const cyl = (v.cylinders || v.cyl || '').toString().trim()
-          const colour = (v.exterior_color || v.colour || '').toString().trim()
-          const odo = pickNumber(v.odometer, v.odometerKm, v.mileage, 0)
-          const odoUnit = (v.odometer_unit || 'km').toString().trim()
-          const price = pickNumber(
-            v.price,
-            v.list_price,
-            v.listPrice,
-            v.listprice,
-            v.sale_price,
-            v.salePrice,
-            v.saleprice,
-            v.msrp,
-            v.advertised_price,
-            v.advertisedPrice,
-            0
-          )
-          const rawStatus = (v.status || '').toString().toLowerCase()
-          const normalizedStatus: ShowroomVehicle['status'] = rawStatus.includes('pending')
-            ? 'Deal Pending'
-            : rawStatus.includes('sold')
-              ? 'Sold'
-              : 'In Stock'
-
-          const imgsNormalized = await loadBucketImages(String(v.id || ''))
-
-          // normalize features
-          let feats: string[] = []
-          const rawFeats = v.features
-          if (Array.isArray(rawFeats)) feats = rawFeats.map((x: any) => String(x)).filter(Boolean)
-          else if (typeof rawFeats === 'string' && rawFeats.trim()) {
-            try {
-              const parsed = JSON.parse(rawFeats)
-              if (Array.isArray(parsed)) feats = parsed.map((x: any) => String(x)).filter(Boolean)
-              else feats = rawFeats.split(',').map((s) => s.trim()).filter(Boolean)
-            } catch {
-              feats = rawFeats.split(',').map((s) => s.trim()).filter(Boolean)
-            }
-          }
-
-          return {
-            id: String(v.id || ''),
-            vehicle: label,
-            drive: drive || '-',
-            transmission: trans || '-',
-            cyl: cyl || '-',
-            colour: colour || '-',
-            odometerKm: odo,
-            odoUnit,
-            price,
-            status: normalizedStatus,
-            images: imgsNormalized,
-            vin: (v.vin || '').toString().trim() || undefined,
-            stock: (v.stock_number ?? v.stockNumber ?? '').toString().trim() || undefined,
-            features: feats,
-            categories: (v.categories || v.category || '').toString().trim() || undefined,
-          }
-        }))
+        const mapped: ShowroomVehicle[] = vehicles.map(mapShowroomVehicle)
 
         if (!cancelled) setRows(mapped)
-      } catch (e: any) {
-        if (!cancelled) setFetchError(e?.message || 'Failed to fetch vehicles')
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : 'Failed to fetch vehicles'
+        if (!cancelled) setFetchError(message)
       } finally {
         if (!cancelled) setLoading(false)
       }
@@ -664,7 +592,7 @@ export default function CustomerShowroomPage() {
             <div className="w-full lg:w-64">
               <select
                 value={status}
-                onChange={(e) => setStatus(e.target.value as any)}
+                onChange={(e) => setStatus(e.target.value as 'ALL' | ShowroomVehicle['status'])}
                 className="edc-input"
               >
                 <option value="ALL">All Status</option>
@@ -1055,6 +983,14 @@ export default function CustomerShowroomPage() {
                             alt={selected.vehicle}
                             className="w-full h-full object-contain"
                           />
+                        ) : selectedImagesLoading ? (
+                          <div className="text-center">
+                            <svg className="mx-auto h-10 w-10 animate-spin text-slate-300" fill="none" viewBox="0 0 24 24">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+                            </svg>
+                            <div className="mt-3 text-sm font-semibold text-slate-400">Loading photos...</div>
+                          </div>
                         ) : (
                           <div className="text-center">
                             <svg className="w-20 h-20 text-slate-300 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1250,7 +1186,7 @@ export default function CustomerShowroomPage() {
                           <div className="text-xs text-slate-500 mb-1">Frequency</div>
                           <select
                             value={frequency}
-                            onChange={(e) => setFrequency(e.target.value as any)}
+                            onChange={(e) => setFrequency(e.target.value as PaymentFrequency)}
                             className="w-full edc-input"
                           >
                             {['Monthly', 'Bi-Weekly', 'Weekly', 'Semi-Monthly'].map((f) => (

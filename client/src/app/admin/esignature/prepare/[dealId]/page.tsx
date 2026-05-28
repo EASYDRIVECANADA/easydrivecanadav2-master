@@ -8,6 +8,7 @@ import { renderBillOfSalePdf, type BillOfSaleData } from '../../../sales/deals/n
 import { buildBillOfSaleCustomerFields } from '../../../sales/deals/new/billOfSaleCustomers'
 import { buildBillOfSaleSettlement } from '../../../sales/deals/new/billOfSaleSettlement'
 import { fetchBillOfSaleDealerInfo } from '../../../sales/deals/new/billOfSaleDealer'
+import { buildAuditTraceCsv } from '@/lib/eSignatureAuditExport'
 
 declare global {
   interface Window {
@@ -299,7 +300,6 @@ export default function PrepareDocumentPage() {
     if (!signatureId || !event.action) return null
 
     const payload: AuditEvent = {
-      signature_id: signatureId,
       deal_id: String(event.deal_id || sig?.deal_id || signatureId).trim(),
       user_name: loggedInUser.name || loggedInUser.email || event.user_name || '',
       user_email: loggedInUser.email || event.user_email || '',
@@ -1134,7 +1134,7 @@ export default function PrepareDocumentPage() {
       ).map((r: any) => ({ id: r.id, email: r.email, full_name: r.full_name }))
 
       const targets = recipientId
-        ? allRecipients.filter(r => r.id === recipientId)
+        ? allRecipients.filter((r: { id: string }) => r.id === recipientId)
         : allRecipients
 
       if (targets.length === 0) throw new Error('Recipient not found')
@@ -2226,10 +2226,10 @@ export default function PrepareDocumentPage() {
             <span className="text-[9px] font-medium leading-tight text-center">View Pages</span>
           </button>
 
-          {/* Audit trail */}
+          {/* Email trace / audit trail */}
           <button
             type="button"
-            title="Audit trail"
+            title="Email trace / audit trail"
             onClick={async () => {
               const sigData = dealData?.signature
               if (!sigData) return
@@ -2253,7 +2253,7 @@ export default function PrepareDocumentPage() {
             <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <circle cx="12" cy="12" r="10"/><polyline strokeLinecap="round" strokeLinejoin="round" points="12 6 12 12 16 14"/>
             </svg>
-            <span className="text-[8px] font-medium leading-tight text-center">Audit trail</span>
+            <span className="text-[8px] font-medium leading-tight text-center">Email trace</span>
           </button>
 
           {/* Send */}
@@ -2468,27 +2468,56 @@ export default function PrepareDocumentPage() {
                 <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7"/></svg>
                 Back to Document
               </button>
-              <div className="text-sm font-semibold text-gray-700">Audit trail</div>
-              <button
-                type="button"
-                onClick={async () => {
-                  if (!legacyAudit) {
-                    await recordAuditEvent({
-                      signature_id: sigData.deal_id || sigData.id,
-                      deal_id: sigData.deal_id || sigData.id,
-                      user_name: loggedInUser.name || loggedInUser.email || 'Owner',
-                      user_email: loggedInUser.email || '',
-                      action: 'Audit Trail Printed',
-                      activity: 'Audit trail was printed.',
-                      status: 'Printed',
-                    }, sigData)
-                  }
-                  window.print()
-                }}
-                className="h-8 px-4 rounded border border-gray-300 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
-              >
-                Print
-              </button>
+              <div className="text-sm font-semibold text-gray-700">Email Trace / Audit Trail</div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (!legacyAudit) {
+                      await recordAuditEvent({
+                        signature_id: sigData.deal_id || sigData.id,
+                        deal_id: sigData.deal_id || sigData.id,
+                        user_name: loggedInUser.name || loggedInUser.email || 'Owner',
+                        user_email: loggedInUser.email || '',
+                        action: 'Audit Trail Downloaded',
+                        activity: 'Audit trail CSV was downloaded.',
+                        status: 'Downloaded',
+                      }, sigData)
+                    }
+                    const csv = buildAuditTraceCsv(rows)
+                    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
+                    const url = URL.createObjectURL(blob)
+                    const a = document.createElement('a')
+                    a.href = url
+                    a.download = `email-trace-${sigData.deal_id || sigData.id}.csv`
+                    a.click()
+                    URL.revokeObjectURL(url)
+                  }}
+                  className="h-8 px-4 rounded border border-gray-300 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                >
+                  Download CSV
+                </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (!legacyAudit) {
+                      await recordAuditEvent({
+                        signature_id: sigData.deal_id || sigData.id,
+                        deal_id: sigData.deal_id || sigData.id,
+                        user_name: loggedInUser.name || loggedInUser.email || 'Owner',
+                        user_email: loggedInUser.email || '',
+                        action: 'Audit Trail Printed',
+                        activity: 'Audit trail was printed.',
+                        status: 'Printed',
+                      }, sigData)
+                    }
+                    window.print()
+                  }}
+                  className="h-8 px-4 rounded border border-gray-300 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                >
+                  Print
+                </button>
+              </div>
             </div>
 
             {/* Page content */}

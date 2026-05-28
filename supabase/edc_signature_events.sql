@@ -31,3 +31,22 @@ create index if not exists edc_signature_events_deal_created_idx
 
 create index if not exists edc_signature_events_recipient_idx
   on public.edc_signature_events (recipient_id);
+
+grant usage on schema public to anon, authenticated;
+grant select, insert on public.edc_signature_events to anon, authenticated;
+
+alter table public.edc_signature_events enable row level security;
+
+drop policy if exists "edc_signature_events_select" on public.edc_signature_events;
+create policy "edc_signature_events_select"
+  on public.edc_signature_events
+  for select
+  to anon, authenticated
+  using (true);
+
+drop policy if exists "edc_signature_events_insert" on public.edc_signature_events;
+create policy "edc_signature_events_insert"
+  on public.edc_signature_events
+  for insert
+  to anon, authenticated
+  with check (true);
