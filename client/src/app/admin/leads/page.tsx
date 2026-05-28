@@ -24,6 +24,7 @@ import { supabase } from '@/lib/supabaseClient'
 import {
   appendLeadTranscriptNote,
   appendLeadUpdateTranscriptNote,
+  displayLeadTranscriptAuthor,
   LEAD_MANAGER_STATUSES,
   normalizeLeadManagerStatus,
   parseLeadTranscriptEntries,
@@ -831,8 +832,9 @@ export default function AdminLeadsPage() {
     setSavingNotes(true)
     setNotesSaveError('')
 
-    const nextNotes = appendLeadTranscriptNote(lead.adminNotes, notesDraft, undefined, adminEmail)
-    const nextFinanceManager = resolveLeadFinanceManager(lead.financeManager, adminEmail)
+    const actorEmail = readAdminSessionEmail() || adminEmail
+    const nextNotes = appendLeadTranscriptNote(lead.adminNotes, notesDraft, undefined, actorEmail)
+    const nextFinanceManager = resolveLeadFinanceManager(lead.financeManager, actorEmail)
     const updatePayload: Record<string, string | null> = { admin_notes: nextNotes }
     if (financeManagerEnabled) updatePayload.finance_manager = nextFinanceManager
 
@@ -865,8 +867,9 @@ export default function AdminLeadsPage() {
     setSavingTableNotes(true)
     setTableNotesError('')
 
-    const nextNotes = appendLeadTranscriptNote(lead.adminNotes, tableNotesDraft, undefined, adminEmail)
-    const nextFinanceManager = resolveLeadFinanceManager(lead.financeManager, adminEmail)
+    const actorEmail = readAdminSessionEmail() || adminEmail
+    const nextNotes = appendLeadTranscriptNote(lead.adminNotes, tableNotesDraft, undefined, actorEmail)
+    const nextFinanceManager = resolveLeadFinanceManager(lead.financeManager, actorEmail)
     const updatePayload: Record<string, string | null> = { admin_notes: nextNotes }
     if (financeManagerEnabled) updatePayload.finance_manager = nextFinanceManager
 
@@ -899,10 +902,11 @@ export default function AdminLeadsPage() {
 
     setSavingStatus(true)
     setStatusSaveError('')
+    const actorEmail = readAdminSessionEmail() || adminEmail
     const statusAuditNotes = notesEnabled
-      ? appendLeadUpdateTranscriptNote(lead.adminNotes, { field: 'Status', from: lead.managerStatus, to: status, actor: adminEmail })
+      ? appendLeadUpdateTranscriptNote(lead.adminNotes, { field: 'Status', from: lead.managerStatus, to: status, actor: actorEmail })
       : lead.adminNotes
-    const nextFinanceManager = resolveLeadFinanceManager(lead.financeManager, adminEmail)
+    const nextFinanceManager = resolveLeadFinanceManager(lead.financeManager, actorEmail)
     const updatePayload: Record<string, string | null> = { manager_status: status }
     if (notesEnabled) updatePayload.admin_notes = statusAuditNotes
     if (financeManagerEnabled) updatePayload.finance_manager = nextFinanceManager
@@ -1978,7 +1982,7 @@ function LeadNotesModal({
         <div className="space-y-4 p-5 sm:p-6">
           <div className="rounded-xl border border-slate-200 bg-white p-3">
             <div className="mb-2 text-xs font-semibold uppercase text-slate-500">Transcript</div>
-            <LeadTranscriptDisplay value={savedValue} emptyClassName="text-sm leading-6" maxHeightClassName="max-h-56" />
+            <LeadTranscriptDisplay value={savedValue} financeManager={lead.financeManager} emptyClassName="text-sm leading-6" maxHeightClassName="max-h-56" />
           </div>
           <textarea
             value={value}
@@ -2311,6 +2315,7 @@ function LeadDetailPanel({
           <LeadNotesSection
             value={notesDraft}
             savedValue={lead.adminNotes || ''}
+            financeManager={lead.financeManager}
             onChange={onNotesChange}
             onSave={() => onSaveNotes(lead)}
             saving={savingNotes}
@@ -2377,6 +2382,7 @@ function LeadSummaryCard({
 function LeadNotesSection({
   value,
   savedValue,
+  financeManager,
   onChange,
   onSave,
   saving,
@@ -2385,6 +2391,7 @@ function LeadNotesSection({
 }: {
   value: string
   savedValue: string
+  financeManager?: string | null
   onChange: (value: string) => void
   onSave: () => void
   saving: boolean
@@ -2413,7 +2420,7 @@ function LeadNotesSection({
       <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
         <div className="mb-3 rounded-lg border border-slate-200 bg-slate-50/70 p-3">
           <div className="mb-2 text-[11px] font-semibold uppercase text-slate-500">Transcript</div>
-          <LeadTranscriptDisplay value={savedValue} emptyClassName="text-sm leading-6" maxHeightClassName="max-h-44" />
+          <LeadTranscriptDisplay value={savedValue} financeManager={financeManager} emptyClassName="text-sm leading-6" maxHeightClassName="max-h-44" />
         </div>
         <textarea
           value={value}
@@ -2436,10 +2443,12 @@ function LeadNotesSection({
 
 function LeadTranscriptDisplay({
   value,
+  financeManager,
   maxHeightClassName,
   emptyClassName = '',
 }: {
   value: string
+  financeManager?: string | null
   maxHeightClassName: string
   emptyClassName?: string
 }) {
@@ -2462,7 +2471,7 @@ function LeadTranscriptDisplay({
           : entry.kind === 'legacy'
             ? 'bg-amber-50 text-amber-700 ring-amber-100'
             : 'bg-slate-100 text-slate-700 ring-slate-200'
-        const author = clean(entry.actor) || 'Unknown author'
+        const author = displayLeadTranscriptAuthor(entry.actor, financeManager || '')
 
         return (
           <div key={`${entry.timestamp}-${index}`} className="rounded-lg border border-slate-200 bg-white px-3 py-2.5 shadow-sm">

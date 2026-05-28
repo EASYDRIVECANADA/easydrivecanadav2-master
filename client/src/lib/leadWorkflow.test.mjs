@@ -4,6 +4,7 @@ import { test } from 'node:test'
 import {
   appendLeadTranscriptNote,
   appendLeadUpdateTranscriptNote,
+  displayLeadTranscriptAuthor,
   parseLeadTranscriptEntries,
   resolveLeadFinanceManager,
   shouldOpenLeadDetailsFromRowClick,
@@ -83,10 +84,16 @@ test('parses transcript entries into timestamp and body rows', () => {
   assert.deepEqual(
     parseLeadTranscriptEntries('[May 26, 2026, 7:59 AM] Called customer.\n\nLegacy imported note'),
     [
-      { timestamp: 'May 26, 2026, 7:59 AM', body: 'Called customer.', isLegacy: false, kind: 'note', actor: 'Unknown author' },
-      { timestamp: 'Legacy note', body: 'Legacy imported note', isLegacy: true, kind: 'legacy', actor: 'Unknown author' },
+      { timestamp: 'May 26, 2026, 7:59 AM', body: 'Called customer.', isLegacy: false, kind: 'note', actor: '' },
+      { timestamp: 'Legacy note', body: 'Legacy imported note', isLegacy: true, kind: 'legacy', actor: '' },
     ]
   )
+})
+
+test('formats missing note authors without saying unknown author', () => {
+  assert.equal(displayLeadTranscriptAuthor('', ''), 'Author not recorded')
+  assert.equal(displayLeadTranscriptAuthor('', 'finance@example.com'), 'Author not recorded · Finance Manager: finance@example.com')
+  assert.equal(displayLeadTranscriptAuthor('agent@example.com', 'finance@example.com'), 'agent@example.com')
 })
 
 test('parses note and status authors for easier transcript display', () => {

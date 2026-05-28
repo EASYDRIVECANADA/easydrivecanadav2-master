@@ -39,6 +39,14 @@ export const resolveLeadFinanceManager = (currentManager, actor) => {
   return next || null
 }
 
+export const displayLeadTranscriptAuthor = (actor, financeManager = '') => {
+  const author = cleanLeadText(actor)
+  if (author) return author
+
+  const manager = cleanLeadText(financeManager)
+  return manager ? `Author not recorded · Finance Manager: ${manager}` : 'Author not recorded'
+}
+
 export const formatLeadNoteTimestamp = (date = new Date()) =>
   date.toLocaleString('en-CA', {
     year: 'numeric',
@@ -85,7 +93,7 @@ export const parseLeadTranscriptEntries = (notes) => {
     .map((entry) => {
       const timestampMatch = entry.match(/^\[([^\]]+)\]\s*([\s\S]*)$/)
       if (!timestampMatch) {
-        return { timestamp: 'Legacy note', body: entry, isLegacy: true, kind: 'legacy', actor: 'Unknown author' }
+        return { timestamp: 'Legacy note', body: entry, isLegacy: true, kind: 'legacy', actor: '' }
       }
       const body = cleanLeadText(timestampMatch[2])
       const noteMatch = body.match(/^Note by ([^:]+):\s*([\s\S]*)$/i)
@@ -95,7 +103,7 @@ export const parseLeadTranscriptEntries = (notes) => {
           body: cleanLeadText(noteMatch[2]),
           isLegacy: false,
           kind: 'note',
-          actor: cleanLeadText(noteMatch[1]) || 'Unknown author',
+          actor: cleanLeadText(noteMatch[1]),
         }
       }
 
@@ -106,7 +114,7 @@ export const parseLeadTranscriptEntries = (notes) => {
           body: cleanLeadText(statusMatch[2]),
           isLegacy: false,
           kind: 'status',
-          actor: cleanLeadText(statusMatch[1]) || 'Unknown author',
+          actor: cleanLeadText(statusMatch[1]),
         }
       }
 
@@ -115,7 +123,7 @@ export const parseLeadTranscriptEntries = (notes) => {
         body,
         isLegacy: false,
         kind: 'note',
-        actor: 'Unknown author',
+        actor: '',
       }
     })
 }

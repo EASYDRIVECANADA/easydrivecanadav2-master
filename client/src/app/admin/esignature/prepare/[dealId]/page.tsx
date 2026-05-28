@@ -36,6 +36,10 @@ type AuditEvent = {
   metadata?: Record<string, unknown>
   created_at?: string
 }
+type ReadinessReport = {
+  ok: boolean
+  checks: Array<{ key: string; label: string; ok: boolean; message: string }>
+}
 
 const fieldKey = (field: Pick<Field, 'id' | 'fileIndex' | 'recipientIndex'>) =>
   `${field.id}::r${field.recipientIndex ?? 0}::f${field.fileIndex ?? 0}`
@@ -244,6 +248,7 @@ export default function PrepareDocumentPage() {
   const [viewPagesOpen, setViewPagesOpen] = useState(false)
   const [historyEvents, setHistoryEvents] = useState<AuditEvent[]>([])
   const [loadingHistory, setLoadingHistory] = useState(false)
+  const [readinessReport, setReadinessReport] = useState<ReadinessReport | null>(null)
   const [loggedInUser, setLoggedInUser] = useState<{ name: string; email: string }>({ name: '', email: '' })
 
   // ── localStorage event helpers ──
@@ -341,6 +346,21 @@ export default function PrepareDocumentPage() {
       setLoadingHistory(false)
     }
   }, [envelopeIdForAudit])
+
+  useEffect(() => {
+    let cancelled = false
+    fetch('/api/esignature/readiness', { cache: 'no-store' })
+      .then((res) => res.ok ? res.json() : null)
+      .then((report) => {
+        if (!cancelled && report && typeof report === 'object') {
+          setReadinessReport(report as ReadinessReport)
+        }
+      })
+      .catch(() => null)
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   // History for undo/redo
   const historyRef = useRef<Field[][]>([[]])
@@ -1740,6 +1760,17 @@ export default function PrepareDocumentPage() {
           </div>
         </div>
       )}
+
+      {readinessReport && !readinessReport.ok ? (
+        <div className="z-30 border-b border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-900">
+          <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-x-3 gap-y-1">
+            <span className="font-bold">E-signature readiness needs attention:</span>
+            {readinessReport.checks.filter((check) => !check.ok).map((check) => (
+              <span key={check.key}>{check.label}: {check.message}</span>
+            ))}
+          </div>
+        </div>
+      ) : null}
 
       {/* ── Top Toolbar ── */}
       <div className={`h-12 flex items-center px-4 gap-2 shrink-0 shadow-sm z-30 transition-colors duration-200 ${darkMode ? 'bg-gray-800 border-b border-gray-700' : 'bg-white border-b border-gray-200'}`}>

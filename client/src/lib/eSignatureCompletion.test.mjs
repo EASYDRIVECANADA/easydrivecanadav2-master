@@ -20,6 +20,7 @@ function loadTsModule(relativePath) {
 
 const {
   buildCompletionNotificationEmail,
+  buildESignatureReadinessReport,
   collectCompletionNotificationRecipients,
   shouldSendCompletionNotification,
 } = loadTsModule('./eSignatureCompletion.ts')
@@ -56,4 +57,36 @@ test('buildCompletionNotificationEmail includes recipients and admin link', () =
   assert.equal(email.subject, 'All recipients signed: Bill of Sale.pdf')
   assert.match(email.text, /Jane Customer <jane@example.com>/)
   assert.match(email.text, /https:\/\/easydrivecanada.com\/admin\/esignature\/prepare\/deal-123/)
+})
+
+test('buildESignatureReadinessReport flags missing env and audit table state', () => {
+  assert.deepEqual(
+    buildESignatureReadinessReport({
+      env: {
+        SMTP_HOST: 'smtp.example.com',
+        SMTP_USER: 'mailer@example.com',
+        SMTP_PASS: 'secret',
+        SMTP_FROM: 'noreply@example.com',
+        NEXT_PUBLIC_SITE_URL: 'https://easydrivecanada.com',
+      },
+      auditTableReachable: true,
+    }),
+    {
+      ok: true,
+      checks: [
+        { key: 'audit_table', label: 'E-signature audit table', ok: true, message: 'edc_signature_events is reachable.' },
+        { key: 'smtp', label: 'Completion email SMTP', ok: true, message: 'SMTP settings are configured.' },
+        { key: 'site_url', label: 'Admin link site URL', ok: true, message: 'NEXT_PUBLIC_SITE_URL is configured.' },
+      ],
+    }
+  )
+
+  const report = buildESignatureReadinessReport({
+    env: { SMTP_HOST: '', SMTP_USER: '', SMTP_PASS: '', SMTP_FROM: '', NEXT_PUBLIC_SITE_URL: '' },
+    auditTableReachable: false,
+  })
+  assert.equal(report.ok, false)
+  assert.match(report.checks[0].message, /not reachable/)
+  assert.match(report.checks[1].message, /SMTP_HOST, SMTP_USER, SMTP_PASS, SMTP_FROM/)
+  assert.match(report.checks[2].message, /NEXT_PUBLIC_SITE_URL is missing/)
 })

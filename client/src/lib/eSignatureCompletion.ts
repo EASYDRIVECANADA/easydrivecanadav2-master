@@ -9,6 +9,8 @@ export type SignatureAuditEvent = {
   action?: string | null
 }
 
+type ReadinessEnvKey = 'SMTP_HOST' | 'SMTP_USER' | 'SMTP_PASS' | 'SMTP_FROM' | 'NEXT_PUBLIC_SITE_URL'
+
 export type CompletionEmailInput = {
   envelopeId: string
   documentTitle: string
@@ -16,7 +18,20 @@ export type CompletionEmailInput = {
   recipients: SignatureRecipient[]
 }
 
+export type ESignatureReadinessCheck = {
+  key: 'audit_table' | 'smtp' | 'site_url'
+  label: string
+  ok: boolean
+  message: string
+}
+
+export type ESignatureReadinessReport = {
+  ok: boolean
+  checks: ESignatureReadinessCheck[]
+}
+
 const normalizeEmail = (email: unknown) => String(email || '').trim().toLowerCase()
+const hasValue = (value: unknown) => String(value || '').trim().length > 0
 
 export function collectCompletionNotificationRecipients(ownerEmail: unknown, easyDriveEmail = 'info@easydrivecanada.com'): string[] {
   const recipients = [normalizeEmail(ownerEmail), normalizeEmail(easyDriveEmail)]
@@ -72,6 +87,50 @@ export function buildCompletionNotificationEmail(input: CompletionEmailInput) {
   }
 }
 
+export function buildESignatureReadinessReport({
+  env,
+  auditTableReachable,
+}: {
+  env: Partial<Record<ReadinessEnvKey, unknown>>
+  auditTableReachable: boolean
+}): ESignatureReadinessReport {
+  const missingSmtp = (['SMTP_HOST', 'SMTP_USER', 'SMTP_PASS', 'SMTP_FROM'] as ReadinessEnvKey[])
+    .filter((key) => !hasValue(env[key]))
+  const siteUrlOk = hasValue(env.NEXT_PUBLIC_SITE_URL)
+
+  const checks: ESignatureReadinessCheck[] = [
+    {
+      key: 'audit_table',
+      label: 'E-signature audit table',
+      ok: auditTableReachable,
+      message: auditTableReachable
+        ? 'edc_signature_events is reachable.'
+        : 'edc_signature_events is not reachable. Apply the Supabase audit table SQL before client sign-off.',
+    },
+    {
+      key: 'smtp',
+      label: 'Completion email SMTP',
+      ok: missingSmtp.length === 0,
+      message: missingSmtp.length === 0
+        ? 'SMTP settings are configured.'
+        : `Missing SMTP settings: ${missingSmtp.join(', ')}. Signing will still work, but completion email will be logged as skipped.`,
+    },
+    {
+      key: 'site_url',
+      label: 'Admin link site URL',
+      ok: siteUrlOk,
+      message: siteUrlOk
+        ? 'NEXT_PUBLIC_SITE_URL is configured.'
+        : 'NEXT_PUBLIC_SITE_URL is missing. Completion emails may not include the production admin link.',
+    },
+  ]
+
+  return {
+    ok: checks.every((check) => check.ok),
+    checks,
+  }
+}
+
 function escapeHtml(value: string): string {
   return value.replace(/[&<>"']/g, (char) => {
     switch (char) {
@@ -88,4 +147,3 @@ function escapeHtml(value: string): string {
 function escapeAttribute(value: string): string {
   return escapeHtml(value).replace(/`/g, '&#96;')
 }
-
