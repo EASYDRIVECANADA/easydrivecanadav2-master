@@ -19,6 +19,7 @@ import {
   normalizeDriverLicensePhoto,
   type DriverLicensePhoto,
 } from '@/lib/driverLicenseDocuments'
+import { normalizeWarrantyTerms } from '@/lib/warrantyTerms'
 import { renderDisclosureFormPdf } from './disclosureFormPdf'
 import { getCheckoutBillOfSaleSignature } from '@/lib/purchaseDocumentPackage.mjs'
 import { supabase } from '@/lib/supabaseClient'
@@ -531,14 +532,15 @@ function SalesNewDealPageContent() {
         const presetMatch = warrantyPresetMap[String(firstWi.name || '').trim()] || {}
         const dur = wsWarranties.find((wi: any) => wi.duration)?.duration || presetMatch.duration || ''
         const dist = wsWarranties.find((wi: any) => wi.distance)?.distance || presetMatch.distance || ''
+        const terms = normalizeWarrantyTerms({ duration: String(dur), distance: String(dist) })
         // Pull add-ons from submission if available (e.g. Zero Deductible, Hi-Tech Components)
         const subOdWarranty = deal?.submission?.order_data?.warranty
         const wsAddOns: Array<{ label: string; price: number }> = Array.isArray(subOdWarranty?.addOns) ? subOdWarranty.addOns : []
         warrantyData = {
           has_extended: true,
           description: desc,
-          duration: String(dur),
-          distance: String(dist),
+          duration: terms.duration,
+          distance: terms.distance,
           cost: totalCost > 0 ? String(totalCost) : '',
           basePrice: subOdWarranty?.baseTotal ? String(subOdWarranty.baseTotal) : '',
           addOns: wsAddOns,
@@ -550,11 +552,12 @@ function SalesNewDealPageContent() {
         const sub = deal?.submission
         const odWarranty = sub?.order_data?.warranty
         if (odWarranty && !sub?.warrantyDeclined && odWarranty.planName && odWarranty.total > 0) {
+          const terms = normalizeWarrantyTerms({ duration: odWarranty.termLabel || '', distance: '' })
           warrantyData = {
             has_extended: true,
             description: odWarranty.planName || '',
-            duration: odWarranty.termLabel || '',
-            distance: '',
+            duration: terms.duration,
+            distance: terms.distance,
             cost: String(odWarranty.total || ''),
             basePrice: odWarranty.baseTotal ? String(odWarranty.baseTotal) : '',
             addOns: Array.isArray(odWarranty.addOns) ? odWarranty.addOns : [],
@@ -792,13 +795,14 @@ function SalesNewDealPageContent() {
         const presetMatchE = warrantyPresetMapE[String(firstWiE.name || '').trim()] || {}
         const dur = wsWarrantiesE.find((wi: any) => wi.duration)?.duration || presetMatchE.duration || ''
         const dist = wsWarrantiesE.find((wi: any) => wi.distance)?.distance || presetMatchE.distance || ''
+        const termsE = normalizeWarrantyTerms({ duration: String(dur), distance: String(dist) })
         const subOdWarrantyE = deal?.submission?.order_data?.warranty
         const wsAddOnsE: Array<{ label: string; price: number }> = Array.isArray(subOdWarrantyE?.addOns) ? subOdWarrantyE.addOns : []
         warrantyDataE = {
           has_extended: true,
           description: desc,
-          duration: String(dur),
-          distance: String(dist),
+          duration: termsE.duration,
+          distance: termsE.distance,
           cost: totalCost > 0 ? String(totalCost) : '',
           basePrice: subOdWarrantyE?.baseTotal ? String(subOdWarrantyE.baseTotal) : '',
           addOns: wsAddOnsE,
@@ -810,11 +814,12 @@ function SalesNewDealPageContent() {
         // but in case it still missed, check directly)
         const odWarrantyE = subOrderDataE.warranty
         if (odWarrantyE && !subE?.warrantyDeclined && odWarrantyE.planName && odWarrantyE.total > 0) {
+          const termsE = normalizeWarrantyTerms({ duration: odWarrantyE.termLabel || '', distance: '' })
           warrantyDataE = {
             has_extended: true,
             description: odWarrantyE.planName || '',
-            duration: odWarrantyE.termLabel || '',
-            distance: '',
+            duration: termsE.duration,
+            distance: termsE.distance,
             cost: String(odWarrantyE.total || ''),
             basePrice: odWarrantyE.baseTotal ? String(odWarrantyE.baseTotal) : '',
             addOns: Array.isArray(odWarrantyE.addOns) ? odWarrantyE.addOns : [],
