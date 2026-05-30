@@ -1,9 +1,17 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { buildAdminOpsTasks } from '@/lib/dealerOpsReadiness.mjs'
+import { scopePurchaseSubmissionQueryForUser } from '@/lib/dealerOpsSubmissionScope.mjs'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
+
+type Row = Record<string, unknown>
+type SupabaseRowsResponse = { data: Row[] | null; error: { message?: string } | null }
+type OpsTask = { severity?: string }
+type BuildAdminOpsTasks = (input: { submissions: Row[]; vehicles: Row[]; leads: Row[]; nowIso: string }) => OpsTask[]
+
+const buildTasks = buildAdminOpsTasks as unknown as BuildAdminOpsTasks
 
 const createSupabase = () => {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -29,21 +37,26 @@ export async function GET(request: Request) {
       .select('*')
       .order('submitted_at', { ascending: false })
       .limit(100)
-    if (userId) submissionsQuery = submissionsQuery.eq('user_id', userId)
+    const scopedSubmissions = await scopePurchaseSubmissionQueryForUser(supabase, submissionsQuery, userId)
 
-    const [submissionsRes, leadsRes, readinessRes] = await Promise.all([
-      submissionsQuery,
+    const emptySubmissionsRes: SupabaseRowsResponse = { data: [], error: null }
+    const [rawSubmissionsRes, leadsRes, readinessRes] = await Promise.all([
+      scopedSubmissions.empty ? Promise.resolve(emptySubmissionsRes) : scopedSubmissions.query,
       supabase.from('edc_leads').select('*').order('created_at', { ascending: false }).limit(100),
       fetch(readinessUrl, { cache: 'no-store' }).then((res) => res.ok ? res.json() : { vehicles: [] }),
     ])
 
+    const submissionsRes = rawSubmissionsRes as SupabaseRowsResponse
     if (submissionsRes.error) return NextResponse.json({ error: submissionsRes.error.message }, { status: 500 })
     if (leadsRes.error) return NextResponse.json({ error: leadsRes.error.message }, { status: 500 })
 
-    const tasks = buildAdminOpsTasks({
-      submissions: Array.isArray(submissionsRes.data) ? submissionsRes.data : [],
-      vehicles: Array.isArray(readinessRes?.vehicles) ? readinessRes.vehicles : [],
-      leads: Array.isArray(leadsRes.data) ? leadsRes.data : [],
+    const submissions: Row[] = Array.isArray(submissionsRes.data) ? submissionsRes.data : []
+    const vehicles: Row[] = Array.isArray(readinessRes?.vehicles) ? readinessRes.vehicles : []
+    const leads: Row[] = Array.isArray(leadsRes.data) ? leadsRes.data : []
+    const tasks = buildTasks({
+      submissions,
+      vehicles,
+      leads,
       nowIso: new Date().toISOString(),
     })
 

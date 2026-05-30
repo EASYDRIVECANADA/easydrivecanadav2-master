@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { scoreDealReadiness } from '@/lib/dealerOpsReadiness.mjs'
+import { scopePurchaseSubmissionQueryForUser } from '@/lib/dealerOpsSubmissionScope.mjs'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -16,6 +17,7 @@ const createSupabase = () => {
 
 type Row = Record<string, unknown>
 type OpsTask = { type?: string }
+type SupabaseRowsResponse = { data: Row[] | null; error: { message?: string } | null }
 
 const statusIs = (row: Row, value: string) =>
   String(row?.status || '').trim().toLowerCase() === value
@@ -45,17 +47,19 @@ export async function GET(request: Request) {
       .select('*')
       .order('submitted_at', { ascending: false })
       .limit(100)
-    if (userId) submissionsQuery = submissionsQuery.eq('user_id', userId)
+    const scopedSubmissions = await scopePurchaseSubmissionQueryForUser(supabase, submissionsQuery, userId)
 
-    const [submissionsRes, readinessRes, tasksRes] = await Promise.all([
-      submissionsQuery,
+    const emptySubmissionsRes: SupabaseRowsResponse = { data: [], error: null }
+    const [rawSubmissionsRes, readinessRes, tasksRes] = await Promise.all([
+      scopedSubmissions.empty ? Promise.resolve(emptySubmissionsRes) : scopedSubmissions.query,
       fetch(readinessUrl, { cache: 'no-store' }).then((res) => res.ok ? res.json() : { vehicles: [], readiness: [], summary: {} }),
       fetch(tasksUrl, { cache: 'no-store' }).then((res) => res.ok ? res.json() : { tasks: [], summary: {} }),
     ])
 
+    const submissionsRes = rawSubmissionsRes as SupabaseRowsResponse
     if (submissionsRes.error) return NextResponse.json({ error: submissionsRes.error.message }, { status: 500 })
 
-    const submissions = Array.isArray(submissionsRes.data) ? submissionsRes.data : []
+    const submissions: Row[] = Array.isArray(submissionsRes.data) ? submissionsRes.data : []
     const dealReadiness = submissions.map((submission) => scoreDealReadiness(submission))
     const approved = submissions.filter((row) => statusIs(row, 'approved'))
     const documentIssues = approved.filter((row) => {
