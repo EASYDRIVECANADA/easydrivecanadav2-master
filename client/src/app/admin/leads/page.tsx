@@ -24,8 +24,10 @@ import { supabase } from '@/lib/supabaseClient'
 import {
   appendLeadTranscriptNote,
   appendLeadUpdateTranscriptNote,
+  canManuallyAssignLeadFinanceManagers,
   displayLeadTranscriptAuthor,
   LEAD_MANAGER_STATUSES,
+  normalizeLeadFinanceManagerTarget,
   normalizeLeadManagerStatus,
   parseLeadTranscriptEntries,
   resolveLeadFinanceManager,
@@ -70,11 +72,20 @@ type LeadRow = {
   created_at: string
 }
 
+type LeadQueryResult = {
+  data: LeadRow[] | null
+  error: { message?: string } | null
+}
+
 type FilterKey = 'finance' | 'insurance' | 'synced'
 type SourceKey = 'finance' | 'insurance' | 'contact' | 'unknown'
 type LeadDraftSource = SourceKey
 type ImportSourceMode = 'auto' | 'finance' | 'insurance'
 type LeadManagerStatus = string
+type AssignmentUser = {
+  email: string
+  label: string
+}
 
 type LeadDraft = {
   firstName: string
@@ -89,6 +100,8 @@ type LeadDraft = {
   creditScore: string
   message: string
   adminNotes: string
+  managerStatus: LeadManagerStatus | ''
+  financeManager: string
   createdAt: string
 }
 
@@ -109,6 +122,14 @@ const LEAD_SELECT_WITH_STATUS = `${LEAD_SELECT_WITH_NOTES}, manager_status`
 const LEAD_SELECT_FULL = `${LEAD_SELECT_WITH_STATUS}, finance_manager`
 const MANAGER_STATUSES = LEAD_MANAGER_STATUSES as LeadManagerStatus[]
 const LEAD_DELETE_ALLOWED_EMAIL = 'info@easydrivecanada.com'
+
+const leadSelectForCapabilities = (notesEnabled: boolean, statusEnabled: boolean, financeManagerEnabled: boolean) => {
+  const columns = [BASE_LEAD_SELECT]
+  if (notesEnabled) columns.push('admin_notes')
+  if (statusEnabled) columns.push('manager_status')
+  if (financeManagerEnabled) columns.push('finance_manager')
+  return columns.join(', ')
+}
 
 const clean = (value: unknown) => String(value ?? '').trim()
 
@@ -137,6 +158,8 @@ const emptyLeadDraft: LeadDraft = {
   creditScore: '',
   message: '',
   adminNotes: '',
+  managerStatus: '',
+  financeManager: '',
   createdAt: '',
 }
 
@@ -211,6 +234,41 @@ const financeManagerLabel = (value: string | null) => {
     .filter(Boolean)
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(' ') || manager
+}
+
+const assignmentUserLabel = (row: { first_name?: string | null; last_name?: string | null; title?: string | null; email?: string | null }) => {
+  const name = [row.first_name, row.last_name].map(clean).filter(Boolean).join(' ')
+  const title = clean(row.title)
+  const email = clean(row.email).toLowerCase()
+  if (name && title) return `${name} · ${title}`
+  return name || title || financeManagerLabel(email)
+}
+
+const buildAssignmentUsers = (rows: Array<Record<string, unknown>> = []): AssignmentUser[] => {
+  const users = new Map<string, AssignmentUser>()
+
+  for (const row of rows) {
+    const email = clean(row.email).toLowerCase()
+    if (!email) continue
+
+    const role = clean(row.role).toLowerCase()
+    const title = clean(row.title).toLowerCase()
+    const canWorkLeads =
+      Boolean(row.access_all_leads_customers || row.customers || row.administrator) ||
+      role === 'admin' ||
+      title.includes('finance') ||
+      title.includes('manager') ||
+      title.includes('sales')
+
+    if (!canWorkLeads && email !== LEAD_DELETE_ALLOWED_EMAIL) continue
+
+    users.set(email, {
+      email,
+      label: assignmentUserLabel(row),
+    })
+  }
+
+  return Array.from(users.values()).sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: 'base' }))
 }
 
 const latestLeadNotePreview = (notes: string | null) => {
@@ -462,8 +520,8 @@ const leadFromDraftPreview = (draft: LeadDraft, index: number): Lead => {
     downPayment: toNumberOrNull(draft.downPayment),
     creditScore: clean(draft.creditScore) || null,
     adminNotes: clean(draft.adminNotes) || null,
-    managerStatus: normalizeLeadManagerStatus(findSubmittedValue(parseMessageFields(message).rows, ['Submitted status', 'Status'])),
-    financeManager: null,
+    managerStatus: clean(draft.managerStatus) || normalizeLeadManagerStatus(findSubmittedValue(parseMessageFields(message).rows, ['Submitted status', 'Status'])),
+    financeManager: normalizeLeadFinanceManagerTarget(draft.financeManager),
     ghlSynced: false,
     createdAt: toDateIsoOrNull(draft.createdAt) || new Date().toISOString(),
   }
@@ -511,7 +569,12 @@ const mapLeadRow = (l: LeadRow): Lead => ({
   createdAt: l.created_at,
 })
 
-const rowToLeadInsert = (draft: LeadDraft, notesEnabled: boolean, createdAt = new Date().toISOString()) => {
+const rowToLeadInsert = (
+  draft: LeadDraft,
+  notesEnabled: boolean,
+  createdAt = new Date().toISOString(),
+  options: { statusEnabled?: boolean; financeManagerEnabled?: boolean } = {}
+) => {
   const insert: Record<string, unknown> = {
     first_name: clean(draft.firstName) || null,
     last_name: clean(draft.lastName) || null,
@@ -529,6 +592,15 @@ const rowToLeadInsert = (draft: LeadDraft, notesEnabled: boolean, createdAt = ne
 
   if (notesEnabled) {
     insert.admin_notes = appendLeadTranscriptNote(null, draft.adminNotes)
+  }
+
+  if (options.statusEnabled) {
+    insert.manager_status = clean(draft.managerStatus) || null
+  }
+
+  if (options.financeManagerEnabled) {
+    const manager = normalizeLeadFinanceManagerTarget(draft.financeManager)
+    insert.finance_manager = manager === 'Unassigned' ? null : manager
   }
 
   return insert
@@ -553,6 +625,8 @@ export default function AdminLeadsPage() {
   const [financeManagerEnabled, setFinanceManagerEnabled] = useState(true)
   const [savingFinanceManagerId, setSavingFinanceManagerId] = useState('')
   const [financeManagerSaveError, setFinanceManagerSaveError] = useState('')
+  const [assignmentUsers, setAssignmentUsers] = useState<AssignmentUser[]>([])
+  const [assignmentUsersLoading, setAssignmentUsersLoading] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [activeFilter, setActiveFilter] = useState<FilterKey>('finance')
   const [currentPage, setCurrentPage] = useState(1)
@@ -571,6 +645,7 @@ export default function AdminLeadsPage() {
   const itemsPerPage = 20
   const router = useRouter()
   const canDeleteLeads = adminEmail === LEAD_DELETE_ALLOWED_EMAIL
+  const canManageLeadAssignments = canManuallyAssignLeadFinanceManagers(adminEmail)
 
   useEffect(() => {
     const sessionStr = localStorage.getItem('edc_admin_session')
@@ -598,19 +673,53 @@ export default function AdminLeadsPage() {
     }
   }, [])
 
+  useEffect(() => {
+    if (!canManageLeadAssignments) {
+      setAssignmentUsers([])
+      setAssignmentUsersLoading(false)
+      return
+    }
+
+    let cancelled = false
+
+    const fetchAssignmentUsers = async () => {
+      setAssignmentUsersLoading(true)
+      try {
+        const { data, error } = await supabase
+          .from('users')
+          .select('email, first_name, last_name, title, role, access_all_leads_customers, customers, administrator, status')
+          .order('first_name', { ascending: true })
+
+        if (error) throw error
+        if (!cancelled) setAssignmentUsers(buildAssignmentUsers((data || []) as Array<Record<string, unknown>>))
+      } catch (error) {
+        console.error('Error fetching assignable lead users:', error)
+        if (!cancelled) setAssignmentUsers([])
+      } finally {
+        if (!cancelled) setAssignmentUsersLoading(false)
+      }
+    }
+
+    void fetchAssignmentUsers()
+
+    return () => {
+      cancelled = true
+    }
+  }, [canManageLeadAssignments])
+
   const fetchLeads = async () => {
     try {
       let result = await supabase
         .from('edc_leads')
         .select(LEAD_SELECT_FULL)
-        .order('created_at', { ascending: false })
+        .order('created_at', { ascending: false }) as unknown as LeadQueryResult
 
       if (result.error && /finance_manager|column|schema cache/i.test(result.error.message || '')) {
         setFinanceManagerEnabled(false)
         result = await supabase
           .from('edc_leads')
           .select(LEAD_SELECT_WITH_STATUS)
-          .order('created_at', { ascending: false })
+          .order('created_at', { ascending: false }) as unknown as LeadQueryResult
       } else {
         setFinanceManagerEnabled(true)
       }
@@ -620,14 +729,14 @@ export default function AdminLeadsPage() {
         result = await supabase
           .from('edc_leads')
           .select(`${LEAD_SELECT_WITH_NOTES}, finance_manager`)
-          .order('created_at', { ascending: false })
+          .order('created_at', { ascending: false }) as unknown as LeadQueryResult
 
         if (result.error && /finance_manager|column|schema cache/i.test(result.error.message || '')) {
           setFinanceManagerEnabled(false)
           result = await supabase
             .from('edc_leads')
             .select(LEAD_SELECT_WITH_NOTES)
-            .order('created_at', { ascending: false })
+            .order('created_at', { ascending: false }) as unknown as LeadQueryResult
         }
       } else {
         setStatusEnabled(true)
@@ -638,7 +747,7 @@ export default function AdminLeadsPage() {
         result = await supabase
           .from('edc_leads')
           .select(BASE_LEAD_SELECT)
-          .order('created_at', { ascending: false })
+          .order('created_at', { ascending: false }) as unknown as LeadQueryResult
       } else if (!result.error) {
         setNotesEnabled(true)
       }
@@ -834,7 +943,8 @@ export default function AdminLeadsPage() {
 
     const actorEmail = readAdminSessionEmail() || adminEmail
     const nextNotes = appendLeadTranscriptNote(lead.adminNotes, notesDraft, undefined, actorEmail)
-    const nextFinanceManager = resolveLeadFinanceManager(lead.financeManager, actorEmail)
+    const autoClaimActor = canManuallyAssignLeadFinanceManagers(actorEmail) ? '' : actorEmail
+    const nextFinanceManager = resolveLeadFinanceManager(lead.financeManager, autoClaimActor)
     const updatePayload: Record<string, string | null> = { admin_notes: nextNotes }
     if (financeManagerEnabled) updatePayload.finance_manager = nextFinanceManager
 
@@ -869,7 +979,8 @@ export default function AdminLeadsPage() {
 
     const actorEmail = readAdminSessionEmail() || adminEmail
     const nextNotes = appendLeadTranscriptNote(lead.adminNotes, tableNotesDraft, undefined, actorEmail)
-    const nextFinanceManager = resolveLeadFinanceManager(lead.financeManager, actorEmail)
+    const autoClaimActor = canManuallyAssignLeadFinanceManagers(actorEmail) ? '' : actorEmail
+    const nextFinanceManager = resolveLeadFinanceManager(lead.financeManager, autoClaimActor)
     const updatePayload: Record<string, string | null> = { admin_notes: nextNotes }
     if (financeManagerEnabled) updatePayload.finance_manager = nextFinanceManager
 
@@ -906,7 +1017,8 @@ export default function AdminLeadsPage() {
     const statusAuditNotes = notesEnabled
       ? appendLeadUpdateTranscriptNote(lead.adminNotes, { field: 'Status', from: lead.managerStatus, to: status, actor: actorEmail })
       : lead.adminNotes
-    const nextFinanceManager = resolveLeadFinanceManager(lead.financeManager, actorEmail)
+    const autoClaimActor = canManuallyAssignLeadFinanceManagers(actorEmail) ? '' : actorEmail
+    const nextFinanceManager = resolveLeadFinanceManager(lead.financeManager, autoClaimActor)
     const updatePayload: Record<string, string | null> = { manager_status: status }
     if (notesEnabled) updatePayload.admin_notes = statusAuditNotes
     if (financeManagerEnabled) updatePayload.finance_manager = nextFinanceManager
@@ -932,14 +1044,22 @@ export default function AdminLeadsPage() {
     }
   }
 
-  const handleAssignFinanceManager = async (lead: Lead) => {
+  const handleAssignFinanceManager = async (lead: Lead, managerTarget?: string | null) => {
     if (!financeManagerEnabled) {
       setFinanceManagerSaveError('Apply the finance_manager database column before assigning leads.')
       return
     }
 
-    const nextFinanceManager = clean(adminEmail)
-    if (!nextFinanceManager) {
+    const manualAssignment = managerTarget !== undefined
+    if (manualAssignment && !canManageLeadAssignments) {
+      setFinanceManagerSaveError('Only info@easydrivecanada.com can manually assign finance managers.')
+      return
+    }
+
+    const normalizedTarget = normalizeLeadFinanceManagerTarget(manualAssignment ? managerTarget : adminEmail)
+    const nextFinanceManager = normalizedTarget === 'Unassigned' ? null : normalizedTarget
+
+    if (!nextFinanceManager && !manualAssignment) {
       setFinanceManagerSaveError('Sign in again before assigning a finance manager.')
       return
     }
@@ -955,10 +1075,11 @@ export default function AdminLeadsPage() {
 
       if (error) throw error
 
-      setLeads((rows) => rows.map((row) => (row.id === lead.id ? { ...row, financeManager: nextFinanceManager } : row)))
-      setSelectedLead((current) => (current?.id === lead.id ? { ...current, financeManager: nextFinanceManager } : current))
-      setNotesModalLead((current) => (current?.id === lead.id ? { ...current, financeManager: nextFinanceManager } : current))
-      setStatusModalLead((current) => (current?.id === lead.id ? { ...current, financeManager: nextFinanceManager } : current))
+      const localUpdate = { financeManager: nextFinanceManager }
+      setLeads((rows) => rows.map((row) => (row.id === lead.id ? { ...row, ...localUpdate } : row)))
+      setSelectedLead((current) => (current?.id === lead.id ? { ...current, ...localUpdate } : current))
+      setNotesModalLead((current) => (current?.id === lead.id ? { ...current, ...localUpdate } : current))
+      setStatusModalLead((current) => (current?.id === lead.id ? { ...current, ...localUpdate } : current))
     } catch (error) {
       console.error('Error assigning finance manager:', error)
       setFinanceManagerSaveError('Unable to assign finance manager. Check that finance_manager exists on edc_leads.')
@@ -982,16 +1103,19 @@ export default function AdminLeadsPage() {
     setLeadFormError('')
 
     try {
-      const insert = rowToLeadInsert(leadDraft, notesEnabled)
+      const insert = rowToLeadInsert(leadDraft, notesEnabled, undefined, {
+        statusEnabled: statusEnabled && canManageLeadAssignments,
+        financeManagerEnabled: financeManagerEnabled && canManageLeadAssignments,
+      })
       const { data, error } = await supabase
         .from('edc_leads')
         .insert(insert)
-        .select(notesEnabled ? LEAD_SELECT_WITH_NOTES : BASE_LEAD_SELECT)
+        .select(leadSelectForCapabilities(notesEnabled, statusEnabled, financeManagerEnabled))
         .single()
 
       if (error) throw error
 
-      const created = mapLeadRow(data as LeadRow)
+      const created = mapLeadRow(data as unknown as LeadRow)
       setLeads((rows) => [created, ...rows])
       setSelectedLead(created)
       setNewLeadOpen(false)
@@ -1017,7 +1141,7 @@ export default function AdminLeadsPage() {
         ? XLSX.read(await file.text(), { type: 'string' })
         : XLSX.read(await file.arrayBuffer(), { type: 'array' })
       const sheet = workbook.Sheets[workbook.SheetNames[0]]
-      const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: '' })
+      const rows = XLSX.utils.sheet_to_json(sheet, { defval: '' }) as Array<Record<string, unknown>>
 
       const drafts = rows
         .map((row) => {
@@ -1045,6 +1169,12 @@ export default function AdminLeadsPage() {
             creditScore: pickImportValue(row, ['credit', 'credit score', 'credit profile']),
             message: buildImportMessage(row, fallbackMessage),
             adminNotes: pickImportValue(row, ['notes', 'admin notes', 'internal notes', 'follow up notes']),
+            managerStatus: canManageLeadAssignments
+              ? normalizeLeadManagerStatus(pickImportValue(row, ['status', 'manager status', 'lead status'])) || ''
+              : '',
+            financeManager: canManageLeadAssignments
+              ? normalizeLeadFinanceManagerTarget(pickImportValue(row, ['finance manager', 'assigned to', 'manager', 'owner'])) || ''
+              : '',
             createdAt: pickImportValue(row, ['timestamp', 'date', 'created at', 'created_at', 'received', 'submitted', 'submitted at']),
           } satisfies LeadDraft
         })
@@ -1075,15 +1205,18 @@ export default function AdminLeadsPage() {
       const rowsToImport = importRows.map((row) => (
         importSourceMode === 'auto' ? row : { ...row, source: importSourceMode }
       ))
-      const inserts = rowsToImport.map((row) => rowToLeadInsert(row, notesEnabled))
+      const inserts = rowsToImport.map((row) => rowToLeadInsert(row, notesEnabled, undefined, {
+        statusEnabled: statusEnabled && canManageLeadAssignments,
+        financeManagerEnabled: financeManagerEnabled && canManageLeadAssignments,
+      }))
       const { data, error } = await supabase
         .from('edc_leads')
         .insert(inserts)
-        .select(notesEnabled ? LEAD_SELECT_WITH_NOTES : BASE_LEAD_SELECT)
+        .select(leadSelectForCapabilities(notesEnabled, statusEnabled, financeManagerEnabled))
 
       if (error) throw error
 
-      const imported = ((data || []) as LeadRow[]).map(mapLeadRow)
+      const imported = ((data || []) as unknown as LeadRow[]).map(mapLeadRow)
       setLeads((rows) => [...imported, ...rows])
       setImportOpen(false)
       setImportRows([])
@@ -1310,6 +1443,9 @@ export default function AdminLeadsPage() {
               notesEnabled={notesEnabled}
               notesSaveError={notesSaveError}
               adminEmail={adminEmail}
+              canManageAssignments={canManageLeadAssignments}
+              assignmentUsers={assignmentUsers}
+              assignmentUsersLoading={assignmentUsersLoading}
               financeManagerEnabled={financeManagerEnabled}
               savingFinanceManager={savingFinanceManagerId === selectedLead.id}
               financeManagerSaveError={financeManagerSaveError}
@@ -1356,6 +1492,11 @@ export default function AdminLeadsPage() {
           submitting={savingLead}
           error={leadFormError}
           notesEnabled={notesEnabled}
+          statusEnabled={statusEnabled}
+          financeManagerEnabled={financeManagerEnabled}
+          canManageAssignments={canManageLeadAssignments}
+          assignmentUsers={assignmentUsers}
+          assignmentUsersLoading={assignmentUsersLoading}
         />
       )}
 
@@ -1691,6 +1832,11 @@ function LeadFormModal({
   submitting,
   error,
   notesEnabled,
+  statusEnabled,
+  financeManagerEnabled,
+  canManageAssignments,
+  assignmentUsers,
+  assignmentUsersLoading,
 }: {
   draft: LeadDraft
   onChange: (draft: LeadDraft) => void
@@ -1699,6 +1845,11 @@ function LeadFormModal({
   submitting: boolean
   error: string
   notesEnabled: boolean
+  statusEnabled: boolean
+  financeManagerEnabled: boolean
+  canManageAssignments: boolean
+  assignmentUsers: AssignmentUser[]
+  assignmentUsersLoading: boolean
 }) {
   const setField = (field: keyof LeadDraft, value: string) => onChange({ ...draft, [field]: value })
 
@@ -1782,6 +1933,42 @@ function LeadFormModal({
                 className="mt-1 min-h-[148px] w-full resize-y rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-2 text-sm text-slate-800 outline-none focus:border-[#1EA7FF]/50 focus:bg-white focus:ring-2 focus:ring-[#1EA7FF]/20 disabled:bg-slate-100 disabled:text-slate-400"
               />
             </label>
+
+            {canManageAssignments ? (
+              <div className="grid gap-4 sm:grid-cols-2">
+                <label className="block">
+                  <span className="text-xs font-semibold text-slate-600">Finance manager</span>
+                  <select
+                    value={draft.financeManager}
+                    onChange={(event) => setField('financeManager', event.target.value)}
+                    disabled={!financeManagerEnabled}
+                    className="mt-1 h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-800 outline-none focus:border-[#1EA7FF]/50 focus:ring-2 focus:ring-[#1EA7FF]/20 disabled:bg-slate-100 disabled:text-slate-400"
+                  >
+                    <option value="">Unassigned</option>
+                    {assignmentUsersLoading ? <option value="">Loading users...</option> : null}
+                    {assignmentUsers.map((user) => (
+                      <option key={user.email} value={user.email}>
+                        {user.label} ({user.email})
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="block">
+                  <span className="text-xs font-semibold text-slate-600">Lead status</span>
+                  <select
+                    value={draft.managerStatus}
+                    onChange={(event) => setField('managerStatus', event.target.value)}
+                    disabled={!statusEnabled}
+                    className="mt-1 h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-800 outline-none focus:border-[#1EA7FF]/50 focus:ring-2 focus:ring-[#1EA7FF]/20 disabled:bg-slate-100 disabled:text-slate-400"
+                  >
+                    <option value="">No status</option>
+                    {MANAGER_STATUSES.map((status) => (
+                      <option key={status} value={status}>{status}</option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+            ) : null}
 
             {error ? <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div> : null}
           </div>
@@ -2152,6 +2339,9 @@ function LeadDetailPanel({
   notesEnabled,
   notesSaveError,
   adminEmail,
+  canManageAssignments,
+  assignmentUsers,
+  assignmentUsersLoading,
   financeManagerEnabled,
   savingFinanceManager,
   financeManagerSaveError,
@@ -2169,11 +2359,15 @@ function LeadDetailPanel({
   notesEnabled: boolean
   notesSaveError: string
   adminEmail: string
+  canManageAssignments: boolean
+  assignmentUsers: AssignmentUser[]
+  assignmentUsersLoading: boolean
   financeManagerEnabled: boolean
   savingFinanceManager: boolean
   financeManagerSaveError: string
-  onAssignFinanceManager: (lead: Lead) => void
+  onAssignFinanceManager: (lead: Lead, managerTarget?: string | null) => void
 }) {
+  const [customManager, setCustomManager] = useState('')
   const source = sourceFromLead(lead)
   const primaryIntent = lead.vehicleInterest || intentFallback(lead)
   const primaryIntentLabel = clean(lead.vehicleInterest) ? 'Vehicle' : 'Application'
@@ -2185,6 +2379,14 @@ function LeadDetailPanel({
         ? 'Full insurance application'
         : 'Submitted details'
   const assignedToCurrentUser = !!clean(adminEmail) && clean(lead.financeManager).toLowerCase() === clean(adminEmail).toLowerCase()
+  const currentManager = clean(lead.financeManager)
+  const assignmentOptions = currentManager && !assignmentUsers.some((user) => user.email === currentManager.toLowerCase())
+    ? [{ email: currentManager.toLowerCase(), label: financeManagerLabel(currentManager) }, ...assignmentUsers]
+    : assignmentUsers
+
+  useEffect(() => {
+    setCustomManager('')
+  }, [lead.id])
 
   return (
     <div className="max-h-[94vh] overflow-y-auto bg-slate-50/70">
@@ -2294,21 +2496,62 @@ function LeadDetailPanel({
               {financeManagerSaveError ? (
                 <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{financeManagerSaveError}</div>
               ) : null}
-              <button
-                type="button"
-                onClick={() => onAssignFinanceManager(lead)}
-                disabled={!financeManagerEnabled || !clean(adminEmail) || savingFinanceManager || assignedToCurrentUser}
-                className="edc-btn-primary h-10 w-full text-xs disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                <Users className="h-4 w-4" />
-                {savingFinanceManager
-                  ? 'Assigning...'
-                  : assignedToCurrentUser
-                    ? 'Assigned to you'
-                    : clean(lead.financeManager)
-                      ? 'Reassign to me'
-                      : 'Assign to me'}
-              </button>
+              {canManageAssignments ? (
+                <div className="space-y-2">
+                  <label className="block">
+                    <span className="text-[11px] font-bold uppercase text-slate-500">Manual assignment</span>
+                    <select
+                      value={currentManager}
+                      onChange={(event) => onAssignFinanceManager(lead, event.target.value || null)}
+                      disabled={!financeManagerEnabled || savingFinanceManager}
+                      className="mt-1 h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs text-slate-800 outline-none focus:border-[#1EA7FF]/50 focus:ring-2 focus:ring-[#1EA7FF]/20 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+                    >
+                      <option value="">Unassigned</option>
+                      {assignmentUsersLoading ? <option value={currentManager || ''}>Loading users...</option> : null}
+                      {assignmentOptions.map((user) => (
+                        <option key={user.email} value={user.email}>
+                          {user.label} ({user.email})
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <div className="flex gap-2">
+                    <input
+                      value={customManager}
+                      onChange={(event) => setCustomManager(event.target.value)}
+                      placeholder="manager@example.com"
+                      className="h-10 min-w-0 flex-1 rounded-xl border border-slate-200 bg-white px-3 text-xs text-slate-800 outline-none focus:border-[#1EA7FF]/50 focus:ring-2 focus:ring-[#1EA7FF]/20"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onAssignFinanceManager(lead, customManager)
+                        setCustomManager('')
+                      }}
+                      disabled={!financeManagerEnabled || savingFinanceManager || !clean(customManager)}
+                      className="edc-btn-secondary h-10 px-3 text-xs disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      Set
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => onAssignFinanceManager(lead)}
+                  disabled={!financeManagerEnabled || !clean(adminEmail) || savingFinanceManager || assignedToCurrentUser}
+                  className="edc-btn-primary h-10 w-full text-xs disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <Users className="h-4 w-4" />
+                  {savingFinanceManager
+                    ? 'Assigning...'
+                    : assignedToCurrentUser
+                      ? 'Assigned to you'
+                      : clean(lead.financeManager)
+                        ? 'Reassign to me'
+                        : 'Assign to me'}
+                </button>
+              )}
             </div>
           </DetailSection>
 
@@ -2714,4 +2957,3 @@ function intentFallback(lead: Lead) {
   if (source === 'contact') return 'General inquiry'
   return 'No vehicle interest'
 }
-

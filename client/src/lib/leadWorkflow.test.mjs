@@ -4,7 +4,9 @@ import { test } from 'node:test'
 import {
   appendLeadTranscriptNote,
   appendLeadUpdateTranscriptNote,
+  canManuallyAssignLeadFinanceManagers,
   displayLeadTranscriptAuthor,
+  normalizeLeadFinanceManagerTarget,
   parseLeadTranscriptEntries,
   resolveLeadFinanceManager,
   shouldOpenLeadDetailsFromRowClick,
@@ -134,6 +136,19 @@ test('keeps an existing finance manager instead of overwriting ownership', () =>
 
 test('does not assign a finance manager without an editor identity', () => {
   assert.equal(resolveLeadFinanceManager('', '   '), null)
+})
+
+test('only the master inbox can manually assign finance managers', () => {
+  assert.equal(canManuallyAssignLeadFinanceManagers('info@easydrivecanada.com'), true)
+  assert.equal(canManuallyAssignLeadFinanceManagers(' INFO@EASYDRIVECANADA.COM '), true)
+  assert.equal(canManuallyAssignLeadFinanceManagers('manager@easydrivecanada.com'), false)
+  assert.equal(canManuallyAssignLeadFinanceManagers(''), false)
+})
+
+test('normalizes manual finance manager assignment targets', () => {
+  assert.equal(normalizeLeadFinanceManagerTarget(' Manager@EasyDriveCanada.com '), 'manager@easydrivecanada.com')
+  assert.equal(normalizeLeadFinanceManagerTarget('Unassigned'), 'Unassigned')
+  assert.equal(normalizeLeadFinanceManagerTarget('   '), null)
 })
 
 test('opens lead details from row clicks except nested lead actions', () => {

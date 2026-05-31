@@ -19,7 +19,19 @@ const LEGACY_STATUS_MAP = new Map([
   ['BOOKED', 'Booked'],
 ])
 
+export const LEAD_MASTER_ASSIGNMENT_EMAIL = 'info@easydrivecanada.com'
+
 export const cleanLeadText = (value) => String(value ?? '').trim()
+
+export const canManuallyAssignLeadFinanceManagers = (email) =>
+  cleanLeadText(email).toLowerCase() === LEAD_MASTER_ASSIGNMENT_EMAIL
+
+export const normalizeLeadFinanceManagerTarget = (value) => {
+  const target = cleanLeadText(value)
+  if (!target) return null
+  if (target.toLowerCase() === 'unassigned') return 'Unassigned'
+  return target.toLowerCase()
+}
 
 export const normalizeLeadManagerStatus = (value) => {
   const raw = cleanLeadText(value)
