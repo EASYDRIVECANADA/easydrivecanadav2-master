@@ -8,6 +8,7 @@ import {
   ChevronDown,
   CheckCircle2,
   Clock3,
+  Download,
   Eye,
   FileSpreadsheet,
   Inbox,
@@ -21,6 +22,11 @@ import {
   X,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
+import {
+  buildLeadMarketingExportRows,
+  buildLeadMarketingSummaryRows,
+  leadMarketingRowsToAoa,
+} from '@/lib/leadMarketingExport.mjs'
 import {
   appendLeadTranscriptNote,
   appendLeadUpdateTranscriptNote,
@@ -47,6 +53,7 @@ interface Lead {
   downPayment: number | null
   creditScore: string | null
   adminNotes: string | null
+  marketingNotes: string | null
   managerStatus: LeadManagerStatus | null
   financeManager: string | null
   ghlSynced: boolean
@@ -66,6 +73,7 @@ type LeadRow = {
   down_payment: number | null
   credit_score: string | null
   admin_notes?: string | null
+  marketing_notes?: string | null
   manager_status?: string | null
   finance_manager?: string | null
   ghl_synced: boolean | null
@@ -100,6 +108,7 @@ type LeadDraft = {
   creditScore: string
   message: string
   adminNotes: string
+  marketingNotes: string
   managerStatus: LeadManagerStatus | ''
   financeManager: string
   createdAt: string
@@ -117,17 +126,20 @@ const FILTERS: Array<{ key: FilterKey; label: string }> = [
 ]
 
 const BASE_LEAD_SELECT = 'id, first_name, last_name, email, phone, vehicle_interest, message, employment_status, monthly_income, down_payment, credit_score, ghl_synced, created_at'
-const LEAD_SELECT_WITH_NOTES = `${BASE_LEAD_SELECT}, admin_notes`
-const LEAD_SELECT_WITH_STATUS = `${LEAD_SELECT_WITH_NOTES}, manager_status`
-const LEAD_SELECT_FULL = `${LEAD_SELECT_WITH_STATUS}, finance_manager`
 const MANAGER_STATUSES = LEAD_MANAGER_STATUSES as LeadManagerStatus[]
 const LEAD_DELETE_ALLOWED_EMAIL = 'info@easydrivecanada.com'
 
-const leadSelectForCapabilities = (notesEnabled: boolean, statusEnabled: boolean, financeManagerEnabled: boolean) => {
+const leadSelectForCapabilities = (
+  notesEnabled: boolean,
+  statusEnabled: boolean,
+  financeManagerEnabled: boolean,
+  marketingNotesEnabled: boolean
+) => {
   const columns = [BASE_LEAD_SELECT]
   if (notesEnabled) columns.push('admin_notes')
   if (statusEnabled) columns.push('manager_status')
   if (financeManagerEnabled) columns.push('finance_manager')
+  if (marketingNotesEnabled) columns.push('marketing_notes')
   return columns.join(', ')
 }
 
@@ -158,6 +170,7 @@ const emptyLeadDraft: LeadDraft = {
   creditScore: '',
   message: '',
   adminNotes: '',
+  marketingNotes: '',
   managerStatus: '',
   financeManager: '',
   createdAt: '',
@@ -520,6 +533,7 @@ const leadFromDraftPreview = (draft: LeadDraft, index: number): Lead => {
     downPayment: toNumberOrNull(draft.downPayment),
     creditScore: clean(draft.creditScore) || null,
     adminNotes: clean(draft.adminNotes) || null,
+    marketingNotes: clean(draft.marketingNotes) || null,
     managerStatus: clean(draft.managerStatus) || normalizeLeadManagerStatus(findSubmittedValue(parseMessageFields(message).rows, ['Submitted status', 'Status'])),
     financeManager: normalizeLeadFinanceManagerTarget(draft.financeManager),
     ghlSynced: false,
@@ -563,6 +577,7 @@ const mapLeadRow = (l: LeadRow): Lead => ({
   downPayment: l.down_payment ?? null,
   creditScore: l.credit_score ?? null,
   adminNotes: l.admin_notes ?? null,
+  marketingNotes: l.marketing_notes ?? null,
   managerStatus: normalizeLeadManagerStatus(l.manager_status),
   financeManager: clean(l.finance_manager) || null,
   ghlSynced: !!l.ghl_synced,
@@ -573,7 +588,7 @@ const rowToLeadInsert = (
   draft: LeadDraft,
   notesEnabled: boolean,
   createdAt = new Date().toISOString(),
-  options: { statusEnabled?: boolean; financeManagerEnabled?: boolean } = {}
+  options: { statusEnabled?: boolean; financeManagerEnabled?: boolean; marketingNotesEnabled?: boolean } = {}
 ) => {
   const insert: Record<string, unknown> = {
     first_name: clean(draft.firstName) || null,
@@ -594,6 +609,10 @@ const rowToLeadInsert = (
     insert.admin_notes = appendLeadTranscriptNote(null, draft.adminNotes)
   }
 
+  if (options.marketingNotesEnabled) {
+    insert.marketing_notes = clean(draft.marketingNotes) || null
+  }
+
   if (options.statusEnabled) {
     insert.manager_status = clean(draft.managerStatus) || null
   }
@@ -606,6 +625,31 @@ const rowToLeadInsert = (
   return insert
 }
 
+const styleMarketingWorksheet = (XLSX: any, worksheet: Record<string, any>, rows: unknown[][]) => {
+  const range = XLSX.utils.decode_range(worksheet['!ref'] || 'A1:A1')
+  for (let column = range.s.c; column <= range.e.c; column += 1) {
+    const address = XLSX.utils.encode_cell({ r: 0, c: column })
+    const cell = worksheet[address]
+    if (cell) {
+      cell.s = {
+        font: { bold: true, color: { rgb: 'FFFFFFFF' } },
+        fill: { patternType: 'solid', fgColor: { rgb: 'FF0B1F3A' } },
+        alignment: { vertical: 'center', horizontal: 'center', wrapText: true },
+      }
+    }
+  }
+
+  const columnCount = rows.reduce((max, row) => Math.max(max, row.length), 0)
+  worksheet['!cols'] = Array.from({ length: columnCount }, (_, columnIndex) => {
+    const maxLength = rows.reduce((max, row) => {
+      const value = row[columnIndex]
+      return Math.max(max, String(value ?? '').length)
+    }, 0)
+    return { wch: Math.min(Math.max(maxLength + 2, 12), 70) }
+  })
+  worksheet['!freeze'] = { xSplit: 0, ySplit: 1 }
+}
+
 export default function AdminLeadsPage() {
   const [leads, setLeads] = useState<Lead[]>([])
   const [loading, setLoading] = useState(true)
@@ -614,6 +658,11 @@ export default function AdminLeadsPage() {
   const [savingNotes, setSavingNotes] = useState(false)
   const [notesEnabled, setNotesEnabled] = useState(true)
   const [notesSaveError, setNotesSaveError] = useState('')
+  const [marketingNotesDraft, setMarketingNotesDraft] = useState('')
+  const [savingMarketingNotes, setSavingMarketingNotes] = useState(false)
+  const [marketingNotesEnabled, setMarketingNotesEnabled] = useState(true)
+  const [marketingNotesSaveError, setMarketingNotesSaveError] = useState('')
+  const [marketingExportError, setMarketingExportError] = useState('')
   const [notesModalLead, setNotesModalLead] = useState<Lead | null>(null)
   const [tableNotesDraft, setTableNotesDraft] = useState('')
   const [savingTableNotes, setSavingTableNotes] = useState(false)
@@ -709,48 +758,70 @@ export default function AdminLeadsPage() {
 
   const fetchLeads = async () => {
     try {
-      let result = await supabase
-        .from('edc_leads')
-        .select(LEAD_SELECT_FULL)
-        .order('created_at', { ascending: false }) as unknown as LeadQueryResult
+      let nextNotesEnabled = true
+      let nextStatusEnabled = true
+      let nextFinanceManagerEnabled = true
+      let nextMarketingNotesEnabled = true
+      let result: LeadQueryResult = { data: null, error: null }
 
-      if (result.error && /finance_manager|column|schema cache/i.test(result.error.message || '')) {
-        setFinanceManagerEnabled(false)
+      for (let attempt = 0; attempt < 8; attempt += 1) {
         result = await supabase
           .from('edc_leads')
-          .select(LEAD_SELECT_WITH_STATUS)
-          .order('created_at', { ascending: false }) as unknown as LeadQueryResult
-      } else {
-        setFinanceManagerEnabled(true)
-      }
-
-      if (result.error && /manager_status|column|schema cache/i.test(result.error.message || '')) {
-        setStatusEnabled(false)
-        result = await supabase
-          .from('edc_leads')
-          .select(`${LEAD_SELECT_WITH_NOTES}, finance_manager`)
+          .select(leadSelectForCapabilities(nextNotesEnabled, nextStatusEnabled, nextFinanceManagerEnabled, nextMarketingNotesEnabled))
           .order('created_at', { ascending: false }) as unknown as LeadQueryResult
 
-        if (result.error && /finance_manager|column|schema cache/i.test(result.error.message || '')) {
-          setFinanceManagerEnabled(false)
-          result = await supabase
-            .from('edc_leads')
-            .select(LEAD_SELECT_WITH_NOTES)
-            .order('created_at', { ascending: false }) as unknown as LeadQueryResult
+        if (!result.error) break
+
+        const message = result.error.message || ''
+        const genericColumnError = /column|schema cache/i.test(message)
+
+        if (nextMarketingNotesEnabled && /marketing_notes/i.test(message)) {
+          nextMarketingNotesEnabled = false
+          continue
         }
-      } else {
-        setStatusEnabled(true)
+
+        if (nextFinanceManagerEnabled && /finance_manager/i.test(message)) {
+          nextFinanceManagerEnabled = false
+          continue
+        }
+
+        if (nextStatusEnabled && /manager_status/i.test(message)) {
+          nextStatusEnabled = false
+          continue
+        }
+
+        if (nextNotesEnabled && /admin_notes/i.test(message)) {
+          nextNotesEnabled = false
+          continue
+        }
+
+        if (genericColumnError && nextMarketingNotesEnabled) {
+          nextMarketingNotesEnabled = false
+          continue
+        }
+
+        if (genericColumnError && nextFinanceManagerEnabled) {
+          nextFinanceManagerEnabled = false
+          continue
+        }
+
+        if (genericColumnError && nextStatusEnabled) {
+          nextStatusEnabled = false
+          continue
+        }
+
+        if (genericColumnError && nextNotesEnabled) {
+          nextNotesEnabled = false
+          continue
+        }
+
+        break
       }
 
-      if (result.error && /admin_notes|column|schema cache/i.test(result.error.message || '')) {
-        setNotesEnabled(false)
-        result = await supabase
-          .from('edc_leads')
-          .select(BASE_LEAD_SELECT)
-          .order('created_at', { ascending: false }) as unknown as LeadQueryResult
-      } else if (!result.error) {
-        setNotesEnabled(true)
-      }
+      setNotesEnabled(nextNotesEnabled)
+      setStatusEnabled(nextStatusEnabled)
+      setFinanceManagerEnabled(nextFinanceManagerEnabled)
+      setMarketingNotesEnabled(nextMarketingNotesEnabled)
 
       const { data, error } = result
       if (error) throw error
@@ -800,6 +871,7 @@ export default function AdminLeadsPage() {
         lead.vehicleInterest,
         lead.message,
         lead.adminNotes,
+        lead.marketingNotes,
         lead.managerStatus,
         lead.financeManager,
         financeManagerLabel(lead.financeManager),
@@ -821,9 +893,11 @@ export default function AdminLeadsPage() {
 
   useEffect(() => {
     setNotesDraft('')
+    setMarketingNotesDraft(selectedLead?.marketingNotes || '')
     setNotesSaveError('')
+    setMarketingNotesSaveError('')
     setFinanceManagerSaveError('')
-  }, [selectedLead?.id, selectedLead?.adminNotes])
+  }, [selectedLead?.id, selectedLead?.adminNotes, selectedLead?.marketingNotes])
 
   useEffect(() => {
     setTableNotesDraft('')
@@ -1005,6 +1079,43 @@ export default function AdminLeadsPage() {
     }
   }
 
+  const handleSaveMarketingNotes = async (lead: Lead) => {
+    if (!canManageLeadAssignments) {
+      setMarketingNotesSaveError('Only info@easydrivecanada.com can update marketing notes.')
+      return
+    }
+
+    if (!marketingNotesEnabled) {
+      setMarketingNotesSaveError('Apply the marketing_notes database column before saving marketing notes.')
+      return
+    }
+
+    setSavingMarketingNotes(true)
+    setMarketingNotesSaveError('')
+
+    const nextMarketingNotes = clean(marketingNotesDraft) || null
+
+    try {
+      const { error } = await supabase
+        .from('edc_leads')
+        .update({ marketing_notes: nextMarketingNotes })
+        .eq('id', lead.id)
+
+      if (error) throw error
+
+      const localUpdate = { marketingNotes: nextMarketingNotes }
+      setLeads((rows) => rows.map((row) => (row.id === lead.id ? { ...row, ...localUpdate } : row)))
+      setSelectedLead((current) => (current?.id === lead.id ? { ...current, ...localUpdate } : current))
+      setNotesModalLead((current) => (current?.id === lead.id ? { ...current, ...localUpdate } : current))
+      setStatusModalLead((current) => (current?.id === lead.id ? { ...current, ...localUpdate } : current))
+    } catch (error) {
+      console.error('Error saving lead marketing notes:', error)
+      setMarketingNotesSaveError('Unable to save marketing notes. Check that marketing_notes exists on edc_leads.')
+    } finally {
+      setSavingMarketingNotes(false)
+    }
+  }
+
   const handleSaveStatus = async (lead: Lead, status: LeadManagerStatus | null) => {
     if (!statusEnabled) {
       setStatusSaveError('Apply the manager_status database column before updating lead status.')
@@ -1106,11 +1217,12 @@ export default function AdminLeadsPage() {
       const insert = rowToLeadInsert(leadDraft, notesEnabled, undefined, {
         statusEnabled: statusEnabled && canManageLeadAssignments,
         financeManagerEnabled: financeManagerEnabled && canManageLeadAssignments,
+        marketingNotesEnabled: marketingNotesEnabled && canManageLeadAssignments,
       })
       const { data, error } = await supabase
         .from('edc_leads')
         .insert(insert)
-        .select(leadSelectForCapabilities(notesEnabled, statusEnabled, financeManagerEnabled))
+        .select(leadSelectForCapabilities(notesEnabled, statusEnabled, financeManagerEnabled, marketingNotesEnabled))
         .single()
 
       if (error) throw error
@@ -1169,6 +1281,9 @@ export default function AdminLeadsPage() {
             creditScore: pickImportValue(row, ['credit', 'credit score', 'credit profile']),
             message: buildImportMessage(row, fallbackMessage),
             adminNotes: pickImportValue(row, ['notes', 'admin notes', 'internal notes', 'follow up notes']),
+            marketingNotes: canManageLeadAssignments
+              ? pickImportValue(row, ['marketing notes', 'marketing_notes', 'customer profile notes', 'customer notes', 'marketing profile'])
+              : '',
             managerStatus: canManageLeadAssignments
               ? normalizeLeadManagerStatus(pickImportValue(row, ['status', 'manager status', 'lead status'])) || ''
               : '',
@@ -1208,11 +1323,12 @@ export default function AdminLeadsPage() {
       const inserts = rowsToImport.map((row) => rowToLeadInsert(row, notesEnabled, undefined, {
         statusEnabled: statusEnabled && canManageLeadAssignments,
         financeManagerEnabled: financeManagerEnabled && canManageLeadAssignments,
+        marketingNotesEnabled: marketingNotesEnabled && canManageLeadAssignments,
       }))
       const { data, error } = await supabase
         .from('edc_leads')
         .insert(inserts)
-        .select(leadSelectForCapabilities(notesEnabled, statusEnabled, financeManagerEnabled))
+        .select(leadSelectForCapabilities(notesEnabled, statusEnabled, financeManagerEnabled, marketingNotesEnabled))
 
       if (error) throw error
 
@@ -1229,6 +1345,35 @@ export default function AdminLeadsPage() {
       setImportError('Unable to import leads. Check the file columns and try again.')
     } finally {
       setImporting(false)
+    }
+  }
+
+  const handleExportMarketingSheet = async () => {
+    if (!canManageLeadAssignments) {
+      setMarketingExportError('Only info@easydrivecanada.com can export the marketing sheet.')
+      return
+    }
+
+    setMarketingExportError('')
+
+    try {
+      const XLSX = await import('xlsx-js-style')
+      const leadRows = buildLeadMarketingExportRows(leads)
+      const leadsAoa = leadMarketingRowsToAoa(leadRows)
+      const summaryAoa = buildLeadMarketingSummaryRows(leads)
+      const leadsWorksheet = XLSX.utils.aoa_to_sheet(leadsAoa)
+      const summaryWorksheet = XLSX.utils.aoa_to_sheet(summaryAoa)
+
+      styleMarketingWorksheet(XLSX, leadsWorksheet, leadsAoa)
+      styleMarketingWorksheet(XLSX, summaryWorksheet, summaryAoa)
+
+      const workbook = XLSX.utils.book_new()
+      XLSX.utils.book_append_sheet(workbook, leadsWorksheet, 'Leads')
+      XLSX.utils.book_append_sheet(workbook, summaryWorksheet, 'Summary')
+      XLSX.writeFile(workbook, `lead_marketing_export_${new Date().toISOString().slice(0, 10)}.xlsx`)
+    } catch (error) {
+      console.error('Error exporting marketing sheet:', error)
+      setMarketingExportError('Unable to create the marketing export. Refresh the leads list and try again.')
     }
   }
 
@@ -1284,6 +1429,16 @@ export default function AdminLeadsPage() {
                   Delete selected{selectedCount > 0 ? ` (${selectedCount})` : ''}
                 </button>
               ) : null}
+              {canManageLeadAssignments ? (
+                <button
+                  type="button"
+                  onClick={handleExportMarketingSheet}
+                  className="inline-flex h-9 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition-colors hover:border-slate-300 hover:bg-slate-50"
+                >
+                  <Download className="h-4 w-4" />
+                  Export marketing
+                </button>
+              ) : null}
               <button
                 type="button"
                 onClick={() => setImportOpen(true)}
@@ -1323,6 +1478,11 @@ export default function AdminLeadsPage() {
               })}
             </div>
           </div>
+          {marketingExportError ? (
+            <div className="mt-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+              {marketingExportError}
+            </div>
+          ) : null}
         </div>
 
         <div className="min-w-0">
@@ -1442,6 +1602,12 @@ export default function AdminLeadsPage() {
               savingNotes={savingNotes}
               notesEnabled={notesEnabled}
               notesSaveError={notesSaveError}
+              marketingNotesDraft={marketingNotesDraft}
+              onMarketingNotesChange={setMarketingNotesDraft}
+              onSaveMarketingNotes={handleSaveMarketingNotes}
+              savingMarketingNotes={savingMarketingNotes}
+              marketingNotesEnabled={marketingNotesEnabled}
+              marketingNotesSaveError={marketingNotesSaveError}
               adminEmail={adminEmail}
               canManageAssignments={canManageLeadAssignments}
               assignmentUsers={assignmentUsers}
@@ -1494,6 +1660,7 @@ export default function AdminLeadsPage() {
           notesEnabled={notesEnabled}
           statusEnabled={statusEnabled}
           financeManagerEnabled={financeManagerEnabled}
+          marketingNotesEnabled={marketingNotesEnabled}
           canManageAssignments={canManageLeadAssignments}
           assignmentUsers={assignmentUsers}
           assignmentUsersLoading={assignmentUsersLoading}
@@ -1834,6 +2001,7 @@ function LeadFormModal({
   notesEnabled,
   statusEnabled,
   financeManagerEnabled,
+  marketingNotesEnabled,
   canManageAssignments,
   assignmentUsers,
   assignmentUsersLoading,
@@ -1847,6 +2015,7 @@ function LeadFormModal({
   notesEnabled: boolean
   statusEnabled: boolean
   financeManagerEnabled: boolean
+  marketingNotesEnabled: boolean
   canManageAssignments: boolean
   assignmentUsers: AssignmentUser[]
   assignmentUsersLoading: boolean
@@ -1935,37 +2104,51 @@ function LeadFormModal({
             </label>
 
             {canManageAssignments ? (
-              <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-4">
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <label className="block">
+                    <span className="text-xs font-semibold text-slate-600">Finance manager</span>
+                    <select
+                      value={draft.financeManager}
+                      onChange={(event) => setField('financeManager', event.target.value)}
+                      disabled={!financeManagerEnabled}
+                      className="mt-1 h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-800 outline-none focus:border-[#1EA7FF]/50 focus:ring-2 focus:ring-[#1EA7FF]/20 disabled:bg-slate-100 disabled:text-slate-400"
+                    >
+                      <option value="">Unassigned</option>
+                      {assignmentUsersLoading ? <option value="">Loading users...</option> : null}
+                      {assignmentUsers.map((user) => (
+                        <option key={user.email} value={user.email}>
+                          {user.label} ({user.email})
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="block">
+                    <span className="text-xs font-semibold text-slate-600">Lead status</span>
+                    <select
+                      value={draft.managerStatus}
+                      onChange={(event) => setField('managerStatus', event.target.value)}
+                      disabled={!statusEnabled}
+                      className="mt-1 h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-800 outline-none focus:border-[#1EA7FF]/50 focus:ring-2 focus:ring-[#1EA7FF]/20 disabled:bg-slate-100 disabled:text-slate-400"
+                    >
+                      <option value="">No status</option>
+                      {MANAGER_STATUSES.map((status) => (
+                        <option key={status} value={status}>{status}</option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+
                 <label className="block">
-                  <span className="text-xs font-semibold text-slate-600">Finance manager</span>
-                  <select
-                    value={draft.financeManager}
-                    onChange={(event) => setField('financeManager', event.target.value)}
-                    disabled={!financeManagerEnabled}
-                    className="mt-1 h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-800 outline-none focus:border-[#1EA7FF]/50 focus:ring-2 focus:ring-[#1EA7FF]/20 disabled:bg-slate-100 disabled:text-slate-400"
-                  >
-                    <option value="">Unassigned</option>
-                    {assignmentUsersLoading ? <option value="">Loading users...</option> : null}
-                    {assignmentUsers.map((user) => (
-                      <option key={user.email} value={user.email}>
-                        {user.label} ({user.email})
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="block">
-                  <span className="text-xs font-semibold text-slate-600">Lead status</span>
-                  <select
-                    value={draft.managerStatus}
-                    onChange={(event) => setField('managerStatus', event.target.value)}
-                    disabled={!statusEnabled}
-                    className="mt-1 h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-800 outline-none focus:border-[#1EA7FF]/50 focus:ring-2 focus:ring-[#1EA7FF]/20 disabled:bg-slate-100 disabled:text-slate-400"
-                  >
-                    <option value="">No status</option>
-                    {MANAGER_STATUSES.map((status) => (
-                      <option key={status} value={status}>{status}</option>
-                    ))}
-                  </select>
+                  <span className="text-xs font-semibold text-slate-600">Marketing notes</span>
+                  <textarea
+                    value={draft.marketingNotes}
+                    onChange={(event) => setField('marketingNotes', event.target.value)}
+                    disabled={!marketingNotesEnabled}
+                    rows={4}
+                    placeholder={marketingNotesEnabled ? 'Customer profile notes for marketing and targeting...' : 'Apply marketing_notes SQL to enable marketing notes.'}
+                    className="mt-1 min-h-[112px] w-full resize-y rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-2 text-sm text-slate-800 outline-none focus:border-[#1EA7FF]/50 focus:bg-white focus:ring-2 focus:ring-[#1EA7FF]/20 disabled:bg-slate-100 disabled:text-slate-400"
+                  />
                 </label>
               </div>
             ) : null}
@@ -2049,7 +2232,7 @@ function LeadImportModal({
           <div className="rounded-2xl border border-slate-200 bg-white p-4">
             <div className="text-sm font-semibold text-slate-900">Recognized columns</div>
             <p className="mt-1 text-xs leading-5 text-slate-500">
-              Name, first name, last name, email, phone, source, vehicle, message, notes, employment, monthly income, annual income, down payment, credit, and date.
+              Name, first name, last name, email, phone, source, vehicle, message, notes, marketing notes, employment, monthly income, annual income, down payment, credit, and date.
             </p>
           </div>
 
@@ -2338,6 +2521,12 @@ function LeadDetailPanel({
   savingNotes,
   notesEnabled,
   notesSaveError,
+  marketingNotesDraft,
+  onMarketingNotesChange,
+  onSaveMarketingNotes,
+  savingMarketingNotes,
+  marketingNotesEnabled,
+  marketingNotesSaveError,
   adminEmail,
   canManageAssignments,
   assignmentUsers,
@@ -2358,6 +2547,12 @@ function LeadDetailPanel({
   savingNotes: boolean
   notesEnabled: boolean
   notesSaveError: string
+  marketingNotesDraft: string
+  onMarketingNotesChange: (value: string) => void
+  onSaveMarketingNotes: (lead: Lead) => void
+  savingMarketingNotes: boolean
+  marketingNotesEnabled: boolean
+  marketingNotesSaveError: string
   adminEmail: string
   canManageAssignments: boolean
   assignmentUsers: AssignmentUser[]
@@ -2566,6 +2761,18 @@ function LeadDetailPanel({
             error={notesSaveError}
           />
 
+          {canManageAssignments ? (
+            <MarketingNotesSection
+              value={marketingNotesDraft}
+              savedValue={lead.marketingNotes || ''}
+              onChange={onMarketingNotesChange}
+              onSave={() => onSaveMarketingNotes(lead)}
+              saving={savingMarketingNotes}
+              enabled={marketingNotesEnabled}
+              error={marketingNotesSaveError}
+            />
+          ) : null}
+
           {canDelete ? (
             <DetailSection title="Actions" icon={Eye}>
               <div className="grid gap-2 p-3">
@@ -2676,6 +2883,61 @@ function LeadNotesSection({
         <div className="mt-2 flex items-center justify-between gap-3 text-xs">
           <span className={error ? 'text-red-600' : 'text-slate-400'}>
             {error || (isDirty ? 'New note ready to add' : hasTranscript ? 'History cannot be edited or deleted' : 'No notes yet')}
+          </span>
+          <span className="shrink-0 text-slate-400">{value.length} chars</span>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function MarketingNotesSection({
+  value,
+  savedValue,
+  onChange,
+  onSave,
+  saving,
+  enabled,
+  error,
+}: {
+  value: string
+  savedValue: string
+  onChange: (value: string) => void
+  onSave: () => void
+  saving: boolean
+  enabled: boolean
+  error: string
+}) {
+  const isDirty = clean(value) !== clean(savedValue)
+
+  return (
+    <section>
+      <div className="mb-2 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2 text-[11px] font-bold uppercase text-slate-500">
+          <FileSpreadsheet className="h-4 w-4 text-[#1EA7FF]" />
+          Marketing notes
+        </div>
+        <button
+          type="button"
+          onClick={onSave}
+          disabled={!enabled || !isDirty || saving}
+          className="h-8 rounded-lg bg-[#0B1F3A] px-3 text-xs font-semibold text-white transition-colors hover:bg-[#12345d] disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400"
+        >
+          {saving ? 'Saving...' : 'Save'}
+        </button>
+      </div>
+      <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+        <textarea
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          disabled={!enabled || saving}
+          rows={5}
+          placeholder={enabled ? 'Customer notes for marketing, targeting, follow-up themes, or analyst handoff...' : 'Apply the marketing_notes database column to enable marketing notes.'}
+          className="min-h-[132px] w-full resize-y rounded-lg border border-slate-200 bg-slate-50/70 px-3 py-2 text-sm text-slate-800 outline-none transition focus:border-[#1EA7FF]/50 focus:bg-white focus:ring-2 focus:ring-[#1EA7FF]/20 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+        />
+        <div className="mt-2 flex items-center justify-between gap-3 text-xs">
+          <span className={error ? 'text-red-600' : 'text-slate-400'}>
+            {error || (isDirty ? 'Unsaved marketing notes' : clean(savedValue) ? 'Included in marketing export' : 'No marketing notes yet')}
           </span>
           <span className="shrink-0 text-slate-400">{value.length} chars</span>
         </div>
