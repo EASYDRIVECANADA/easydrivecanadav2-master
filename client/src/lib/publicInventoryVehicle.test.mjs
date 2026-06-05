@@ -13,6 +13,7 @@ test('mapPublicInventoryVehicle preserves marketplace image URLs and dealer buck
     price: 16871,
     retail_price: 17871,
     finance_price: 16871,
+    marketplace_source: 'DriveTown Ottawa',
     images: ['https://drivetownottawa.com/image.jpg'],
     categories: 'dealer_select',
     inventory_type: 'DEALER_SELECT',
@@ -26,6 +27,7 @@ test('mapPublicInventoryVehicle preserves marketplace image URLs and dealer buck
   assert.equal(vehicle.inventoryType, 'DEALER_SELECT')
   assert.equal(vehicle.retailPrice, 17871)
   assert.equal(vehicle.financePrice, 16871)
+  assert.equal(vehicle.sourceName, 'DriveTown Ottawa')
   assert.equal(vehicle.createdAt, '2026-06-05T00:00:00.000Z')
 })
 

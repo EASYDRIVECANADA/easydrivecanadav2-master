@@ -8,14 +8,14 @@ test('formatCadPrice formats whole-dollar CAD values', () => {
   assert.equal(formatCadPrice('20871'), '$20,871')
 })
 
-test('buildDealerPriceDisplay labels sale price as Dealer Price', () => {
+test('buildDealerPriceDisplay labels sale price as Cash Price', () => {
   assert.deepEqual(buildDealerPriceDisplay({
     price: 19871,
     retailPrice: 20871,
     financePrice: 19871,
   }), {
     dealerPrice: 19871,
-    dealerPriceLabel: 'Dealer Price',
+    dealerPriceLabel: 'Cash Price',
     dealerPriceFormatted: '$19,871',
     retailPrice: 20871,
     retailPriceFormatted: '$20,871',

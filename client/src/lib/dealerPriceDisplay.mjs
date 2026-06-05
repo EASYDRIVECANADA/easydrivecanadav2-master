@@ -20,7 +20,7 @@ export function buildDealerPriceDisplay({ price, retailPrice, financePrice } = {
 
   return {
     dealerPrice,
-    dealerPriceLabel: 'Dealer Price',
+    dealerPriceLabel: 'Cash Price',
     dealerPriceFormatted: formatCadPrice(dealerPrice),
     retailPrice: retail,
     retailPriceFormatted: formatCadPrice(retail),

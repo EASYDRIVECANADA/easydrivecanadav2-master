@@ -245,7 +245,7 @@ export default function InventoryClient() {
 
     return (
       <div className={`flex flex-col ${alignClass}`}>
-        <span className="text-[10px] font-bold uppercase tracking-wide text-gray-500">Dealer Price</span>
+        <span className="text-[10px] font-bold uppercase tracking-wide text-gray-500">{display.dealerPriceLabel}</span>
         <span className="text-base font-bold text-gray-900">{display.dealerPriceFormatted || formatPrice(vehicle.price)}</span>
         {display.hasFinancePrice && (
           <span className="text-xs font-semibold text-gray-600">Finance {display.financePriceFormatted}</span>

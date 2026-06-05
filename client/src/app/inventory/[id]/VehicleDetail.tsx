@@ -6,6 +6,7 @@ import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabaseClient'
 import { buildDealerPriceDisplay } from '@/lib/dealerPriceDisplay.mjs'
+import { getListingTypeMeta } from '@/lib/listingType.mjs'
 // phase3Mock removed — reservation status now comes from edc_vehicles.status
 
 interface Vehicle {
@@ -40,6 +41,7 @@ interface Vehicle {
   inventoryType?: string
   vehicleId?: string
   category?: string
+  sourceName?: string
 }
 
 const getDownPaymentCap = (price: number) => {
@@ -339,6 +341,11 @@ export default function VehicleDetailPage() {
       }
 
       const anyData = data as any
+      const rowImages = normalizeImages(anyData.images ?? anyData.image_urls ?? anyData.image)
+      const bucketImages = await loadBucketImages(String(anyData.id || params.id || ''))
+      const listingMeta = getListingTypeMeta(anyData)
+      const category = listingMeta.bucket === 'unknown' ? 'premier' : listingMeta.bucket
+
       const mapped: Vehicle = {
         id: String(anyData.id || ''),
         make: String(anyData.make || ''),
@@ -364,25 +371,14 @@ export default function VehicleDetailPage() {
         seats: Number(anyData.seats || 0),
         features: normalizeFeatures(anyData.features),
         description: String(anyData.description || anyData.ad_description || anyData.adDescription || ''),
-        images: await loadBucketImages(String(anyData.id || params.id || '')),
+        images: rowImages.length > 0 ? rowImages : bucketImages,
         status: String(anyData.status || ''),
         city: String(anyData.city || ''),
         province: String(anyData.province || ''),
         inventoryType: String(anyData.inventory_type ?? anyData.inventoryType ?? ''),
         vehicleId: String(anyData.vehicleId || anyData.vehicle_id || anyData.id || ''),
-        category: (() => {
-          const c = String(anyData.categories || anyData.category || '').trim().toLowerCase()
-          if (c === 'premiere' || c === 'premier') return 'premier'
-          if (c === 'fleet') return 'fleet'
-          if (c === 'private') return 'private'
-          if (c === 'dealership') return 'dealership'
-          const inv = String(anyData.inventory_type || '').trim().toLowerCase()
-          if (inv === 'premiere' || inv === 'premier') return 'premier'
-          if (inv === 'fleet') return 'fleet'
-          if (inv === 'private') return 'private'
-          if (inv === 'dealership') return 'dealership'
-          return 'premier' // default
-        })(),
+        category,
+        sourceName: String(anyData.marketplace_source ?? anyData.sourceName ?? anyData.dealer_name ?? anyData.seller_name ?? ''),
       }
 
       setVehicle(mapped)
@@ -733,6 +729,9 @@ export default function VehicleDetailPage() {
                     {formatLocation(vehicle.city, vehicle.province)}
                   </p>
                 )}
+                {vehicle.sourceName && (
+                  <p className="mt-1 text-sm font-medium text-gray-700">Listed by {vehicle.sourceName}</p>
+                )}
                 {vehicle.category && (
                   <span className={`inline-block mt-2 px-3 py-1 rounded-full text-xs font-bold tracking-wide ${
                     vehicle.category === 'premier' ? 'bg-[#118df0] text-white' :
@@ -749,7 +748,7 @@ export default function VehicleDetailPage() {
                 {/* Price + Status */}
                 <div className="flex items-start gap-3 mt-4">
                   <div className="rounded-xl bg-[#118df0] px-5 py-3 text-white">
-                    <div className="text-[11px] font-bold uppercase tracking-wide text-white/80">Dealer Price</div>
+                    <div className="text-[11px] font-bold uppercase tracking-wide text-white/80">{priceDisplay.dealerPriceLabel}</div>
                     <div className="text-2xl font-bold">{priceDisplay.dealerPriceFormatted || formatPrice(vehicle.price)}</div>
                   </div>
                   {vehicle.status && (() => {
@@ -962,7 +961,7 @@ export default function VehicleDetailPage() {
                   <span className="text-xs text-gray-400">Est. 7.99% APR OAC</span>
                 </div>
                 <div className="mb-4 rounded-xl bg-gray-50 px-4 py-3 flex items-center justify-between">
-                  <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Dealer Price</span>
+                  <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">{priceDisplay.dealerPriceLabel}</span>
                   <span className="text-base font-bold text-gray-900">{priceDisplay.dealerPriceFormatted || formatPrice(vehicle.price)}</span>
                 </div>
                 <div className="mb-4">
@@ -1072,7 +1071,7 @@ export default function VehicleDetailPage() {
                      vehicle.category === 'private' ? 'PRIVATE SELLER' : 'DEALER SELECT'}
                   </span>
                 </div>
-                <p className="text-sm text-gray-600">Sold by <span className="font-medium text-gray-900">EasyDrive Canada</span></p>
+                <p className="text-sm text-gray-600">Sold by <span className="font-medium text-gray-900">{vehicle.sourceName || 'EasyDrive Canada'}</span></p>
               </div>
 
             </div>
