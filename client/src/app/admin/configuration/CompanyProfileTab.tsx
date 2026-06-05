@@ -2,6 +2,15 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
+import { isSuperAdminEmail, resolveEditableDealerUserId } from '@/lib/superAdminAccess.mjs'
+
+type DealerProfileOption = {
+  id: string
+  user_id: string
+  company_name?: string | null
+  email?: string | null
+  website?: string | null
+}
 
 export default function DealershipDetailsSettingsPage() {
   const [saving, setSaving] = useState(false)
@@ -11,6 +20,10 @@ export default function DealershipDetailsSettingsPage() {
   const [updateModalOpen, setUpdateModalOpen] = useState(false)
 
   const [scopedUserId, setScopedUserId] = useState<string | null>(null)
+  const [ownUserId, setOwnUserId] = useState<string | null>(null)
+  const [adminEmail, setAdminEmail] = useState('')
+  const [selectedDealerUserId, setSelectedDealerUserId] = useState('')
+  const [dealerOptions, setDealerOptions] = useState<DealerProfileOption[]>([])
 
   const timezoneOptions = useMemo(() => {
     const getUtcOffsetMinutes = (timeZone: string, at = new Date()) => {
@@ -124,12 +137,20 @@ export default function DealershipDetailsSettingsPage() {
     []
   )
 
-  const getLoggedInAdminDbUserId = async (): Promise<string | null> => {
+  const readAdminSession = (): { email?: string; user_id?: string } | null => {
     try {
       if (typeof window === 'undefined') return null
       const raw = window.localStorage.getItem('edc_admin_session')
-      if (!raw) return null
-      const parsed = JSON.parse(raw) as { email?: string; user_id?: string }
+      return raw ? (JSON.parse(raw) as { email?: string; user_id?: string }) : null
+    } catch {
+      return null
+    }
+  }
+
+  const getLoggedInAdminDbUserId = async (): Promise<string | null> => {
+    try {
+      const parsed = readAdminSession()
+      if (!parsed) return null
       const sessionUserId = String(parsed?.user_id ?? '').trim()
       if (sessionUserId) return sessionUserId
       const email = String(parsed?.email ?? '').trim().toLowerCase()
@@ -167,9 +188,18 @@ export default function DealershipDetailsSettingsPage() {
   useEffect(() => {
     const load = async () => {
       try {
+        const session = readAdminSession()
+        const email = String(session?.email ?? '').trim().toLowerCase()
         const id = await getWebhookUserId()
-        setScopedUserId(id)
+        setAdminEmail(email)
+        setOwnUserId(id)
+        setScopedUserId(resolveEditableDealerUserId({
+          adminEmail: email,
+          ownUserId: id,
+          selectedDealerUserId: '',
+        }))
       } catch {
+        setOwnUserId(null)
         setScopedUserId(null)
       }
     }
@@ -222,6 +252,43 @@ export default function DealershipDetailsSettingsPage() {
   const [serviceRate, setServiceRate] = useState('')
   const [financeInterestRate, setFinanceInterestRate] = useState('')
   const [autoCloseDealsIn, setAutoCloseDealsIn] = useState('')
+
+  const clearProfileForm = () => {
+    setDealershipId(null)
+    persistDealershipId(null)
+    setLogoDataUrl(null)
+    setLogoFileName(null)
+    setLogoMimeType(null)
+    setCompanyName('')
+    setMvda('')
+    setTimezone('')
+    setWebsite('')
+    setStreetAddress('')
+    setSuiteApt('')
+    setCity('')
+    setProvince('')
+    setPostalCode('')
+    setCountry('')
+    setPhone('')
+    setFax('')
+    setEmail('')
+    setMobile('')
+    setTaxNumber('')
+    setRin('')
+    setLicenseTransferFee('')
+    setNewPlateFee('')
+    setRenewalFee('')
+    setUseSequentialStockNumbers(false)
+    setNextSalesInvoice('')
+    setNextPurchaseInvoice('')
+    setNextWorkOrder('')
+    setServiceRate('')
+    setFinanceInterestRate('')
+    setAutoCloseDealsIn('')
+    setActionMode('save')
+  }
+
+  const isSuperAdmin = isSuperAdminEmail(adminEmail)
 
   const payload = useMemo(() => {
     const nullIfEmpty = (v: string) => {
@@ -319,7 +386,10 @@ export default function DealershipDetailsSettingsPage() {
           .maybeSingle()
 
         if (error) return
-        if (!data) return
+        if (!data) {
+          clearProfileForm()
+          return
+        }
 
         const id = (data as any).id ?? null
         setDealershipId(id)
@@ -361,6 +431,48 @@ export default function DealershipDetailsSettingsPage() {
     void load()
   }, [scopedUserId])
 
+  useEffect(() => {
+    if (!isSuperAdmin) {
+      setDealerOptions([])
+      setSelectedDealerUserId('')
+      return
+    }
+
+    const loadDealers = async () => {
+      const { data, error } = await supabase
+        .from('dealership')
+        .select('id, user_id, company_name, email, website')
+        .order('company_name', { ascending: true })
+
+      if (error || !Array.isArray(data)) {
+        setDealerOptions([])
+        return
+      }
+
+      setDealerOptions(
+        data
+          .map((row: any) => ({
+            id: String(row.id || ''),
+            user_id: String(row.user_id || ''),
+            company_name: row.company_name ?? null,
+            email: row.email ?? null,
+            website: row.website ?? null,
+          }))
+          .filter((row) => row.id && row.user_id)
+      )
+    }
+
+    void loadDealers()
+  }, [isSuperAdmin])
+
+  useEffect(() => {
+    setScopedUserId(resolveEditableDealerUserId({
+      adminEmail,
+      ownUserId,
+      selectedDealerUserId,
+    }))
+  }, [adminEmail, ownUserId, selectedDealerUserId])
+
   const onLogoFileChange = (file: File | null) => {
     if (!file) {
       setLogoDataUrl(null)
@@ -389,7 +501,7 @@ export default function DealershipDetailsSettingsPage() {
     setUpdateModalOpen(false)
     setSaving(true)
     try {
-      const user_id = await getWebhookUserId()
+      const user_id = scopedUserId || await getWebhookUserId()
 
       const res = await fetch('https://primary-production-6722.up.railway.app/webhook/dealership', {
         method: 'POST',
@@ -510,6 +622,33 @@ export default function DealershipDetailsSettingsPage() {
     <div className="space-y-6">
       {saveError ? <div className="text-xs text-red-600">{saveError}</div> : null}
       {saveOk ? <div className="text-xs text-green-600">{saveOk}</div> : null}
+
+      {isSuperAdmin ? (
+        <div className="rounded-xl border border-slate-200 bg-white p-4">
+          <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Superadmin dealer profile</div>
+          <div className="mt-2 grid gap-2 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
+            <select
+              value={selectedDealerUserId}
+              onChange={(event) => setSelectedDealerUserId(event.target.value)}
+              className="edc-input"
+            >
+              <option value="">EasyDrive Canada profile</option>
+              {dealerOptions.map((dealer) => {
+                const label = dealer.company_name || dealer.email || dealer.website || dealer.user_id
+                const context = [dealer.email, dealer.website].filter(Boolean).join(' - ')
+                return (
+                  <option key={dealer.id} value={dealer.user_id}>
+                    {context ? `${label} (${context})` : label}
+                  </option>
+                )
+              })}
+            </select>
+            <div className="text-xs text-slate-500">
+              Editing {selectedDealerUserId ? 'selected dealer' : 'EasyDrive Canada'}
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {successModalOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center" role="dialog" aria-modal="true">
