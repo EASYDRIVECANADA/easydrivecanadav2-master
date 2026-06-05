@@ -14,9 +14,10 @@ export function formatCadPrice(value) {
 }
 
 export function buildDealerPriceDisplay({ price, retailPrice, financePrice } = {}) {
-  const dealerPrice = asNumber(price) || 0
+  const basePrice = asNumber(price) || 0
   const retail = asNumber(retailPrice)
   const finance = asNumber(financePrice)
+  const dealerPrice = retail || basePrice
 
   return {
     dealerPrice,
@@ -27,7 +28,7 @@ export function buildDealerPriceDisplay({ price, retailPrice, financePrice } = {
     financePrice: finance,
     financePriceLabel: 'Finance Price',
     financePriceFormatted: formatCadPrice(finance),
-    hasRetailComparison: retail != null && retail > dealerPrice,
+    hasRetailComparison: false,
     hasFinancePrice: finance != null,
   }
 }
