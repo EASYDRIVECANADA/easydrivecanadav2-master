@@ -2,7 +2,48 @@
 
 const { createClient } = require('@supabase/supabase-js')
 
-const clean = (value) => String(value ?? '').trim()
+const SOURCE_COLUMNS = [
+  'source_name',
+  'source_url',
+  'source_vehicle_id',
+  'source_last_seen_at',
+  'source_last_synced_at',
+  'source_sync_status',
+]
+
+function normalizeEnvValue(value) {
+  const trimmed = String(value ?? '').trim()
+  const quote = trimmed[0]
+  if ((quote === '"' || quote === "'") && trimmed.endsWith(quote)) {
+    return trimmed.slice(1, -1).trim()
+  }
+  return trimmed
+}
+
+const clean = normalizeEnvValue
+
+function stripSourceColumns(row) {
+  const copy = { ...row }
+  const sourceUrl = clean(copy.source_url)
+  const sourceVehicleId = clean(copy.source_vehicle_id)
+  for (const key of SOURCE_COLUMNS) delete copy[key]
+  copy.notes = [
+    clean(copy.notes),
+    sourceUrl ? `source_url=${sourceUrl}` : '',
+    sourceVehicleId ? `source_vehicle_id=${sourceVehicleId}` : '',
+  ].filter(Boolean).join('; ')
+  return copy
+}
+
+function hydrateLegacySourceFields(row) {
+  const notes = clean(row?.notes)
+  return {
+    ...row,
+    source_name: row?.source_name || (notes.includes('DriveTown Ottawa') ? 'DriveTown Ottawa' : ''),
+    source_url: row?.source_url || (notes.match(/source_url=([^;]+)/)?.[1] ?? ''),
+    source_vehicle_id: row?.source_vehicle_id || (notes.match(/source_vehicle_id=([^;]+)/)?.[1] ?? ''),
+  }
+}
 
 async function main() {
   const startedAt = new Date()
@@ -29,9 +70,10 @@ async function main() {
   const scrape = await scraper.scrapeDriveTownInventory()
   if (!scrape.detailUrls.length) throw new Error('DriveTown listing discovery returned zero vehicle URLs')
 
-  const supportsDealerSelectType = dryRun ? true : await detectDealerSelectSupport(supabase, sync, userId)
+  const sourceColumnsSupported = await detectSourceColumnSupport(supabase)
+  const supportsDealerSelectType = dryRun ? true : await detectDealerSelectSupport(supabase, sync, userId, sourceColumnsSupported)
   const now = new Date().toISOString()
-  const existingRows = await loadExistingDriveTownRows(supabase, userId)
+  const existingRows = await loadExistingDriveTownRows(supabase, userId, sourceColumnsSupported)
 
   const counts = {
     listingUrls: scrape.detailUrls.length,
@@ -46,7 +88,8 @@ async function main() {
   for (const vehicle of scrape.vehicles) {
     const existing = sync.chooseExistingVehicle(vehicle, existingRows, userId)
     const baseRow = sync.buildVehicleUpsertRow(vehicle, { userId, now, supportsDealerSelectType })
-    const row = existing ? sync.mergePreservingEditableFields(baseRow, existing) : baseRow
+    const mergedRow = existing ? sync.mergePreservingEditableFields(baseRow, existing) : baseRow
+    const row = sourceColumnsSupported ? mergedRow : stripSourceColumns(mergedRow)
 
     if (existing && sync.shouldPreserveEditableFields(existing)) counts.preserved += 1
 
@@ -69,7 +112,8 @@ async function main() {
       if (error) {
         if (String(error.message || '').includes('DEALER_SELECT')) {
           const fallback = sync.buildVehicleUpsertRow(vehicle, { userId, now, supportsDealerSelectType: false })
-          const { error: fallbackError } = await supabase.from('edc_vehicles').insert(fallback)
+          const fallbackRow = sourceColumnsSupported ? fallback : stripSourceColumns(fallback)
+          const { error: fallbackError } = await supabase.from('edc_vehicles').insert(fallbackRow)
           if (fallbackError) throw fallbackError
         } else {
           throw error
@@ -88,8 +132,10 @@ async function main() {
     for (const row of missing) {
       const { error } = await supabase.from('edc_vehicles').update({
         status: 'Sold',
-        source_sync_status: 'missing',
-        source_last_synced_at: now,
+        ...(sourceColumnsSupported ? {
+          source_sync_status: 'missing',
+          source_last_synced_at: now,
+        } : {}),
         updated_at: now,
       }).eq('id', row.id)
       if (error) throw error
@@ -159,7 +205,16 @@ async function ensureDriveTownAccount(supabase, sync, configuredUserId, dryRun) 
   return { userId, configured: false }
 }
 
-async function detectDealerSelectSupport(supabase, sync, userId) {
+async function detectSourceColumnSupport(supabase) {
+  const { error } = await supabase
+    .from('edc_vehicles')
+    .select('source_name')
+    .limit(1)
+
+  return !error
+}
+
+async function detectDealerSelectSupport(supabase, sync, userId, sourceColumnsSupported) {
   const probe = sync.buildVehicleUpsertRow({
     sourceUrl: 'probe',
     sourceVehicleId: 'probe',
@@ -173,7 +228,8 @@ async function detectDealerSelectSupport(supabase, sync, userId) {
     mileage: 1,
   }, { userId, now: new Date().toISOString(), supportsDealerSelectType: true })
 
-  const { error } = await supabase.from('edc_vehicles').insert(probe)
+  const row = sourceColumnsSupported ? probe : stripSourceColumns(probe)
+  const { error } = await supabase.from('edc_vehicles').insert(row)
   if (!error) {
     await supabase.from('edc_vehicles').delete().eq('vin', probe.vin)
     return true
@@ -181,19 +237,35 @@ async function detectDealerSelectSupport(supabase, sync, userId) {
   return !String(error.message || '').includes('DEALER_SELECT') && !String(error.message || '').includes('inventory_type')
 }
 
-async function loadExistingDriveTownRows(supabase, userId) {
-  const { data, error } = await supabase
+async function loadExistingDriveTownRows(supabase, userId, sourceColumnsSupported) {
+  let query = supabase
     .from('edc_vehicles')
     .select('*')
     .eq('user_id', userId)
-    .or('notes.eq.Imported from DriveTown Ottawa feed,source_name.eq.DriveTown Ottawa,categories.eq.dealer_select')
     .limit(1000)
 
+  if (sourceColumnsSupported) {
+    query = query.or('notes.eq.Imported from DriveTown Ottawa feed,source_name.eq.DriveTown Ottawa,categories.eq.dealer_select')
+  }
+
+  const { data, error } = await query
+
   if (error) throw error
-  return Array.isArray(data) ? data : []
+  const rows = Array.isArray(data) ? data : []
+  const filtered = sourceColumnsSupported
+    ? rows
+    : rows.filter((row) => {
+      const notes = clean(row?.notes)
+      return row?.categories === 'dealer_select' || notes.includes('Imported from DriveTown Ottawa feed')
+    })
+  return filtered.map(hydrateLegacySourceFields)
 }
 
-main().catch((error) => {
-  console.error('[sync-drivetown] failed:', error)
-  process.exit(1)
-})
+module.exports = { normalizeEnvValue, stripSourceColumns }
+
+if (require.main === module) {
+  main().catch((error) => {
+    console.error('[sync-drivetown] failed:', error)
+    process.exit(1)
+  })
+}

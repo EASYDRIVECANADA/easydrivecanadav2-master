@@ -26,9 +26,15 @@ test('parseDriveTownListing returns absolute detail URLs and source total', asyn
 
   assert.equal(result.totalCount, 148)
   assert.deepEqual(result.detailUrls, [
-    'https://drivetownottawa.com/vehicles/2019-ford-f-150-xlt-a1234/',
-    'https://drivetownottawa.com/vehicles/2021-honda-civic-ex-b5678/',
+    'https://drivetownottawa.com/inventory/2019-ford-f-150/12345678',
+    'https://drivetownottawa.com/inventory/2021-honda-civic/23456789',
   ])
+  assert.equal(result.vehicles.length, 1)
+  assert.equal(result.vehicles[0].sourceUrl, 'https://drivetownottawa.com/inventory/2019-ford-f-150/12345678')
+  assert.equal(result.vehicles[0].vin, '1FTEW1E50KFA12345')
+  assert.equal(result.vehicles[0].stockNumber, 'A1234')
+  assert.equal(result.vehicles[0].price, 31995)
+  assert.equal(result.vehicles[0].bodyStyle, 'Pickup Truck')
 })
 
 test('discoverDriveTownDetailUrls follows inventory pages until source total is reached', async () => {
@@ -50,7 +56,7 @@ test('discoverDriveTownDetailUrls follows inventory pages until source total is 
   assert.equal(result.detailUrls.length, 3)
   assert.deepEqual(calls, [
     'https://drivetownottawa.com/vehicles/',
-    'https://drivetownottawa.com/vehicles/page/2/',
+    'https://drivetownottawa.com/vehicles/?dsp_page=2',
   ])
 })
 

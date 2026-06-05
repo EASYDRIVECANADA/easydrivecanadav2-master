@@ -22,6 +22,73 @@ const absoluteUrl = (href, baseUrl = DRIVETOWN_INVENTORY_URL) => {
 
 const unique = (items) => [...new Set(items.filter(Boolean))]
 
+const nestedName = (value) => clean(value?.name || value)
+
+const stripHtml = (value) => {
+  const $ = load(clean(value))
+  return clean($.text())
+}
+
+const normalizeDriveType = (value) => {
+  const raw = nestedName(value)
+  if (/4[-\s]?wheel|4wd/i.test(raw)) return '4WD'
+  if (/all[-\s]?wheel|awd/i.test(raw)) return 'AWD'
+  if (/front[-\s]?wheel|fwd/i.test(raw)) return 'FWD'
+  if (/rear[-\s]?wheel|rwd/i.test(raw)) return 'RWD'
+  return raw
+}
+
+const bestPhotoUrl = (photo) => clean(photo?.web_paths?.xl || photo?.web_paths?.lg || photo?.web_paths?.md || photo?.url)
+
+function normalizeInventoryItem(item, sourceUrl = '') {
+  const title = clean(item?.title)
+  const titleParts = inferTitleParts(title)
+  const price = cleanNumber(item?.sale_price ?? item?.lowest_price ?? item?.price)
+  const itemId = clean(item?.id)
+
+  return {
+    sourceName: 'DriveTown Ottawa',
+    sourceUrl,
+    sourceVehicleId: itemId,
+    title,
+    year: titleParts.year,
+    make: nestedName(item?.make) || titleParts.make,
+    model: nestedName(item?.model) || titleParts.model,
+    trim: nestedName(item?.trim) || titleParts.trim,
+    vin: clean(item?.vin).toUpperCase(),
+    stockNumber: clean(item?.stock_num),
+    price,
+    financePriceText: item?.adjusted_finance_price ? `$${item.adjusted_finance_price}` : null,
+    mileage: cleanNumber(item?.odometer?.amount),
+    transmission: nestedName(item?.transmission_type),
+    drivetrain: normalizeDriveType(item?.drive_type),
+    fuelType: nestedName(item?.fuel_type),
+    bodyStyle: nestedName(item?.category),
+    exteriorColor: nestedName(item?.ext_colour),
+    interiorColor: nestedName(item?.int_colour),
+    description: stripHtml(item?.description),
+    features: [],
+    imageUrls: unique((Array.isArray(item?.photos) ? item.photos : []).map(bestPhotoUrl)),
+  }
+}
+
+function parseInventoryItems($, detailUrls) {
+  const raw = $('#dsp-filters').attr('data-inventory')
+  if (!raw) return []
+
+  try {
+    const inventory = JSON.parse(raw)
+    const items = Array.isArray(inventory?.items) ? inventory.items : []
+    return items.map((item) => {
+      const id = clean(item?.id)
+      const sourceUrl = detailUrls.find((url) => url.endsWith(`/${id}`) || url.endsWith(`/${id}/`)) || ''
+      return normalizeInventoryItem(item, sourceUrl)
+    })
+  } catch {
+    return []
+  }
+}
+
 export function parseDriveTownListing(html, pageUrl = DRIVETOWN_INVENTORY_URL) {
   const $ = load(html)
   const bodyText = clean($('body').text())
@@ -33,13 +100,13 @@ export function parseDriveTownListing(html, pageUrl = DRIVETOWN_INVENTORY_URL) {
       .toArray()
       .map((el) => absoluteUrl($(el).attr('href'), pageUrl))
       .filter((url) => {
-        if (!url.startsWith(`${DRIVETOWN_BASE_URL}/vehicles/`)) return false
-        if (url === DRIVETOWN_INVENTORY_URL) return false
-        return /\/vehicles\/[^/?#]+\/?$/i.test(url)
+        return /^https:\/\/drivetownottawa\.com\/inventory\/[^/?#]+\/[0-9]+\/?$/i.test(url)
       })
   )
 
-  return { detailUrls, totalCount }
+  const vehicles = parseInventoryItems($, detailUrls)
+
+  return { detailUrls, totalCount, vehicles }
 }
 
 const dlValue = ($, label) => {
@@ -124,7 +191,9 @@ export async function fetchText(url, fetchImpl = fetch) {
 
 export function inventoryPageUrl(pageNumber, inventoryUrl = DRIVETOWN_INVENTORY_URL) {
   if (pageNumber <= 1) return inventoryUrl
-  return new URL(`page/${pageNumber}/`, inventoryUrl).toString()
+  const url = new URL(inventoryUrl)
+  url.searchParams.set('dsp_page', String(pageNumber))
+  return url.toString()
 }
 
 export async function discoverDriveTownDetailUrls({
@@ -133,6 +202,7 @@ export async function discoverDriveTownDetailUrls({
   maxPages = 20,
 } = {}) {
   const allUrls = []
+  const allVehicles = []
   let totalCount = null
 
   for (let pageNumber = 1; pageNumber <= maxPages; pageNumber += 1) {
@@ -145,6 +215,11 @@ export async function discoverDriveTownDetailUrls({
     for (const url of parsed.detailUrls) {
       if (!allUrls.includes(url)) allUrls.push(url)
     }
+    for (const vehicle of parsed.vehicles || []) {
+      if (vehicle.sourceUrl && !allVehicles.some((existing) => existing.sourceUrl === vehicle.sourceUrl)) {
+        allVehicles.push(vehicle)
+      }
+    }
 
     if (totalCount && allUrls.length >= totalCount) break
     if (allUrls.length === before && pageNumber > 1) break
@@ -152,6 +227,7 @@ export async function discoverDriveTownDetailUrls({
 
   return {
     detailUrls: allUrls,
+    vehicles: allVehicles,
     totalCount,
     completeListing: allUrls.length > 0 && (!totalCount || allUrls.length >= totalCount),
   }
@@ -159,6 +235,16 @@ export async function discoverDriveTownDetailUrls({
 
 export async function scrapeDriveTownInventory({ fetchImpl = fetch, inventoryUrl = DRIVETOWN_INVENTORY_URL } = {}) {
   const listing = await discoverDriveTownDetailUrls({ fetchImpl, inventoryUrl })
+  if (listing.vehicles.length > 0) {
+    return {
+      completeListing: listing.completeListing,
+      totalCount: listing.totalCount,
+      detailUrls: listing.detailUrls,
+      vehicles: listing.vehicles,
+      failures: [],
+    }
+  }
+
   const vehicles = []
   const failures = []
 
