@@ -20,6 +20,7 @@ test('buildDealerPriceDisplay labels sale price as Dealer Price', () => {
     retailPrice: 20871,
     retailPriceFormatted: '$20,871',
     financePrice: 19871,
+    financePriceLabel: 'Finance Price',
     financePriceFormatted: '$19,871',
     hasRetailComparison: true,
     hasFinancePrice: true,

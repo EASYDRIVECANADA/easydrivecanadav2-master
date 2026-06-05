@@ -114,6 +114,9 @@ export default function VehicleCard({ vehicle, onClick }: VehicleCardProps) {
           <span className="flex-shrink-0 text-right">
             <span className="block text-[10px] font-bold uppercase tracking-wide text-slate-400">Dealer Price</span>
             <span className="block text-base font-bold text-slate-900">{priceDisplay.dealerPriceFormatted || formatPrice(vehicle.price)}</span>
+            {priceDisplay.hasFinancePrice && (
+              <span className="block text-xs font-semibold text-slate-600">Finance {priceDisplay.financePriceFormatted}</span>
+            )}
             {priceDisplay.hasRetailComparison && (
               <span className="block text-xs text-slate-400 line-through">Retail {priceDisplay.retailPriceFormatted}</span>
             )}

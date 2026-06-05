@@ -25,6 +25,7 @@ export function buildDealerPriceDisplay({ price, retailPrice, financePrice } = {
     retailPrice: retail,
     retailPriceFormatted: formatCadPrice(retail),
     financePrice: finance,
+    financePriceLabel: 'Finance Price',
     financePriceFormatted: formatCadPrice(finance),
     hasRetailComparison: retail != null && retail > dealerPrice,
     hasFinancePrice: finance != null,
