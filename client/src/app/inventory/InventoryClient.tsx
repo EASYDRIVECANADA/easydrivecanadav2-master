@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { supabase } from '@/lib/supabaseClient'
 import { buildVehiclePhotoUrls } from '@/lib/vehiclePhotoUrls.mjs'
 import { buildDealerPriceDisplay } from '@/lib/dealerPriceDisplay.mjs'
+import { getPublicListingBucket, mapPublicInventoryVehicle } from '@/lib/publicInventoryVehicle.mjs'
 // phase3Mock removed — reservation status now comes from edc_vehicles.status
 
 interface Vehicle {
@@ -37,6 +38,7 @@ interface Vehicle {
   featured?: boolean
   sellerName?: string
   dealerName?: string
+  listingBucket?: string
 }
 
 interface SupabaseVehicleRow {
@@ -63,6 +65,8 @@ interface SupabaseVehicleRow {
   inventory_type?: string | null
   features?: unknown
   categories?: string | null
+  images?: unknown
+  created_at?: string | null
 }
 
 type SortOption =
@@ -92,6 +96,7 @@ export default function InventoryClient() {
   const [vehicles, setVehicles] = useState<Vehicle[]>([])
   const [loading, setLoading] = useState(true)
   const [activeView, setActiveView] = useState<'inventory' | 'fleet'>('inventory')
+  const [listingType, setListingType] = useState<'all' | 'premier' | 'dealer' | 'private'>('all')
   const [searchQuery, setSearchQuery] = useState('')
   const [showMobileFilters, setShowMobileFilters] = useState(false)
   const [sortBy, setSortBy] = useState<SortOption>('newest')
@@ -169,26 +174,6 @@ export default function InventoryClient() {
     return `data:${mime};base64,${v}`
   }
 
-  const normalizeFeatures = (raw: unknown): string[] => {
-    if (!raw) return []
-    if (Array.isArray(raw)) return raw.map(String).map((s) => s.trim()).filter(Boolean)
-    if (typeof raw === 'string') {
-      const s = raw.trim()
-      if (!s) return []
-      try {
-        const parsed = JSON.parse(s)
-        if (Array.isArray(parsed)) return parsed.map(String).map((x) => x.trim()).filter(Boolean)
-      } catch {
-        // ignore
-      }
-      return s
-        .split(',')
-        .map((x) => x.trim())
-        .filter(Boolean)
-    }
-    return []
-  }
-
   const formatLocation = (city?: string, province?: string) => {
     const c = String(city || '').trim()
     const p = String(province || '').trim()
@@ -209,6 +194,7 @@ export default function InventoryClient() {
 
   const handleViewChange = (view: 'inventory' | 'fleet') => {
     setActiveView(view)
+    setListingType('all')
     setCurrentPage(1)
     setFilters((prev) => ({ ...prev, inventoryType: '' }))
     setQuickFilters((prev) => ({ ...prev, sellerTypes: [] }))
@@ -225,46 +211,13 @@ export default function InventoryClient() {
     try {
       const { data, error } = await supabase
         .from('edc_vehicles')
-        .select(
-          'id, stock_number, make, model, series, year, price, retail_price, finance_price, mileage, odometer, odometer_unit, fuel_type, transmission, body_style, exterior_color, city, province, lot_location, status, inventory_type, features, categories'
-        )
+        .select('*')
         .order('created_at', { ascending: false })
 
       if (error) throw error
 
       const mapped: Vehicle[] =
-        ((data || []) as SupabaseVehicleRow[]).map((v) => {
-          const baseVehicle: Omit<Vehicle, 'images'> = {
-            id: v.id,
-            stockNumber: v.stock_number || undefined,
-            make: String(v.make || ''),
-            model: String(v.model || ''),
-            series: v.series || '',
-            year: Number(v.year || 0),
-            price: Number(v.price || 0),
-            retailPrice: v.retail_price === null || v.retail_price === undefined ? null : Number(v.retail_price || 0),
-            financePrice: v.finance_price === null || v.finance_price === undefined ? null : Number(v.finance_price || 0),
-            mileage: Number((v.odometer ?? v.mileage) || 0),
-            odometer: v.odometer === null || v.odometer === undefined ? undefined : Number(v.odometer || 0),
-            odometerUnit: v.odometer_unit || '',
-            fuelType: v.fuel_type || '',
-            transmission: v.transmission || '',
-            bodyStyle: v.body_style || '',
-            exteriorColor: v.exterior_color || '',
-            city: v.city || '',
-            province: v.province || '',
-            lotLocation: v.lot_location || '',
-            features: normalizeFeatures(v.features),
-            status: v.status || '',
-            inventoryType: v.inventory_type || '',
-            categories: v.categories || '',
-          }
-
-          return {
-            ...baseVehicle,
-            images: [],
-          }
-        })
+        ((data || []) as SupabaseVehicleRow[]).map((v) => mapPublicInventoryVehicle(v) as Vehicle)
 
       setVehicles(mapped.filter((vehicle) => !isClosedInventoryStatus(vehicle.status)))
     } catch (_error) {
@@ -310,13 +263,17 @@ export default function InventoryClient() {
 
   const viewVehicles = useMemo(() => {
     return vehicles.filter((vehicle) => {
-      const isFleet = isFleetVehicle(vehicle)
+      const bucket = vehicle.listingBucket || getPublicListingBucket(vehicle)
+      const isFleet = bucket === 'fleet' || isFleetVehicle(vehicle)
       return activeView === 'fleet' ? isFleet : !isFleet
     })
   }, [vehicles, activeView])
 
-  const inventoryCount = useMemo(() => vehicles.filter((vehicle) => !isFleetVehicle(vehicle)).length, [vehicles])
-  const fleetCount = useMemo(() => vehicles.filter((vehicle) => isFleetVehicle(vehicle)).length, [vehicles])
+  const inventoryCount = useMemo(() => vehicles.filter((vehicle) => (vehicle.listingBucket || getPublicListingBucket(vehicle)) !== 'fleet' && !isFleetVehicle(vehicle)).length, [vehicles])
+  const fleetCount = useMemo(() => vehicles.filter((vehicle) => (vehicle.listingBucket || getPublicListingBucket(vehicle)) === 'fleet' || isFleetVehicle(vehicle)).length, [vehicles])
+  const dealerCount = useMemo(() => vehicles.filter((vehicle) => (vehicle.listingBucket || getPublicListingBucket(vehicle)) === 'dealer').length, [vehicles])
+  const premierCount = useMemo(() => vehicles.filter((vehicle) => (vehicle.listingBucket || getPublicListingBucket(vehicle)) === 'premier').length, [vehicles])
+  const privateCount = useMemo(() => vehicles.filter((vehicle) => (vehicle.listingBucket || getPublicListingBucket(vehicle)) === 'private').length, [vehicles])
 
   // Get unique values from vehicles dynamically
   const uniqueMakes = useMemo(() => {
@@ -356,6 +313,9 @@ export default function InventoryClient() {
   // Filter and search vehicles
   const filteredVehicles = useMemo(() => {
     const result = viewVehicles.filter((vehicle) => {
+      const bucket = vehicle.listingBucket || getPublicListingBucket(vehicle)
+      if (activeView !== 'fleet' && listingType !== 'all' && bucket !== listingType) return false
+
       // Search query - searches make, model, year
       if (searchQuery) {
         const query = searchQuery.toLowerCase()
@@ -384,11 +344,10 @@ export default function InventoryClient() {
 
       // Quick filters
       if (activeView !== 'fleet' && quickFilters.sellerTypes.length > 0) {
-        const cat = String(vehicle.categories || '').toLowerCase()
         const match = quickFilters.sellerTypes.some(type =>
-          (type === 'private' && cat.includes('private')) ||
-          (type === 'dealer' && (cat.includes('dealer') || cat.includes('dealership'))) ||
-          (type === 'premier' && cat.includes('premier'))
+          (type === 'private' && bucket === 'private') ||
+          (type === 'dealer' && bucket === 'dealer') ||
+          (type === 'premier' && bucket === 'premier')
         )
         if (!match) return false
       }
@@ -440,7 +399,7 @@ export default function InventoryClient() {
     }
 
     return result
-  }, [viewVehicles, activeView, searchQuery, filters, sortBy, quickFilters])
+  }, [viewVehicles, activeView, listingType, searchQuery, filters, sortBy, quickFilters])
 
   // Pagination
   const totalPages = Math.ceil(filteredVehicles.length / itemsPerPage)
@@ -477,7 +436,7 @@ export default function InventoryClient() {
   // Reset to page 1 when filters change
   useEffect(() => {
     setCurrentPage(1)
-  }, [searchQuery, filters, sortBy, quickFilters, activeView])
+  }, [searchQuery, filters, sortBy, quickFilters, activeView, listingType])
 
   const clearFilters = () => {
     setFilters({
@@ -492,6 +451,7 @@ export default function InventoryClient() {
       maxYear: '',
     })
     setSearchQuery('')
+    setListingType('all')
     setQuickFilters({ sellerTypes: [], newListings: false, dealOfWeek: false, featured: false, priceUnder: null })
   }
 
@@ -691,17 +651,23 @@ export default function InventoryClient() {
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <p className="text-[#118df0] font-medium text-sm">{viewVehicles.length} {activeViewLabel} available</p>
-            <div className="mt-4 inline-flex rounded-xl border border-gray-200 bg-white p-1 shadow-sm">
+            <div className="mt-4 flex flex-wrap gap-2 rounded-xl border border-gray-200 bg-white p-1 shadow-sm">
               {[
-                { key: 'inventory' as const, label: 'Photo Inventory', count: inventoryCount },
-                { key: 'fleet' as const, label: 'Fleet Select', count: fleetCount },
+                { key: 'all', label: 'All Inventory', count: inventoryCount, view: 'inventory' as const },
+                { key: 'premier', label: 'EDC Premier', count: premierCount, view: 'inventory' as const },
+                { key: 'dealer', label: 'Dealer Select', count: dealerCount, view: 'inventory' as const },
+                ...(privateCount > 0 ? [{ key: 'private', label: 'Private Seller', count: privateCount, view: 'inventory' as const }] : []),
+                { key: 'fleet', label: 'Fleet Select', count: fleetCount, view: 'fleet' as const },
               ].map((tab) => (
                 <button
                   key={tab.key}
                   type="button"
-                  onClick={() => handleViewChange(tab.key)}
+                  onClick={() => {
+                    handleViewChange(tab.view)
+                    if (tab.view === 'inventory') setListingType(tab.key as 'all' | 'premier' | 'dealer' | 'private')
+                  }}
                   className={`min-w-[132px] rounded-lg px-4 py-2 text-sm font-semibold transition-colors ${
-                    activeView === tab.key
+                    (tab.view === 'fleet' && activeView === 'fleet') || (tab.view === 'inventory' && activeView === 'inventory' && listingType === tab.key)
                       ? 'bg-gray-900 text-white'
                       : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
                   }`}

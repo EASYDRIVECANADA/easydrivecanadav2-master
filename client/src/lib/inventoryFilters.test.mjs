@@ -28,13 +28,17 @@ const vehicles = [
 
 test('getVehicleListingBucket normalizes premier and fleet listings', () => {
   assert.equal(getVehicleListingBucket({ category: 'Premiere' }), 'premier')
+  assert.equal(getVehicleListingBucket({ inventoryType: 'PREMIERE' }), 'premier')
   assert.equal(getVehicleListingBucket({ inventoryType: 'FLEET' }), 'fleet')
   assert.equal(getVehicleListingBucket({ category: 'Dealer Select' }), 'dealer')
+  assert.equal(getVehicleListingBucket({ category: 'dealer_select' }), 'dealer')
+  assert.equal(getVehicleListingBucket({ inventoryType: 'DEALER_SELECT' }), 'dealer')
 })
 
-test('filterInventoryVehicles switches between all, premier, and fleet tabs', () => {
+test('filterInventoryVehicles switches between all, premier, dealer, and fleet tabs', () => {
   assert.deepEqual(filterInventoryVehicles(vehicles, { categoryTab: '' }).map((v) => v.id), ['1', '2'])
   assert.deepEqual(filterInventoryVehicles(vehicles, { categoryTab: 'premier' }).map((v) => v.id), ['1'])
+  assert.deepEqual(filterInventoryVehicles(vehicles, { categoryTab: 'dealer', statusFilter: new Set(['Sold']), statusOptions: ['In Stock', 'Sold'] }).map((v) => v.id), ['3'])
   assert.deepEqual(filterInventoryVehicles(vehicles, { categoryTab: 'fleet' }).map((v) => v.id), ['2'])
 })
 
