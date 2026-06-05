@@ -8,6 +8,7 @@ import {
   buildVehicleUpsertRow,
   chooseExistingVehicle,
   computeMissingSyncedVehicles,
+  prepareScrapedVehiclesForUniqueVin,
   shouldPreserveEditableFields,
 } from './dealerSelectSync.mjs'
 
@@ -85,6 +86,26 @@ test('falls back when DEALER_SELECT enum is not available', () => {
   assert.equal(row.categories, 'dealer_select')
 })
 
+test('uses source vehicle id when scraped stock number is missing', () => {
+  const row = buildVehicleUpsertRow({ ...scraped, stockNumber: '' }, {
+    userId: 'dealer-user-1',
+    now: '2026-06-05T00:00:00.000Z',
+    supportsDealerSelectType: false,
+  })
+
+  assert.equal(row.stock_number, 'DT-2019-ford-f-150-xlt-a1234')
+})
+
+test('uses source vehicle id when scraped VIN is missing', () => {
+  const row = buildVehicleUpsertRow({ ...scraped, vin: '' }, {
+    userId: 'dealer-user-1',
+    now: '2026-06-05T00:00:00.000Z',
+    supportsDealerSelectType: false,
+  })
+
+  assert.equal(row.vin, 'DRIVETOWN-2019-FORD-F-150-XLT-A1234')
+})
+
 test('chooses existing vehicle by source URL then VIN then stock scoped to dealer', () => {
   const existing = [
     { id: 'stock-hit', user_id: 'dealer-user-1', stock_number: 'A1234', vin: 'OTHER', source_url: null },
@@ -94,6 +115,40 @@ test('chooses existing vehicle by source URL then VIN then stock scoped to deale
   ]
 
   assert.equal(chooseExistingVehicle(scraped, existing, 'dealer-user-1')?.id, 'source-hit')
+})
+
+test('does not match stock number when existing row belongs to a different source URL', () => {
+  const existing = [
+    {
+      id: 'same-stock-different-source',
+      user_id: 'dealer-user-1',
+      stock_number: scraped.stockNumber,
+      vin: 'OTHER',
+      source_url: 'https://drivetownottawa.com/inventory/other/1',
+    },
+  ]
+
+  assert.equal(chooseExistingVehicle(scraped, existing, 'dealer-user-1'), null)
+})
+
+test('uniquifies repeated VINs within the same scraped feed', () => {
+  const vehicles = prepareScrapedVehiclesForUniqueVin([
+    { ...scraped, sourceVehicleId: 'first' },
+    { ...scraped, sourceVehicleId: 'second', sourceUrl: 'https://drivetownottawa.com/inventory/duplicate/2' },
+  ])
+
+  assert.equal(vehicles[0].vin, '1FTEW1E50KFA12345')
+  assert.equal(vehicles[1].vin, '1FTEW1E50KFA12345-SECOND')
+})
+
+test('does not uniquify blank VINs before row fallback generation', () => {
+  const vehicles = prepareScrapedVehiclesForUniqueVin([
+    { ...scraped, vin: '', sourceVehicleId: 'first' },
+    { ...scraped, vin: '', sourceVehicleId: 'second' },
+  ])
+
+  assert.equal(vehicles[0].vin, '')
+  assert.equal(vehicles[1].vin, '')
 })
 
 test('preserves editable fields when row was manually edited after last sync', () => {

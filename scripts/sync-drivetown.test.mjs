@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { createRequire } from 'node:module'
 
 const require = createRequire(import.meta.url)
-const { normalizeEnvValue, stripSourceColumns } = require('./sync-drivetown.js')
+const { isDuplicateConstraintError, normalizeEnvValue, pickKnownColumns, stripSourceColumns } = require('./sync-drivetown.js')
 
 test('normalizeEnvValue removes surrounding dotenv quotes', () => {
   assert.equal(normalizeEnvValue('"https://example.supabase.co"'), 'https://example.supabase.co')
@@ -29,4 +29,23 @@ test('stripSourceColumns moves source identity into notes for older schemas', ()
   assert.match(row.notes, /Imported from DriveTown Ottawa feed/)
   assert.match(row.notes, /source_url=https:\/\/drivetownottawa.com\/inventory\/2017-ram-1500\/14205830/)
   assert.match(row.notes, /source_vehicle_id=14205830/)
+})
+
+test('pickKnownColumns removes fields missing from deployed schema', () => {
+  const row = pickKnownColumns({
+    vin: '1C6RR7NT1HS840918',
+    images: ['https://example.com/image.jpg'],
+    source_name: 'DriveTown Ottawa',
+    price: 19871,
+  }, new Set(['vin', 'price']))
+
+  assert.deepEqual(row, {
+    vin: '1C6RR7NT1HS840918',
+    price: 19871,
+  })
+})
+
+test('isDuplicateConstraintError detects Supabase unique constraint failures', () => {
+  assert.equal(isDuplicateConstraintError({ code: '23505', message: 'duplicate key value violates unique constraint' }), true)
+  assert.equal(isDuplicateConstraintError({ code: 'PGRST204', message: 'missing column' }), false)
 })

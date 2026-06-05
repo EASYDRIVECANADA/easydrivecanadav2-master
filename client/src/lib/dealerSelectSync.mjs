@@ -38,6 +38,8 @@ export function buildDriveTownDealershipRow(userId) {
 export function buildVehicleUpsertRow(vehicle, { userId, now, supportsDealerSelectType = true } = {}) {
   const mileage = Number(vehicle.mileage || 0)
   const description = clean(vehicle.description || vehicle.title)
+  const stockNumber = clean(vehicle.stockNumber) || `DT-${clean(vehicle.sourceVehicleId || vehicle.sourceUrl || vehicle.vin)}`
+  const vin = upper(vehicle.vin) || `DRIVETOWN-${upper(vehicle.sourceVehicleId || vehicle.sourceUrl || stockNumber)}`
 
   return {
     user_id: userId,
@@ -45,10 +47,10 @@ export function buildVehicleUpsertRow(vehicle, { userId, now, supportsDealerSele
     model: clean(vehicle.model),
     year: Number(vehicle.year || 0),
     trim: clean(vehicle.trim) || null,
-    stock_number: clean(vehicle.stockNumber) || null,
+    stock_number: stockNumber,
     series: clean(vehicle.trim) || null,
     equipment: clean(vehicle.title) || null,
-    vin: upper(vehicle.vin),
+    vin,
     price: Number(vehicle.price || 0),
     mileage,
     odometer: mileage,
@@ -91,9 +93,28 @@ export function chooseExistingVehicle(vehicle, existingRows, userId) {
   return (
     scoped.find((row) => clean(row.source_url) && clean(row.source_url) === sourceUrl) ||
     scoped.find((row) => upper(row.vin) && upper(row.vin) === vin) ||
-    scoped.find((row) => upper(row.stock_number) && upper(row.stock_number) === stock) ||
+    scoped.find((row) => upper(row.stock_number) && upper(row.stock_number) === stock && !clean(row.source_url)) ||
     null
   )
+}
+
+export function prepareScrapedVehiclesForUniqueVin(vehicles) {
+  const seen = new Map()
+
+  return (vehicles || []).map((vehicle) => {
+    const vin = upper(vehicle?.vin)
+    if (!vin) return vehicle
+
+    const count = seen.get(vin) || 0
+    seen.set(vin, count + 1)
+    if (count === 0) return vehicle
+
+    const suffix = upper(vehicle?.sourceVehicleId || vehicle?.stockNumber || count + 1)
+    return {
+      ...vehicle,
+      vin: `${vin}-${suffix}`,
+    }
+  })
 }
 
 export function shouldPreserveEditableFields(existingRow) {

@@ -35,6 +35,17 @@ function stripSourceColumns(row) {
   return copy
 }
 
+function pickKnownColumns(row, knownColumns) {
+  if (!knownColumns || knownColumns.size === 0) return row
+  return Object.fromEntries(
+    Object.entries(row).filter(([key]) => knownColumns.has(key))
+  )
+}
+
+function isDuplicateConstraintError(error) {
+  return clean(error?.code) === '23505' || /duplicate key value violates unique constraint/i.test(clean(error?.message))
+}
+
 function hydrateLegacySourceFields(row) {
   const notes = clean(row?.notes)
   return {
@@ -70,8 +81,9 @@ async function main() {
   const scrape = await scraper.scrapeDriveTownInventory()
   if (!scrape.detailUrls.length) throw new Error('DriveTown listing discovery returned zero vehicle URLs')
 
-  const sourceColumnsSupported = await detectSourceColumnSupport(supabase)
-  const supportsDealerSelectType = dryRun ? true : await detectDealerSelectSupport(supabase, sync, userId, sourceColumnsSupported)
+  const vehicleColumns = await loadVehicleColumns(supabase)
+  const sourceColumnsSupported = vehicleColumns.has('source_name')
+  const supportsDealerSelectType = dryRun ? true : await detectDealerSelectSupport(supabase, sync, userId, sourceColumnsSupported, vehicleColumns)
   const now = new Date().toISOString()
   const existingRows = await loadExistingDriveTownRows(supabase, userId, sourceColumnsSupported)
 
@@ -83,13 +95,17 @@ async function main() {
     updated: 0,
     preserved: 0,
     markedSold: 0,
+    writeFailed: 0,
   }
+  const writeFailures = []
 
-  for (const vehicle of scrape.vehicles) {
+  const scrapedVehicles = sync.prepareScrapedVehiclesForUniqueVin(scrape.vehicles)
+
+  for (const vehicle of scrapedVehicles) {
     const existing = sync.chooseExistingVehicle(vehicle, existingRows, userId)
     const baseRow = sync.buildVehicleUpsertRow(vehicle, { userId, now, supportsDealerSelectType })
     const mergedRow = existing ? sync.mergePreservingEditableFields(baseRow, existing) : baseRow
-    const row = sourceColumnsSupported ? mergedRow : stripSourceColumns(mergedRow)
+    const row = pickKnownColumns(sourceColumnsSupported ? mergedRow : stripSourceColumns(mergedRow), vehicleColumns)
 
     if (existing && sync.shouldPreserveEditableFields(existing)) counts.preserved += 1
 
@@ -112,9 +128,20 @@ async function main() {
       if (error) {
         if (String(error.message || '').includes('DEALER_SELECT')) {
           const fallback = sync.buildVehicleUpsertRow(vehicle, { userId, now, supportsDealerSelectType: false })
-          const fallbackRow = sourceColumnsSupported ? fallback : stripSourceColumns(fallback)
+          const fallbackRow = pickKnownColumns(sourceColumnsSupported ? fallback : stripSourceColumns(fallback), vehicleColumns)
           const { error: fallbackError } = await supabase.from('edc_vehicles').insert(fallbackRow)
-          if (fallbackError) throw fallbackError
+          if (fallbackError) {
+            if (isDuplicateConstraintError(fallbackError)) {
+              counts.writeFailed += 1
+              writeFailures.push({ url: vehicle.sourceUrl, vin: vehicle.vin, stockNumber: vehicle.stockNumber, error: fallbackError.message })
+              continue
+            }
+            throw fallbackError
+          }
+        } else if (isDuplicateConstraintError(error)) {
+          counts.writeFailed += 1
+          writeFailures.push({ url: vehicle.sourceUrl, vin: vehicle.vin, stockNumber: vehicle.stockNumber, error: error.message })
+          continue
         } else {
           throw error
         }
@@ -123,21 +150,22 @@ async function main() {
     }
   }
 
-  const missing = sync.computeMissingSyncedVehicles(existingRows, scrape.vehicles, {
+  const missing = sync.computeMissingSyncedVehicles(existingRows, scrapedVehicles, {
     completeListing: scrape.detailUrls.length > 0 && scrape.failures.length <= Math.max(3, Math.floor(scrape.detailUrls.length * 0.05)),
   })
 
   counts.markedSold = missing.length
   if (!dryRun && missing.length) {
     for (const row of missing) {
-      const { error } = await supabase.from('edc_vehicles').update({
+      const soldRow = pickKnownColumns({
         status: 'Sold',
         ...(sourceColumnsSupported ? {
           source_sync_status: 'missing',
           source_last_synced_at: now,
         } : {}),
         updated_at: now,
-      }).eq('id', row.id)
+      }, vehicleColumns)
+      const { error } = await supabase.from('edc_vehicles').update(soldRow).eq('id', row.id)
       if (error) throw error
     }
   }
@@ -152,6 +180,7 @@ async function main() {
     account,
     counts,
     failures: scrape.failures.slice(0, 20),
+    writeFailures: writeFailures.slice(0, 20),
   }, null, 2))
 }
 
@@ -205,16 +234,18 @@ async function ensureDriveTownAccount(supabase, sync, configuredUserId, dryRun) 
   return { userId, configured: false }
 }
 
-async function detectSourceColumnSupport(supabase) {
-  const { error } = await supabase
+async function loadVehicleColumns(supabase) {
+  const { data, error } = await supabase
     .from('edc_vehicles')
-    .select('source_name')
+    .select('*')
     .limit(1)
 
-  return !error
+  if (error) throw error
+  const first = Array.isArray(data) ? data[0] : null
+  return new Set(Object.keys(first || {}))
 }
 
-async function detectDealerSelectSupport(supabase, sync, userId, sourceColumnsSupported) {
+async function detectDealerSelectSupport(supabase, sync, userId, sourceColumnsSupported, vehicleColumns) {
   const probe = sync.buildVehicleUpsertRow({
     sourceUrl: 'probe',
     sourceVehicleId: 'probe',
@@ -228,7 +259,7 @@ async function detectDealerSelectSupport(supabase, sync, userId, sourceColumnsSu
     mileage: 1,
   }, { userId, now: new Date().toISOString(), supportsDealerSelectType: true })
 
-  const row = sourceColumnsSupported ? probe : stripSourceColumns(probe)
+  const row = pickKnownColumns(sourceColumnsSupported ? probe : stripSourceColumns(probe), vehicleColumns)
   const { error } = await supabase.from('edc_vehicles').insert(row)
   if (!error) {
     await supabase.from('edc_vehicles').delete().eq('vin', probe.vin)
@@ -261,7 +292,7 @@ async function loadExistingDriveTownRows(supabase, userId, sourceColumnsSupporte
   return filtered.map(hydrateLegacySourceFields)
 }
 
-module.exports = { normalizeEnvValue, stripSourceColumns }
+module.exports = { isDuplicateConstraintError, normalizeEnvValue, pickKnownColumns, stripSourceColumns }
 
 if (require.main === module) {
   main().catch((error) => {
