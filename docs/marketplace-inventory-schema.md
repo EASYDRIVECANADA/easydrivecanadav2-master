@@ -4,6 +4,12 @@
 
 Run `supabase/marketplace_inventory_schema.sql` in the deployed Supabase SQL editor.
 
+The migration is idempotent. Re-run it after pricing updates to add:
+
+- `retail_price`
+- `finance_price`
+- `source_price_payload`
+
 ## Backfill DriveTown
 
 ```powershell

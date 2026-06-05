@@ -5,6 +5,7 @@ import { useState, useEffect } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabaseClient'
+import { buildDealerPriceDisplay } from '@/lib/dealerPriceDisplay.mjs'
 // phase3Mock removed — reservation status now comes from edc_vehicles.status
 
 interface Vehicle {
@@ -14,6 +15,8 @@ interface Vehicle {
   series: string
   year: number
   price: number
+  retailPrice?: number | null
+  financePrice?: number | null
   mileage: number
   odometer?: number
   odometerUnit?: string
@@ -343,6 +346,8 @@ export default function VehicleDetailPage() {
         series: String(anyData.series || ''),
         year: Number(anyData.year || 0),
         price: Number(anyData.price || 0),
+        retailPrice: anyData.retail_price === null || anyData.retail_price === undefined ? null : Number(anyData.retail_price || 0),
+        financePrice: anyData.finance_price === null || anyData.finance_price === undefined ? null : Number(anyData.finance_price || 0),
         mileage: Number((anyData.odometer ?? anyData.mileage) || 0),
         odometer: anyData.odometer === null || anyData.odometer === undefined ? undefined : Number(anyData.odometer || 0),
         odometerUnit: String(anyData.odometer_unit ?? anyData.odometerUnit ?? ''),
@@ -512,6 +517,12 @@ export default function VehicleDetailPage() {
       </div>
     )
   }
+
+  const priceDisplay = buildDealerPriceDisplay({
+    price: vehicle.price,
+    retailPrice: vehicle.retailPrice,
+    financePrice: vehicle.financePrice,
+  })
 
   return (
     <div className="min-h-screen bg-white">
@@ -736,9 +747,10 @@ export default function VehicleDetailPage() {
                 )}
 
                 {/* Price + Status */}
-                <div className="flex items-center gap-3 mt-4">
-                  <div className="bg-[#118df0] text-white text-2xl font-bold px-5 py-2.5 rounded-xl">
-                    {formatPrice(vehicle.price)}
+                <div className="flex items-start gap-3 mt-4">
+                  <div className="rounded-xl bg-[#118df0] px-5 py-3 text-white">
+                    <div className="text-[11px] font-bold uppercase tracking-wide text-white/80">Dealer Price</div>
+                    <div className="text-2xl font-bold">{priceDisplay.dealerPriceFormatted || formatPrice(vehicle.price)}</div>
                   </div>
                   {vehicle.status && (() => {
                     const s = vehicle.status.toLowerCase()
@@ -752,6 +764,22 @@ export default function VehicleDetailPage() {
                     )
                   })()}
                 </div>
+                {(priceDisplay.hasRetailComparison || priceDisplay.hasFinancePrice) && (
+                  <div className="mt-3 grid grid-cols-1 gap-2 rounded-xl border border-gray-100 bg-gray-50 p-3 sm:grid-cols-2">
+                    {priceDisplay.hasRetailComparison && (
+                      <div>
+                        <div className="text-[11px] font-bold uppercase tracking-wide text-gray-500">Retail Price</div>
+                        <div className="text-sm font-semibold text-gray-700 line-through">{priceDisplay.retailPriceFormatted}</div>
+                      </div>
+                    )}
+                    {priceDisplay.hasFinancePrice && (
+                      <div>
+                        <div className="text-[11px] font-bold uppercase tracking-wide text-gray-500">Finance Price</div>
+                        <div className="text-sm font-semibold text-gray-900">{priceDisplay.financePriceFormatted}</div>
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {/* Action Buttons */}
                 <div className="mt-5 space-y-2.5">
@@ -934,8 +962,8 @@ export default function VehicleDetailPage() {
                   <span className="text-xs text-gray-400">Est. 7.99% APR OAC</span>
                 </div>
                 <div className="mb-4 rounded-xl bg-gray-50 px-4 py-3 flex items-center justify-between">
-                  <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Vehicle Price</span>
-                  <span className="text-base font-bold text-gray-900">{formatPrice(vehicle.price)}</span>
+                  <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Dealer Price</span>
+                  <span className="text-base font-bold text-gray-900">{priceDisplay.dealerPriceFormatted || formatPrice(vehicle.price)}</span>
                 </div>
                 <div className="mb-4">
                   <div className="flex items-center justify-between mb-2">

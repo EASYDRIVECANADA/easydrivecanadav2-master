@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo, useCallback } from 'react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabaseClient'
 import { buildVehiclePhotoUrls } from '@/lib/vehiclePhotoUrls.mjs'
+import { buildDealerPriceDisplay } from '@/lib/dealerPriceDisplay.mjs'
 // phase3Mock removed — reservation status now comes from edc_vehicles.status
 
 interface Vehicle {
@@ -14,6 +15,8 @@ interface Vehicle {
   series: string
   year: number
   price: number
+  retailPrice?: number | null
+  financePrice?: number | null
   mileage: number
   odometer?: number
   odometerUnit?: string
@@ -44,6 +47,8 @@ interface SupabaseVehicleRow {
   series?: string | null
   year?: number | string | null
   price?: number | string | null
+  retail_price?: number | string | null
+  finance_price?: number | string | null
   mileage?: number | string | null
   odometer?: number | string | null
   odometer_unit?: string | null
@@ -221,7 +226,7 @@ export default function InventoryClient() {
       const { data, error } = await supabase
         .from('edc_vehicles')
         .select(
-          'id, stock_number, make, model, series, year, price, mileage, odometer, odometer_unit, fuel_type, transmission, body_style, exterior_color, city, province, lot_location, status, inventory_type, features, categories'
+          'id, stock_number, make, model, series, year, price, retail_price, finance_price, mileage, odometer, odometer_unit, fuel_type, transmission, body_style, exterior_color, city, province, lot_location, status, inventory_type, features, categories'
         )
         .order('created_at', { ascending: false })
 
@@ -237,6 +242,8 @@ export default function InventoryClient() {
             series: v.series || '',
             year: Number(v.year || 0),
             price: Number(v.price || 0),
+            retailPrice: v.retail_price === null || v.retail_price === undefined ? null : Number(v.retail_price || 0),
+            financePrice: v.finance_price === null || v.finance_price === undefined ? null : Number(v.finance_price || 0),
             mileage: Number((v.odometer ?? v.mileage) || 0),
             odometer: v.odometer === null || v.odometer === undefined ? undefined : Number(v.odometer || 0),
             odometerUnit: v.odometer_unit || '',
@@ -273,6 +280,25 @@ export default function InventoryClient() {
       currency: 'CAD',
       minimumFractionDigits: 0,
     }).format(price)
+  }
+
+  const renderDealerPriceStack = (vehicle: Vehicle, align: 'left' | 'right' = 'left') => {
+    const display = buildDealerPriceDisplay({
+      price: vehicle.price,
+      retailPrice: vehicle.retailPrice,
+      financePrice: vehicle.financePrice,
+    })
+    const alignClass = align === 'right' ? 'items-end text-right' : 'items-start text-left'
+
+    return (
+      <div className={`flex flex-col ${alignClass}`}>
+        <span className="text-[10px] font-bold uppercase tracking-wide text-gray-500">Dealer Price</span>
+        <span className="text-base font-bold text-gray-900">{display.dealerPriceFormatted || formatPrice(vehicle.price)}</span>
+        {display.hasRetailComparison && (
+          <span className="text-xs text-gray-400 line-through">Retail {display.retailPriceFormatted}</span>
+        )}
+      </div>
+    )
   }
 
   const formatOdometer = (vehicle: Vehicle) => {
@@ -937,7 +963,7 @@ export default function InventoryClient() {
                               </Link>
                             </td>
                             <td className="px-4 py-3 text-gray-600">{vehicle.series || '—'}</td>
-                            <td className="px-4 py-3 font-semibold text-gray-900">{formatPrice(vehicle.price)}</td>
+                            <td className="px-4 py-3">{renderDealerPriceStack(vehicle)}</td>
                             <td className="px-4 py-3 text-gray-600">{formatOdometer(vehicle)}</td>
                             <td className="px-4 py-3 text-gray-600">{vehicle.stockNumber || '—'}</td>
                             <td className="px-4 py-3 text-gray-600">{vehicle.lotLocation || formatLocation(vehicle.city, vehicle.province) || '—'}</td>
@@ -963,7 +989,7 @@ export default function InventoryClient() {
                             </h3>
                             {vehicle.series && <p className="mt-0.5 truncate text-sm text-[#118df0]">{vehicle.series}</p>}
                           </div>
-                          <p className="shrink-0 text-base font-bold text-gray-900">{formatPrice(vehicle.price)}</p>
+                          <div className="shrink-0">{renderDealerPriceStack(vehicle, 'right')}</div>
                         </div>
                         <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-gray-600 [&>div:nth-child(3)]:hidden">
                           <div>
@@ -1056,12 +1082,12 @@ export default function InventoryClient() {
                               </svg>
                               {formatOdometer(vehicle)}
                             </span>
-                            <p className="text-sm font-bold text-gray-900">{formatPrice(vehicle.price)}</p>
+                            <div>{renderDealerPriceStack(vehicle, 'right')}</div>
                           </div>
 
                           {/* Desktop: full stats */}
                           <div className="hidden sm:flex items-center justify-between gap-2 mt-2">
-                            <p className="text-base font-bold text-gray-900">{formatPrice(vehicle.price)}</p>
+                            {renderDealerPriceStack(vehicle)}
                           </div>
                           <div className="hidden sm:flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500 mt-2">
                             <span className="flex items-center gap-1">

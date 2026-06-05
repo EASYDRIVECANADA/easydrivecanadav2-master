@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { buildDealerPriceDisplay } from '@/lib/dealerPriceDisplay.mjs'
 
 interface Vehicle {
   id: string
@@ -7,6 +8,10 @@ interface Vehicle {
   series: string
   year: number
   price: number
+  retailPrice?: number | null
+  financePrice?: number | null
+  retail_price?: number | null
+  finance_price?: number | null
   mileage: number
   fuelType: string
   transmission: string
@@ -60,6 +65,12 @@ export default function VehicleCard({ vehicle, onClick }: VehicleCardProps) {
   const formatPrice = (price: number) =>
     new Intl.NumberFormat('en-CA', { style: 'currency', currency: 'CAD', minimumFractionDigits: 0 }).format(price)
 
+  const priceDisplay = buildDealerPriceDisplay({
+    price: vehicle.price,
+    retailPrice: vehicle.retailPrice ?? vehicle.retail_price,
+    financePrice: vehicle.financePrice ?? vehicle.finance_price,
+  })
+
   return (
     <div
       className="bg-white rounded-2xl overflow-hidden border border-slate-100 shadow-sm hover:shadow-md transition-shadow cursor-pointer group"
@@ -100,8 +111,12 @@ export default function VehicleCard({ vehicle, onClick }: VehicleCardProps) {
             {vehicle.year} {vehicle.make} {vehicle.model}
             {vehicle.series ? ` ${vehicle.series}` : ''}
           </h3>
-          <span className="flex-shrink-0 text-base font-bold text-slate-900">
-            {formatPrice(vehicle.price)}
+          <span className="flex-shrink-0 text-right">
+            <span className="block text-[10px] font-bold uppercase tracking-wide text-slate-400">Dealer Price</span>
+            <span className="block text-base font-bold text-slate-900">{priceDisplay.dealerPriceFormatted || formatPrice(vehicle.price)}</span>
+            {priceDisplay.hasRetailComparison && (
+              <span className="block text-xs text-slate-400 line-through">Retail {priceDisplay.retailPriceFormatted}</span>
+            )}
           </span>
         </div>
 

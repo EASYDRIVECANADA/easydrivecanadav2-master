@@ -12,6 +12,8 @@ type MarketVehicle = {
   series: string
   year: number
   price: number
+  retailPrice?: number | null
+  financePrice?: number | null
   mileage: number
   fuelType: string
   transmission: string
@@ -293,6 +295,8 @@ export default function MarketplacePage() {
               series: r.series || '',
               year: Number(r.year) || 0,
               price: Number(r.price) || 0,
+              retailPrice: r.retail_price === null || r.retail_price === undefined ? null : Number(r.retail_price || 0),
+              financePrice: r.finance_price === null || r.finance_price === undefined ? null : Number(r.finance_price || 0),
               mileage: Number(r.mileage ?? r.odometer ?? 0) || 0,
               fuelType: r.fuelType || r.fuel_type || '',
               transmission: r.transmission || '',
