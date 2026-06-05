@@ -17,6 +17,9 @@ test('marketplace schema migration declares required vehicle columns and tables'
     'marketplace_sync_status',
     'marketplace_original_vin',
     'marketplace_original_stock_number',
+    'retail_price',
+    'finance_price',
+    'source_price_payload',
   ]) {
     assert.match(sql, new RegExp(`add column if not exists ${column}\\b`, 'i'))
   }

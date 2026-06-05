@@ -40,10 +40,40 @@ const normalizeDriveType = (value) => {
 
 const bestPhotoUrl = (photo) => clean(photo?.web_paths?.xl || photo?.web_paths?.lg || photo?.web_paths?.md || photo?.url)
 
+const sourcePriceTypeName = (price) => clean(price?.type?.name || price?.type)
+
+const sourcePriceAmount = (price) => cleanNumber(price?.amount)
+
+const sourcePriceByType = (item, typeName) => {
+  const target = clean(typeName).toLowerCase()
+  const found = (Array.isArray(item?.prices) ? item.prices : [])
+    .find((price) => sourcePriceTypeName(price).toLowerCase() === target)
+  return sourcePriceAmount(found)
+}
+
+const compactPricePayload = (item) => {
+  const payload = {}
+  for (const key of ['price', 'sale_price', 'lowest_price', 'lowest_price_with_incentives', 'adjusted_finance_price']) {
+    const value = cleanNumber(item?.[key])
+    if (value != null) payload[key] = value
+  }
+
+  const prices = (Array.isArray(item?.prices) ? item.prices : [])
+    .map((price) => ({
+      type: sourcePriceTypeName(price),
+      amount: sourcePriceAmount(price),
+    }))
+    .filter((price) => price.type && price.amount != null && price.type.toLowerCase() !== 'cost')
+
+  if (prices.length > 0) payload.prices = prices
+  return payload
+}
+
 function normalizeInventoryItem(item, sourceUrl = '') {
   const title = clean(item?.title)
   const titleParts = inferTitleParts(title)
   const price = cleanNumber(item?.sale_price ?? item?.lowest_price ?? item?.price)
+  const financePrice = sourcePriceByType(item, 'Financed Price') ?? cleanNumber(item?.adjusted_finance_price)
   const itemId = clean(item?.id)
 
   return {
@@ -58,7 +88,10 @@ function normalizeInventoryItem(item, sourceUrl = '') {
     vin: clean(item?.vin).toUpperCase(),
     stockNumber: clean(item?.stock_num),
     price,
-    financePriceText: item?.adjusted_finance_price ? `$${item.adjusted_finance_price}` : null,
+    retailPrice: sourcePriceByType(item, 'Retail') ?? cleanNumber(item?.price),
+    financePrice,
+    financePriceText: financePrice ? `$${financePrice}` : null,
+    sourcePricePayload: compactPricePayload(item),
     mileage: cleanNumber(item?.odometer?.amount),
     transmission: nestedName(item?.transmission_type),
     drivetrain: normalizeDriveType(item?.drive_type),

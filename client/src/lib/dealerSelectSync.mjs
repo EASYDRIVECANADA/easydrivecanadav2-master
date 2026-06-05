@@ -52,6 +52,11 @@ export function buildVehicleUpsertRow(vehicle, { userId, now, supportsDealerSele
     equipment: clean(vehicle.title) || null,
     vin,
     price: Number(vehicle.price || 0),
+    retail_price: Number(vehicle.retailPrice || 0) || null,
+    finance_price: Number(vehicle.financePrice || 0) || null,
+    source_price_payload: vehicle.sourcePricePayload && typeof vehicle.sourcePricePayload === 'object'
+      ? vehicle.sourcePricePayload
+      : {},
     mileage,
     odometer: mileage,
     odometer_unit: 'kms',

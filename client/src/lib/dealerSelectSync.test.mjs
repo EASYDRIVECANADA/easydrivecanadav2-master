@@ -24,6 +24,18 @@ const scraped = {
   vin: '1FTEW1E50KFA12345',
   stockNumber: 'A1234',
   price: 32995,
+  retailPrice: 33995,
+  financePrice: 32995,
+  sourcePricePayload: {
+    price: 33995,
+    sale_price: 32995,
+    adjusted_finance_price: 32995,
+    prices: [
+      { type: 'Retail', amount: 33995 },
+      { type: 'Discount', amount: 32995 },
+      { type: 'Financed Price', amount: 32995 },
+    ],
+  },
   mileage: 91200,
   transmission: 'Automatic',
   drivetrain: '4WD',
@@ -68,6 +80,9 @@ test('maps scraped vehicle to editable Dealer Select row', () => {
   assert.equal(row.stock_number, 'A1234')
   assert.equal(row.vin, '1FTEW1E50KFA12345')
   assert.equal(row.price, 32995)
+  assert.equal(row.retail_price, 33995)
+  assert.equal(row.finance_price, 32995)
+  assert.deepEqual(row.source_price_payload, scraped.sourcePricePayload)
   assert.equal(row.mileage, 91200)
   assert.equal(row.odometer, 91200)
   assert.equal(row.source_name, 'DriveTown Ottawa')

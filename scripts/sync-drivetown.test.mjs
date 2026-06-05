@@ -81,5 +81,8 @@ test('requireMarketplaceColumns fails when migration columns are unavailable', (
     'marketplace_sync_status',
     'marketplace_original_vin',
     'marketplace_original_stock_number',
+    'retail_price',
+    'finance_price',
+    'source_price_payload',
   ])))
 })

@@ -34,6 +34,18 @@ test('parseDriveTownListing returns absolute detail URLs and source total', asyn
   assert.equal(result.vehicles[0].vin, '1FTEW1E50KFA12345')
   assert.equal(result.vehicles[0].stockNumber, 'A1234')
   assert.equal(result.vehicles[0].price, 31995)
+  assert.equal(result.vehicles[0].retailPrice, 32995)
+  assert.equal(result.vehicles[0].financePrice, 32495)
+  assert.deepEqual(result.vehicles[0].sourcePricePayload, {
+    price: 32995,
+    sale_price: 31995,
+    adjusted_finance_price: 31995,
+    prices: [
+      { type: 'Retail', amount: 32995 },
+      { type: 'Discount', amount: 31995 },
+      { type: 'Financed Price', amount: 32495 },
+    ],
+  })
   assert.equal(result.vehicles[0].bodyStyle, 'Pickup Truck')
 })
 

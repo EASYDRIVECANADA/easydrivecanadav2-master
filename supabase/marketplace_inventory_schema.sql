@@ -7,7 +7,10 @@ alter table public.edc_vehicles
   add column if not exists marketplace_last_synced_at timestamptz,
   add column if not exists marketplace_sync_status text not null default 'active',
   add column if not exists marketplace_original_vin text,
-  add column if not exists marketplace_original_stock_number text;
+  add column if not exists marketplace_original_stock_number text,
+  add column if not exists retail_price numeric,
+  add column if not exists finance_price numeric,
+  add column if not exists source_price_payload jsonb not null default '{}'::jsonb;
 
 create index if not exists edc_vehicles_marketplace_source_idx
   on public.edc_vehicles (marketplace_source);
