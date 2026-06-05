@@ -11,6 +11,18 @@ const SOURCE_COLUMNS = [
   'source_sync_status',
 ]
 
+const REQUIRED_MARKETPLACE_COLUMNS = [
+  'images',
+  'marketplace_source',
+  'marketplace_source_url',
+  'marketplace_source_vehicle_id',
+  'marketplace_last_seen_at',
+  'marketplace_last_synced_at',
+  'marketplace_sync_status',
+  'marketplace_original_vin',
+  'marketplace_original_stock_number',
+]
+
 function normalizeEnvValue(value) {
   const trimmed = String(value ?? '').trim()
   const quote = trimmed[0]
@@ -46,13 +58,28 @@ function isDuplicateConstraintError(error) {
   return clean(error?.code) === '23505' || /duplicate key value violates unique constraint/i.test(clean(error?.message))
 }
 
+function requireMarketplaceColumns(vehicleColumns) {
+  const missing = REQUIRED_MARKETPLACE_COLUMNS.filter((column) => !vehicleColumns.has(column))
+  if (missing.length > 0) {
+    throw new Error(`Apply supabase/marketplace_inventory_schema.sql before running DriveTown sync. Missing: ${missing.join(', ')}`)
+  }
+}
+
+function buildRunStatus(counts, fatalError) {
+  if (fatalError) return 'failed'
+  if (Number(counts?.failed || 0) > 0 || Number(counts?.writeFailed || 0) > 0) return 'partial'
+  return 'success'
+}
+
 function hydrateLegacySourceFields(row) {
   const notes = clean(row?.notes)
+  const parsedNotesUrl = notes.match(/source_url=([^;]+)/)?.[1] ?? ''
+  const parsedNotesVehicleId = notes.match(/source_vehicle_id=([^;]+)/)?.[1] ?? ''
   return {
     ...row,
-    source_name: row?.source_name || (notes.includes('DriveTown Ottawa') ? 'DriveTown Ottawa' : ''),
-    source_url: row?.source_url || (notes.match(/source_url=([^;]+)/)?.[1] ?? ''),
-    source_vehicle_id: row?.source_vehicle_id || (notes.match(/source_vehicle_id=([^;]+)/)?.[1] ?? ''),
+    source_name: row?.marketplace_source || row?.source_name || (notes.includes('DriveTown Ottawa') ? 'DriveTown Ottawa' : ''),
+    source_url: row?.marketplace_source_url || row?.source_url || parsedNotesUrl,
+    source_vehicle_id: row?.marketplace_source_vehicle_id || row?.source_vehicle_id || parsedNotesVehicleId,
   }
 }
 
@@ -78,110 +105,147 @@ async function main() {
   const userId = account.userId
   if (!userId) throw new Error('DriveTown account user_id could not be resolved')
 
-  const scrape = await scraper.scrapeDriveTownInventory()
-  if (!scrape.detailUrls.length) throw new Error('DriveTown listing discovery returned zero vehicle URLs')
-
   const vehicleColumns = await loadVehicleColumns(supabase)
-  const sourceColumnsSupported = vehicleColumns.has('source_name')
+  requireMarketplaceColumns(vehicleColumns)
+  const sourceColumnsSupported = false
   const supportsDealerSelectType = dryRun ? true : await detectDealerSelectSupport(supabase, sync, userId, sourceColumnsSupported, vehicleColumns)
   const now = new Date().toISOString()
   const existingRows = await loadExistingDriveTownRows(supabase, userId, sourceColumnsSupported)
 
-  const counts = {
-    listingUrls: scrape.detailUrls.length,
-    scraped: scrape.vehicles.length,
-    failed: scrape.failures.length,
-    inserted: 0,
-    updated: 0,
-    preserved: 0,
-    markedSold: 0,
-    writeFailed: 0,
-  }
-  const writeFailures = []
-
-  const scrapedVehicles = sync.prepareScrapedVehiclesForUniqueVin(scrape.vehicles)
-
-  for (const vehicle of scrapedVehicles) {
-    const existing = sync.chooseExistingVehicle(vehicle, existingRows, userId)
-    const baseRow = sync.buildVehicleUpsertRow(vehicle, { userId, now, supportsDealerSelectType })
-    const mergedRow = existing ? sync.mergePreservingEditableFields(baseRow, existing) : baseRow
-    const row = pickKnownColumns(sourceColumnsSupported ? mergedRow : stripSourceColumns(mergedRow), vehicleColumns)
-
-    if (existing && sync.shouldPreserveEditableFields(existing)) counts.preserved += 1
-
-    if (dryRun) {
-      if (existing) counts.updated += 1
-      else counts.inserted += 1
-      continue
-    }
-
-    if (existing?.id) {
-      const { error } = await supabase.from('edc_vehicles').update({
-        ...row,
-        created_at: existing.created_at || row.created_at,
-        vehicleId: existing.vehicleId || row.vehicleId,
-      }).eq('id', existing.id)
-      if (error) throw error
-      counts.updated += 1
-    } else {
-      const { error } = await supabase.from('edc_vehicles').insert(row)
-      if (error) {
-        if (String(error.message || '').includes('DEALER_SELECT')) {
-          const fallback = sync.buildVehicleUpsertRow(vehicle, { userId, now, supportsDealerSelectType: false })
-          const fallbackRow = pickKnownColumns(sourceColumnsSupported ? fallback : stripSourceColumns(fallback), vehicleColumns)
-          const { error: fallbackError } = await supabase.from('edc_vehicles').insert(fallbackRow)
-          if (fallbackError) {
-            if (isDuplicateConstraintError(fallbackError)) {
-              counts.writeFailed += 1
-              writeFailures.push({ url: vehicle.sourceUrl, vin: vehicle.vin, stockNumber: vehicle.stockNumber, error: fallbackError.message })
-              continue
-            }
-            throw fallbackError
-          }
-        } else if (isDuplicateConstraintError(error)) {
-          counts.writeFailed += 1
-          writeFailures.push({ url: vehicle.sourceUrl, vin: vehicle.vin, stockNumber: vehicle.stockNumber, error: error.message })
-          continue
-        } else {
-          throw error
-        }
-      }
-      counts.inserted += 1
-    }
-  }
-
-  const missing = sync.computeMissingSyncedVehicles(existingRows, scrapedVehicles, {
-    completeListing: scrape.detailUrls.length > 0 && scrape.failures.length <= Math.max(3, Math.floor(scrape.detailUrls.length * 0.05)),
+  const sourceId = dryRun ? '' : await ensureInventorySource(supabase, sync, userId)
+  const runId = dryRun ? '' : await createSyncRun(supabase, {
+    sourceId,
+    userId,
+    sourceName: sync.DRIVE_TOWN_SOURCE_NAME,
+    dryRun,
+    startedAt,
   })
 
-  counts.markedSold = missing.length
-  if (!dryRun && missing.length) {
-    for (const row of missing) {
-      const soldRow = pickKnownColumns({
-        status: 'Sold',
-        ...(sourceColumnsSupported ? {
-          source_sync_status: 'missing',
-          source_last_synced_at: now,
-        } : {}),
-        updated_at: now,
-      }, vehicleColumns)
-      const { error } = await supabase.from('edc_vehicles').update(soldRow).eq('id', row.id)
-      if (error) throw error
+  let fatalError = null
+  let counts = {}
+  let scrapeFailures = []
+  const writeFailures = []
+  let endedAt = null
+
+  try {
+    const scrape = await scraper.scrapeDriveTownInventory()
+    if (!scrape.detailUrls.length) throw new Error('DriveTown listing discovery returned zero vehicle URLs')
+
+    counts = {
+      listingUrls: scrape.detailUrls.length,
+      scraped: scrape.vehicles.length,
+      failed: scrape.failures.length,
+      inserted: 0,
+      updated: 0,
+      preserved: 0,
+      markedSold: 0,
+      writeFailed: 0,
+    }
+    scrapeFailures = scrape.failures.slice(0, 20)
+
+    const scrapedVehicles = sync.prepareScrapedVehiclesForUniqueVin(scrape.vehicles)
+
+    for (const vehicle of scrapedVehicles) {
+      const existing = sync.chooseExistingVehicle(vehicle, existingRows, userId)
+      const baseRow = sync.buildVehicleUpsertRow(vehicle, { userId, now, supportsDealerSelectType })
+      const mergedRow = existing ? sync.mergePreservingEditableFields(baseRow, existing) : baseRow
+      const row = pickKnownColumns(mergedRow, vehicleColumns)
+
+      if (existing && sync.shouldPreserveEditableFields(existing)) counts.preserved += 1
+
+      if (dryRun) {
+        if (existing) counts.updated += 1
+        else counts.inserted += 1
+        continue
+      }
+
+      if (existing?.id) {
+        const { error } = await supabase.from('edc_vehicles').update({
+          ...row,
+          created_at: existing.created_at || row.created_at,
+          vehicleId: existing.vehicleId || row.vehicleId,
+        }).eq('id', existing.id)
+        if (error) throw error
+        counts.updated += 1
+      } else {
+        const { error } = await supabase.from('edc_vehicles').insert(row)
+        if (error) {
+          if (String(error.message || '').includes('DEALER_SELECT')) {
+            const fallback = sync.buildVehicleUpsertRow(vehicle, { userId, now, supportsDealerSelectType: false })
+            const fallbackRow = pickKnownColumns(fallback, vehicleColumns)
+            const { error: fallbackError } = await supabase.from('edc_vehicles').insert(fallbackRow)
+            if (fallbackError) {
+              if (isDuplicateConstraintError(fallbackError)) {
+                counts.writeFailed += 1
+                writeFailures.push({ url: vehicle.sourceUrl, vin: vehicle.vin, stockNumber: vehicle.stockNumber, error: fallbackError.message })
+                continue
+              }
+              throw fallbackError
+            }
+          } else if (isDuplicateConstraintError(error)) {
+            counts.writeFailed += 1
+            writeFailures.push({ url: vehicle.sourceUrl, vin: vehicle.vin, stockNumber: vehicle.stockNumber, error: error.message })
+            continue
+          } else {
+            throw error
+          }
+        }
+        counts.inserted += 1
+      }
+    }
+
+    const missing = sync.computeMissingSyncedVehicles(existingRows, scrapedVehicles, {
+      completeListing: scrape.detailUrls.length > 0 && scrape.failures.length <= Math.max(3, Math.floor(scrape.detailUrls.length * 0.05)),
+    })
+
+    counts.markedSold = missing.length
+    if (!dryRun && missing.length) {
+      for (const row of missing) {
+        const soldRow = pickKnownColumns({
+          status: 'Sold',
+          marketplace_sync_status: 'missing',
+          marketplace_last_synced_at: now,
+          updated_at: now,
+        }, vehicleColumns)
+        const { error } = await supabase.from('edc_vehicles').update(soldRow).eq('id', row.id)
+        if (error) throw error
+      }
+    }
+
+    endedAt = new Date()
+    console.log(JSON.stringify({
+      source: sync.DRIVE_TOWN_SOURCE_NAME,
+      dryRun,
+      startedAt: startedAt.toISOString(),
+      endedAt: endedAt.toISOString(),
+      durationMs: endedAt.getTime() - startedAt.getTime(),
+      account,
+      counts,
+      failures: scrapeFailures,
+      writeFailures: writeFailures.slice(0, 20),
+      runId: runId || null,
+    }, null, 2))
+  } catch (error) {
+    fatalError = error
+    throw error
+  } finally {
+    if (!dryRun && runId) {
+      const finishedAt = endedAt || new Date()
+      const errors = [
+        ...scrapeFailures.map((failure) => ({ type: 'scrape', ...failure })),
+        ...writeFailures.slice(0, 20).map((failure) => ({ type: 'write', ...failure })),
+        ...(fatalError ? [{ type: 'fatal', error: fatalError.message }] : []),
+      ]
+      await finishSyncRun(supabase, {
+        runId,
+        sourceId,
+        status: buildRunStatus(counts, fatalError),
+        counts,
+        errors,
+        finishedAt,
+      })
     }
   }
-
-  const endedAt = new Date()
-  console.log(JSON.stringify({
-    source: sync.DRIVE_TOWN_SOURCE_NAME,
-    dryRun,
-    startedAt: startedAt.toISOString(),
-    endedAt: endedAt.toISOString(),
-    durationMs: endedAt.getTime() - startedAt.getTime(),
-    account,
-    counts,
-    failures: scrape.failures.slice(0, 20),
-    writeFailures: writeFailures.slice(0, 20),
-  }, null, 2))
 }
 
 async function ensureDriveTownAccount(supabase, sync, configuredUserId, dryRun) {
@@ -232,6 +296,69 @@ async function ensureDriveTownAccount(supabase, sync, configuredUserId, dryRun) 
   }
 
   return { userId, configured: false }
+}
+
+async function ensureInventorySource(supabase, sync, userId) {
+  const row = {
+    user_id: userId,
+    source_name: sync.DRIVE_TOWN_SOURCE_NAME,
+    website_url: sync.DRIVE_TOWN_WEBSITE,
+    inventory_url: 'https://drivetownottawa.com/vehicles/',
+    source_type: 'dealer_site',
+    enabled: true,
+    schedule_cron: '0 */6 * * *',
+    updated_at: new Date().toISOString(),
+  }
+
+  const { data, error } = await supabase
+    .from('dealer_inventory_sources')
+    .upsert(row, { onConflict: 'user_id,source_name' })
+    .select('id')
+    .single()
+  if (error) throw error
+  return String(data?.id || '')
+}
+
+async function createSyncRun(supabase, { sourceId, userId, sourceName, dryRun, startedAt }) {
+  const { data, error } = await supabase
+    .from('dealer_inventory_sync_runs')
+    .insert({
+      source_id: sourceId,
+      user_id: userId,
+      source_name: sourceName,
+      dry_run: dryRun,
+      started_at: startedAt.toISOString(),
+      status: 'running',
+    })
+    .select('id')
+    .single()
+  if (error) throw error
+  return String(data?.id || '')
+}
+
+async function finishSyncRun(supabase, { runId, sourceId, status, counts, errors, finishedAt }) {
+  const { error: runError } = await supabase
+    .from('dealer_inventory_sync_runs')
+    .update({
+      status,
+      counts,
+      errors,
+      finished_at: finishedAt.toISOString(),
+    })
+    .eq('id', runId)
+  if (runError) throw runError
+
+  const { error: sourceError } = await supabase
+    .from('dealer_inventory_sources')
+    .update({
+      last_run_at: finishedAt.toISOString(),
+      last_run_status: status,
+      last_run_counts: counts,
+      last_error: errors?.[0]?.error || null,
+      updated_at: finishedAt.toISOString(),
+    })
+    .eq('id', sourceId)
+  if (sourceError) throw sourceError
 }
 
 async function loadVehicleColumns(supabase) {
@@ -292,7 +419,14 @@ async function loadExistingDriveTownRows(supabase, userId, sourceColumnsSupporte
   return filtered.map(hydrateLegacySourceFields)
 }
 
-module.exports = { isDuplicateConstraintError, normalizeEnvValue, pickKnownColumns, stripSourceColumns }
+module.exports = {
+  buildRunStatus,
+  isDuplicateConstraintError,
+  normalizeEnvValue,
+  pickKnownColumns,
+  requireMarketplaceColumns,
+  stripSourceColumns,
+}
 
 if (require.main === module) {
   main().catch((error) => {

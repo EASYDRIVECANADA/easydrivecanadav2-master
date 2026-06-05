@@ -3,7 +3,14 @@ import assert from 'node:assert/strict'
 import { createRequire } from 'node:module'
 
 const require = createRequire(import.meta.url)
-const { isDuplicateConstraintError, normalizeEnvValue, pickKnownColumns, stripSourceColumns } = require('./sync-drivetown.js')
+const {
+  buildRunStatus,
+  isDuplicateConstraintError,
+  normalizeEnvValue,
+  pickKnownColumns,
+  requireMarketplaceColumns,
+  stripSourceColumns,
+} = require('./sync-drivetown.js')
 
 test('normalizeEnvValue removes surrounding dotenv quotes', () => {
   assert.equal(normalizeEnvValue('"https://example.supabase.co"'), 'https://example.supabase.co')
@@ -48,4 +55,31 @@ test('pickKnownColumns removes fields missing from deployed schema', () => {
 test('isDuplicateConstraintError detects Supabase unique constraint failures', () => {
   assert.equal(isDuplicateConstraintError({ code: '23505', message: 'duplicate key value violates unique constraint' }), true)
   assert.equal(isDuplicateConstraintError({ code: 'PGRST204', message: 'missing column' }), false)
+})
+
+test('buildRunStatus reports success, partial, and failed from counts and fatal error', () => {
+  assert.equal(buildRunStatus({ failed: 0, writeFailed: 0 }, null), 'success')
+  assert.equal(buildRunStatus({ failed: 1, writeFailed: 0 }, null), 'partial')
+  assert.equal(buildRunStatus({ failed: 0, writeFailed: 2 }, null), 'partial')
+  assert.equal(buildRunStatus({ failed: 0, writeFailed: 0 }, new Error('boom')), 'failed')
+})
+
+test('requireMarketplaceColumns fails when migration columns are unavailable', () => {
+  assert.throws(
+    () => requireMarketplaceColumns(new Set(['id', 'vin'])),
+    /Apply supabase\/marketplace_inventory_schema.sql/
+  )
+
+  assert.doesNotThrow(() => requireMarketplaceColumns(new Set([
+    'id',
+    'images',
+    'marketplace_source',
+    'marketplace_source_url',
+    'marketplace_source_vehicle_id',
+    'marketplace_last_seen_at',
+    'marketplace_last_synced_at',
+    'marketplace_sync_status',
+    'marketplace_original_vin',
+    'marketplace_original_stock_number',
+  ])))
 })
