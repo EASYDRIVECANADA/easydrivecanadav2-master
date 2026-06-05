@@ -86,6 +86,25 @@ test('falls back when DEALER_SELECT enum is not available', () => {
   assert.equal(row.categories, 'dealer_select')
 })
 
+test('maps scraped vehicle images and marketplace metadata when schema supports it', () => {
+  const now = '2026-06-05T00:00:00.000Z'
+  const row = buildVehicleUpsertRow(scraped, {
+    userId: 'dealer-user-1',
+    now,
+    supportsDealerSelectType: false,
+  })
+
+  assert.deepEqual(row.images, scraped.imageUrls)
+  assert.equal(row.marketplace_source, 'DriveTown Ottawa')
+  assert.equal(row.marketplace_source_url, scraped.sourceUrl)
+  assert.equal(row.marketplace_source_vehicle_id, scraped.sourceVehicleId)
+  assert.equal(row.marketplace_last_seen_at, now)
+  assert.equal(row.marketplace_last_synced_at, now)
+  assert.equal(row.marketplace_sync_status, 'active')
+  assert.equal(row.marketplace_original_vin, scraped.vin)
+  assert.equal(row.marketplace_original_stock_number, scraped.stockNumber)
+})
+
 test('uses source vehicle id when scraped stock number is missing', () => {
   const row = buildVehicleUpsertRow({ ...scraped, stockNumber: '' }, {
     userId: 'dealer-user-1',
@@ -115,6 +134,21 @@ test('chooses existing vehicle by source URL then VIN then stock scoped to deale
   ]
 
   assert.equal(chooseExistingVehicle(scraped, existing, 'dealer-user-1')?.id, 'source-hit')
+})
+
+test('chooses existing vehicle by marketplace source URL before legacy source URL', () => {
+  const existing = [
+    {
+      id: 'marketplace-hit',
+      user_id: 'dealer-user-1',
+      marketplace_source_url: scraped.sourceUrl,
+      source_url: '',
+      vin: 'OTHER',
+      stock_number: 'OTHER',
+    },
+  ]
+
+  assert.equal(chooseExistingVehicle(scraped, existing, 'dealer-user-1')?.id, 'marketplace-hit')
 })
 
 test('does not match stock number when existing row belongs to a different source URL', () => {

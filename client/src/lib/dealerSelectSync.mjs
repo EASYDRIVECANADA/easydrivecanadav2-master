@@ -72,6 +72,14 @@ export function buildVehicleUpsertRow(vehicle, { userId, now, supportsDealerSele
     city: 'Ottawa',
     province: 'ON',
     notes: DRIVE_TOWN_SYNC_MARKER,
+    marketplace_source: DRIVE_TOWN_SOURCE_NAME,
+    marketplace_source_url: clean(vehicle.sourceUrl),
+    marketplace_source_vehicle_id: clean(vehicle.sourceVehicleId),
+    marketplace_last_seen_at: now,
+    marketplace_last_synced_at: now,
+    marketplace_sync_status: 'active',
+    marketplace_original_vin: upper(vehicle.vin) || null,
+    marketplace_original_stock_number: clean(vehicle.stockNumber) || null,
     source_name: DRIVE_TOWN_SOURCE_NAME,
     source_url: clean(vehicle.sourceUrl),
     source_vehicle_id: clean(vehicle.sourceVehicleId),
@@ -91,6 +99,7 @@ export function chooseExistingVehicle(vehicle, existingRows, userId) {
   const stock = upper(vehicle.stockNumber)
 
   return (
+    scoped.find((row) => clean(row.marketplace_source_url) && clean(row.marketplace_source_url) === sourceUrl) ||
     scoped.find((row) => clean(row.source_url) && clean(row.source_url) === sourceUrl) ||
     scoped.find((row) => upper(row.vin) && upper(row.vin) === vin) ||
     scoped.find((row) => upper(row.stock_number) && upper(row.stock_number) === stock && !clean(row.source_url)) ||
