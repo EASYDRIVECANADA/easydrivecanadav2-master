@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import * as XLSX from 'xlsx-js-style'
-import { parseFleetInventoryRows } from '@/lib/fleetInventoryImport.mjs'
+import { applyFleetPriceMarkup, parseFleetInventoryRows } from '@/lib/fleetInventoryImport.mjs'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -9,7 +9,6 @@ export const maxDuration = 60
 const IMPORT_MARKER = 'Imported from weekly inventory feed'
 const IMPORT_CATEGORY = 'fleet'
 const IMPORT_INVENTORY_TYPE = 'FLEET'
-const FLEET_PRICE_MARKUP = 3000
 
 type UserRow = {
   id?: string | null
@@ -159,7 +158,7 @@ export async function POST(req: Request) {
         series: vehicle.series,
         equipment: vehicle.equipment,
         vin: vehicle.vin,
-        price: vehicle.price + FLEET_PRICE_MARKUP,
+        price: applyFleetPriceMarkup(vehicle.price),
         mileage: vehicle.mileage,
         odometer: vehicle.odometer,
         odometer_unit: vehicle.odometer_unit,

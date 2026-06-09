@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { parseFleetInventoryRows } from './fleetInventoryImport.mjs'
+import { applyFleetPriceMarkup, parseFleetInventoryRows } from './fleetInventoryImport.mjs'
 
 test('parseFleetInventoryRows skips rows with missing price while keeping valid fleet vehicles', () => {
   const rows = [
@@ -40,4 +40,8 @@ test('parseFleetInventoryRows uses EVN as the imported description', () => {
 
   assert.equal(result.vehicles[0].description, '2024 Mercedes-Benz Sprinter 2500 High Roof 4-Cyl Diesel split swing-out Cargo Van diesel 170" WB 2.0L I4 Turbo RWD Blind Spot Assist')
   assert.equal(result.vehicles[0].equipment, '2024 Mercedes-Benz Sprinter 2500 High Roof 4-Cyl Diesel split swing-out Cargo Van diesel 170" WB 2.0L I4 Turbo RWD Blind Spot Assist')
+})
+
+test('applyFleetPriceMarkup adds 4000 per imported unit', () => {
+  assert.equal(applyFleetPriceMarkup(36500), 40500)
 })

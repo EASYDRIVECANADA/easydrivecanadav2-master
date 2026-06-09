@@ -27,6 +27,10 @@ const normalizeVin = (value) => clean(value).toUpperCase()
 
 const normalizeStock = (value) => clean(value).toUpperCase()
 
+export const FLEET_PRICE_MARKUP = 4000
+
+export const applyFleetPriceMarkup = (price) => Number(price || 0) + FLEET_PRICE_MARKUP
+
 export function parseFleetInventoryRows(rows) {
   if (rows.length < 2) throw new Error('Workbook has no vehicle rows')
 
