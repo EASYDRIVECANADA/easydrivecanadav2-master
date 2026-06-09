@@ -17,3 +17,27 @@ test('parseFleetInventoryRows skips rows with missing price while keeping valid 
   assert.deepEqual(result.vehicles.map((vehicle) => vehicle.stock_number), ['FLEET-001', 'FLEET-003'])
   assert.deepEqual(result.skipped, [{ row: 3, reason: 'Missing price' }])
 })
+
+test('parseFleetInventoryRows uses EVN as the imported description', () => {
+  const rows = [
+    ['Location', 'Unit ID', 'Year', 'Make', 'Model', 'Series', 'Kilometers', 'Ext Color', 'VIN', 'Price', 'EVN'],
+    [
+      'C331-98-AP',
+      '8FPXND',
+      '2024',
+      'MERB',
+      'S2HC',
+      'BDLW',
+      '124225',
+      'WHITE',
+      'W1Y4KCHY3RP691867',
+      '$36,500',
+      '2024 Mercedes-Benz Sprinter 2500 High Roof 4-Cyl Diesel split swing-out Cargo Van diesel 170" WB 2.0L I4 Turbo RWD Blind Spot Assist',
+    ],
+  ]
+
+  const result = parseFleetInventoryRows(rows)
+
+  assert.equal(result.vehicles[0].description, '2024 Mercedes-Benz Sprinter 2500 High Roof 4-Cyl Diesel split swing-out Cargo Van diesel 170" WB 2.0L I4 Turbo RWD Blind Spot Assist')
+  assert.equal(result.vehicles[0].equipment, '2024 Mercedes-Benz Sprinter 2500 High Roof 4-Cyl Diesel split swing-out Cargo Van diesel 170" WB 2.0L I4 Turbo RWD Blind Spot Assist')
+})

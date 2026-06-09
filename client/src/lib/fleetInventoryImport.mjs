@@ -48,6 +48,7 @@ export function parseFleetInventoryRows(rows) {
     vin: indexOf('VIN'),
     price: indexOf('Price', 'List Price'),
     equipment: indexOf('Equip', 'Equipment'),
+    evn: indexOf('EVN'),
   }
 
   const required = [
@@ -87,6 +88,7 @@ export function parseFleetInventoryRows(rows) {
     const year = toInt(get(column.year))
     const make = clean(get(column.make)).toUpperCase()
     const equipment = clean(get(column.equipment))
+    const evn = clean(get(column.evn))
     const model = (equipment || clean(get(column.model))).toUpperCase()
     const mileageValue = get(column.mileage)
     const mileage = toInt(mileageValue)
@@ -121,7 +123,7 @@ export function parseFleetInventoryRows(rows) {
     seenVin.add(vin)
 
     const series = clean(get(column.series)) || null
-    const equipmentValue = equipment || null
+    const equipmentValue = evn || equipment || null
 
     vehicles.push({
       sourceRow,

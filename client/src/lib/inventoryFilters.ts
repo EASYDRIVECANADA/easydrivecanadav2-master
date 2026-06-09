@@ -52,6 +52,28 @@ export const getVehicleListingBucket = (
   return ''
 }
 
+export const normalizeInventoryCategory = (row: {
+  categories?: unknown
+  category?: unknown
+  inventory_type?: unknown
+  inventoryType?: unknown
+}) => {
+  const explicit = String(row.categories || row.category || '').trim().toLowerCase()
+  if (explicit) {
+    if (explicit === 'premiere') return 'premier'
+    if (explicit.includes('dealer')) return explicit
+    if (explicit === 'premier' || explicit === 'fleet') return explicit
+    return explicit
+  }
+
+  const inventoryType = String(row.inventory_type || row.inventoryType || '').trim().toLowerCase()
+  if (inventoryType === 'premiere') return 'premier'
+  if (inventoryType === 'premier' || inventoryType === 'fleet') return inventoryType
+  if (inventoryType.includes('dealer')) return 'dealer'
+
+  return undefined
+}
+
 const defaultNormalizeStatus = (value: unknown) => String(value ?? '').trim()
 
 const defaultVehicleMatchesSearch = (vehicle: Record<string, unknown>, query: string) =>

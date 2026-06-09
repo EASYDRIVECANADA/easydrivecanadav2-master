@@ -18,7 +18,7 @@ function loadTsModule(relativePath) {
   return mod.exports
 }
 
-const { filterInventoryVehicles, getVehicleListingBucket } = loadTsModule('./inventoryFilters.ts')
+const { filterInventoryVehicles, getVehicleListingBucket, normalizeInventoryCategory } = loadTsModule('./inventoryFilters.ts')
 
 const vehicles = [
   { id: '1', year: 2020, make: 'Tesla', model: 'Model 3', stockNumber: '1010', vin: 'TESLAVIN123', status: 'In Stock', category: 'premier', inventoryType: 'PREMIERE' },
@@ -47,4 +47,11 @@ test('filterInventoryVehicles searches stock, VIN, make, and model', () => {
   assert.deepEqual(filterInventoryVehicles(vehicles, { searchQuery: 'fleetvin' }).map((v) => v.id), ['2'])
   assert.deepEqual(filterInventoryVehicles(vehicles, { searchQuery: 'tesla' }).map((v) => v.id), ['1'])
   assert.deepEqual(filterInventoryVehicles(vehicles, { searchQuery: 'escape' }).map((v) => v.id), ['2'])
+})
+
+test('normalizeInventoryCategory keeps dealer select ahead of fleet fallback inventory type', () => {
+  assert.equal(
+    normalizeInventoryCategory({ categories: 'dealer_select', inventory_type: 'FLEET' }),
+    'dealer_select'
+  )
 })

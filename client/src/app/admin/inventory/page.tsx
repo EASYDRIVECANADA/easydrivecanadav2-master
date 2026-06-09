@@ -14,6 +14,7 @@ import {
 import {
   filterInventoryVehicles,
   getVehicleListingBucket,
+  normalizeInventoryCategory,
   type InventoryListingTab,
 } from '@/lib/inventoryFilters'
 import { buildVehiclePhotoUrls } from '@/lib/vehiclePhotoUrls.mjs'
@@ -745,19 +746,7 @@ export default function AdminInventoryPage() {
           mileage: Number(v.mileage) || 0,
           status: normalizeStatus(v.status),
           inventoryType: safe(v.inventory_type),
-          category: (() => {
-            // Prefer explicit categories/category columns; fallback to inventory_type
-            const c1 = safe((v as any).categories)
-            const c2 = safe((v as any).category)
-            const source = (c1 || c2 || '').trim().toLowerCase()
-            let cat = source
-            if (cat === 'premiere') cat = 'premier'
-            if (cat === 'premier' || cat === 'fleet') return cat
-            const inv = safe((v as any).inventory_type).trim().toLowerCase()
-            if (inv === 'premiere') return 'premier'
-            if (inv === 'premier' || inv === 'fleet') return inv
-            return source || undefined
-          })(),
+          category: normalizeInventoryCategory(v as any),
           vehicleType: (() => {
             const vt = String((v as any).vehicle_type ?? (v as any).vehicletype ?? (v as any).type ?? '').trim()
             return vt || undefined
