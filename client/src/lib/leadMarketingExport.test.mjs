@@ -51,6 +51,7 @@ test('exports lead rows with personal contact info and marketing notes', () => {
   const [row] = buildLeadMarketingExportRows(sampleLeads)
 
   assert.equal(row['Lead ID'], 'lead-1')
+  assert.equal(row.Source, 'EASYDRIVE FINANCE - LANDING PAGE')
   assert.equal(row['First name'], 'Jane')
   assert.equal(row['Last name'], 'Smith')
   assert.equal(row['Full name'], 'Jane Smith')
@@ -61,6 +62,34 @@ test('exports lead rows with personal contact info and marketing notes', () => {
   assert.equal(row['Campaign source'], 'Facebook Ads')
   assert.equal(row['Marketing notes'], 'SUV buyer, low down payment concern')
   assert.equal(row['Internal notes transcript'], '[2026-06-01 10:00] Called customer')
+})
+
+test('exports website and manual Facebook lead form source labels', () => {
+  const rows = buildLeadMarketingExportRows([
+    {
+      id: 'lead-website',
+      firstName: 'Alex',
+      lastName: 'Rivera',
+      email: 'alex@example.com',
+      phone: '6135550303',
+      vehicleInterest: '',
+      message: 'Source: EasyDrive Canada - Website',
+      createdAt: '2026-06-03T12:00:00.000Z',
+    },
+    {
+      id: 'lead-fb',
+      firstName: 'Sam',
+      lastName: 'Patel',
+      email: 'sam@example.com',
+      phone: '6135550404',
+      vehicleInterest: '',
+      message: 'Source: Manual Entry - FB Lead Form',
+      createdAt: '2026-06-04T12:00:00.000Z',
+    },
+  ])
+
+  assert.equal(rows[0].Source, 'EASYDRIVE CANADA - WEBSITE')
+  assert.equal(rows[1].Source, 'MANUAL ENTRY - FB LEAD FORM')
 })
 
 test('normalizes missing optional export fields to empty strings', () => {
@@ -78,7 +107,7 @@ test('builds summary rows by source status and finance manager', () => {
   const rows = buildLeadMarketingSummaryRows(sampleLeads)
 
   assert.deepEqual(rows[0], ['Metric', 'Value', 'Count'])
-  assert.ok(rows.some((row) => row[0] === 'Source' && row[1] === 'Finance' && row[2] === 1))
+  assert.ok(rows.some((row) => row[0] === 'Source' && row[1] === 'EASYDRIVE FINANCE - LANDING PAGE' && row[2] === 1))
   assert.ok(rows.some((row) => row[0] === 'Status' && row[1] === 'Contacted' && row[2] === 1))
   assert.ok(rows.some((row) => row[0] === 'Finance manager' && row[1] === 'manager@easydrivecanada.com' && row[2] === 1))
   assert.ok(rows.some((row) => row[0] === 'Submitted date' && row[1] === '2026-06-01' && row[2] === 1))

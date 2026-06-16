@@ -29,6 +29,18 @@ import {
   leadMarketingRowsToAoa,
 } from '@/lib/leadMarketingExport.mjs'
 import {
+  defaultLeadFilterForSource,
+  LEAD_LIST_FILTERS,
+  matchesLeadListFilter,
+} from '@/lib/leadListFilters.mjs'
+import {
+  leadSourceFromMessage,
+  leadSourceLabel,
+  leadSourceMessageValue,
+  leadSourcePillClass,
+  normalizeLeadSourceInput,
+} from '@/lib/leadSource.mjs'
+import {
   appendLeadTranscriptNote,
   appendLeadUpdateTranscriptNote,
   canManuallyAssignLeadFinanceManagers,
@@ -86,10 +98,10 @@ type LeadQueryResult = {
   error: { message?: string } | null
 }
 
-type FilterKey = 'finance' | 'insurance' | 'synced'
-type SourceKey = 'finance' | 'insurance' | 'contact' | 'unknown'
+type FilterKey = 'open' | 'finance' | 'website' | 'facebook' | 'insurance' | 'synced'
+type SourceKey = 'website' | 'finance' | 'facebook' | 'insurance' | 'unknown'
 type LeadDraftSource = SourceKey
-type ImportSourceMode = 'auto' | 'finance' | 'insurance'
+type ImportSourceMode = 'auto' | 'website' | 'finance' | 'facebook' | 'insurance'
 type LeadManagerStatus = string
 type AssignmentUser = {
   email: string
@@ -120,11 +132,7 @@ type CsvMessageField = {
   aliases: string[]
 }
 
-const FILTERS: Array<{ key: FilterKey; label: string }> = [
-  { key: 'finance', label: 'Credit Application' },
-  { key: 'insurance', label: 'Insurance Application' },
-  { key: 'synced', label: 'Handled' },
-]
+const FILTERS = LEAD_LIST_FILTERS as Array<{ key: FilterKey; label: string }>
 
 const BASE_LEAD_SELECT = 'id, first_name, last_name, email, phone, vehicle_interest, message, employment_status, monthly_income, down_payment, credit_score, ghl_synced, created_at'
 const MANAGER_STATUSES = LEAD_MANAGER_STATUSES as LeadManagerStatus[]
@@ -163,7 +171,7 @@ const emptyLeadDraft: LeadDraft = {
   lastName: '',
   email: '',
   phone: '',
-  source: 'contact',
+  source: 'website',
   vehicleInterest: '',
   employmentStatus: '',
   monthlyIncome: '',
@@ -202,32 +210,19 @@ const parseMessageFields = (message: string | null) => {
 }
 
 const sourceFromLead = (lead: Lead): SourceKey => {
-  const { rows } = parseMessageFields(lead.message)
-  const source = clean(rows.find((row) => row.label.toLowerCase() === 'source')?.value).toLowerCase()
-  const message = clean(lead.message).toLowerCase()
-  const labels = rows.map((row) => row.label.toLowerCase())
-
-  if (source.includes('insurance') || message.includes('license number')) return 'insurance'
-  if (source.includes('finance') || source.includes('financing') || source.includes('easydrivefinance')) return 'finance'
-  if (source.includes('contact')) return 'contact'
-  if (labels.includes('subject') || labels.includes('message')) return 'contact'
-  if (lead.message && !lead.vehicleInterest && !lead.employmentStatus && !lead.monthlyIncome && !lead.downPayment && !lead.creditScore) return 'contact'
-  return 'unknown'
+  return leadSourceFromMessage({
+    message: lead.message,
+    vehicleInterest: lead.vehicleInterest,
+    employmentStatus: lead.employmentStatus,
+    monthlyIncome: lead.monthlyIncome,
+    downPayment: lead.downPayment,
+    creditScore: lead.creditScore,
+  }) as SourceKey
 }
 
-const sourceLabel = (source: SourceKey) => {
-  if (source === 'finance') return 'Finance'
-  if (source === 'insurance') return 'Insurance'
-  if (source === 'contact') return 'Contact'
-  return 'Unknown'
-}
+const sourceLabel = (source: SourceKey) => leadSourceLabel(source)
 
-const sourcePillClass = (source: SourceKey) => {
-  if (source === 'finance') return 'bg-blue-50 text-blue-700 ring-blue-200'
-  if (source === 'insurance') return 'bg-emerald-50 text-emerald-700 ring-emerald-200'
-  if (source === 'contact') return 'bg-amber-50 text-amber-700 ring-amber-200'
-  return 'bg-slate-100 text-slate-600 ring-slate-200'
-}
+const sourcePillClass = (source: SourceKey) => leadSourcePillClass(source)
 
 const leadName = (lead: Lead) => [lead.firstName, lead.lastName].map(clean).filter(Boolean).join(' ') || 'Unnamed lead'
 
@@ -434,10 +429,7 @@ const inferCityFromAddress = (address: string) => {
 }
 
 const sourceMessageValue = (source: LeadDraftSource) => {
-  if (source === 'finance') return 'Manual Finance'
-  if (source === 'insurance') return 'Manual Insurance'
-  if (source === 'contact') return 'Manual Contact'
-  return 'Manual Entry'
+  return leadSourceMessageValue(source)
 }
 
 const buildMessage = (rows: Array<[string, unknown]>) =>
@@ -551,17 +543,15 @@ const splitFullName = (fullName: string) => {
 }
 
 const normalizeImportSource = (value: unknown): LeadDraftSource => {
-  const source = clean(value).toLowerCase()
-  if (source.includes('finance') || source.includes('financing')) return 'finance'
-  if (source.includes('insurance')) return 'insurance'
-  if (source.includes('contact')) return 'contact'
-  return 'unknown'
+  return normalizeLeadSourceInput(value) as LeadDraftSource
 }
 
 const inferImportSourceFromFileName = (fileName: string): ImportSourceMode => {
   const normalized = clean(fileName).toLowerCase()
+  if (normalized.includes('fb') || normalized.includes('facebook')) return 'facebook'
   if (normalized.includes('insurance')) return 'insurance'
   if (normalized.includes('finance') || normalized.includes('financing')) return 'finance'
+  if (normalized.includes('website') || normalized.includes('contact')) return 'website'
   return 'auto'
 }
 
@@ -626,13 +616,31 @@ const rowToLeadInsert = (
   return insert
 }
 
-const styleMarketingWorksheet = (XLSX: any, worksheet: Record<string, any>, rows: unknown[][]) => {
+type WorksheetStyleApi = {
+  utils: {
+    decode_range: (ref: string) => { s: { c: number }; e: { c: number } }
+    encode_cell: (cell: { r: number; c: number }) => string
+  }
+}
+
+type StyledWorksheet = Record<string, unknown> & {
+  '!ref'?: string
+  '!cols'?: Array<{ wch: number }>
+  '!freeze'?: { xSplit: number; ySplit: number }
+}
+
+type StyledWorksheetCell = {
+  s?: unknown
+}
+
+const styleMarketingWorksheet = (XLSX: WorksheetStyleApi, worksheet: StyledWorksheet, rows: unknown[][]) => {
   const range = XLSX.utils.decode_range(worksheet['!ref'] || 'A1:A1')
   for (let column = range.s.c; column <= range.e.c; column += 1) {
     const address = XLSX.utils.encode_cell({ r: 0, c: column })
     const cell = worksheet[address]
-    if (cell) {
-      cell.s = {
+    if (cell && typeof cell === 'object') {
+      const styledCell = cell as StyledWorksheetCell
+      styledCell.s = {
         font: { bold: true, color: { rgb: 'FFFFFFFF' } },
         fill: { patternType: 'solid', fgColor: { rgb: 'FF0B1F3A' } },
         alignment: { vertical: 'center', horizontal: 'center', wrapText: true },
@@ -678,7 +686,7 @@ export default function AdminLeadsPage() {
   const [assignmentUsers, setAssignmentUsers] = useState<AssignmentUser[]>([])
   const [assignmentUsersLoading, setAssignmentUsersLoading] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
-  const [activeFilter, setActiveFilter] = useState<FilterKey>('finance')
+  const [activeFilter, setActiveFilter] = useState<FilterKey>('open')
   const [currentPage, setCurrentPage] = useState(1)
   const [newLeadOpen, setNewLeadOpen] = useState(false)
   const [leadDraft, setLeadDraft] = useState<LeadDraft>(emptyLeadDraft)
@@ -855,12 +863,7 @@ export default function AdminLeadsPage() {
 
     return leads.filter((lead) => {
       const source = sourceFromLead(lead)
-      const matchesFilter =
-        (activeFilter === 'synced' && lead.ghlSynced) ||
-        (activeFilter === 'finance' && source === 'finance' && !lead.ghlSynced) ||
-        (activeFilter === 'insurance' && source === 'insurance' && !lead.ghlSynced)
-
-      if (!matchesFilter) return false
+      if (!matchesLeadListFilter(lead, activeFilter)) return false
       if (!query) return true
 
       const haystack = [
@@ -1263,6 +1266,8 @@ export default function AdminLeadsPage() {
       const created = mapLeadRow(data as unknown as LeadRow)
       setLeads((rows) => [created, ...rows])
       setSelectedLead(created)
+      setActiveFilter(defaultLeadFilterForSource(sourceFromLead(created)) as FilterKey)
+      setCurrentPage(1)
       setNewLeadOpen(false)
       resetLeadForm()
     } catch (error) {
@@ -1371,7 +1376,7 @@ export default function AdminLeadsPage() {
       setImportRows([])
       setImportFileName('')
       setImportSourceMode('auto')
-      setActiveFilter('finance')
+      setActiveFilter(imported[0] ? defaultLeadFilterForSource(sourceFromLead(imported[0])) as FilterKey : 'open')
       setCurrentPage(1)
     } catch (error) {
       console.error('Error importing leads:', error)
@@ -2093,8 +2098,9 @@ function LeadFormModal({
               <label className="block">
                 <span className="text-xs font-semibold text-slate-600">Source</span>
                 <select value={draft.source} onChange={(event) => setField('source', event.target.value)} className="mt-1 h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-800 outline-none focus:border-[#1EA7FF]/50 focus:ring-2 focus:ring-[#1EA7FF]/20">
-                  <option value="contact">Contact</option>
-                  <option value="finance">Finance</option>
+                  <option value="website">EASYDRIVE CANADA - WEBSITE</option>
+                  <option value="finance">EASYDRIVE FINANCE - LANDING PAGE</option>
+                  <option value="facebook">MANUAL ENTRY - FB LEAD FORM</option>
                   <option value="insurance">Insurance</option>
                   <option value="unknown">Other</option>
                 </select>
@@ -2273,12 +2279,14 @@ function LeadImportModal({
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <div className="text-sm font-semibold text-slate-900">Import source</div>
-                <p className="mt-1 text-xs leading-5 text-slate-500">Choose Finance or Insurance when the spreadsheet source is missing or unknown.</p>
+                <p className="mt-1 text-xs leading-5 text-slate-500">Choose a source when the spreadsheet source is missing or unknown.</p>
               </div>
               <div className="inline-flex rounded-xl border border-slate-200 bg-slate-50 p-1">
                 {([
                   ['auto', 'Auto'],
+                  ['website', 'Website'],
                   ['finance', 'Finance'],
+                  ['facebook', 'FB Form'],
                   ['insurance', 'Insurance'],
                 ] as Array<[ImportSourceMode, string]>).map(([mode, label]) => (
                   <button
@@ -3078,7 +3086,8 @@ const defaultLeadStatusLabel = (lead: Lead) => {
   const source = sourceFromLead(lead)
   if (source === 'finance') return 'New Credit App'
   if (source === 'insurance') return 'New Insurance Application'
-  if (source === 'contact') return 'New Contact Lead'
+  if (source === 'facebook') return 'New FB Lead'
+  if (source === 'website') return 'New Website Lead'
   return 'New Lead'
 }
 
@@ -3249,6 +3258,7 @@ function intentFallback(lead: Lead) {
   const source = sourceFromLead(lead)
   if (source === 'finance') return 'Finance application'
   if (source === 'insurance') return 'Insurance quote'
-  if (source === 'contact') return 'General inquiry'
+  if (source === 'facebook') return 'Facebook lead form'
+  if (source === 'website') return 'Website inquiry'
   return 'No vehicle interest'
 }

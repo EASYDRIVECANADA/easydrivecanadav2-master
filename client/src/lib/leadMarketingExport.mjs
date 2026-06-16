@@ -1,3 +1,8 @@
+import {
+  leadSourceFromMessage,
+  leadSourceLabel,
+} from './leadSource.mjs'
+
 const clean = (value) => String(value ?? '').trim()
 
 export const LEAD_MARKETING_EXPORT_COLUMNS = [
@@ -50,17 +55,15 @@ const findMessageValue = (rows, labels) => {
   return rows.find((row) => wanted.includes(row.label))?.value || ''
 }
 
-const titleCase = (value) =>
-  clean(value).replace(/\b\w/g, (char) => char.toUpperCase())
-
-const inferSource = (lead, rows) => {
-  const raw = clean(findMessageValue(rows, ['source', 'lead source', 'form source'])).toLowerCase()
-  const message = clean(lead?.message).toLowerCase()
-
-  if (raw.includes('insurance') || message.includes('license number')) return 'Insurance'
-  if (raw.includes('finance') || raw.includes('financing') || message.includes('credit')) return 'Finance'
-  if (raw.includes('contact')) return 'Contact'
-  return raw ? titleCase(raw) : 'Unknown'
+const inferSource = (lead) => {
+  return leadSourceLabel(leadSourceFromMessage({
+    message: lead?.message,
+    vehicleInterest: lead?.vehicleInterest,
+    employmentStatus: lead?.employmentStatus,
+    monthlyIncome: lead?.monthlyIncome,
+    downPayment: lead?.downPayment,
+    creditScore: lead?.creditScore,
+  }))
 }
 
 const formatDateTime = (value) => {
@@ -81,7 +84,7 @@ export const buildLeadMarketingExportRows = (leads = []) =>
       'Lead ID': clean(lead?.id),
       'Submitted at': formatDateTime(lead?.createdAt),
       'Submitted date': formatDate(lead?.createdAt),
-      Source: inferSource(lead, rows),
+      Source: inferSource(lead),
       'First name': clean(lead?.firstName),
       'Last name': clean(lead?.lastName),
       'Full name': fullName(lead),
