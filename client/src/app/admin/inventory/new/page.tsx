@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabaseClient'
 import { usePermissionVisibility } from '@/lib/permissions'
+import { recordSystemAuditEvent } from '@/lib/auditClient'
 import {
   CarFront,
   ClipboardList,
@@ -733,6 +734,14 @@ export default function NewVehiclePage() {
         setSaveModalTitle('Updated')
         setSaveModalMessage('Vehicle updated successfully.')
         setSaveModalOpen(true)
+        void recordSystemAuditEvent({
+          module: 'Inventory',
+          action: 'Updated',
+          summary: `Updated vehicle ${payload.year || ''} ${payload.make || ''} ${payload.model || ''}${payload.stock_number ? ` (${payload.stock_number})` : ''}.`.replace(/\s+/g, ' ').trim(),
+          record_type: 'vehicle',
+          record_id: dbVehicleId,
+          metadata: { stock_number: payload.stock_number, vin: payload.vin },
+        })
         return
       }
 
@@ -881,6 +890,14 @@ export default function NewVehiclePage() {
       setSaveModalMessage('Vehicle saved successfully.')
       setSaveModalOpen(true)
       setAllowNextTabs(true)
+      void recordSystemAuditEvent({
+        module: 'Inventory',
+        action: 'Created',
+        summary: `Created vehicle ${payload.year || ''} ${payload.make || ''} ${payload.model || ''}${payload.stock_number ? ` (${payload.stock_number})` : ''}.`.replace(/\s+/g, ' ').trim(),
+        record_type: 'vehicle',
+        record_id: rid,
+        metadata: { stock_number: payload.stock_number, vin: payload.vin },
+      })
       try {
         const snapshot = {
           activeTab: 'details',

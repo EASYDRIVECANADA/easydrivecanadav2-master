@@ -11,12 +11,19 @@ export const dynamic = 'force-dynamic'
 
 const baseUrl = (process.env.NEXT_PUBLIC_SUPABASE_URL || '').replace(/\/+$/, '')
 const apiKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || ''
 
 const hdrs = () => ({
   apikey: apiKey!,
   Authorization: `Bearer ${apiKey}`,
   'Content-Type': 'application/json',
   Prefer: 'return=representation',
+})
+
+const auditHdrs = () => ({
+  apikey: serviceKey,
+  Authorization: `Bearer ${serviceKey}`,
+  'Content-Type': 'application/json',
 })
 
 const numberOrZero = (value: unknown) => {
@@ -58,6 +65,37 @@ const requestIp = (request: Request, fallback?: unknown) =>
     ''
   ).trim()
 
+const textValue = (value: unknown) => String(value ?? '').trim()
+
+const insertSystemAuditEvent = async (payload: Record<string, unknown>) => {
+  if (!baseUrl || !serviceKey) return
+  try {
+    await fetch(`${baseUrl}/rest/v1/edc_audit_events`, {
+      method: 'POST',
+      headers: auditHdrs(),
+      body: JSON.stringify({
+        module: 'E-Signature',
+        action: textValue(payload.action) || 'Updated',
+        summary: textValue(payload.activity) || textValue(payload.action) || 'E-signature activity recorded.',
+        actor_name: textValue(payload.user_name),
+        actor_email: textValue(payload.user_email).toLowerCase(),
+        record_type: 'signature',
+        record_id: textValue(payload.signature_id),
+        ip_address: textValue(payload.ip_address),
+        user_agent: textValue(payload.user_agent),
+        metadata: {
+          deal_id: textValue(payload.deal_id),
+          recipient_id: textValue(payload.recipient_id),
+          status: textValue(payload.status),
+        },
+      }),
+      cache: 'no-store',
+    })
+  } catch {
+    // Do not block signing when global audit logging is unavailable.
+  }
+}
+
 const insertAuditEvent = async (payload: Record<string, unknown>) => {
   if (!baseUrl || !apiKey) return
   const res = await fetch(`${baseUrl}/rest/v1/edc_signature_events`, {
@@ -96,6 +134,8 @@ const insertAuditEvent = async (payload: Record<string, unknown>) => {
       }).catch(() => null)
     }
   }
+
+  await insertSystemAuditEvent(payload)
 }
 
 const getSiteOrigin = (request: Request) =>
@@ -282,7 +322,7 @@ export async function PATCH(
         .map((f) => {
           const filters = [
             `deal_id=eq.${encodeURIComponent(deal_id)}`,
-            `field_id=eq.${encodeURIComponent(f.id)}`,
+            `field_id=eq.${encodeURIComponent(String(f.id))}`,
           ]
           if (f.recipientIndex !== undefined && f.recipientIndex !== null) {
             filters.push(`recipient_index=eq.${encodeURIComponent(String(numberOrZero(f.recipientIndex)))}`)

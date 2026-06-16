@@ -5,10 +5,18 @@ export const revalidate = 0
 
 const baseUrl = (process.env.NEXT_PUBLIC_SUPABASE_URL || '').replace(/\/+$/, '')
 const apiKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || ''
 
 const headers = (prefer?: string) => ({
   apikey: apiKey!,
   Authorization: `Bearer ${apiKey}`,
+  'Content-Type': 'application/json',
+  ...(prefer ? { Prefer: prefer } : {}),
+})
+
+const serviceHeaders = (prefer?: string) => ({
+  apikey: serviceKey,
+  Authorization: `Bearer ${serviceKey}`,
   'Content-Type': 'application/json',
   ...(prefer ? { Prefer: prefer } : {}),
 })
@@ -46,6 +54,36 @@ const isMissingColumnError = (status: number, text: string) =>
     text.includes('PGRST204')
   )
 
+const insertSystemAuditEvent = async (payload: Record<string, unknown>) => {
+  if (!baseUrl || !serviceKey) return
+  try {
+    await fetch(`${baseUrl}/rest/v1/edc_audit_events`, {
+      method: 'POST',
+      headers: serviceHeaders(),
+      body: JSON.stringify({
+        module: 'E-Signature',
+        action: pickString(payload.action) || 'Updated',
+        summary: pickString(payload.activity) || pickString(payload.action) || 'E-signature activity recorded.',
+        actor_name: pickString(payload.user_name),
+        actor_email: pickString(payload.user_email).toLowerCase(),
+        record_type: 'signature',
+        record_id: pickString(payload.signature_id),
+        ip_address: pickString(payload.ip_address),
+        user_agent: pickString(payload.user_agent),
+        metadata: {
+          deal_id: pickString(payload.deal_id),
+          recipient_id: pickString(payload.recipient_id),
+          recipient_index: payload.recipient_index,
+          status: pickString(payload.status),
+        },
+      }),
+      cache: 'no-store',
+    })
+  } catch {
+    // Global audit logging should not block the e-signature audit flow.
+  }
+}
+
 /**
  * GET /api/esignature/events?signature_id=xxx
  * Returns all events for a given signature (primary + siblings share the same signature_id).
@@ -80,8 +118,8 @@ export async function GET(req: Request) {
 
     const rows = await res.json().catch(() => [])
     return NextResponse.json(Array.isArray(rows) ? rows : [])
-  } catch (err: any) {
-    return NextResponse.json({ error: err?.message || 'Failed' }, { status: 500 })
+  } catch (err: unknown) {
+    return NextResponse.json({ error: err instanceof Error ? err.message : 'Failed' }, { status: 500 })
   }
 }
 
@@ -155,8 +193,9 @@ export async function POST(req: Request) {
     }
 
     const rows = await res.json().catch(() => [])
+    await insertSystemAuditEvent(payload)
     return NextResponse.json(Array.isArray(rows) ? rows[0] : rows)
-  } catch (err: any) {
-    return NextResponse.json({ error: err?.message || 'Failed' }, { status: 500 })
+  } catch (err: unknown) {
+    return NextResponse.json({ error: err instanceof Error ? err.message : 'Failed' }, { status: 500 })
   }
 }

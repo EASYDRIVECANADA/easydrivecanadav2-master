@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
+import { recordSystemAuditEvent } from '@/lib/auditClient'
 
 type AdminUserRow = {
   id: string
@@ -286,6 +287,14 @@ export default function SettingsUsersPage() {
         closeNewUser()
         setUserAddedMessage('User information updated')
         setUserAddedOpen(true)
+        void recordSystemAuditEvent({
+          module: 'Users',
+          action: 'Updated',
+          summary: `Updated user ${email}.`,
+          record_type: 'user',
+          record_id: editingUserId,
+          metadata: { email },
+        })
         return
       }
 
@@ -386,6 +395,14 @@ export default function SettingsUsersPage() {
       closeNewUser()
       setUserAddedMessage('User information added')
       setUserAddedOpen(true)
+      void recordSystemAuditEvent({
+        module: 'Users',
+        action: 'Created',
+        summary: `Created user ${email}.`,
+        record_type: 'user',
+        record_id: String(payload.email || email || ''),
+        metadata: { email: payload.email, title: payload.title },
+      })
 
       try {
         const insertRow: any = {
@@ -630,6 +647,14 @@ export default function SettingsUsersPage() {
       const { error } = await supabase.from('users').delete().eq('id', id).eq('user_id', scopedUserId)
       if (error) return
       setRows((prev) => prev.filter((r) => r.id !== id))
+      void recordSystemAuditEvent({
+        module: 'Users',
+        action: 'Deleted',
+        summary: `Deleted user ${email}.`,
+        record_type: 'user',
+        record_id: id,
+        metadata: { email },
+      })
     } catch {
       // ignore
     }

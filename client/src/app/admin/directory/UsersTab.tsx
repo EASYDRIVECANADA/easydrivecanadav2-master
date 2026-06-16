@@ -3,6 +3,7 @@
 import { useEffect, useState, useMemo, forwardRef, useImperativeHandle } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { DIRECTORY_ACCOUNT_FILTERS, getDirectoryAccountType } from '@/lib/directoryAccountType.mjs'
+import { recordSystemAuditEvent } from '@/lib/auditClient'
 
 type UserRow = {
   id: string
@@ -235,6 +236,14 @@ const UsersTab = forwardRef<UsersTabHandle>(function UsersTab(_, ref) {
       if (updateError) throw updateError
       await fetchUsers()
       setEditingId(null)
+      void recordSystemAuditEvent({
+        module: 'Users',
+        action: 'Updated',
+        summary: `Updated user ${editForm.email || editingId}.`,
+        record_type: 'user',
+        record_id: editingId,
+        metadata: { email: editForm.email },
+      })
     } catch (e: any) {
       alert(e?.message || 'Failed to save')
     } finally {
@@ -248,6 +257,13 @@ const UsersTab = forwardRef<UsersTabHandle>(function UsersTab(_, ref) {
       const { error: delError } = await supabase.from('users').delete().eq('id', id)
       if (delError) throw delError
       await fetchUsers()
+      void recordSystemAuditEvent({
+        module: 'Users',
+        action: 'Deleted',
+        summary: `Deleted user ${id}.`,
+        record_type: 'user',
+        record_id: id,
+      })
     } catch (e: any) {
       alert(e?.message || 'Failed to delete')
     }
@@ -272,6 +288,14 @@ const UsersTab = forwardRef<UsersTabHandle>(function UsersTab(_, ref) {
       if (insertError) throw insertError
       await fetchUsers()
       setShowAddModal(false)
+      void recordSystemAuditEvent({
+        module: 'Users',
+        action: 'Created',
+        summary: `Created user ${addForm.email.trim().toLowerCase()}.`,
+        record_type: 'user',
+        record_id: addForm.email.trim().toLowerCase(),
+        metadata: { email: addForm.email.trim().toLowerCase(), role: addForm.role || 'Private' },
+      })
     } catch (e: any) {
       setAddError(e?.message || 'Failed to create employee')
     } finally {

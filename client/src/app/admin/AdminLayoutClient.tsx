@@ -263,7 +263,7 @@ export default function AdminLayoutClient({ children }: { children: ReactNode })
       { href: '/admin/inventory', label: 'Inventory', icon: 'car', disabled: !isVerified, visible: canShow('inventory') },
       { href: '/admin/sales', label: 'Sales', icon: 'dollar', disabled: false, visible: canShow('sales') || canShow('access_all_deals') },
       { href: '/admin/esignature', label: 'E-Signature', icon: 'pen', disabled: !isVerified, visible: true },
-      { href: '/admin/reports', label: 'Reports', icon: 'file', disabled: !isVerified, visible: canShow('sales_reports_access') || canShow('inventory_reports_access') },
+      { href: '/admin/reports', label: 'Reports', icon: 'file', disabled: !isVerified, visible: canShow('sales_reports_access') || canShow('inventory_reports_access') || canShow('settings') },
       { href: '/admin/billing', label: 'Billing', icon: 'billing', disabled: !isVerified, visible: canShow('settings') },
     ]
 
@@ -309,6 +309,13 @@ export default function AdminLayoutClient({ children }: { children: ReactNode })
       }
       return permissionVisibility.canShow('inventory_reports_access')
     }),
+    [permissionVisibility.canShow]
+  )
+
+  const reportsSystemItems = useMemo(
+    () => [
+      { href: '/admin/reports/audit-trail', label: 'Audit Trail' },
+    ].filter(() => permissionVisibility.canShow('settings')),
     [permissionVisibility.canShow]
   )
 
@@ -550,6 +557,34 @@ export default function AdminLayoutClient({ children }: { children: ReactNode })
                                   </ul>
                                 ) : null}
                               </li>
+
+                              {reportsSystemItems.length > 0 ? (
+                                <li>
+                                  <ul className="mt-1 space-y-0.5">
+                                    {reportsSystemItems.map((sub) => {
+                                      const subActive = pathname === sub.href
+                                      const subClasses = subActive
+                                        ? 'flex items-center justify-between px-3 py-1.5 rounded-lg text-[13px] bg-cyan-500/10 text-cyan-400 transition-all duration-200'
+                                        : 'flex items-center justify-between px-3 py-1.5 rounded-lg text-[13px] text-white/55 hover:bg-white/[.05] hover:text-white/85 transition-all duration-200'
+
+                                      return (
+                                        <li key={sub.label}>
+                                          <Link
+                                            href={sub.href}
+                                            className={subClasses}
+                                            title={sub.label}
+                                          >
+                                            <span className="flex items-center gap-2">
+                                              <Icon name="file" />
+                                              <span>{sub.label}</span>
+                                            </span>
+                                          </Link>
+                                        </li>
+                                      )
+                                    })}
+                                  </ul>
+                                </li>
+                              ) : null}
 
                               <li>
                                 <button

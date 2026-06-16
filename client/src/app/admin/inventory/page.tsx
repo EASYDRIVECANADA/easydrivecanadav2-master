@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabaseClient'
 import { usePermissionVisibility } from '@/lib/permissions'
+import { recordSystemAuditEvent } from '@/lib/auditClient'
 import {
   scoreInventoryReadiness,
   vehicleMatchesSearch,
@@ -1222,6 +1223,14 @@ export default function AdminInventoryPage() {
       })
       if (drawerVehicle?.id === vehicle.id) closeDrawer()
 
+      void recordSystemAuditEvent({
+        module: 'Inventory',
+        action: 'Deleted',
+        summary: `Deleted vehicle ${vehicle.year || ''} ${vehicle.make || ''} ${vehicle.model || ''}${vehicle.stockNumber ? ` (${vehicle.stockNumber})` : ''}.`.replace(/\s+/g, ' ').trim(),
+        record_type: 'vehicle',
+        record_id: vehicle.id,
+        metadata: { stock_number: vehicle.stockNumber, vin: vehicle.vin },
+      })
       return true
     } catch (error) {
       console.error('Error deleting vehicle:', error)

@@ -11,6 +11,7 @@ import { renderCreditConsentPdf } from './creditConsentPdf'
 import type { CreditForm, CustomerForm, CustomerRow } from './types'
 import { supabase } from '@/lib/supabaseClient'
 import { usePermissionVisibility } from '@/lib/permissions'
+import { recordSystemAuditEvent } from '@/lib/auditClient'
 
 export default function AdminCostumerPage() {
   const searchParams = useSearchParams()
@@ -557,6 +558,13 @@ export default function AdminCostumerPage() {
         setShowCreate(false)
         setEditingId(null)
       }
+      void recordSystemAuditEvent({
+        module: 'Customers',
+        action: 'Deleted',
+        summary: `Deleted customer ${id}.`,
+        record_type: 'customer',
+        record_id: id,
+      })
     } catch (err) {
       setSaveErrorMessage(`Failed to delete: ${err instanceof Error ? err.message : String(err)}`)
       setSaveErrorOpen(true)
@@ -584,6 +592,14 @@ export default function AdminCostumerPage() {
         setShowCreate(false)
         setEditingId(null)
       }
+      void recordSystemAuditEvent({
+        module: 'Customers',
+        action: 'Deleted',
+        summary: `Deleted ${ids.length} customer${ids.length === 1 ? '' : 's'}.`,
+        record_type: 'customer',
+        record_id: ids.join(','),
+        metadata: { ids },
+      })
     } catch (err) {
       setSaveErrorMessage(`Failed to delete: ${err instanceof Error ? err.message : String(err)}`)
       setSaveErrorOpen(true)
@@ -600,6 +616,7 @@ export default function AdminCostumerPage() {
     setSaving(true)
     try {
       const operation = isCreate ? 'create' : 'edit'
+      const wasCreate = isCreate
 
       const user_id = await getWebhookUserId().catch(() => null)
       if (!user_id) throw new Error('Missing user')
@@ -697,6 +714,13 @@ export default function AdminCostumerPage() {
       setSaveSuccessMessage('Customer information saved successfully')
       setSaveSuccessOpen(true)
       setLastSavedTab('customer')
+      void recordSystemAuditEvent({
+        module: 'Customers',
+        action: wasCreate ? 'Created' : 'Updated',
+        summary: `${wasCreate ? 'Created' : 'Updated'} customer ${[form.firstName, form.lastName].filter(Boolean).join(' ') || form.email || createdId || editingId || ''}.`,
+        record_type: 'customer',
+        record_id: createdId ?? editingId ?? '',
+      })
       return createdId ?? editingId ?? null
     } catch (err) {
       setSaveErrorMessage(err instanceof Error ? err.message : String(err))
@@ -757,6 +781,13 @@ export default function AdminCostumerPage() {
       setSaveSuccessMessage('Credit app saved successfully')
       setSaveSuccessOpen(true)
       setLastSavedTab('credit')
+      void recordSystemAuditEvent({
+        module: 'Customers',
+        action: creditAppExists ? 'Updated' : 'Created',
+        summary: `${creditAppExists ? 'Updated' : 'Created'} credit application for customer ${customerId}.`,
+        record_type: 'credit_app',
+        record_id: customerId,
+      })
     } catch (err) {
       setSaveErrorMessage(err instanceof Error ? err.message : String(err))
       setSaveErrorOpen(true)

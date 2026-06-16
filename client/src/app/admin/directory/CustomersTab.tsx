@@ -6,6 +6,7 @@ import CustomerInformationTab from '../customer/CustomerInformationTab'
 import CreditAppTab from '../customer/CreditAppTab'
 import HistoryTab from '../customer/HistoryTab'
 import type { CustomerForm, CreditForm } from '../customer/types'
+import { recordSystemAuditEvent } from '@/lib/auditClient'
 
 type CustomerRow = {
   id: string
@@ -313,6 +314,13 @@ export default function CustomersTab() {
           body: JSON.stringify(payload),
         })
         await fetchCustomers()
+        void recordSystemAuditEvent({
+          module: 'Customers',
+          action: 'Updated',
+          summary: `Updated customer ${[form.firstName, form.lastName].filter(Boolean).join(' ') || form.email || editingId}.`,
+          record_type: 'customer',
+          record_id: editingId,
+        })
       } else if (activeTab === 'credit') {
         const toNulls = (obj: Record<string, unknown>) => {
           const out: Record<string, unknown> = {}
@@ -328,6 +336,13 @@ export default function CustomersTab() {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(creditPayload),
+        })
+        void recordSystemAuditEvent({
+          module: 'Customers',
+          action: 'Updated',
+          summary: `Updated credit application for customer ${editingId}.`,
+          record_type: 'credit_app',
+          record_id: editingId,
         })
       }
       setEditingId(null)
@@ -345,6 +360,13 @@ export default function CustomersTab() {
       const { error: delError } = await supabase.from('edc_customer').delete().eq('id', id)
       if (delError) throw delError
       await fetchCustomers()
+      void recordSystemAuditEvent({
+        module: 'Customers',
+        action: 'Deleted',
+        summary: `Deleted customer ${id}.`,
+        record_type: 'customer',
+        record_id: id,
+      })
     } catch (e: any) {
       alert(e?.message || 'Failed to delete')
     }

@@ -22,6 +22,7 @@ import {
   X,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
+import { recordSystemAuditEvent } from '@/lib/auditClient'
 import {
   buildLeadMarketingExportRows,
   buildLeadMarketingSummaryRows,
@@ -1034,6 +1035,14 @@ export default function AdminLeadsPage() {
       setLeads((rows) => rows.map((row) => (row.id === lead.id ? { ...row, ...localUpdate } : row)))
       setSelectedLead((current) => (current?.id === lead.id ? { ...current, ...localUpdate } : current))
       setNotesDraft('')
+      void recordSystemAuditEvent({
+        module: 'Leads',
+        action: 'Note Added',
+        summary: `Added an internal note for ${[lead.firstName, lead.lastName].filter(Boolean).join(' ') || lead.email || lead.id}.`,
+        actor_email: actorEmail,
+        record_type: 'lead',
+        record_id: lead.id,
+      })
     } catch (error) {
       console.error('Error saving lead notes:', error)
       setNotesSaveError('Unable to save notes. Check that admin_notes exists on edc_leads.')
@@ -1071,6 +1080,14 @@ export default function AdminLeadsPage() {
       setSelectedLead((current) => (current?.id === lead.id ? { ...current, ...localUpdate } : current))
       setNotesModalLead((current) => (current?.id === lead.id ? { ...current, ...localUpdate } : current))
       setTableNotesDraft('')
+      void recordSystemAuditEvent({
+        module: 'Leads',
+        action: 'Note Added',
+        summary: `Added an internal note for ${[lead.firstName, lead.lastName].filter(Boolean).join(' ') || lead.email || lead.id}.`,
+        actor_email: actorEmail,
+        record_type: 'lead',
+        record_id: lead.id,
+      })
     } catch (error) {
       console.error('Error saving lead notes:', error)
       setTableNotesError('Unable to save notes. Check that admin_notes exists on edc_leads.')
@@ -1108,6 +1125,13 @@ export default function AdminLeadsPage() {
       setSelectedLead((current) => (current?.id === lead.id ? { ...current, ...localUpdate } : current))
       setNotesModalLead((current) => (current?.id === lead.id ? { ...current, ...localUpdate } : current))
       setStatusModalLead((current) => (current?.id === lead.id ? { ...current, ...localUpdate } : current))
+      void recordSystemAuditEvent({
+        module: 'Leads',
+        action: 'Updated',
+        summary: `Updated marketing notes for ${[lead.firstName, lead.lastName].filter(Boolean).join(' ') || lead.email || lead.id}.`,
+        record_type: 'lead',
+        record_id: lead.id,
+      })
     } catch (error) {
       console.error('Error saving lead marketing notes:', error)
       setMarketingNotesSaveError('Unable to save marketing notes. Check that marketing_notes exists on edc_leads.')
@@ -1147,6 +1171,15 @@ export default function AdminLeadsPage() {
       setSelectedLead((current) => (current?.id === lead.id ? { ...current, ...localUpdate } : current))
       setNotesModalLead((current) => (current?.id === lead.id ? { ...current, ...localUpdate } : current))
       setStatusModalLead((current) => (current?.id === lead.id ? { ...current, ...localUpdate } : current))
+      void recordSystemAuditEvent({
+        module: 'Leads',
+        action: 'Status Updated',
+        summary: `Updated lead status from ${lead.managerStatus || 'cleared'} to ${status || 'cleared'} for ${[lead.firstName, lead.lastName].filter(Boolean).join(' ') || lead.email || lead.id}.`,
+        actor_email: actorEmail,
+        record_type: 'lead',
+        record_id: lead.id,
+        metadata: { from: lead.managerStatus || null, to: status || null },
+      })
     } catch (error) {
       console.error('Error saving lead status:', error)
       setStatusSaveError('Unable to update status. Check that manager_status exists on edc_leads.')

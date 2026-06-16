@@ -53,6 +53,17 @@ export default function ReportsHomePage() {
               </Link>
             </div>
           </div>
+
+          <div className="edc-card p-5">
+            <div className="text-sm font-semibold text-slate-800">System Reports</div>
+            <div className="text-xs text-slate-500 mt-1">Administrative activity and system changes</div>
+            <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <Link href="/admin/reports/audit-trail" className="border border-slate-200/60 rounded-xl px-4 py-3 hover:bg-slate-50 transition-colors">
+                <div className="text-sm font-semibold text-slate-800">Audit Trail</div>
+                <div className="text-xs text-slate-500">System event log</div>
+              </Link>
+            </div>
+          </div>
         </div>
       </div>
     </div>
