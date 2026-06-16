@@ -42,6 +42,18 @@ test('parseFleetInventoryRows uses EVN as the imported description', () => {
   assert.equal(result.vehicles[0].equipment, '2024 Mercedes-Benz Sprinter 2500 High Roof 4-Cyl Diesel split swing-out Cargo Van diesel 170" WB 2.0L I4 Turbo RWD Blind Spot Assist')
 })
 
+test('parseFleetInventoryRows accepts common alternate price headers', () => {
+  const rows = [
+    ['Location', 'Unit ID', 'Year', 'Make', 'Model', 'Kilometers', 'VIN', 'Selling Price', 'Equip'],
+    ['Ottawa', 'FLEET-004', '2022', 'Ford', 'Transit', '36000', '1FTBW2CM1NKA12345', '$31,995', 'Cargo Van'],
+  ]
+
+  const result = parseFleetInventoryRows(rows)
+
+  assert.equal(result.vehicles.length, 1)
+  assert.equal(result.vehicles[0].price, 31995)
+})
+
 test('applyFleetPriceMarkup adds 4000 per imported unit', () => {
   assert.equal(applyFleetPriceMarkup(36500), 40500)
 })

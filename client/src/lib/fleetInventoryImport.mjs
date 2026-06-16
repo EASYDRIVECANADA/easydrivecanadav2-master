@@ -50,7 +50,18 @@ export function parseFleetInventoryRows(rows) {
     mileage: indexOf('Kilometers', 'Kilometres', 'Mileage', 'Odometer'),
     exteriorColor: indexOf('Ext Color', 'Exterior Color', 'Colour', 'Color'),
     vin: indexOf('VIN'),
-    price: indexOf('Price', 'List Price'),
+    price: indexOf(
+      'Price',
+      'List Price',
+      'Selling Price',
+      'Sale Price',
+      'Retail Price',
+      'Advertised Price',
+      'Internet Price',
+      'Price CAD',
+      'Price CDN',
+      'MSRP'
+    ),
     equipment: indexOf('Equip', 'Equipment'),
     evn: indexOf('EVN'),
   }
