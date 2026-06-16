@@ -29,6 +29,10 @@ import {
   leadMarketingRowsToAoa,
 } from '@/lib/leadMarketingExport.mjs'
 import {
+  buildLeadDetailDraft,
+  buildLeadDetailUpdate,
+} from '@/lib/leadDetailUpdate.mjs'
+import {
   defaultLeadFilterForSource,
   LEAD_LIST_FILTERS,
   matchesLeadListFilter,
@@ -127,12 +131,34 @@ type LeadDraft = {
   createdAt: string
 }
 
+type LeadDetailDraft = Pick<
+  LeadDraft,
+  | 'firstName'
+  | 'lastName'
+  | 'email'
+  | 'phone'
+  | 'source'
+  | 'createdAt'
+  | 'vehicleInterest'
+  | 'employmentStatus'
+  | 'monthlyIncome'
+  | 'downPayment'
+  | 'creditScore'
+>
+
 type CsvMessageField = {
   label: string
   aliases: string[]
 }
 
 const FILTERS = LEAD_LIST_FILTERS as Array<{ key: FilterKey; label: string }>
+const LEAD_SOURCE_OPTIONS: Array<{ key: LeadDraftSource; label: string }> = [
+  { key: 'website', label: 'EASYDRIVE CANADA - WEBSITE' },
+  { key: 'finance', label: 'EASYDRIVE FINANCE - LANDING PAGE' },
+  { key: 'facebook', label: 'FB LEAD FORM' },
+  { key: 'insurance', label: 'Insurance' },
+  { key: 'unknown', label: 'Other' },
+]
 
 const BASE_LEAD_SELECT = 'id, first_name, last_name, email, phone, vehicle_interest, message, employment_status, monthly_income, down_payment, credit_score, ghl_synced, created_at'
 const MANAGER_STATUSES = LEAD_MANAGER_STATUSES as LeadManagerStatus[]
@@ -672,6 +698,9 @@ export default function AdminLeadsPage() {
   const [marketingNotesEnabled, setMarketingNotesEnabled] = useState(true)
   const [marketingNotesSaveError, setMarketingNotesSaveError] = useState('')
   const [marketingExportError, setMarketingExportError] = useState('')
+  const [leadDetailDraft, setLeadDetailDraft] = useState<LeadDetailDraft | null>(null)
+  const [savingLeadDetails, setSavingLeadDetails] = useState(false)
+  const [leadDetailsSaveError, setLeadDetailsSaveError] = useState('')
   const [notesModalLead, setNotesModalLead] = useState<Lead | null>(null)
   const [tableNotesDraft, setTableNotesDraft] = useState('')
   const [savingTableNotes, setSavingTableNotes] = useState(false)
@@ -901,7 +930,9 @@ export default function AdminLeadsPage() {
     setNotesSaveError('')
     setMarketingNotesSaveError('')
     setFinanceManagerSaveError('')
-  }, [selectedLead?.id, selectedLead?.adminNotes, selectedLead?.marketingNotes])
+    setLeadDetailDraft(selectedLead ? buildLeadDetailDraft(selectedLead) as LeadDetailDraft : null)
+    setLeadDetailsSaveError('')
+  }, [selectedLead])
 
   useEffect(() => {
     setTableNotesDraft('')
@@ -1140,6 +1171,59 @@ export default function AdminLeadsPage() {
       setMarketingNotesSaveError('Unable to save marketing notes. Check that marketing_notes exists on edc_leads.')
     } finally {
       setSavingMarketingNotes(false)
+    }
+  }
+
+  const setLeadDetailField = (field: keyof LeadDetailDraft, value: string) => {
+    setLeadDetailDraft((current) => (current ? { ...current, [field]: value } : current))
+  }
+
+  const handleSaveLeadDetails = async (lead: Lead) => {
+    if (!leadDetailDraft) return
+
+    const actor = readAdminSessionEmail() || adminEmail
+    const update = buildLeadDetailUpdate(lead, leadDetailDraft, {
+      notesEnabled,
+      actor,
+    })
+
+    if (!update.hasChanges) {
+      setLeadDetailsSaveError('No changes to save.')
+      return
+    }
+
+    setSavingLeadDetails(true)
+    setLeadDetailsSaveError('')
+
+    try {
+      const { error } = await supabase
+        .from('edc_leads')
+        .update(update.payload)
+        .eq('id', lead.id)
+
+      if (error) throw error
+
+      const localUpdate = update.localUpdate as Partial<Lead>
+      const updatedLead = { ...lead, ...localUpdate }
+      setLeads((rows) => rows.map((row) => (row.id === lead.id ? { ...row, ...localUpdate } : row)))
+      setSelectedLead((current) => (current?.id === lead.id ? { ...current, ...localUpdate } : current))
+      setNotesModalLead((current) => (current?.id === lead.id ? { ...current, ...localUpdate } : current))
+      setStatusModalLead((current) => (current?.id === lead.id ? { ...current, ...localUpdate } : current))
+      setLeadDetailDraft(buildLeadDetailDraft(updatedLead) as LeadDetailDraft)
+      setActiveFilter(defaultLeadFilterForSource(sourceFromLead(updatedLead)) as FilterKey)
+      setCurrentPage(1)
+      void recordSystemAuditEvent({
+        module: 'Leads',
+        action: 'Updated',
+        summary: `Updated lead details for ${[updatedLead.firstName, updatedLead.lastName].filter(Boolean).join(' ') || updatedLead.email || lead.id}.`,
+        record_type: 'lead',
+        record_id: lead.id,
+      })
+    } catch (error) {
+      console.error('Error saving lead details:', error)
+      setLeadDetailsSaveError('Unable to save lead details. Check the fields and try again.')
+    } finally {
+      setSavingLeadDetails(false)
     }
   }
 
@@ -1631,6 +1715,11 @@ export default function AdminLeadsPage() {
             <LeadDetailPanel
               lead={selectedLead}
               fields={selectedLeadFields}
+              detailDraft={leadDetailDraft}
+              onDetailFieldChange={setLeadDetailField}
+              onSaveDetails={handleSaveLeadDetails}
+              savingDetails={savingLeadDetails}
+              detailsSaveError={leadDetailsSaveError}
               onClose={() => setSelectedLead(null)}
               onDelete={handleDelete}
               canDelete={canDeleteLeads}
@@ -2098,11 +2187,9 @@ function LeadFormModal({
               <label className="block">
                 <span className="text-xs font-semibold text-slate-600">Source</span>
                 <select value={draft.source} onChange={(event) => setField('source', event.target.value)} className="mt-1 h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-800 outline-none focus:border-[#1EA7FF]/50 focus:ring-2 focus:ring-[#1EA7FF]/20">
-                  <option value="website">EASYDRIVE CANADA - WEBSITE</option>
-                  <option value="finance">EASYDRIVE FINANCE - LANDING PAGE</option>
-                  <option value="facebook">MANUAL ENTRY - FB LEAD FORM</option>
-                  <option value="insurance">Insurance</option>
-                  <option value="unknown">Other</option>
+                  {LEAD_SOURCE_OPTIONS.map((option) => (
+                    <option key={option.key} value={option.key}>{option.label}</option>
+                  ))}
                 </select>
               </label>
               <LeadInput label="Received date" value={draft.createdAt} type="date" onChange={(value) => setField('createdAt', value)} />
@@ -2553,6 +2640,11 @@ function ModalFrame({ children, maxWidth, onClose }: { children: ReactNode; maxW
 function LeadDetailPanel({
   lead,
   fields,
+  detailDraft,
+  onDetailFieldChange,
+  onSaveDetails,
+  savingDetails,
+  detailsSaveError,
   onClose,
   onDelete,
   canDelete,
@@ -2579,6 +2671,11 @@ function LeadDetailPanel({
 }: {
   lead: Lead
   fields: { rows: Array<{ label: string; value: string }>; notes: string[] }
+  detailDraft: LeadDetailDraft | null
+  onDetailFieldChange: (field: keyof LeadDetailDraft, value: string) => void
+  onSaveDetails: (lead: Lead) => void
+  savingDetails: boolean
+  detailsSaveError: string
   onClose: () => void
   onDelete: (lead: Lead) => void
   canDelete: boolean
@@ -2683,6 +2780,16 @@ function LeadDetailPanel({
               secondary={clean(lead.financeManager) || (financeManagerEnabled ? 'Not assigned' : 'Column not enabled')}
             />
           </div>
+
+          {detailDraft ? (
+            <EditableLeadDetailsSection
+              draft={detailDraft}
+              onChange={onDetailFieldChange}
+              onSave={() => onSaveDetails(lead)}
+              saving={savingDetails}
+              error={detailsSaveError}
+            />
+          ) : null}
 
           <div className="grid gap-5 lg:grid-cols-2">
             <DetailSection title="Contact" icon={UserRound}>
@@ -2827,6 +2934,71 @@ function LeadDetailPanel({
         </aside>
       </div>
     </div>
+  )
+}
+
+function EditableLeadDetailsSection({
+  draft,
+  onChange,
+  onSave,
+  saving,
+  error,
+}: {
+  draft: LeadDetailDraft
+  onChange: (field: keyof LeadDetailDraft, value: string) => void
+  onSave: () => void
+  saving: boolean
+  error: string
+}) {
+  return (
+    <DetailSection title="Editable lead details" icon={FileSpreadsheet}>
+      <div className="space-y-4 p-4">
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <LeadInput label="First name" value={draft.firstName} onChange={(value) => onChange('firstName', value)} />
+          <LeadInput label="Last name" value={draft.lastName} onChange={(value) => onChange('lastName', value)} />
+          <LeadInput label="Email" value={draft.email} type="email" onChange={(value) => onChange('email', value)} />
+          <LeadInput label="Phone" value={draft.phone} type="tel" onChange={(value) => onChange('phone', value)} />
+        </div>
+
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <label className="block">
+            <span className="text-xs font-semibold text-slate-600">Source</span>
+            <select
+              value={draft.source}
+              onChange={(event) => onChange('source', event.target.value)}
+              className="mt-1 h-10 w-full rounded-xl border border-slate-200 bg-slate-50/70 px-3 text-sm text-slate-800 outline-none transition focus:border-[#1EA7FF]/50 focus:bg-white focus:ring-2 focus:ring-[#1EA7FF]/20"
+            >
+              {LEAD_SOURCE_OPTIONS.map((option) => (
+                <option key={option.key} value={option.key}>{option.label}</option>
+              ))}
+            </select>
+          </label>
+          <LeadInput label="Received date" value={draft.createdAt} type="date" onChange={(value) => onChange('createdAt', value)} />
+          <LeadInput label="Employment" value={draft.employmentStatus} onChange={(value) => onChange('employmentStatus', value)} />
+          <LeadInput label="Monthly income" value={draft.monthlyIncome} inputMode="decimal" onChange={(value) => onChange('monthlyIncome', value)} />
+        </div>
+
+        <div className="grid gap-4 md:grid-cols-3">
+          <LeadInput label="Vehicle interest" value={draft.vehicleInterest} onChange={(value) => onChange('vehicleInterest', value)} />
+          <LeadInput label="Down payment" value={draft.downPayment} inputMode="decimal" onChange={(value) => onChange('downPayment', value)} />
+          <LeadInput label="Credit profile" value={draft.creditScore} onChange={(value) => onChange('creditScore', value)} />
+        </div>
+
+        <div className="flex flex-col gap-3 border-t border-slate-100 pt-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className={`text-xs ${error ? 'text-red-600' : 'text-slate-500'}`}>
+            {error || 'Saved changes are timestamped in the notes transcript when notes are enabled.'}
+          </div>
+          <button
+            type="button"
+            onClick={onSave}
+            disabled={saving}
+            className="edc-btn-primary h-10 px-4 text-xs disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {saving ? 'Saving...' : 'Save lead details'}
+          </button>
+        </div>
+      </div>
+    </DetailSection>
   )
 }
 
