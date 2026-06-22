@@ -29,6 +29,11 @@ import {
   leadMarketingRowsToAoa,
 } from '@/lib/leadMarketingExport.mjs'
 import {
+  buildCreditApplicationMessageRows,
+  emptyCreditApplicationDetails,
+  parseGetGoingCreditApplicationEmail,
+} from '@/lib/manualCreditApplication.mjs'
+import {
   buildLeadDetailDraft,
   buildLeadDetailUpdate,
 } from '@/lib/leadDetailUpdate.mjs'
@@ -105,6 +110,7 @@ type LeadQueryResult = {
 type FilterKey = 'open' | 'finance' | 'website' | 'facebook' | 'insurance' | 'synced'
 type SourceKey = 'website' | 'finance' | 'facebook' | 'insurance' | 'unknown'
 type LeadDraftSource = SourceKey
+type ManualEntryMode = 'basic' | 'credit'
 type ImportSourceMode = 'auto' | 'website' | 'finance' | 'facebook' | 'insurance'
 type LeadManagerStatus = string
 type AssignmentUser = {
@@ -113,11 +119,13 @@ type AssignmentUser = {
 }
 
 type LeadDraft = {
+  manualEntryMode: ManualEntryMode
   firstName: string
   lastName: string
   email: string
   phone: string
   source: LeadDraftSource
+  customSource: string
   vehicleInterest: string
   employmentStatus: string
   monthlyIncome: string
@@ -129,6 +137,8 @@ type LeadDraft = {
   managerStatus: LeadManagerStatus | ''
   financeManager: string
   createdAt: string
+  pastedApplication: string
+  applicationDetails: typeof emptyCreditApplicationDetails
 }
 
 type LeadDetailDraft = Pick<
@@ -138,6 +148,7 @@ type LeadDetailDraft = Pick<
   | 'email'
   | 'phone'
   | 'source'
+  | 'customSource'
   | 'createdAt'
   | 'vehicleInterest'
   | 'employmentStatus'
@@ -193,11 +204,13 @@ const readAdminSessionEmail = () => {
 }
 
 const emptyLeadDraft: LeadDraft = {
+  manualEntryMode: 'basic',
   firstName: '',
   lastName: '',
   email: '',
   phone: '',
   source: 'website',
+  customSource: '',
   vehicleInterest: '',
   employmentStatus: '',
   monthlyIncome: '',
@@ -209,6 +222,8 @@ const emptyLeadDraft: LeadDraft = {
   managerStatus: '',
   financeManager: '',
   createdAt: '',
+  pastedApplication: '',
+  applicationDetails: { ...emptyCreditApplicationDetails },
 }
 
 const parseMessageFields = (message: string | null) => {
@@ -454,8 +469,8 @@ const inferCityFromAddress = (address: string) => {
   return ''
 }
 
-const sourceMessageValue = (source: LeadDraftSource) => {
-  return leadSourceMessageValue(source)
+const sourceMessageValue = (source: LeadDraftSource, customSource = '') => {
+  return leadSourceMessageValue(source, customSource)
 }
 
 const buildMessage = (rows: Array<[string, unknown]>) =>
@@ -526,14 +541,30 @@ const buildImportMessage = (row: Record<string, unknown>, fallbackMessage: strin
 }
 
 const draftMessageForInsert = (draft: LeadDraft) => {
-  const sourceLine = `Source: ${sourceMessageValue(draft.source)}`
+  const sourceLine = `Source: ${clean(draft.applicationDetails.leadSource) || sourceMessageValue(draft.source, draft.customSource)}`
   const body = clean(draft.message)
-  if (!body) return sourceLine
+  const applicationRows = (draft.manualEntryMode === 'credit'
+    ? buildCreditApplicationMessageRows(draft.applicationDetails, {
+      vehicleInterest: draft.vehicleInterest,
+      employmentStatus: draft.employmentStatus,
+      monthlyIncome: draft.monthlyIncome,
+      downPayment: draft.downPayment,
+      creditScore: draft.creditScore,
+    })
+    : []) as Array<[string, unknown]>
+
+  const detailMessage = buildMessage([
+    ['Source', clean(draft.applicationDetails.leadSource) || sourceMessageValue(draft.source, draft.customSource)] as [string, unknown],
+    ...applicationRows,
+  ])
+
+  if (!body) return detailMessage || sourceLine
   if (body.toLowerCase().startsWith('source:')) return body
-  if (body.includes('\n') || /^([^:]+):\s*(.*)$/.test(body)) return `${sourceLine}\n${body}`
+  if (body.includes('\n') || /^([^:]+):\s*(.*)$/.test(body)) return [detailMessage || sourceLine, body].filter(Boolean).join('\n')
   return buildMessage([
-    ['Source', sourceMessageValue(draft.source)],
-    ['Message', body],
+    ['Source', clean(draft.applicationDetails.leadSource) || sourceMessageValue(draft.source, draft.customSource)] as [string, unknown],
+    ...applicationRows,
+    ['Message', body] as [string, unknown],
   ])
 }
 
@@ -1381,7 +1412,8 @@ export default function AdminLeadsPage() {
         .map((row) => {
           const fullName = pickImportValue(row, ['name', 'full name', 'customer', 'lead'])
           const splitName = splitFullName(fullName)
-          const source = normalizeImportSource(pickImportValue(row, ['source', 'lead source', 'type', 'category']))
+          const rawSource = pickImportValue(row, ['source', 'lead source', 'type', 'category'])
+          const source = normalizeImportSource(rawSource)
           const resolvedSource = source === 'unknown' ? inferImportSourceFromFileName(file.name) : source
           const monthlyIncome = pickImportValue(row, ['monthly income', 'income monthly', 'monthly_income']) ||
             (() => {
@@ -1391,11 +1423,13 @@ export default function AdminLeadsPage() {
           const fallbackMessage = pickImportValue(row, ['message', 'comments', 'comment', 'inquiry', 'details'])
 
           return {
+            manualEntryMode: 'basic',
             firstName: pickImportValue(row, ['first name', 'firstname', 'first_name']) || splitName.firstName,
             lastName: pickImportValue(row, ['last name', 'lastname', 'last_name']) || splitName.lastName,
             email: pickImportValue(row, ['email', 'email address', 'e-mail']),
             phone: pickImportValue(row, ['phone', 'phone number', 'mobile', 'cell', 'telephone']),
             source: resolvedSource === 'auto' ? 'unknown' : resolvedSource,
+            customSource: source === 'unknown' && resolvedSource === 'auto' ? rawSource : '',
             vehicleInterest: pickImportValue(row, ['vehicle interest', 'vehicle', 'car', 'vehicle_interest', 'interest']),
             employmentStatus: pickImportValue(row, ['employment', 'employment status', 'job status']),
             monthlyIncome,
@@ -1413,6 +1447,8 @@ export default function AdminLeadsPage() {
               ? normalizeLeadFinanceManagerTarget(pickImportValue(row, ['finance manager', 'assigned to', 'manager', 'owner'])) || ''
               : '',
             createdAt: pickImportValue(row, ['timestamp', 'date', 'created at', 'created_at', 'received', 'submitted', 'submitted at']),
+            pastedApplication: '',
+            applicationDetails: { ...emptyCreditApplicationDetails },
           } satisfies LeadDraft
         })
         .filter((row) => clean(row.firstName) || clean(row.lastName) || clean(row.email) || clean(row.phone) || clean(row.message))
@@ -1440,7 +1476,7 @@ export default function AdminLeadsPage() {
 
     try {
       const rowsToImport = importRows.map((row) => (
-        importSourceMode === 'auto' ? row : { ...row, source: importSourceMode }
+        importSourceMode === 'auto' ? row : { ...row, source: importSourceMode, customSource: '' }
       ))
       const inserts = rowsToImport.map((row) => rowToLeadInsert(row, notesEnabled, undefined, {
         statusEnabled: statusEnabled && canManageLeadAssignments,
@@ -2148,6 +2184,46 @@ function LeadFormModal({
   assignmentUsersLoading: boolean
 }) {
   const setField = (field: keyof LeadDraft, value: string) => onChange({ ...draft, [field]: value })
+  const setApplicationField = (field: keyof typeof emptyCreditApplicationDetails, value: string) => {
+    onChange({
+      ...draft,
+      applicationDetails: {
+        ...draft.applicationDetails,
+        [field]: value,
+      },
+    })
+  }
+  const setManualEntryMode = (mode: ManualEntryMode) => {
+    onChange({
+      ...draft,
+      manualEntryMode: mode,
+      source: mode === 'credit' ? 'finance' : draft.source,
+      managerStatus: mode === 'credit' && !draft.managerStatus ? 'New Credit App' : draft.managerStatus,
+    })
+  }
+  const applyPastedApplication = () => {
+    const parsed = parseGetGoingCreditApplicationEmail(draft.pastedApplication)
+    onChange({
+      ...draft,
+      manualEntryMode: 'credit',
+      source: 'finance',
+      firstName: parsed.firstName || draft.firstName,
+      lastName: parsed.lastName || draft.lastName,
+      email: parsed.email || draft.email,
+      phone: parsed.phone || draft.phone,
+      vehicleInterest: parsed.vehicleInterest || draft.vehicleInterest,
+      employmentStatus: parsed.employmentStatus || draft.employmentStatus,
+      monthlyIncome: parsed.monthlyIncome || draft.monthlyIncome,
+      managerStatus: draft.managerStatus || 'New Credit App',
+      applicationDetails: {
+        ...draft.applicationDetails,
+        ...Object.fromEntries(
+          Object.entries(parsed.applicationDetails).filter(([, value]) => clean(value))
+        ),
+      },
+    })
+  }
+  const isCreditApplicationMode = draft.manualEntryMode === 'credit'
 
   return (
     <ModalFrame maxWidth="max-w-4xl" onClose={onClose}>
@@ -2174,6 +2250,53 @@ function LeadFormModal({
           </div>
         </div>
 
+        <div className="border-b border-slate-200 bg-white px-5 py-4 sm:px-6">
+          <div className="inline-flex rounded-xl border border-slate-200 bg-slate-50 p-1">
+            {[
+              { key: 'basic', label: 'Basic lead' },
+              { key: 'credit', label: 'Credit application' },
+            ].map((option) => (
+              <button
+                key={option.key}
+                type="button"
+                onClick={() => setManualEntryMode(option.key as ManualEntryMode)}
+                className={
+                  draft.manualEntryMode === option.key
+                    ? 'h-8 rounded-lg bg-[#0B1F3A] px-3 text-xs font-semibold text-white shadow-sm'
+                    : 'h-8 rounded-lg px-3 text-xs font-semibold text-slate-600 transition-colors hover:bg-white'
+                }
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {isCreditApplicationMode ? (
+          <div className="border-b border-slate-200 bg-slate-50/60 px-5 py-4 sm:px-6">
+            <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
+              <label className="block">
+                <span className="text-xs font-semibold text-slate-600">Paste application email</span>
+                <textarea
+                  value={draft.pastedApplication}
+                  onChange={(event) => setField('pastedApplication', event.target.value)}
+                  rows={4}
+                  placeholder="Paste the full GetGoing / credit application email here, then extract details."
+                  className="mt-1 min-h-[96px] w-full resize-y rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none transition focus:border-[#1EA7FF]/50 focus:ring-2 focus:ring-[#1EA7FF]/20"
+                />
+              </label>
+              <button
+                type="button"
+                onClick={applyPastedApplication}
+                disabled={!clean(draft.pastedApplication)}
+                className="edc-btn-secondary h-10 px-4 text-xs disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Extract details
+              </button>
+            </div>
+          </div>
+        ) : null}
+
         <div className="grid gap-5 p-5 sm:p-6 lg:grid-cols-2">
           <div className="space-y-4">
             <div className="grid gap-4 sm:grid-cols-2">
@@ -2186,16 +2309,51 @@ function LeadFormModal({
             <div className="grid gap-4 sm:grid-cols-2">
               <label className="block">
                 <span className="text-xs font-semibold text-slate-600">Source</span>
-                <select value={draft.source} onChange={(event) => setField('source', event.target.value)} className="mt-1 h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-800 outline-none focus:border-[#1EA7FF]/50 focus:ring-2 focus:ring-[#1EA7FF]/20">
+                <select
+                  value={draft.source}
+                  onChange={(event) => {
+                    const source = event.target.value as LeadDraftSource
+                    onChange({ ...draft, source, customSource: source === 'unknown' ? draft.customSource : '' })
+                  }}
+                  className="mt-1 h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-800 outline-none focus:border-[#1EA7FF]/50 focus:ring-2 focus:ring-[#1EA7FF]/20"
+                >
                   {LEAD_SOURCE_OPTIONS.map((option) => (
                     <option key={option.key} value={option.key}>{option.label}</option>
                   ))}
                 </select>
               </label>
+              {draft.source === 'unknown' ? (
+                <LeadInput
+                  label="Other source"
+                  value={draft.customSource}
+                  placeholder="Referral, walk-in, phone up..."
+                  onChange={(value) => setField('customSource', value)}
+                />
+              ) : null}
               <LeadInput label="Received date" value={draft.createdAt} type="date" onChange={(value) => setField('createdAt', value)} />
             </div>
 
             <LeadInput label="Vehicle interest" value={draft.vehicleInterest} onChange={(value) => setField('vehicleInterest', value)} />
+
+            {isCreditApplicationMode ? (
+              <div className="space-y-4 rounded-xl border border-slate-200 bg-slate-50/60 p-4">
+                <div className="text-xs font-bold uppercase text-slate-500">Address</div>
+                <LeadInput label="Street address" value={draft.applicationDetails.streetAddress} onChange={(value) => setApplicationField('streetAddress', value)} />
+                <div className="grid gap-4 sm:grid-cols-3">
+                  <LeadInput label="City" value={draft.applicationDetails.city} onChange={(value) => setApplicationField('city', value)} />
+                  <LeadInput label="Province" value={draft.applicationDetails.province} onChange={(value) => setApplicationField('province', value)} />
+                  <LeadInput label="Postal code" value={draft.applicationDetails.postalCode} onChange={(value) => setApplicationField('postalCode', value)} />
+                </div>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <LeadInput label="Mobile phone" value={draft.applicationDetails.mobilePhone} type="tel" onChange={(value) => setApplicationField('mobilePhone', value)} />
+                  <LeadInput label="Home phone" value={draft.applicationDetails.homePhone} type="tel" onChange={(value) => setApplicationField('homePhone', value)} />
+                </div>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <LeadInput label="Birthday / DOB" value={draft.applicationDetails.dateOfBirth} onChange={(value) => setApplicationField('dateOfBirth', value)} />
+                  <LeadInput label="Lead source" value={draft.applicationDetails.leadSource} placeholder="firstnationfinancing.ca" onChange={(value) => setApplicationField('leadSource', value)} />
+                </div>
+              </div>
+            ) : null}
 
             <label className="block">
               <span className="text-xs font-semibold text-slate-600">Message</span>
@@ -2216,6 +2374,21 @@ function LeadFormModal({
               <LeadInput label="Monthly income" value={draft.monthlyIncome} inputMode="decimal" onChange={(value) => setField('monthlyIncome', value)} />
               <LeadInput label="Down payment" value={draft.downPayment} inputMode="decimal" onChange={(value) => setField('downPayment', value)} />
             </div>
+
+            {isCreditApplicationMode ? (
+              <div className="space-y-4 rounded-xl border border-slate-200 bg-slate-50/60 p-4">
+                <div className="text-xs font-bold uppercase text-slate-500">Credit application details</div>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <LeadInput label="Monthly budget" value={draft.applicationDetails.monthlyBudget} onChange={(value) => setApplicationField('monthlyBudget', value)} />
+                  <LeadInput label="Occupation" value={draft.applicationDetails.occupation} onChange={(value) => setApplicationField('occupation', value)} />
+                  <LeadInput label="Employer" value={draft.applicationDetails.employerName} onChange={(value) => setApplicationField('employerName', value)} />
+                  <LeadInput label="Employment duration (months)" value={draft.applicationDetails.employmentDuration} inputMode="numeric" onChange={(value) => setApplicationField('employmentDuration', value)} />
+                  <LeadInput label="Rent or own" value={draft.applicationDetails.housing} onChange={(value) => setApplicationField('housing', value)} />
+                  <LeadInput label="House monthly payment" value={draft.applicationDetails.housingPayment} inputMode="decimal" onChange={(value) => setApplicationField('housingPayment', value)} />
+                  <LeadInput label="Time at residence (months)" value={draft.applicationDetails.residenceDuration} inputMode="numeric" onChange={(value) => setApplicationField('residenceDuration', value)} />
+                </div>
+              </div>
+            ) : null}
 
             <label className="block">
               <span className="text-xs font-semibold text-slate-600">Internal notes</span>
@@ -2600,12 +2773,14 @@ function LeadInput({
   onChange,
   type = 'text',
   inputMode,
+  placeholder,
 }: {
   label: string
   value: string
   onChange: (value: string) => void
   type?: string
   inputMode?: HTMLAttributes<HTMLInputElement>['inputMode']
+  placeholder?: string
 }) {
   return (
     <label className="block">
@@ -2614,6 +2789,7 @@ function LeadInput({
         type={type}
         inputMode={inputMode}
         value={value}
+        placeholder={placeholder}
         onChange={(event) => onChange(event.target.value)}
         className="mt-1 h-10 w-full rounded-xl border border-slate-200 bg-slate-50/70 px-3 text-sm text-slate-800 outline-none transition focus:border-[#1EA7FF]/50 focus:bg-white focus:ring-2 focus:ring-[#1EA7FF]/20"
       />
@@ -2793,7 +2969,7 @@ function LeadDetailPanel({
 
           <div className="grid gap-5 lg:grid-cols-2">
             <DetailSection title="Contact" icon={UserRound}>
-              <div className="grid h-full grid-rows-3 divide-y divide-slate-100">
+              <div className="divide-y divide-slate-100">
                 <DetailRow label="Email" value={lead.email} href={lead.email ? `mailto:${lead.email}` : undefined} />
                 <DetailRow label="Phone" value={lead.phone} href={lead.phone ? `tel:${lead.phone}` : undefined} />
                 <DetailRow label="Received" value={formatDate(lead.createdAt)} />
@@ -2801,7 +2977,7 @@ function LeadDetailPanel({
             </DetailSection>
 
             <DetailSection title="Intent" icon={Car}>
-              <div className="grid h-full grid-rows-5 divide-y divide-slate-100">
+              <div className="divide-y divide-slate-100">
                 <DetailRow label={primaryIntentLabel} value={primaryIntent} />
                 <DetailRow label="Employment" value={lead.employmentStatus} />
                 <DetailRow label="Income" value={formatMoney(lead.monthlyIncome)} />
@@ -2965,7 +3141,11 @@ function EditableLeadDetailsSection({
             <span className="text-xs font-semibold text-slate-600">Source</span>
             <select
               value={draft.source}
-              onChange={(event) => onChange('source', event.target.value)}
+              onChange={(event) => {
+                const source = event.target.value as LeadDraftSource
+                onChange('source', source)
+                if (source !== 'unknown') onChange('customSource', '')
+              }}
               className="mt-1 h-10 w-full rounded-xl border border-slate-200 bg-slate-50/70 px-3 text-sm text-slate-800 outline-none transition focus:border-[#1EA7FF]/50 focus:bg-white focus:ring-2 focus:ring-[#1EA7FF]/20"
             >
               {LEAD_SOURCE_OPTIONS.map((option) => (
@@ -2973,6 +3153,14 @@ function EditableLeadDetailsSection({
               ))}
             </select>
           </label>
+          {draft.source === 'unknown' ? (
+            <LeadInput
+              label="Other source"
+              value={draft.customSource}
+              placeholder="Referral, walk-in, phone up..."
+              onChange={(value) => onChange('customSource', value)}
+            />
+          ) : null}
           <LeadInput label="Received date" value={draft.createdAt} type="date" onChange={(value) => onChange('createdAt', value)} />
           <LeadInput label="Employment" value={draft.employmentStatus} onChange={(value) => onChange('employmentStatus', value)} />
           <LeadInput label="Monthly income" value={draft.monthlyIncome} inputMode="decimal" onChange={(value) => onChange('monthlyIncome', value)} />
