@@ -36,10 +36,10 @@ DRIVETOWN_SYNC_DRY_RUN=0 node scripts/sync-drivetown.js
 
 ## Cron
 
-Run every six hours:
+Run every 48 hours at 3:00 AM server time:
 
 ```cron
-0 */6 * * * set -a && . /etc/easydrive/drivetown-sync.env && set +a && cd "$EDC_APP_DIR" && DRIVETOWN_SYNC_DRY_RUN=0 node scripts/sync-drivetown.js >> /var/log/easydrive-drivetown-sync.log 2>&1
+0 3 */2 * * set -a && . /etc/easydrive/drivetown-sync.env && set +a && cd "$EDC_APP_DIR" && DRIVETOWN_SYNC_DRY_RUN=0 node scripts/sync-drivetown.js >> /var/log/easydrive-drivetown-sync.log 2>&1
 ```
 
 ## Monitoring

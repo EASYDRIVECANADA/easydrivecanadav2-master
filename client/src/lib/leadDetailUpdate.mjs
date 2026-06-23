@@ -3,6 +3,7 @@ import {
   cleanLeadText,
 } from './leadWorkflow.mjs'
 import {
+  leadCustomSourceFromMessage,
   leadSourceFromMessage,
   leadSourceLabel,
   leadSourceMessageValue,
@@ -33,7 +34,11 @@ const sameValue = (left, right) => cleanLeadText(left) === cleanLeadText(right)
 
 const displayValue = (value) => cleanLeadText(value) || null
 
-const sourceDisplay = (source) => leadSourceLabel(source)
+const sourceDisplay = (source, customSource = '') => {
+  const custom = cleanLeadText(customSource)
+  if (source === 'unknown' && custom) return `Other: ${custom}`
+  return leadSourceLabel(source)
+}
 
 export const replaceLeadMessageSource = (message, sourceValue) => {
   const sourceLine = `Source: ${cleanLeadText(sourceValue)}`
@@ -60,6 +65,7 @@ export const buildLeadDetailDraft = (lead) => ({
   email: cleanLeadText(lead?.email).toLowerCase(),
   phone: cleanLeadText(lead?.phone),
   source: leadSourceFromMessage(lead),
+  customSource: leadCustomSourceFromMessage(lead),
   createdAt: dateInputValue(lead?.createdAt),
   vehicleInterest: cleanLeadText(lead?.vehicleInterest),
   employmentStatus: cleanLeadText(lead?.employmentStatus),
@@ -73,8 +79,10 @@ export const buildLeadDetailUpdate = (lead, draft, options = {}) => {
   const actor = cleanLeadText(options.actor)
   const timestamp = options.timestamp
   const currentSource = leadSourceFromMessage(lead)
+  const currentCustomSource = leadCustomSourceFromMessage(lead)
   const nextSource = cleanLeadText(draft?.source) || 'unknown'
-  const nextMessage = replaceLeadMessageSource(lead?.message, leadSourceMessageValue(nextSource))
+  const nextCustomSource = nextSource === 'unknown' ? cleanLeadText(draft?.customSource) : ''
+  const nextMessage = replaceLeadMessageSource(lead?.message, leadSourceMessageValue(nextSource, nextCustomSource))
   const nextCreatedAt = isoDateOrNull(draft?.createdAt)
 
   const nextValues = {
@@ -102,7 +110,7 @@ export const buildLeadDetailUpdate = (lead, draft, options = {}) => {
     ['Down payment', 'downPayment', 'down_payment', lead?.downPayment ?? null, nextValues.downPayment],
     ['Credit', 'creditScore', 'credit_score', displayValue(lead?.creditScore), nextValues.creditScore],
     ['Received date', 'createdAt', 'created_at', dateInputValue(lead?.createdAt), dateInputValue(nextValues.createdAt)],
-    ['Source', 'message', 'message', sourceDisplay(currentSource), sourceDisplay(nextSource)],
+    ['Source', 'message', 'message', sourceDisplay(currentSource, currentCustomSource), sourceDisplay(nextSource, nextCustomSource)],
   ]
 
   const payload = {}

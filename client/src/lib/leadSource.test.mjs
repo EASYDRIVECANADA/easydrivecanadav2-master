@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
 import {
+  leadCustomSourceFromMessage,
   leadSourceFromMessage,
   leadSourceLabel,
   leadSourceMessageValue,
@@ -39,4 +40,14 @@ test('normalizes common import source values to the Facebook lead form source', 
   assert.equal(normalizeLeadSourceInput('FB Lead Form'), 'facebook')
   assert.equal(normalizeLeadSourceInput('Facebook ad campaign'), 'facebook')
   assert.equal(leadSourceMessageValue('facebook'), 'Manual Entry - FB Lead Form')
+})
+
+test('keeps custom other source text available for lead editing', () => {
+  const lead = {
+    message: 'Source: Referral partner\nMessage: Called the dealership',
+  }
+
+  assert.equal(leadSourceFromMessage(lead), 'unknown')
+  assert.equal(leadCustomSourceFromMessage(lead), 'Referral partner')
+  assert.equal(leadSourceMessageValue('unknown', 'Referral partner'), 'Referral partner')
 })

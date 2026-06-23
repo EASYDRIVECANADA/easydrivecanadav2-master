@@ -1,6 +1,7 @@
 export const DRIVE_TOWN_SOURCE_NAME = 'DriveTown Ottawa'
 export const DRIVE_TOWN_WEBSITE_URL = 'https://drivetownottawa.com/'
 export const DRIVE_TOWN_INVENTORY_URL = 'https://drivetownottawa.com/vehicles/'
+export const DRIVE_TOWN_SYNC_CRON = '0 3 */2 * *'
 
 const clean = (value) => String(value ?? '').trim()
 
@@ -34,6 +35,6 @@ export function buildDriveTownSourceRow(userId) {
     inventory_url: DRIVE_TOWN_INVENTORY_URL,
     source_type: 'dealer_site',
     enabled: true,
-    schedule_cron: '0 */6 * * *',
+    schedule_cron: DRIVE_TOWN_SYNC_CRON,
   }
 }

@@ -309,7 +309,7 @@ async function ensureInventorySource(supabase, sync, userId) {
     inventory_url: 'https://drivetownottawa.com/vehicles/',
     source_type: 'dealer_site',
     enabled: true,
-    schedule_cron: '0 */6 * * *',
+    schedule_cron: '0 3 */2 * *',
     updated_at: new Date().toISOString(),
   }
 

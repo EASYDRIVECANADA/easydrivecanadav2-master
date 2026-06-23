@@ -11,12 +11,30 @@ import {
   type RenderedPage,
 } from '@/lib/eSignatureDocuments'
 
-declare global {
-  interface Window { pdfjsLib?: any }
+type PdfViewport = { width: number; height: number }
+type PdfPage = {
+  getViewport: (options: { scale: number }) => PdfViewport
+  render: (options: { canvasContext: CanvasRenderingContext2D; viewport: PdfViewport }) => { promise: Promise<void> }
 }
-
+type PdfDocument = {
+  numPages: number
+  getPage: (pageNumber: number) => Promise<PdfPage>
+}
+type PdfJsLib = {
+  GlobalWorkerOptions: { workerSrc: string }
+  getDocument: (src: string) => { promise: Promise<PdfDocument> }
+}
 type FieldType = 'signature' | 'initial' | 'stamp' | 'dateSigned' | 'name' | 'company' | 'title' | 'text' | 'checkbox'
 type Field = { id: string; type: FieldType; x: number; y: number; width: number; height: number; page: number; value?: string; fileIndex?: number; recipientIndex?: number }
+type SignatureRecord = {
+  deal_id?: string | number | null
+  recipient_index?: string | number | null
+  full_name?: string | null
+  company?: string | null
+  title?: string | null
+  email?: string | null
+  document_file?: unknown
+}
 
 const fieldKey = (field: Pick<Field, 'id' | 'fileIndex' | 'recipientIndex'>) =>
   `${field.id}::r${field.recipientIndex ?? 0}::f${field.fileIndex ?? 0}`
@@ -40,15 +58,17 @@ function normalizeToDataUrl(value: string, fallbackMime: string): { url: string;
   return { url: `data:${mime};base64,${raw}`, mime }
 }
 
-async function loadPdfJsLib(): Promise<any> {
-  if (window.pdfjsLib) return window.pdfjsLib
+async function loadPdfJsLib(): Promise<PdfJsLib> {
+  const existingPdfJsLib = window.pdfjsLib as PdfJsLib | undefined
+  if (existingPdfJsLib) return existingPdfJsLib
   return new Promise((resolve, reject) => {
     const script = document.createElement('script')
     script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js'
     script.onload = () => {
-      if (window.pdfjsLib) {
-        window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'
-        resolve(window.pdfjsLib)
+      const loadedPdfJsLib = window.pdfjsLib as PdfJsLib | undefined
+      if (loadedPdfJsLib) {
+        loadedPdfJsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'
+        resolve(loadedPdfJsLib)
       } else {
         reject(new Error('pdf.js failed to load'))
       }
@@ -203,7 +223,7 @@ export default function SignPage() {
 
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [sigRecord, setSigRecord] = useState<any>(null)
+  const [sigRecord, setSigRecord] = useState<SignatureRecord | null>(null)
   const [fields, setFields] = useState<Field[]>([])
   const [renderedPages, setRenderedPages] = useState<RenderedPage[]>([])
   const [sigPadField, setSigPadField] = useState<string | null>(null)
@@ -223,6 +243,11 @@ export default function SignPage() {
   const pageRefs = useRef<(HTMLDivElement | null)[]>([])
   const fieldRefs = useRef<Record<string, HTMLDivElement | null>>({})
   const contentRef = useRef<HTMLDivElement>(null)
+  const initialFieldScrolledRef = useRef(false)
+
+  useEffect(() => {
+    initialFieldScrolledRef.current = false
+  }, [id, recipientIdxParam])
 
   // Load signature record + fields
   useEffect(() => {
@@ -242,7 +267,7 @@ export default function SignPage() {
         const envelopeId = String(sigData?.deal_id || id)
         const fieldsRes = await fetch(`/api/esignature/fields?dealId=${encodeURIComponent(envelopeId)}`, { cache: 'no-store' })
         const fieldsJson = await fieldsRes.json()
-        let allFields: Field[] = Array.isArray(fieldsJson.fields) ? fieldsJson.fields : []
+        const allFields: Field[] = Array.isArray(fieldsJson.fields) ? fieldsJson.fields : []
         const myFields = allFields.filter(f => (f.recipientIndex ?? 0) === recipientIdx)
         const today = new Date().toLocaleDateString('en-CA')
         const autoFilled = myFields.map(f => {
@@ -266,8 +291,8 @@ export default function SignPage() {
           }))
           setRenderedPages(buildRenderedPageSequence(renderedDocuments))
         }
-      } catch (e: any) {
-        setError(e.message || 'Failed to load document')
+      } catch (e: unknown) {
+        setError(e instanceof Error ? e.message : 'Failed to load document')
       } finally {
         setLoading(false)
       }
@@ -338,8 +363,8 @@ export default function SignPage() {
         )
       await Promise.all(fieldUpdates)
       setSubmitted(true)
-    } catch (e: any) {
-      alert(e.message || 'Failed to submit')
+    } catch (e: unknown) {
+      alert(e instanceof Error ? e.message : 'Failed to submit')
     } finally {
       setSubmitting(false)
     }
@@ -367,6 +392,14 @@ export default function SignPage() {
     setZoom(parseFloat(fit.toFixed(2)))
   }
 
+  useEffect(() => {
+    if (loading || submitted || initialFieldScrolledRef.current || renderedPages.length === 0) return
+    const firstRequired = getNextRequiredField(fields) as Field | null
+    if (!firstRequired) return
+    initialFieldScrolledRef.current = true
+    scrollToField(firstRequired)
+  }, [fields, loading, renderedPages.length, scrollToField, submitted])
+
   // ── Theme tokens ─────────────────────────────────────────────────────────
   const bg = dark ? 'bg-[#111827]' : 'bg-gray-100'
   const headerBg = dark ? 'bg-[#1f2937] border-gray-700' : 'bg-white border-gray-200'
@@ -375,7 +408,6 @@ export default function SignPage() {
   const sidebarBg = dark ? 'bg-[#1f2937] border-gray-700' : 'bg-white border-gray-200'
   const sidebarText = dark ? 'text-gray-300' : 'text-gray-600'
   const sidebarHover = dark ? 'hover:bg-gray-700 hover:text-white' : 'hover:bg-gray-100 hover:text-gray-900'
-  const zoomBarBg = dark ? 'bg-[#1f2937] border-gray-700 text-gray-300' : 'bg-white border-gray-200 text-gray-600'
   const popoverBg = dark ? 'bg-[#1f2937] border-gray-700' : 'bg-white border-gray-200'
   const popoverText = dark ? 'text-gray-200' : 'text-gray-700'
   const popoverHover = dark ? 'hover:bg-gray-700' : 'hover:bg-gray-50'
@@ -434,6 +466,16 @@ export default function SignPage() {
           <h1 className={`text-base font-semibold ${headerText}`}>Sign Document</h1>
           <p className={`text-xs ${headerSub}`}>{recipient?.full_name || recipient?.email}</p>
         </div>
+        <div className="flex items-center gap-2">
+        {remainingRequired.length > 0 ? (
+          <button
+            type="button"
+            onClick={handleNextRequiredField}
+            className="px-4 py-2 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 transition-colors"
+          >
+            Start signing
+          </button>
+        ) : null}
         <button
           onClick={handleSubmit}
           disabled={submitting || !allSigned}
@@ -441,13 +483,14 @@ export default function SignPage() {
         >
           {submitting ? 'Submitting…' : 'Finish & Submit'}
         </button>
+        </div>
       </div>
 
       {/* Instructions bar */}
       <div className={`${dark ? 'bg-blue-900/40 border-blue-800 text-blue-300' : 'bg-blue-50 border-blue-100 text-blue-700'} border-b px-4 py-2 text-xs shrink-0 flex items-center justify-between gap-3`}>
         <span>
           {remainingRequired.length > 0
-            ? `${remainingRequired.length} required signature${remainingRequired.length === 1 ? '' : 's'} remaining. Tap a highlighted field or use Next.`
+            ? `${remainingRequired.length} required field${remainingRequired.length === 1 ? '' : 's'} remaining. Use Start signing or tap the highlighted blue boxes on the document.`
             : 'All required signatures are complete. Finish and submit when ready.'}
         </span>
         <button

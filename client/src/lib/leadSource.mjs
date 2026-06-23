@@ -41,11 +41,19 @@ export const leadSourceFromMessage = (lead = {}) => {
   const labels = rows.map((row) => row.label)
 
   if (normalizedSource !== 'unknown') return normalizedSource
+  if (rawSource) return 'unknown'
   if (message.includes('license number')) return 'insurance'
   if (message.includes('credit') || lead.employmentStatus || lead.monthlyIncome || lead.downPayment || lead.creditScore) return 'finance'
   if (labels.includes('subject') || labels.includes('message')) return 'website'
   if (lead.message && !lead.vehicleInterest && !lead.employmentStatus && !lead.monthlyIncome && !lead.downPayment && !lead.creditScore) return 'website'
   return 'unknown'
+}
+
+export const leadCustomSourceFromMessage = (lead = {}) => {
+  const rows = parseMessageRows(lead.message)
+  const rawSource = findMessageValue(rows, ['source', 'lead source', 'form source'])
+  if (!rawSource) return ''
+  return normalizeLeadSourceInput(rawSource) === 'unknown' ? rawSource : ''
 }
 
 export const leadSourceLabel = (source) => {
@@ -64,10 +72,11 @@ export const leadSourcePillClass = (source) => {
   return 'bg-slate-100 text-slate-600 ring-slate-200'
 }
 
-export const leadSourceMessageValue = (source) => {
+export const leadSourceMessageValue = (source, customSource = '') => {
+  const custom = clean(customSource)
   if (source === 'finance') return 'EasyDrive Finance - Landing Page'
   if (source === 'insurance') return 'Manual Insurance'
   if (source === 'facebook') return 'Manual Entry - FB Lead Form'
   if (source === 'website') return 'EasyDrive Canada - Website'
-  return 'Manual Entry'
+  return custom || 'Other'
 }

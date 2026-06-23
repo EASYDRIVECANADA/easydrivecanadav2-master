@@ -36,6 +36,7 @@ test('builds an editable draft from an existing lead', () => {
     email: 'jane@example.com',
     phone: '6135550101',
     source: 'website',
+    customSource: '',
     createdAt: '2026-06-16',
     vehicleInterest: '',
     employmentStatus: '',
@@ -99,4 +100,25 @@ test('does not require admin notes when the notes column is unavailable', () => 
 
   assert.equal(result.hasChanges, true)
   assert.equal(result.payload.admin_notes, undefined)
+})
+
+test('preserves custom other source text when updating lead details', () => {
+  const lead = {
+    ...currentLead,
+    message: 'Source: Referral partner\nMessage: Sent from a referral',
+  }
+  const draft = {
+    ...buildLeadDetailDraft(lead),
+    customSource: 'Community event',
+  }
+
+  const result = buildLeadDetailUpdate(lead, draft, {
+    notesEnabled: true,
+    actor: 'manager@easydrivecanada.com',
+    timestamp: 'Jun 16, 2026, 11:45 PM',
+  })
+
+  assert.equal(result.hasChanges, true)
+  assert.equal(result.payload.message, 'Source: Community event\nMessage: Sent from a referral')
+  assert.match(result.payload.admin_notes, /Source updated by manager@easydrivecanada\.com: Other: Referral partner -> Other: Community event/)
 })

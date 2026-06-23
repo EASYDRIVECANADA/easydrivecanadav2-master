@@ -45,4 +45,5 @@ test('buildDriveTownSourceRow creates the source configuration row', () => {
   assert.equal(row.inventory_url, 'https://drivetownottawa.com/vehicles/')
   assert.equal(row.source_type, 'dealer_site')
   assert.equal(row.enabled, true)
+  assert.equal(row.schedule_cron, '0 3 */2 * *')
 })
