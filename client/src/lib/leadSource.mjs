@@ -80,3 +80,11 @@ export const leadSourceMessageValue = (source, customSource = '') => {
   if (source === 'website') return 'EasyDrive Canada - Website'
   return custom || 'Other'
 }
+
+export const leadCustomSourceFieldState = (source) => {
+  const isOther = source === 'unknown'
+  return {
+    disabled: !isOther,
+    placeholder: isOther ? 'Referral, walk-in, phone up...' : 'Select Other to type a source',
+  }
+}

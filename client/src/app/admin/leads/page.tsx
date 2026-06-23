@@ -43,6 +43,7 @@ import {
   matchesLeadListFilter,
 } from '@/lib/leadListFilters.mjs'
 import {
+  leadCustomSourceFieldState,
   leadSourceFromMessage,
   leadSourceLabel,
   leadSourceMessageValue,
@@ -2774,6 +2775,7 @@ function LeadInput({
   type = 'text',
   inputMode,
   placeholder,
+  disabled = false,
 }: {
   label: string
   value: string
@@ -2781,6 +2783,7 @@ function LeadInput({
   type?: string
   inputMode?: HTMLAttributes<HTMLInputElement>['inputMode']
   placeholder?: string
+  disabled?: boolean
 }) {
   return (
     <label className="block">
@@ -2790,8 +2793,9 @@ function LeadInput({
         inputMode={inputMode}
         value={value}
         placeholder={placeholder}
+        disabled={disabled}
         onChange={(event) => onChange(event.target.value)}
-        className="mt-1 h-10 w-full rounded-xl border border-slate-200 bg-slate-50/70 px-3 text-sm text-slate-800 outline-none transition focus:border-[#1EA7FF]/50 focus:bg-white focus:ring-2 focus:ring-[#1EA7FF]/20"
+        className="mt-1 h-10 w-full rounded-xl border border-slate-200 bg-slate-50/70 px-3 text-sm text-slate-800 outline-none transition focus:border-[#1EA7FF]/50 focus:bg-white focus:ring-2 focus:ring-[#1EA7FF]/20 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
       />
     </label>
   )
@@ -3126,6 +3130,8 @@ function EditableLeadDetailsSection({
   saving: boolean
   error: string
 }) {
+  const customSourceField = leadCustomSourceFieldState(draft.source)
+
   return (
     <DetailSection title="Editable lead details" icon={FileSpreadsheet}>
       <div className="space-y-4 p-4">
@@ -3153,14 +3159,13 @@ function EditableLeadDetailsSection({
               ))}
             </select>
           </label>
-          {draft.source === 'unknown' ? (
-            <LeadInput
-              label="Other source"
-              value={draft.customSource}
-              placeholder="Referral, walk-in, phone up..."
-              onChange={(value) => onChange('customSource', value)}
-            />
-          ) : null}
+          <LeadInput
+            label="Other source"
+            value={draft.source === 'unknown' ? draft.customSource : ''}
+            placeholder={customSourceField.placeholder}
+            disabled={customSourceField.disabled}
+            onChange={(value) => onChange('customSource', value)}
+          />
           <LeadInput label="Received date" value={draft.createdAt} type="date" onChange={(value) => onChange('createdAt', value)} />
           <LeadInput label="Employment" value={draft.employmentStatus} onChange={(value) => onChange('employmentStatus', value)} />
           <LeadInput label="Monthly income" value={draft.monthlyIncome} inputMode="decimal" onChange={(value) => onChange('monthlyIncome', value)} />

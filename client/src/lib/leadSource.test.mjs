@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
 import {
+  leadCustomSourceFieldState,
   leadCustomSourceFromMessage,
   leadSourceFromMessage,
   leadSourceLabel,
@@ -50,4 +51,16 @@ test('keeps custom other source text available for lead editing', () => {
   assert.equal(leadSourceFromMessage(lead), 'unknown')
   assert.equal(leadCustomSourceFromMessage(lead), 'Referral partner')
   assert.equal(leadSourceMessageValue('unknown', 'Referral partner'), 'Referral partner')
+})
+
+test('keeps the detail other source input visible but locked until Other is selected', () => {
+  assert.deepEqual(leadCustomSourceFieldState('finance'), {
+    disabled: true,
+    placeholder: 'Select Other to type a source',
+  })
+
+  assert.deepEqual(leadCustomSourceFieldState('unknown'), {
+    disabled: false,
+    placeholder: 'Referral, walk-in, phone up...',
+  })
 })
