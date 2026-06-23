@@ -37,6 +37,7 @@ import {
   buildLeadDetailDraft,
   buildLeadDetailUpdate,
 } from '@/lib/leadDetailUpdate.mjs'
+import { leadDetailSectionClasses } from '@/lib/leadDetailLayout.mjs'
 import {
   defaultLeadFilterForSource,
   LEAD_LIST_FILTERS,
@@ -3404,13 +3405,15 @@ function LeadTranscriptDisplay({
 }
 
 function DetailSection({ title, icon: Icon, children }: { title: string; icon: typeof UserRound; children: ReactNode }) {
+  const classes = leadDetailSectionClasses()
+
   return (
-    <section className="flex h-full flex-col">
+    <section className={classes.section}>
       <div className="mb-2 flex items-center gap-2 text-[11px] font-bold uppercase text-slate-500">
         <Icon className="h-4 w-4 text-[#1EA7FF]" />
         {title}
       </div>
-      <div className="flex-1 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+      <div className={classes.body}>
         {children}
       </div>
     </section>
