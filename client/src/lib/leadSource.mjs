@@ -26,7 +26,6 @@ const findMessageValue = (rows, labels) => {
 
 export const normalizeLeadSourceInput = (value) => {
   const source = clean(value).toLowerCase()
-  if (source.includes('fb') || source.includes('facebook')) return 'facebook'
   if (source.includes('insurance')) return 'insurance'
   if (source.includes('finance') || source.includes('financing')) return 'finance'
   if (source.includes('website') || source.includes('contact') || source.includes('easy drive canada')) return 'website'
@@ -59,15 +58,13 @@ export const leadCustomSourceFromMessage = (lead = {}) => {
 export const leadSourceLabel = (source) => {
   if (source === 'website') return 'EASYDRIVE CANADA - WEBSITE'
   if (source === 'finance') return 'EASYDRIVE FINANCE - LANDING PAGE'
-  if (source === 'facebook') return 'MANUAL ENTRY - FB LEAD FORM'
   if (source === 'insurance') return 'Insurance'
-  return 'Unknown'
+  return 'Other'
 }
 
 export const leadSourcePillClass = (source) => {
   if (source === 'finance') return 'bg-blue-50 text-blue-700 ring-blue-200'
   if (source === 'insurance') return 'bg-emerald-50 text-emerald-700 ring-emerald-200'
-  if (source === 'facebook') return 'bg-rose-50 text-rose-700 ring-rose-200'
   if (source === 'website') return 'bg-amber-50 text-amber-700 ring-amber-200'
   return 'bg-slate-100 text-slate-600 ring-slate-200'
 }
@@ -76,7 +73,6 @@ export const leadSourceMessageValue = (source, customSource = '') => {
   const custom = clean(customSource)
   if (source === 'finance') return 'EasyDrive Finance - Landing Page'
   if (source === 'insurance') return 'Manual Insurance'
-  if (source === 'facebook') return 'Manual Entry - FB Lead Form'
   if (source === 'website') return 'EasyDrive Canada - Website'
   return custom || 'Other'
 }

@@ -1,4 +1,5 @@
 import {
+  leadCustomSourceFromMessage,
   leadSourceFromMessage,
   leadSourceLabel,
 } from './leadSource.mjs'
@@ -56,14 +57,17 @@ const findMessageValue = (rows, labels) => {
 }
 
 const inferSource = (lead) => {
-  return leadSourceLabel(leadSourceFromMessage({
+  const sourceLead = {
     message: lead?.message,
     vehicleInterest: lead?.vehicleInterest,
     employmentStatus: lead?.employmentStatus,
     monthlyIncome: lead?.monthlyIncome,
     downPayment: lead?.downPayment,
     creditScore: lead?.creditScore,
-  }))
+  }
+  const source = leadSourceFromMessage(sourceLead)
+  const custom = source === 'unknown' ? leadCustomSourceFromMessage(sourceLead) : ''
+  return custom || leadSourceLabel(source)
 }
 
 const formatDateTime = (value) => {

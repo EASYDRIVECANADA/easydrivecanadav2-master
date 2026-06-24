@@ -28,19 +28,20 @@ test('labels EasyDrive Finance landing page leads from landing page source lines
   assert.equal(leadSourceLabel(source), 'EASYDRIVE FINANCE - LANDING PAGE')
 })
 
-test('labels manual Facebook lead form entries distinctly', () => {
+test('treats manual Facebook lead form entries as other source text', () => {
   const source = leadSourceFromMessage({
     message: 'Source: Manual Entry - FB Lead Form',
   })
 
-  assert.equal(source, 'facebook')
-  assert.equal(leadSourceLabel(source), 'MANUAL ENTRY - FB LEAD FORM')
+  assert.equal(source, 'unknown')
+  assert.equal(leadCustomSourceFromMessage({ message: 'Source: Manual Entry - FB Lead Form' }), 'Manual Entry - FB Lead Form')
+  assert.equal(leadSourceLabel(source), 'Other')
 })
 
-test('normalizes common import source values to the Facebook lead form source', () => {
-  assert.equal(normalizeLeadSourceInput('FB Lead Form'), 'facebook')
-  assert.equal(normalizeLeadSourceInput('Facebook ad campaign'), 'facebook')
-  assert.equal(leadSourceMessageValue('facebook'), 'Manual Entry - FB Lead Form')
+test('keeps common Facebook source values under other', () => {
+  assert.equal(normalizeLeadSourceInput('FB Lead Form'), 'unknown')
+  assert.equal(normalizeLeadSourceInput('Facebook ad campaign'), 'unknown')
+  assert.equal(leadSourceMessageValue('unknown', 'FB Lead Form'), 'FB Lead Form')
 })
 
 test('keeps custom other source text available for lead editing', () => {

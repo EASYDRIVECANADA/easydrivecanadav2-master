@@ -64,7 +64,7 @@ test('exports lead rows with personal contact info and marketing notes', () => {
   assert.equal(row['Internal notes transcript'], '[2026-06-01 10:00] Called customer')
 })
 
-test('exports website and manual Facebook lead form source labels', () => {
+test('exports website labels and custom other source text', () => {
   const rows = buildLeadMarketingExportRows([
     {
       id: 'lead-website',
@@ -89,7 +89,7 @@ test('exports website and manual Facebook lead form source labels', () => {
   ])
 
   assert.equal(rows[0].Source, 'EASYDRIVE CANADA - WEBSITE')
-  assert.equal(rows[1].Source, 'MANUAL ENTRY - FB LEAD FORM')
+  assert.equal(rows[1].Source, 'Manual Entry - FB Lead Form')
 })
 
 test('normalizes missing optional export fields to empty strings', () => {

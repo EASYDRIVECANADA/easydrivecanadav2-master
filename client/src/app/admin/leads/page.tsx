@@ -39,11 +39,12 @@ import {
 } from '@/lib/leadDetailUpdate.mjs'
 import { leadDetailSectionClasses } from '@/lib/leadDetailLayout.mjs'
 import {
+  filterAndSortLeads,
   defaultLeadFilterForSource,
   LEAD_LIST_FILTERS,
-  matchesLeadListFilter,
 } from '@/lib/leadListFilters.mjs'
 import {
+  leadCustomSourceFromMessage,
   leadCustomSourceFieldState,
   leadSourceFromMessage,
   leadSourceLabel,
@@ -80,6 +81,9 @@ interface Lead {
   marketingNotes: string | null
   managerStatus: LeadManagerStatus | null
   financeManager: string | null
+  taskNote: string | null
+  taskDueAt: string | null
+  taskCompletedAt: string | null
   ghlSynced: boolean
   createdAt: string
 }
@@ -100,6 +104,9 @@ type LeadRow = {
   marketing_notes?: string | null
   manager_status?: string | null
   finance_manager?: string | null
+  task_note?: string | null
+  task_due_at?: string | null
+  task_completed_at?: string | null
   ghl_synced: boolean | null
   created_at: string
 }
@@ -109,11 +116,11 @@ type LeadQueryResult = {
   error: { message?: string } | null
 }
 
-type FilterKey = 'open' | 'finance' | 'website' | 'facebook' | 'insurance' | 'synced'
-type SourceKey = 'website' | 'finance' | 'facebook' | 'insurance' | 'unknown'
+type FilterKey = 'all' | 'finance' | 'website' | 'unknown'
+type SourceKey = 'website' | 'finance' | 'insurance' | 'unknown'
 type LeadDraftSource = SourceKey
 type ManualEntryMode = 'basic' | 'credit'
-type ImportSourceMode = 'auto' | 'website' | 'finance' | 'facebook' | 'insurance'
+type ImportSourceMode = 'auto' | 'website' | 'finance' | 'unknown'
 type LeadManagerStatus = string
 type AssignmentUser = {
   email: string
@@ -168,8 +175,6 @@ const FILTERS = LEAD_LIST_FILTERS as Array<{ key: FilterKey; label: string }>
 const LEAD_SOURCE_OPTIONS: Array<{ key: LeadDraftSource; label: string }> = [
   { key: 'website', label: 'EASYDRIVE CANADA - WEBSITE' },
   { key: 'finance', label: 'EASYDRIVE FINANCE - LANDING PAGE' },
-  { key: 'facebook', label: 'FB LEAD FORM' },
-  { key: 'insurance', label: 'Insurance' },
   { key: 'unknown', label: 'Other' },
 ]
 
@@ -181,13 +186,15 @@ const leadSelectForCapabilities = (
   notesEnabled: boolean,
   statusEnabled: boolean,
   financeManagerEnabled: boolean,
-  marketingNotesEnabled: boolean
+  marketingNotesEnabled: boolean,
+  taskEnabled: boolean
 ) => {
   const columns = [BASE_LEAD_SELECT]
   if (notesEnabled) columns.push('admin_notes')
   if (statusEnabled) columns.push('manager_status')
   if (financeManagerEnabled) columns.push('finance_manager')
   if (marketingNotesEnabled) columns.push('marketing_notes')
+  if (taskEnabled) columns.push('task_note, task_due_at, task_completed_at')
   return columns.join(', ')
 }
 
@@ -336,6 +343,45 @@ const formatDate = (dateStr: string) =>
     hour: '2-digit',
     minute: '2-digit',
   })
+
+const formatTaskDue = (dateStr: string | null) => {
+  const cleaned = clean(dateStr)
+  if (!cleaned) return ''
+  return new Date(cleaned).toLocaleString('en-CA', {
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
+const datetimeLocalValue = (dateStr: string | null) => {
+  const date = new Date(clean(dateStr))
+  if (Number.isNaN(date.getTime())) return ''
+  const offsetMs = date.getTimezoneOffset() * 60 * 1000
+  return new Date(date.getTime() - offsetMs).toISOString().slice(0, 16)
+}
+
+const datetimeLocalToIsoOrNull = (value: string) => {
+  const cleaned = clean(value)
+  if (!cleaned) return null
+  const date = new Date(cleaned)
+  return Number.isNaN(date.getTime()) ? null : date.toISOString()
+}
+
+const sourceDisplayLabel = (lead: Lead) => {
+  const source = sourceFromLead(lead)
+  const custom = source === 'unknown' ? leadCustomSourceFromMessage(lead) : ''
+  return custom || sourceLabel(source)
+}
+
+const hasActiveTask = (lead: Lead) => !!clean(lead.taskDueAt) && !clean(lead.taskCompletedAt)
+
+const isTaskDueNow = (lead: Lead) => {
+  if (!hasActiveTask(lead)) return false
+  const due = Date.parse(clean(lead.taskDueAt))
+  return Number.isFinite(due) && due <= Date.now()
+}
 
 const isToday = (dateStr: string) => {
   const date = new Date(dateStr)
@@ -588,6 +634,9 @@ const leadFromDraftPreview = (draft: LeadDraft, index: number): Lead => {
     marketingNotes: clean(draft.marketingNotes) || null,
     managerStatus: clean(draft.managerStatus) || normalizeLeadManagerStatus(findSubmittedValue(parseMessageFields(message).rows, ['Submitted status', 'Status'])),
     financeManager: normalizeLeadFinanceManagerTarget(draft.financeManager),
+    taskNote: null,
+    taskDueAt: null,
+    taskCompletedAt: null,
     ghlSynced: false,
     createdAt: toDateIsoOrNull(draft.createdAt) || new Date().toISOString(),
   }
@@ -607,8 +656,7 @@ const normalizeImportSource = (value: unknown): LeadDraftSource => {
 
 const inferImportSourceFromFileName = (fileName: string): ImportSourceMode => {
   const normalized = clean(fileName).toLowerCase()
-  if (normalized.includes('fb') || normalized.includes('facebook')) return 'facebook'
-  if (normalized.includes('insurance')) return 'insurance'
+  if (normalized.includes('fb') || normalized.includes('facebook')) return 'unknown'
   if (normalized.includes('finance') || normalized.includes('financing')) return 'finance'
   if (normalized.includes('website') || normalized.includes('contact')) return 'website'
   return 'auto'
@@ -630,6 +678,9 @@ const mapLeadRow = (l: LeadRow): Lead => ({
   marketingNotes: l.marketing_notes ?? null,
   managerStatus: normalizeLeadManagerStatus(l.manager_status),
   financeManager: clean(l.finance_manager) || null,
+  taskNote: l.task_note ?? null,
+  taskDueAt: l.task_due_at ?? null,
+  taskCompletedAt: l.task_completed_at ?? null,
   ghlSynced: !!l.ghl_synced,
   createdAt: l.created_at,
 })
@@ -734,6 +785,10 @@ export default function AdminLeadsPage() {
   const [leadDetailDraft, setLeadDetailDraft] = useState<LeadDetailDraft | null>(null)
   const [savingLeadDetails, setSavingLeadDetails] = useState(false)
   const [leadDetailsSaveError, setLeadDetailsSaveError] = useState('')
+  const [taskDraft, setTaskDraft] = useState({ note: '', dueAt: '', completed: false })
+  const [savingTask, setSavingTask] = useState(false)
+  const [taskEnabled, setTaskEnabled] = useState(true)
+  const [taskSaveError, setTaskSaveError] = useState('')
   const [notesModalLead, setNotesModalLead] = useState<Lead | null>(null)
   const [tableNotesDraft, setTableNotesDraft] = useState('')
   const [savingTableNotes, setSavingTableNotes] = useState(false)
@@ -748,7 +803,9 @@ export default function AdminLeadsPage() {
   const [assignmentUsers, setAssignmentUsers] = useState<AssignmentUser[]>([])
   const [assignmentUsersLoading, setAssignmentUsersLoading] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
-  const [activeFilter, setActiveFilter] = useState<FilterKey>('open')
+  const [activeFilter, setActiveFilter] = useState<FilterKey>('all')
+  const [statusFilter, setStatusFilter] = useState('')
+  const [sourceTextFilter, setSourceTextFilter] = useState('')
   const [currentPage, setCurrentPage] = useState(1)
   const [newLeadOpen, setNewLeadOpen] = useState(false)
   const [leadDraft, setLeadDraft] = useState<LeadDraft>(emptyLeadDraft)
@@ -833,12 +890,13 @@ export default function AdminLeadsPage() {
       let nextStatusEnabled = true
       let nextFinanceManagerEnabled = true
       let nextMarketingNotesEnabled = true
+      let nextTaskEnabled = true
       let result: LeadQueryResult = { data: null, error: null }
 
-      for (let attempt = 0; attempt < 8; attempt += 1) {
+      for (let attempt = 0; attempt < 12; attempt += 1) {
         result = await supabase
           .from('edc_leads')
-          .select(leadSelectForCapabilities(nextNotesEnabled, nextStatusEnabled, nextFinanceManagerEnabled, nextMarketingNotesEnabled))
+          .select(leadSelectForCapabilities(nextNotesEnabled, nextStatusEnabled, nextFinanceManagerEnabled, nextMarketingNotesEnabled, nextTaskEnabled))
           .order('created_at', { ascending: false }) as unknown as LeadQueryResult
 
         if (!result.error) break
@@ -848,6 +906,11 @@ export default function AdminLeadsPage() {
 
         if (nextMarketingNotesEnabled && /marketing_notes/i.test(message)) {
           nextMarketingNotesEnabled = false
+          continue
+        }
+
+        if (nextTaskEnabled && /task_note|task_due_at|task_completed_at/i.test(message)) {
+          nextTaskEnabled = false
           continue
         }
 
@@ -868,6 +931,11 @@ export default function AdminLeadsPage() {
 
         if (genericColumnError && nextMarketingNotesEnabled) {
           nextMarketingNotesEnabled = false
+          continue
+        }
+
+        if (genericColumnError && nextTaskEnabled) {
+          nextTaskEnabled = false
           continue
         }
 
@@ -893,6 +961,7 @@ export default function AdminLeadsPage() {
       setStatusEnabled(nextStatusEnabled)
       setFinanceManagerEnabled(nextFinanceManagerEnabled)
       setMarketingNotesEnabled(nextMarketingNotesEnabled)
+      setTaskEnabled(nextTaskEnabled)
 
       const { data, error } = result
       if (error) throw error
@@ -921,41 +990,17 @@ export default function AdminLeadsPage() {
   }, [leads])
 
   const filteredLeads = useMemo(() => {
-    const query = searchQuery.trim().toLowerCase()
-
-    return leads.filter((lead) => {
-      const source = sourceFromLead(lead)
-      if (!matchesLeadListFilter(lead, activeFilter)) return false
-      if (!query) return true
-
-      const haystack = [
-        lead.firstName,
-        lead.lastName,
-        leadName(lead),
-        lead.email,
-        lead.phone,
-        lead.vehicleInterest,
-        lead.message,
-        lead.adminNotes,
-        lead.marketingNotes,
-        lead.managerStatus,
-        lead.financeManager,
-        financeManagerLabel(lead.financeManager),
-        sourceLabel(source),
-        lead.employmentStatus,
-        lead.creditScore,
-      ]
-        .map(clean)
-        .join(' ')
-        .toLowerCase()
-
-      return haystack.includes(query)
-    })
-  }, [activeFilter, leads, searchQuery])
+    return filterAndSortLeads(leads, {
+      tab: activeFilter,
+      status: statusFilter,
+      sourceText: sourceTextFilter,
+      search: searchQuery,
+    }) as Lead[]
+  }, [activeFilter, leads, searchQuery, sourceTextFilter, statusFilter])
 
   useEffect(() => {
     setCurrentPage(1)
-  }, [activeFilter, searchQuery])
+  }, [activeFilter, searchQuery, sourceTextFilter, statusFilter])
 
   useEffect(() => {
     setNotesDraft('')
@@ -964,7 +1009,13 @@ export default function AdminLeadsPage() {
     setMarketingNotesSaveError('')
     setFinanceManagerSaveError('')
     setLeadDetailDraft(selectedLead ? buildLeadDetailDraft(selectedLead) as LeadDetailDraft : null)
+    setTaskDraft({
+      note: selectedLead?.taskNote || '',
+      dueAt: datetimeLocalValue(selectedLead?.taskDueAt || null),
+      completed: !!selectedLead?.taskCompletedAt,
+    })
     setLeadDetailsSaveError('')
+    setTaskSaveError('')
   }, [selectedLead])
 
   useEffect(() => {
@@ -1260,6 +1311,55 @@ export default function AdminLeadsPage() {
     }
   }
 
+  const handleSaveTask = async (lead: Lead, completedOverride?: boolean) => {
+    if (!taskEnabled) {
+      setTaskSaveError('Apply the task columns on edc_leads before saving reminders.')
+      return
+    }
+
+    const taskNote = clean(taskDraft.note) || null
+    const taskDueAt = datetimeLocalToIsoOrNull(taskDraft.dueAt)
+    const completed = completedOverride ?? taskDraft.completed
+    const taskCompletedAt = completed ? (lead.taskCompletedAt || new Date().toISOString()) : null
+
+    if (!taskNote && !taskDueAt && !completed) {
+      setTaskSaveError('Add a task note, due date, or mark the task complete before saving.')
+      return
+    }
+
+    setSavingTask(true)
+    setTaskSaveError('')
+
+    try {
+      const { error } = await supabase
+        .from('edc_leads')
+        .update({
+          task_note: taskNote,
+          task_due_at: taskDueAt,
+          task_completed_at: taskCompletedAt,
+        })
+        .eq('id', lead.id)
+
+      if (error) throw error
+
+      const localUpdate = { taskNote, taskDueAt, taskCompletedAt }
+      setLeads((rows) => rows.map((row) => (row.id === lead.id ? { ...row, ...localUpdate } : row)))
+      setSelectedLead((current) => (current?.id === lead.id ? { ...current, ...localUpdate } : current))
+      setNotesModalLead((current) => (current?.id === lead.id ? { ...current, ...localUpdate } : current))
+      setStatusModalLead((current) => (current?.id === lead.id ? { ...current, ...localUpdate } : current))
+      setTaskDraft({
+        note: taskNote || '',
+        dueAt: datetimeLocalValue(taskDueAt),
+        completed: !!taskCompletedAt,
+      })
+    } catch (error) {
+      console.error('Error saving lead task:', error)
+      setTaskSaveError('Unable to save task. Check that task columns exist on edc_leads.')
+    } finally {
+      setSavingTask(false)
+    }
+  }
+
   const handleSaveStatus = async (lead: Lead, status: LeadManagerStatus | null) => {
     if (!statusEnabled) {
       setStatusSaveError('Apply the manager_status database column before updating lead status.')
@@ -1375,7 +1475,7 @@ export default function AdminLeadsPage() {
       const { data, error } = await supabase
         .from('edc_leads')
         .insert(insert)
-        .select(leadSelectForCapabilities(notesEnabled, statusEnabled, financeManagerEnabled, marketingNotesEnabled))
+        .select(leadSelectForCapabilities(notesEnabled, statusEnabled, financeManagerEnabled, marketingNotesEnabled, taskEnabled))
         .single()
 
       if (error) throw error
@@ -1488,7 +1588,7 @@ export default function AdminLeadsPage() {
       const { data, error } = await supabase
         .from('edc_leads')
         .insert(inserts)
-        .select(leadSelectForCapabilities(notesEnabled, statusEnabled, financeManagerEnabled, marketingNotesEnabled))
+        .select(leadSelectForCapabilities(notesEnabled, statusEnabled, financeManagerEnabled, marketingNotesEnabled, taskEnabled))
 
       if (error) throw error
 
@@ -1498,7 +1598,7 @@ export default function AdminLeadsPage() {
       setImportRows([])
       setImportFileName('')
       setImportSourceMode('auto')
-      setActiveFilter(imported[0] ? defaultLeadFilterForSource(sourceFromLead(imported[0])) as FilterKey : 'open')
+      setActiveFilter(imported[0] ? defaultLeadFilterForSource(sourceFromLead(imported[0])) as FilterKey : 'all')
       setCurrentPage(1)
     } catch (error) {
       console.error('Error importing leads:', error)
@@ -1643,6 +1743,43 @@ export default function AdminLeadsPage() {
               {marketingExportError}
             </div>
           ) : null}
+          <div className="mt-4 grid gap-3 border-t border-slate-100 pt-4 md:grid-cols-[220px_minmax(0,1fr)_auto] md:items-end">
+            <label className="block">
+              <span className="text-xs font-semibold text-slate-600">Status</span>
+              <select
+                value={statusFilter}
+                onChange={(event) => setStatusFilter(event.target.value)}
+                className="mt-1 h-10 w-full rounded-xl border border-slate-200 bg-slate-50/70 px-3 text-sm text-slate-800 outline-none transition focus:border-[#1EA7FF]/50 focus:bg-white focus:ring-2 focus:ring-[#1EA7FF]/20"
+              >
+                <option value="">All statuses</option>
+                {MANAGER_STATUSES.map((status) => (
+                  <option key={status} value={status}>{status}</option>
+                ))}
+              </select>
+            </label>
+            <label className="block">
+              <span className="text-xs font-semibold text-slate-600">Source contains</span>
+              <input
+                value={sourceTextFilter}
+                onChange={(event) => setSourceTextFilter(event.target.value)}
+                placeholder="getgoing, fb leads, referral..."
+                className="mt-1 h-10 w-full rounded-xl border border-slate-200 bg-slate-50/70 px-3 text-sm text-slate-800 placeholder-slate-400 outline-none transition focus:border-[#1EA7FF]/50 focus:bg-white focus:ring-2 focus:ring-[#1EA7FF]/20"
+              />
+            </label>
+            <button
+              type="button"
+              onClick={() => {
+                setSearchQuery('')
+                setStatusFilter('')
+                setSourceTextFilter('')
+                setActiveFilter('all')
+              }}
+              disabled={!searchQuery && !statusFilter && !sourceTextFilter && activeFilter === 'all'}
+              className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600 transition-colors hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-300 disabled:hover:bg-white"
+            >
+              Clear filters
+            </button>
+          </div>
         </div>
 
         <div className="min-w-0">
@@ -1665,7 +1802,7 @@ export default function AdminLeadsPage() {
               <div className="hidden overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-card lg:block">
                 <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
                   <div className="text-sm font-semibold text-slate-900">Showing {paginatedLeads.length} of {filteredLeads.length} leads</div>
-                  <div className="text-xs text-slate-500">Sorted by newest first</div>
+                  <div className="text-xs text-slate-500">Tasks due first, then newest</div>
                 </div>
                 <div className="overflow-x-auto">
                   <table className="edc-table min-w-[1240px]">
@@ -1758,6 +1895,12 @@ export default function AdminLeadsPage() {
               onSaveDetails={handleSaveLeadDetails}
               savingDetails={savingLeadDetails}
               detailsSaveError={leadDetailsSaveError}
+              taskDraft={taskDraft}
+              onTaskDraftChange={setTaskDraft}
+              onSaveTask={handleSaveTask}
+              savingTask={savingTask}
+              taskEnabled={taskEnabled}
+              taskSaveError={taskSaveError}
               onClose={() => setSelectedLead(null)}
               onDelete={handleDelete}
               canDelete={canDeleteLeads}
@@ -1929,6 +2072,11 @@ function LeadRow({
       </td>
       <td>
         <div className="text-sm text-slate-600">{formatDate(lead.createdAt)}</div>
+        {hasActiveTask(lead) ? (
+          <div className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ring-1 ring-inset ${isTaskDueNow(lead) ? 'bg-orange-50 text-orange-700 ring-orange-200' : 'bg-sky-50 text-sky-700 ring-sky-200'}`}>
+            {isTaskDueNow(lead) ? 'Task due' : `Task ${formatTaskDue(lead.taskDueAt)}`}
+          </div>
+        ) : null}
       </td>
       <td>
         <div className="group flex min-w-0 items-center gap-3 text-left">
@@ -1938,8 +2086,8 @@ function LeadRow({
           <span className="min-w-0">
             <span className="block truncate font-semibold text-slate-900 group-hover:text-[#0877bd]">{leadName(lead)}</span>
             <span className="mt-1 block truncate text-xs text-slate-500">{lead.email || lead.phone || 'No contact info'}</span>
-            <span className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 ring-inset ${sourcePillClass(source)}`}>
-              {sourceLabel(source)}
+            <span className={`mt-1 inline-flex max-w-full rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 ring-inset ${sourcePillClass(source)}`}>
+              <span className="truncate">{sourceDisplayLabel(lead)}</span>
             </span>
           </span>
         </div>
@@ -2011,7 +2159,14 @@ function MobileLeadCard({
               Select
             </label>
           ) : null}
-          <div className="text-right text-[11px] font-medium text-slate-400">{formatDate(lead.createdAt)}</div>
+          <div className="text-right text-[11px] font-medium text-slate-400">
+            {formatDate(lead.createdAt)}
+            {hasActiveTask(lead) ? (
+              <div className={`mt-1 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${isTaskDueNow(lead) ? 'bg-orange-50 text-orange-700' : 'bg-sky-50 text-sky-700'}`}>
+                {isTaskDueNow(lead) ? 'Task due' : 'Task set'}
+              </div>
+            ) : null}
+          </div>
         </div>
       </div>
       <div className="flex items-start gap-3">
@@ -2023,8 +2178,8 @@ function MobileLeadCard({
             <div className="min-w-0">
               <h3 className="truncate text-sm font-semibold text-slate-950">{leadName(lead)}</h3>
               <div className="mt-1 flex flex-wrap gap-1.5">
-                <span className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 ring-inset ${sourcePillClass(source)}`}>
-                  {sourceLabel(source)}
+                <span className={`inline-flex max-w-full rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 ring-inset ${sourcePillClass(source)}`}>
+                  <span className="truncate">{sourceDisplayLabel(lead)}</span>
                 </span>
               </div>
             </div>
@@ -2073,8 +2228,8 @@ function LeadImportPreviewRow({ lead }: { lead: Lead }) {
           <span className="min-w-0">
             <span className="block truncate font-semibold text-slate-900">{leadName(lead)}</span>
             <span className="mt-1 block truncate text-xs text-slate-500">{lead.email || lead.phone || 'No contact info'}</span>
-            <span className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 ring-inset ${sourcePillClass(source)}`}>
-              {sourceLabel(source)}
+            <span className={`mt-1 inline-flex max-w-full rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 ring-inset ${sourcePillClass(source)}`}>
+              <span className="truncate">{sourceDisplayLabel(lead)}</span>
             </span>
           </span>
         </div>
@@ -2547,9 +2702,8 @@ function LeadImportModal({
                 {([
                   ['auto', 'Auto'],
                   ['website', 'Website'],
-                  ['finance', 'Finance'],
-                  ['facebook', 'FB Form'],
-                  ['insurance', 'Insurance'],
+                  ['finance', 'Landing Page'],
+                  ['unknown', 'Other'],
                 ] as Array<[ImportSourceMode, string]>).map(([mode, label]) => (
                   <button
                     key={mode}
@@ -2826,6 +2980,12 @@ function LeadDetailPanel({
   onSaveDetails,
   savingDetails,
   detailsSaveError,
+  taskDraft,
+  onTaskDraftChange,
+  onSaveTask,
+  savingTask,
+  taskEnabled,
+  taskSaveError,
   onClose,
   onDelete,
   canDelete,
@@ -2857,6 +3017,12 @@ function LeadDetailPanel({
   onSaveDetails: (lead: Lead) => void
   savingDetails: boolean
   detailsSaveError: string
+  taskDraft: { note: string; dueAt: string; completed: boolean }
+  onTaskDraftChange: (draft: { note: string; dueAt: string; completed: boolean }) => void
+  onSaveTask: (lead: Lead, completedOverride?: boolean) => void
+  savingTask: boolean
+  taskEnabled: boolean
+  taskSaveError: string
   onClose: () => void
   onDelete: (lead: Lead) => void
   canDelete: boolean
@@ -2915,11 +3081,11 @@ function LeadDetailPanel({
               <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-500">
                 <span>Received {formatDate(lead.createdAt)}</span>
                 <span className="hidden h-1 w-1 rounded-full bg-slate-300 sm:inline-block" />
-                <span>{sourceLabel(source)} lead</span>
+                <span>{sourceDisplayLabel(lead)} lead</span>
               </div>
               <div className="mt-2 flex flex-wrap gap-1.5">
-                <span className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold ring-1 ring-inset ${sourcePillClass(source)}`}>
-                  {sourceLabel(source)}
+                <span className={`inline-flex max-w-full rounded-full px-2.5 py-1 text-[11px] font-semibold ring-1 ring-inset ${sourcePillClass(source)}`}>
+                  <span className="truncate">{sourceDisplayLabel(lead)}</span>
                 </span>
                 <ManagerStatusPill lead={lead} />
               </div>
@@ -2945,7 +3111,7 @@ function LeadDetailPanel({
               icon={Car}
               label="Intent"
               primary={primaryIntent}
-              secondary={lead.employmentStatus || sourceLabel(source)}
+              secondary={lead.employmentStatus || sourceDisplayLabel(lead)}
             />
             <LeadSummaryCard
               icon={BadgeCheck}
@@ -3078,6 +3244,17 @@ function LeadDetailPanel({
               )}
             </div>
           </DetailSection>
+
+          <LeadTaskSection
+            lead={lead}
+            draft={taskDraft}
+            onChange={onTaskDraftChange}
+            onSave={() => onSaveTask(lead)}
+            onComplete={() => onSaveTask(lead, true)}
+            saving={savingTask}
+            enabled={taskEnabled}
+            error={taskSaveError}
+          />
 
           <LeadNotesSection
             value={notesDraft}
@@ -3233,6 +3410,105 @@ function LeadSummaryCard({
       {secondaryDisplay ? <div className="mt-1 truncate text-xs text-slate-500">{secondaryDisplay}</div> : null}
       {tertiaryDisplay ? <div className="mt-1 truncate text-xs text-slate-500">{tertiaryDisplay}</div> : null}
     </div>
+  )
+}
+
+function LeadTaskSection({
+  lead,
+  draft,
+  onChange,
+  onSave,
+  onComplete,
+  saving,
+  enabled,
+  error,
+}: {
+  lead: Lead
+  draft: { note: string; dueAt: string; completed: boolean }
+  onChange: (draft: { note: string; dueAt: string; completed: boolean }) => void
+  onSave: () => void
+  onComplete: () => void
+  saving: boolean
+  enabled: boolean
+  error: string
+}) {
+  const active = hasActiveTask(lead)
+  const due = formatTaskDue(lead.taskDueAt)
+
+  return (
+    <DetailSection title="Tasks" icon={Clock3}>
+      <div className="space-y-3 p-3">
+        {active ? (
+          <div className={`rounded-lg border px-3 py-2 ${isTaskDueNow(lead) ? 'border-orange-200 bg-orange-50 text-orange-800' : 'border-sky-200 bg-sky-50 text-sky-800'}`}>
+            <div className="text-[11px] font-bold uppercase">{isTaskDueNow(lead) ? 'Due now' : 'Scheduled'}</div>
+            <div className="mt-1 text-sm font-semibold">{due || 'No due date'}</div>
+            {lead.taskNote ? <div className="mt-1 text-xs leading-5">{lead.taskNote}</div> : null}
+          </div>
+        ) : lead.taskCompletedAt ? (
+          <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-emerald-800">
+            <div className="text-[11px] font-bold uppercase">Completed</div>
+            <div className="mt-1 text-sm font-semibold">{formatTaskDue(lead.taskCompletedAt)}</div>
+          </div>
+        ) : null}
+
+        <label className="block">
+          <span className="text-[11px] font-bold uppercase text-slate-500">Task note</span>
+          <textarea
+            value={draft.note}
+            onChange={(event) => onChange({ ...draft, note: event.target.value })}
+            disabled={!enabled || saving}
+            rows={3}
+            placeholder={enabled ? 'Call back, text customer, request document...' : 'Apply the task columns to enable reminders.'}
+            className="mt-1 min-h-[84px] w-full resize-y rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-2 text-sm text-slate-800 outline-none transition focus:border-[#1EA7FF]/50 focus:bg-white focus:ring-2 focus:ring-[#1EA7FF]/20 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+          />
+        </label>
+
+        <label className="block">
+          <span className="text-[11px] font-bold uppercase text-slate-500">Due date and time</span>
+          <input
+            type="datetime-local"
+            value={draft.dueAt}
+            onChange={(event) => onChange({ ...draft, dueAt: event.target.value, completed: false })}
+            disabled={!enabled || saving}
+            className="mt-1 h-10 w-full rounded-xl border border-slate-200 bg-slate-50/70 px-3 text-sm text-slate-800 outline-none transition focus:border-[#1EA7FF]/50 focus:bg-white focus:ring-2 focus:ring-[#1EA7FF]/20 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+          />
+        </label>
+
+        <label className="inline-flex items-center gap-2 text-xs font-semibold text-slate-600">
+          <input
+            type="checkbox"
+            checked={draft.completed}
+            onChange={(event) => onChange({ ...draft, completed: event.target.checked })}
+            disabled={!enabled || saving}
+            className="h-4 w-4 rounded border-slate-300 text-[#0B1F3A] focus:ring-[#1EA7FF] disabled:cursor-not-allowed"
+          />
+          Mark complete
+        </label>
+
+        {error ? <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{error}</div> : null}
+
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={onSave}
+            disabled={!enabled || saving}
+            className="edc-btn-primary h-10 flex-1 text-xs disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {saving ? 'Saving...' : 'Save task'}
+          </button>
+          {active ? (
+            <button
+              type="button"
+              onClick={onComplete}
+              disabled={!enabled || saving}
+              className="edc-btn-secondary h-10 px-3 text-xs disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Complete
+            </button>
+          ) : null}
+        </div>
+      </div>
+    </DetailSection>
   )
 }
 
@@ -3454,7 +3730,6 @@ const defaultLeadStatusLabel = (lead: Lead) => {
   const source = sourceFromLead(lead)
   if (source === 'finance') return 'New Credit App'
   if (source === 'insurance') return 'New Insurance Application'
-  if (source === 'facebook') return 'New FB Lead'
   if (source === 'website') return 'New Website Lead'
   return 'New Lead'
 }
@@ -3626,7 +3901,6 @@ function intentFallback(lead: Lead) {
   const source = sourceFromLead(lead)
   if (source === 'finance') return 'Finance application'
   if (source === 'insurance') return 'Insurance quote'
-  if (source === 'facebook') return 'Facebook lead form'
   if (source === 'website') return 'Website inquiry'
   return 'No vehicle interest'
 }
