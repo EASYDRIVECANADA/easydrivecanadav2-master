@@ -44,6 +44,12 @@ interface Vehicle {
   sourceName?: string
 }
 
+type CertificateRow = {
+  certificate?: string | null
+}
+
+type RawVehicleRow = Record<string, unknown>
+
 const getDownPaymentCap = (price: number) => {
   const numericPrice = Number(price)
   return Number.isFinite(numericPrice) ? Math.max(0, numericPrice) : 0
@@ -90,7 +96,7 @@ export default function VehicleDetailPage() {
       const urlId = String(params.id || '')
       const idsToTry = Array.from(new Set([vehicleId, urlId].filter(Boolean)))
 
-      let rows: any[] = []
+      let rows: CertificateRow[] = []
       for (const id of idsToTry) {
         const { data, error } = await supabase
           .from('certificate')
@@ -111,7 +117,7 @@ export default function VehicleDetailPage() {
         return
       }
 
-      const files: { name: string; publicUrl: string }[] = rows.map((row: any) => {
+      const files: { name: string; publicUrl: string }[] = rows.map((row) => {
         try {
           const meta = JSON.parse(row.certificate)
           return { name: String(meta?.name || 'certificate'), publicUrl: String(meta?.url || '') }
@@ -134,11 +140,11 @@ export default function VehicleDetailPage() {
   const [submitting, setSubmitting] = useState(false)
   const [submitted, setSubmitted] = useState(false)
 
-  const [isVerified, setIsVerified] = useState(false)
   const [userEmail, setUserEmail] = useState<string | null>(null)
   // Reservation status comes from vehicle.status in DB (Reserved / Sold / In Stock)
 
   const API_URL = process.env.NEXT_PUBLIC_API_URL || ''
+  const isTestDriveEligible = (item: Vehicle | null) => String(item?.category || '').toLowerCase() !== 'fleet'
 
   const openCarfaxModal = async (vehicleId: string) => {
     setCarfaxModal({ open: true, loading: true, files: [], activeIndex: 0 })
@@ -168,7 +174,7 @@ export default function VehicleDetailPage() {
 
   const [bucketImageCache] = useState(() => new Map<string, string[]>())
 
-  const normalizeImages = (raw: any): string[] => {
+  const normalizeImages = (raw: unknown): string[] => {
     if (!raw) return []
     if (Array.isArray(raw)) return raw.map(String).filter(Boolean)
     if (typeof raw === 'string') {
@@ -222,7 +228,7 @@ export default function VehicleDetailPage() {
     return unit
   }
 
-  const normalizeFeatures = (raw: any): string[] => {
+  const normalizeFeatures = (raw: unknown): string[] => {
     if (!raw) return []
     if (Array.isArray(raw)) return raw.map(String).map(s => s.trim()).filter(Boolean)
     if (typeof raw === 'string') {
@@ -243,12 +249,6 @@ export default function VehicleDetailPage() {
     }
     return []
   }
-
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      setIsVerified(window.localStorage.getItem('edc_account_verified') === 'true')
-    }
-  }, [])
 
   useEffect(() => {
     const init = async () => {
@@ -328,7 +328,7 @@ export default function VehicleDetailPage() {
             const { data: signed } = await supabase.storage
               .from('vehicle-photos')
               .createSignedUrl(path, 60 * 60)
-            const signedUrl = String((signed as any)?.signedUrl || '').trim()
+            const signedUrl = String((signed as { signedUrl?: string } | null)?.signedUrl || '').trim()
             if (signedUrl) urls.push(signedUrl)
           }
 
@@ -340,7 +340,7 @@ export default function VehicleDetailPage() {
         }
       }
 
-      const anyData = data as any
+      const anyData = data as RawVehicleRow
       const rowImages = normalizeImages(anyData.images ?? anyData.image_urls ?? anyData.image)
       const bucketImages = await loadBucketImages(String(anyData.id || params.id || ''))
       const listingMeta = getListingTypeMeta(anyData)
@@ -846,6 +846,17 @@ export default function VehicleDetailPage() {
                     )
                   })()}
 
+                  {isTestDriveEligible(vehicle) && (
+                    <button
+                      type="button"
+                      onClick={() => setShowTestDriveModal(true)}
+                      className="w-full py-3 rounded-xl font-semibold text-sm border border-emerald-300 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 flex items-center justify-center gap-2 transition-colors"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3M4 11h16M5 5h14a2 2 0 012 2v12a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2z" /></svg>
+                      Schedule Test Drive
+                    </button>
+                  )}
+
                   <button
                     onClick={() => setShowInquiryForm(!showInquiryForm)}
                     className="w-full py-3 rounded-xl font-semibold text-sm border border-gray-200 hover:bg-gray-50 text-gray-700 flex items-center justify-center gap-2 transition-colors"
@@ -1081,7 +1092,7 @@ export default function VehicleDetailPage() {
       </div>
 
       {/* Test Drive Scheduling Modal - Only for non-fleet vehicles */}
-      {showTestDriveModal && vehicle.inventoryType !== 'FLEET' && (
+      {showTestDriveModal && isTestDriveEligible(vehicle) && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-y-auto">
           {/* Backdrop */}
           <div 
@@ -1112,10 +1123,10 @@ export default function VehicleDetailPage() {
             {/* Calendar Widget */}
             <div className="overflow-y-auto flex-1 p-6">
               <iframe
-                src="https://api.leadconnectorhq.com/widget/booking/v4xgBoz3TjpnjV7L7QK4"
+                src={`/book/test-drive?vehicleId=${encodeURIComponent(vehicle.id)}&source=vehicle_page&embedded=1`}
                 className="w-full border-0 rounded-lg"
                 style={{ minHeight: '700px', height: '100%' }}
-                title="Schedule Test Drive"
+                title="EasyDrive test drive scheduler"
               ></iframe>
             </div>
           </div>
