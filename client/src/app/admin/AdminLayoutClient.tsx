@@ -257,6 +257,7 @@ export default function AdminLayoutClient({ children }: { children: ReactNode })
     const items = [
       { href: '/admin', label: 'Home', icon: 'home', disabled: false, visible: true },
       { href: '/admin/leads', label: 'Leads', icon: 'phone', disabled: !isVerified, visible: canShow('customers') || canShow('access_all_leads_customers') },
+      { href: '/admin/appointments', label: 'Appointments', icon: 'calendar', disabled: !isVerified, visible: canShow('customers') || canShow('access_all_leads_customers') || canShow('inventory') },
       { href: '/admin/customer?view=list', label: 'Customers', icon: 'users', disabled: !isVerified, visible: canShow('customers') || canShow('access_all_leads_customers') },
       { href: '/admin/vendors', label: 'Vendors', icon: 'briefcase', disabled: !isVerified, visible: canShow('vendors') },
       { href: '/admin/marketplace', label: 'Market Place', icon: 'market', disabled: !isVerified, visible: true },
@@ -844,6 +845,14 @@ function Icon({ name }: { name: string }) {
     return (
       <svg className={cls} fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17 20h5v-2a4 4 0 00-3-3.87M9 20H2v-2a4 4 0 013-3.87m12 0a4 4 0 00-6 0m6 0a3 3 0 10-6 0M7 11a3 3 0 106 0" />
+      </svg>
+    )
+  }
+  if (name === 'calendar') {
+    return (
+      <svg className={cls} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 2v4m8-4v4M4 9h16M6 5h12a2 2 0 012 2v12a2 2 0 01-2 2H6a2 2 0 01-2-2V7a2 2 0 012-2z" />
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 13h3m2 0h3M8 17h3" />
       </svg>
     )
   }

@@ -63,7 +63,7 @@ function readAdminHeaders(): Record<string, string> {
     const session = JSON.parse(window.localStorage.getItem('edc_admin_session') || '{}')
     return {
       'x-admin-email': String(session?.email || ''),
-      'x-admin-token': String(session?.session_token || session?.token || ''),
+      'x-admin-token': String(session?.session_token || session?.token || 'no-token'),
     }
   } catch {
     return {}

@@ -221,6 +221,18 @@ type OpsTask = {
   severity: string
 }
 
+type DashboardAppointment = {
+  id: string
+  customer_first_name?: string | null
+  customer_last_name?: string | null
+  customer_phone?: string | null
+  customer_email?: string | null
+  starts_at: string
+  time_zone: string
+  status: string
+  vehicle?: { year?: string | number | null; make?: string | null; model?: string | null; stock_number?: string | null } | null
+}
+
 export default function AdminPage() {
   const router = useRouter()
   const [isAuthenticated, setIsAuthenticated] = useState(false)
@@ -262,6 +274,9 @@ export default function AdminPage() {
   const [opsTasks, setOpsTasks] = useState<OpsTask[]>([])
   const [opsDealAverage, setOpsDealAverage] = useState<number>(0)
   const [opsInventoryAverage, setOpsInventoryAverage] = useState<number>(0)
+  const [appointmentsToday, setAppointmentsToday] = useState<DashboardAppointment[]>([])
+  const [appointmentsLoading, setAppointmentsLoading] = useState(false)
+  const [appointmentsError, setAppointmentsError] = useState('')
 
   useEffect(() => {
     checkAuth()
@@ -752,6 +767,44 @@ export default function AdminPage() {
     void loadOps()
   }, [isAdminRole, isAuthenticated, scopedUserId])
 
+  useEffect(() => {
+    if (!isAuthenticated) return
+
+    const getAdminHeaders = (): Record<string, string> => {
+      try {
+        const session = JSON.parse(localStorage.getItem('edc_admin_session') || '{}')
+        return {
+          'x-admin-email': String(session?.email || ''),
+          'x-admin-token': String(session?.session_token || session?.token || 'no-token'),
+        }
+      } catch {
+        return {}
+      }
+    }
+
+    const loadTodayAppointments = async () => {
+      setAppointmentsLoading(true)
+      setAppointmentsError('')
+      try {
+        const res = await fetch('/api/admin/appointments?range=today&status=booked&limit=5', {
+          cache: 'no-store',
+          headers: getAdminHeaders(),
+        })
+        const json = await res.json().catch(() => null)
+        if (!res.ok) {
+          setAppointmentsError(json?.setupRequired ? 'Appointment calendar setup required.' : json?.error || 'Unable to load appointments.')
+          setAppointmentsToday([])
+          return
+        }
+        setAppointmentsToday(Array.isArray(json?.appointments) ? json.appointments : [])
+      } finally {
+        setAppointmentsLoading(false)
+      }
+    }
+
+    void loadTodayAppointments()
+  }, [isAuthenticated])
+
   // Fetch visitor stats independently
   useEffect(() => {
     if (!isAuthenticated) return
@@ -980,6 +1033,46 @@ export default function AdminPage() {
               </div>
             )
           })}
+        </div>
+
+        <div className="bg-white rounded-2xl border border-slate-200/60 p-6 mb-8" style={{ boxShadow: '0 1px 3px rgba(0,0,0,.04)' }}>
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <div>
+              <div className="text-sm font-bold text-[#0B1F3A]">Today&apos;s Appointments</div>
+              <div className="text-xs text-slate-500 mt-0.5">{appointmentsToday.length} booked today</div>
+            </div>
+            <Link href="/admin/appointments" className="text-xs font-semibold text-[#1EA7FF] hover:text-[#0B1F3A] transition-colors px-3 py-1.5 rounded-lg hover:bg-[#1EA7FF]/5">
+              View all
+            </Link>
+          </div>
+          {appointmentsLoading ? (
+            <div className="text-sm text-slate-500">Loading appointments...</div>
+          ) : appointmentsError ? (
+            <div className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">{appointmentsError}</div>
+          ) : appointmentsToday.length === 0 ? (
+            <div className="text-sm text-slate-500">No appointments booked for today.</div>
+          ) : (
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+              {appointmentsToday.map((appointment) => {
+                const customerName = [appointment.customer_first_name, appointment.customer_last_name].filter(Boolean).join(' ') || appointment.customer_phone || appointment.customer_email || 'Unknown customer'
+                const time = new Intl.DateTimeFormat('en-CA', {
+                  timeZone: appointment.time_zone || 'America/Toronto',
+                  hour: 'numeric',
+                  minute: '2-digit',
+                }).format(new Date(appointment.starts_at))
+
+                return (
+                  <div key={appointment.id} className="flex items-start justify-between gap-3 rounded-xl border border-slate-200/70 bg-slate-50/70 p-3">
+                    <div className="min-w-0">
+                      <div className="truncate text-sm font-semibold text-[#0B1F3A]">{customerName}</div>
+                      <div className="mt-1 truncate text-xs text-slate-500">{appointment.customer_phone || appointment.customer_email || 'No contact saved'}</div>
+                    </div>
+                    <div className="shrink-0 text-right text-sm font-semibold text-slate-700">{time}</div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
         </div>
 
         <div className="grid grid-cols-1 xl:grid-cols-[1fr_360px] gap-6 mb-8">
