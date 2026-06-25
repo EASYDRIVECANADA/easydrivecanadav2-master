@@ -189,3 +189,19 @@ test('facebook assist launch tokens expire and verify without secrets in the run
   assert.equal(verifyFacebookAssistLaunchToken(token, '2026-06-26T00:00:30.000Z').valid, true)
   assert.equal(verifyFacebookAssistLaunchToken(token, '2026-06-26T00:02:00.000Z').valid, false)
 })
+
+test('buildFacebookAssistPayload never treats assist completion as posted', () => {
+  const payload = buildFacebookAssistPayload({
+    postId: 'post-2',
+    vehicleId: 'vehicle-2',
+    title: '2019 Toyota Corolla',
+    description: 'Clean sedan ready for Facebook Marketplace.',
+    price: 16995,
+    mileage: 89000,
+    location: 'Mississauga, ON',
+  })
+
+  assert.equal(payload.finalSubmitRequired, true)
+  assert.equal(Object.prototype.hasOwnProperty.call(payload, 'status'), false)
+  assert.equal(Object.prototype.hasOwnProperty.call(payload, 'postedAt'), false)
+})
