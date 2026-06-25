@@ -1,6 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import Link from 'next/link'
 import VehicleCard from '@/components/VehicleCard'
 import { supabase } from '@/lib/supabaseClient'
 import { buildVehiclePhotoUrls, normalizeVehicleImageList } from '@/lib/vehiclePhotoUrls.mjs'
@@ -581,12 +582,20 @@ export default function MarketplacePage() {
                 : `${tabFiltered.length} of ${vehicles.length} listings published to AutoTrader, Kijiji and Facebook`}
             </p>
           </div>
-          <button
-            type="button"
-            className="inline-flex h-10 items-center justify-center rounded-full bg-gray-900 px-5 text-sm font-semibold text-white transition-colors hover:bg-[#118df0]"
-          >
-            Sync now
-          </button>
+          <div className="flex flex-wrap gap-2">
+            <Link
+              href="/admin/marketplace/facebook"
+              className="inline-flex h-10 items-center justify-center rounded-full bg-[#118df0] px-5 text-sm font-semibold text-white transition-colors hover:bg-gray-900"
+            >
+              Facebook Posting Queue
+            </Link>
+            <button
+              type="button"
+              className="inline-flex h-10 items-center justify-center rounded-full bg-gray-900 px-5 text-sm font-semibold text-white transition-colors hover:bg-[#118df0]"
+            >
+              Sync now
+            </button>
+          </div>
         </div>
 
         <div className="mt-5 inline-flex max-w-full flex-wrap gap-1 rounded-xl border border-gray-200 bg-white p-1 shadow-sm">
