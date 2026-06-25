@@ -157,6 +157,65 @@ export function buildFacebookPostInsert(payload = {}, readiness = scoreFacebookM
   }
 }
 
+export const ASSIST_STATUS_OPTIONS = [
+  { value: 'not_started', label: 'Not started' },
+  { value: 'started', label: 'Started' },
+  { value: 'needs_review', label: 'Needs review' },
+  { value: 'failed', label: 'Failed' },
+  { value: 'cancelled', label: 'Cancelled' },
+]
+
+const ASSIST_STATUS_VALUES = new Set(ASSIST_STATUS_OPTIONS.map((item) => item.value))
+
+export function normalizeFacebookAssistStatus(value) {
+  const normalized = lower(value).replace(/[\s-]+/g, '_')
+  return normalized || 'not_started'
+}
+
+export function isValidFacebookAssistStatus(value) {
+  return ASSIST_STATUS_VALUES.has(normalizeFacebookAssistStatus(value))
+}
+
+export function buildFacebookAssistPayload(row = {}) {
+  return {
+    postId: clean(row.postId || row.id),
+    vehicleId: clean(row.vehicleId || row.vehicle_id),
+    title: clean(row.title || row.posting_title),
+    description: clean(row.description || row.posting_description),
+    price: numberValue(row.price || row.posting_price),
+    mileage: numberValue(row.mileage),
+    location: clean(row.location || row.posting_location),
+    vin: clean(row.vin),
+    stockNumber: clean(row.stockNumber || row.stock_number),
+    images: imageList(row.images),
+    publicUrl: clean(row.publicUrl),
+    finalSubmitRequired: true,
+  }
+}
+
+export function buildFacebookAssistLaunchToken({ postId, baseUrl, issuedAt = new Date().toISOString(), ttlSeconds = 600 } = {}) {
+  const issued = new Date(issuedAt)
+  const expires = new Date(issued.getTime() + Number(ttlSeconds || 600) * 1000)
+  return {
+    postId: clean(postId),
+    baseUrl: absoluteSiteUrl(baseUrl),
+    issuedAt: issued.toISOString(),
+    expiresAt: expires.toISOString(),
+  }
+}
+
+export function verifyFacebookAssistLaunchToken(token = {}, nowIso = new Date().toISOString()) {
+  const postId = clean(token.postId)
+  const baseUrl = clean(token.baseUrl)
+  const expiresAt = Date.parse(token.expiresAt)
+  const now = Date.parse(nowIso)
+  if (!postId) return { valid: false, reason: 'missing_post_id' }
+  if (!baseUrl) return { valid: false, reason: 'missing_base_url' }
+  if (!Number.isFinite(expiresAt)) return { valid: false, reason: 'missing_expiry' }
+  if (Number.isFinite(now) && now > expiresAt) return { valid: false, reason: 'expired' }
+  return { valid: true, reason: '' }
+}
+
 export function vehicleMatchesFacebookSearch(row = {}, query = '') {
   const q = lower(query)
   if (!q) return true

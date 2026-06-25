@@ -2,10 +2,16 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
 import {
+  ASSIST_STATUS_OPTIONS,
+  buildFacebookAssistPayload,
+  buildFacebookAssistLaunchToken,
   buildFacebookMarketplacePayload,
+  isValidFacebookAssistStatus,
   mergeFacebookPostRow,
+  normalizeFacebookAssistStatus,
   scoreFacebookMarketplaceReadiness,
   resolveFacebookMarketplaceStatus,
+  verifyFacebookAssistLaunchToken,
   vehicleMatchesFacebookSearch,
 } from './facebookMarketplacePosting.mjs'
 
@@ -135,4 +141,51 @@ test('vehicleMatchesFacebookSearch searches title, VIN, stock, and status text',
   assert.equal(vehicleMatchesFacebookSearch(row, 'A123'), true)
   assert.equal(vehicleMatchesFacebookSearch(row, 'ready'), true)
   assert.equal(vehicleMatchesFacebookSearch(row, 'camry'), false)
+})
+
+test('facebook assist statuses are explicit and normalized', () => {
+  assert.deepEqual(ASSIST_STATUS_OPTIONS.map((item) => item.value), ['not_started', 'started', 'needs_review', 'failed', 'cancelled'])
+  assert.equal(isValidFacebookAssistStatus('started'), true)
+  assert.equal(isValidFacebookAssistStatus('Needs Review'), true)
+  assert.equal(isValidFacebookAssistStatus('posted'), false)
+  assert.equal(normalizeFacebookAssistStatus('Needs Review'), 'needs_review')
+})
+
+test('buildFacebookAssistPayload creates runner-safe payload from merged row', () => {
+  const row = mergeFacebookPostRow(buildFacebookMarketplacePayload(completeVehicle, {
+    siteUrl: 'https://easydrivecanada.com',
+    defaultLocation: 'Mississauga, ON',
+  }), {
+    id: 'post-1',
+    posting_title: 'Custom Civic title',
+    posting_description: 'Custom Civic description for Facebook Marketplace.',
+    posting_price: 21500,
+    posting_location: 'Ottawa, ON',
+  })
+
+  const payload = buildFacebookAssistPayload(row)
+  assert.equal(payload.postId, 'post-1')
+  assert.equal(payload.vehicleId, completeVehicle.id)
+  assert.equal(payload.title, 'Custom Civic title')
+  assert.equal(payload.price, 21500)
+  assert.equal(payload.location, 'Ottawa, ON')
+  assert.equal(payload.vin, completeVehicle.vin)
+  assert.equal(payload.stockNumber, completeVehicle.stock_number)
+  assert.equal(Array.isArray(payload.images), true)
+  assert.equal(payload.images.length > 0, true)
+  assert.equal(payload.finalSubmitRequired, true)
+})
+
+test('facebook assist launch tokens expire and verify without secrets in the runner', () => {
+  const token = buildFacebookAssistLaunchToken({
+    postId: 'post-1',
+    baseUrl: 'https://easydrivecanada.com',
+    issuedAt: '2026-06-26T00:00:00.000Z',
+    ttlSeconds: 60,
+  })
+
+  assert.equal(token.postId, 'post-1')
+  assert.equal(token.baseUrl, 'https://easydrivecanada.com')
+  assert.equal(verifyFacebookAssistLaunchToken(token, '2026-06-26T00:00:30.000Z').valid, true)
+  assert.equal(verifyFacebookAssistLaunchToken(token, '2026-06-26T00:02:00.000Z').valid, false)
 })
