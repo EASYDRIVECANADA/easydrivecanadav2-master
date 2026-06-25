@@ -96,3 +96,9 @@ test('summarizes appointment counts', () => {
   assert.equal(summary.completed, 1)
   assert.equal(summary.noShow, 1)
 })
+
+test('search matching tolerates missing vehicle records', () => {
+  assert.equal(vehicleMatchesAppointmentSearch(sampleAppointment, null, 'avery'), true)
+  assert.equal(vehicleMatchesAppointmentSearch(sampleAppointment, null, 'veh-1'), true)
+  assert.equal(vehicleMatchesAppointmentSearch(sampleAppointment, null, 'rav4'), false)
+})
