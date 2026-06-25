@@ -5,6 +5,7 @@ import {
   requireLaunchToken,
   buildAssistPayloadUrl,
   buildAssistStatusUrl,
+  buildFacebookFieldPlan,
   createStatusBody,
 } from './facebook-marketplace-assist-runner.mjs'
 
@@ -35,4 +36,17 @@ test('builds assist URLs from token', () => {
 test('createStatusBody uses assistStatus and never marks durable posted status', () => {
   const body = createStatusBody('needs_review')
   assert.deepEqual(body, { assistStatus: 'needs_review', assistError: '' })
+})
+
+test('buildFacebookFieldPlan maps only supported safe fields', () => {
+  const plan = buildFacebookFieldPlan({
+    title: '2020 Honda Civic',
+    price: 21000,
+    description: 'Clean local trade ready for test drive.',
+    mileage: 70000,
+    location: 'Mississauga, ON',
+    vin: '2HGFC2F59LH000000',
+  })
+  assert.deepEqual(plan.map((item) => item.field), ['title', 'price', 'description', 'mileage', 'location', 'vin'])
+  assert.equal(plan.find((item) => item.field === 'price')?.value, '21000')
 })

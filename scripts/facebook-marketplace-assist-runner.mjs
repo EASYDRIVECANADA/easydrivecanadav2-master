@@ -42,6 +42,45 @@ export function createStatusBody(assistStatus, assistError = '') {
   return { assistStatus, assistError: clean(assistError) }
 }
 
+export function buildFacebookFieldPlan(payload = {}) {
+  return [
+    { field: 'title', value: clean(payload.title), labels: ['Title'] },
+    { field: 'price', value: clean(payload.price), labels: ['Price'] },
+    { field: 'description', value: clean(payload.description), labels: ['Description'] },
+    { field: 'mileage', value: clean(payload.mileage), labels: ['Mileage', 'Odometer'] },
+    { field: 'location', value: clean(payload.location), labels: ['Location'] },
+    { field: 'vin', value: clean(payload.vin), labels: ['VIN'] },
+  ].filter((item) => item.value)
+}
+
+export async function fillFacebookMarketplaceForm(page, payload) {
+  const plan = buildFacebookFieldPlan(payload)
+  for (const item of plan) {
+    let filled = false
+    for (const label of item.labels) {
+      const locator = page.getByLabel(label, { exact: false }).first()
+      if (await locator.count().catch(() => 0)) {
+        await locator.fill(item.value)
+        filled = true
+        break
+      }
+    }
+    if (!filled) console.warn(`Could not fill ${item.field}; Facebook may have changed this field.`)
+  }
+}
+
+export async function openFacebookMarketplace(payload, { browser = 'msedge' } = {}) {
+  const { chromium } = await import('playwright')
+  const context = await chromium.launchPersistentContext('./.facebook-assist-profile', {
+    channel: browser,
+    headless: false,
+  })
+  const page = await context.newPage()
+  await page.goto('https://www.facebook.com/marketplace/create/vehicle', { waitUntil: 'domcontentloaded' })
+  await fillFacebookMarketplaceForm(page, payload)
+  return { context, page }
+}
+
 async function fetchJson(url) {
   const res = await fetch(url, { cache: 'no-store' })
   const json = await res.json().catch(() => null)
@@ -67,6 +106,7 @@ export async function runAssistOnce(args) {
     console.log(JSON.stringify(payloadResponse.payload, null, 2))
     return payloadResponse.payload
   }
+  await openFacebookMarketplace(payloadResponse.payload, args)
   await patchJson(buildAssistStatusUrl(token), createStatusBody('needs_review'))
   return payloadResponse.payload
 }
