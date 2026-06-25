@@ -133,6 +133,21 @@ test('mergeFacebookPostRow preserves staff overrides over generated payload', ()
   assert.equal(merged.notes, 'Posted by Sam.')
 })
 
+test('mergeFacebookPostRow exposes assist lifecycle fields', () => {
+  const payload = buildFacebookMarketplacePayload(completeVehicle)
+  const merged = mergeFacebookPostRow(payload, {
+    assist_status: 'needs_review',
+    assist_started_at: '2026-06-26T10:00:00.000Z',
+    assist_completed_at: '2026-06-26T10:02:00.000Z',
+    assist_error: 'Facebook changed a field label.',
+  })
+
+  assert.equal(merged.assistStatus, 'needs_review')
+  assert.equal(merged.assistStartedAt, '2026-06-26T10:00:00.000Z')
+  assert.equal(merged.assistCompletedAt, '2026-06-26T10:02:00.000Z')
+  assert.equal(merged.assistError, 'Facebook changed a field label.')
+})
+
 test('vehicleMatchesFacebookSearch searches title, VIN, stock, and status text', () => {
   const row = mergeFacebookPostRow(buildFacebookMarketplacePayload(completeVehicle), { status: 'ready' })
 

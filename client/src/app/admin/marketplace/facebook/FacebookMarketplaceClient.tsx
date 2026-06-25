@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Copy, ExternalLink, RefreshCw, Search, Save } from 'lucide-react'
+import { Bot, Copy, ExternalLink, RefreshCw, Search, Save } from 'lucide-react'
 
 type FacebookPostRow = {
   postId: string
@@ -19,6 +19,10 @@ type FacebookPostRow = {
   status: string
   facebookListingUrl: string
   notes: string
+  assistStatus?: string
+  assistStartedAt?: string
+  assistCompletedAt?: string
+  assistError?: string
   readiness: { ready: boolean; score: number; missing: string[] }
 }
 
@@ -49,6 +53,22 @@ const facebookMarketplaceUrl = 'https://www.facebook.com/marketplace/create/vehi
 const statusLabel = (status: string) =>
   STATUS_OPTIONS.find((item) => item.value === status)?.label || status || 'Draft'
 
+const assistLabel = (status?: string) => {
+  if (!status) return ''
+  return status.replace(/_/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase())
+}
+
+type AssistLaunch = {
+  command: string
+  localUrl: string
+}
+
+type AssistResponse = {
+  setupRequired?: boolean
+  error?: string
+  launchToken?: unknown
+}
+
 export default function FacebookMarketplaceClient() {
   const [posts, setPosts] = useState<FacebookPostRow[]>([])
   const [summary, setSummary] = useState<Summary | null>(null)
@@ -59,6 +79,7 @@ export default function FacebookMarketplaceClient() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [copied, setCopied] = useState('')
+  const [assistLaunch, setAssistLaunch] = useState<AssistLaunch | null>(null)
   const [form, setForm] = useState({
     title: '',
     description: '',
@@ -100,6 +121,7 @@ export default function FacebookMarketplaceClient() {
   }, [load])
 
   useEffect(() => {
+    setAssistLaunch(null)
     if (!selected) return
     setForm({
       title: selected.title || '',
@@ -171,6 +193,52 @@ export default function FacebookMarketplaceClient() {
     }
 
     setSelected(null)
+    await load()
+  }
+
+  const assistSelected = async () => {
+    if (!selected?.postId) {
+      setError('Prepare and save this vehicle before launching browser assistance.')
+      return
+    }
+    if (!selected.readiness?.ready) {
+      setError('Resolve missing Marketplace fields before launching browser assistance.')
+      return
+    }
+
+    setSaving(true)
+    setError('')
+    let res: Response
+    let json: AssistResponse | null = null
+    try {
+      res = await fetch(`/api/admin/marketplace/facebook/posts/${encodeURIComponent(selected.postId)}/assist`, {
+        cache: 'no-store',
+      })
+      json = (await res.json().catch(() => null)) as AssistResponse | null
+    } catch {
+      setSaving(false)
+      setError('Failed to reach browser assistance endpoint.')
+      return
+    }
+    setSaving(false)
+
+    if (!res.ok) {
+      setError(json?.setupRequired
+        ? 'Run supabase/edc_facebook_marketplace_posts_assist.sql before browser assistance.'
+        : json?.error || 'Failed to launch browser assistance.')
+      return
+    }
+    if (!json?.launchToken) {
+      setError('Missing browser assistance launch token.')
+      return
+    }
+
+    const tokenJson = JSON.stringify(json.launchToken)
+    const encodedToken = encodeURIComponent(tokenJson)
+    const localUrl = `http://127.0.0.1:4777/assist?token=${encodedToken}`
+    const command = `node scripts/facebook-marketplace-assist-runner.mjs --token '${tokenJson}'`
+    setAssistLaunch({ command, localUrl })
+    window.open(localUrl, '_blank', 'noopener,noreferrer')
     await load()
   }
 
@@ -256,10 +324,16 @@ export default function FacebookMarketplaceClient() {
                 <div className="mt-1 truncate text-xs text-slate-500">
                   {post.stockNumber || 'No stock'} - {post.vin || 'No VIN'} - ${Number(post.price || 0).toLocaleString('en-CA')}
                 </div>
-                <div className="mt-1 text-xs text-slate-500 md:hidden">{post.readiness?.score || 0}% - {statusLabel(post.status)}</div>
+                <div className="mt-1 text-xs text-slate-500 md:hidden">
+                  {post.readiness?.score || 0}% - {statusLabel(post.status)}
+                  {post.assistStatus ? ` - Assist: ${assistLabel(post.assistStatus)}` : ''}
+                </div>
               </div>
               <div className="hidden text-sm font-semibold text-slate-700 md:block">{post.readiness?.score || 0}%</div>
-              <div className="hidden text-sm text-slate-600 md:block">{statusLabel(post.status)}</div>
+              <div className="hidden text-sm text-slate-600 md:block">
+                <div>{statusLabel(post.status)}</div>
+                {post.assistStatus ? <div className="mt-1 text-xs text-slate-500">Assist: {assistLabel(post.assistStatus)}</div> : null}
+              </div>
               <div className="hidden text-sm font-semibold text-[#1EA7FF] md:block">Open</div>
             </button>
           ))}
@@ -275,6 +349,7 @@ export default function FacebookMarketplaceClient() {
                 <div>
                   <h2 className="text-lg font-bold text-slate-950">{selected.title}</h2>
                   <p className="text-sm text-slate-500">{statusLabel(selected.status)} - {selected.readiness?.score || 0}% ready</p>
+                  {selected.assistStatus ? <p className="text-xs text-slate-500">Assist: {assistLabel(selected.assistStatus)}</p> : null}
                 </div>
                 <button type="button" onClick={() => setSelected(null)} className="edc-btn-ghost text-sm">Close</button>
               </div>
@@ -300,11 +375,33 @@ export default function FacebookMarketplaceClient() {
                   <Copy className="h-4 w-4" />
                   Copy Vehicle Link
                 </button>
+                <button
+                  type="button"
+                  onClick={() => void assistSelected()}
+                  disabled={saving || !selected.readiness?.ready}
+                  className="inline-flex items-center gap-2 rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <Bot className="h-4 w-4" />
+                  Assist Post
+                </button>
                 <button type="button" onClick={() => void saveSelected()} disabled={saving} className="edc-btn-primary inline-flex items-center gap-2 text-sm">
                   <Save className="h-4 w-4" />
                   {saving ? 'Saving...' : 'Save'}
                 </button>
               </div>
+              {assistLaunch ? (
+                <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">
+                  <div className="font-semibold">Local browser assistant</div>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <button type="button" onClick={() => window.open(assistLaunch.localUrl, '_blank', 'noopener,noreferrer')} className="text-xs font-semibold underline">
+                      Open local runner
+                    </button>
+                    <button type="button" onClick={() => void copyText('assist command', assistLaunch.command)} className="text-xs font-semibold underline">
+                      Copy runner command
+                    </button>
+                  </div>
+                </div>
+              ) : null}
               {copied ? <div className="text-sm text-emerald-700">Copied {copied}.</div> : null}
             </div>
           </aside>
