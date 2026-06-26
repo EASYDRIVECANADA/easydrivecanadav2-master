@@ -9,6 +9,12 @@
 
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import {
+  ADMIN_USER_COLUMNS,
+  ADMIN_USER_COLUMNS_WITH_SESSION_TOKEN,
+  isMissingSessionTokenColumnError,
+  shouldRejectAdminSessionToken,
+} from './apiAuthCore.mjs'
 
 /**
  * Verifies that the request carries a valid admin session.
@@ -34,26 +40,39 @@ export async function requireAdminSession(request: Request): Promise<NextRespons
       auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
     })
 
-    // Verify the session token exists and belongs to an active admin/staff user
-    const { data, error } = await supabase
+    // Verify the session token exists and belongs to an active admin/staff user.
+    // Some deployed schemas do not have the optional session_token column, so retry without it.
+    let result = await supabase
       .from('users')
-      .select('id, email, administrator, status, session_token')
+      .select(ADMIN_USER_COLUMNS_WITH_SESSION_TOKEN)
       .ilike('email', email)
       .limit(1)
       .maybeSingle()
+
+    if (result.error && isMissingSessionTokenColumnError(result.error)) {
+      result = await supabase
+        .from('users')
+        .select(ADMIN_USER_COLUMNS)
+        .ilike('email', email)
+        .limit(1)
+        .maybeSingle()
+    }
+
+    const { data, error } = result
 
     if (error || !data) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const accountStatus = String((data as any)?.status || '').trim().toLowerCase()
+    const adminUser = data as Record<string, unknown>
+    const accountStatus = String(adminUser.status || '').trim().toLowerCase()
     if (accountStatus === 'disable') {
       return NextResponse.json({ error: 'Account disabled' }, { status: 403 })
     }
 
     // If session_token column exists, validate it; otherwise fall back to email-only check
-    const storedToken = String((data as any)?.session_token || '').trim()
-    if (storedToken && storedToken !== token) {
+    const storedToken = String(adminUser.session_token || '').trim()
+    if (shouldRejectAdminSessionToken(storedToken, token)) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
