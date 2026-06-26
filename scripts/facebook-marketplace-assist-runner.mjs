@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url'
 import { URL } from 'node:url'
 
 const clean = (value) => String(value ?? '').trim()
+const defaultProfileDir = '.facebook-assist-profile'
 
 const parseTokenValue = (value) => {
   const raw = clean(value)
@@ -13,16 +14,22 @@ const parseTokenValue = (value) => {
 }
 
 export function parseRunnerArgs(argv = []) {
-  const args = { port: 4777, dryRun: false, browser: 'msedge', token: null }
+  const args = { port: 4777, dryRun: false, browser: 'msedge', profileDir: defaultProfileDir, token: null }
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i]
     if (arg === '--token') args.token = parseTokenValue(argv[++i])
     if (arg === '--port') args.port = Number(argv[++i] || 4777)
     if (arg === '--dry-run') args.dryRun = true
     if (arg === '--browser') args.browser = clean(argv[++i] || 'msedge')
+    if (arg === '--profile-dir') args.profileDir = clean(argv[++i] || defaultProfileDir)
   }
   if (!Number.isFinite(args.port) || args.port <= 0) args.port = 4777
+  if (!args.profileDir) args.profileDir = defaultProfileDir
   return args
+}
+
+export function resolveProfileDir(profileDir = defaultProfileDir) {
+  return path.resolve(clean(profileDir) || defaultProfileDir)
 }
 
 export function requireLaunchToken(args) {
@@ -69,9 +76,9 @@ export async function fillFacebookMarketplaceForm(page, payload) {
   }
 }
 
-export async function openFacebookMarketplace(payload, { browser = 'msedge' } = {}) {
+export async function openFacebookMarketplace(payload, { browser = 'msedge', profileDir = defaultProfileDir } = {}) {
   const { chromium } = await import('playwright')
-  const context = await chromium.launchPersistentContext('./.facebook-assist-profile', {
+  const context = await chromium.launchPersistentContext(resolveProfileDir(profileDir), {
     channel: browser,
     headless: false,
   })
@@ -111,7 +118,7 @@ export async function runAssistOnce(args) {
   return payloadResponse.payload
 }
 
-export function startRunnerServer({ port = 4777, browser = 'msedge', dryRun = false } = {}) {
+export function startRunnerServer({ port = 4777, browser = 'msedge', profileDir = defaultProfileDir, dryRun = false } = {}) {
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url || '/', `http://127.0.0.1:${port}`)
     if (url.pathname === '/health') {
@@ -122,7 +129,7 @@ export function startRunnerServer({ port = 4777, browser = 'msedge', dryRun = fa
     if (url.pathname === '/assist') {
       try {
         const token = parseTokenValue(url.searchParams.get('token'))
-        const payload = await runAssistOnce({ token, port, browser, dryRun })
+        const payload = await runAssistOnce({ token, port, browser, profileDir, dryRun })
         res.writeHead(200, { 'Content-Type': 'text/plain' })
         res.end(`Assist request received for ${payload?.title || payload?.vehicleId || 'vehicle'}.`)
       } catch (err) {

@@ -4,16 +4,18 @@ This runner is used on the dealership computer for browser-assisted Facebook Mar
 
 It does not store Facebook credentials and it does not click the final Facebook Post button.
 
+The runner uses a dedicated persistent browser profile at `.facebook-assist-profile` by default. Log into Facebook once in the browser window opened by the runner; future assist runs reuse that same profile and session.
+
 ## Start Runner
 
 ```bash
-node scripts/facebook-marketplace-assist-runner.mjs --port 4777
+node scripts/facebook-marketplace-assist-runner.mjs --port 4777 --profile-dir ".facebook-assist-profile"
 ```
 
 ## Dry Run A Launch Token
 
 ```bash
-node scripts/facebook-marketplace-assist-runner.mjs --token '<token json>' --dry-run
+node scripts/facebook-marketplace-assist-runner.mjs --token '<token json>' --dry-run --profile-dir ".facebook-assist-profile"
 ```
 
 ## Expected Workflow

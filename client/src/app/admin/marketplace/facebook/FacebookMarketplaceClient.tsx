@@ -236,7 +236,7 @@ export default function FacebookMarketplaceClient() {
     const tokenJson = JSON.stringify(json.launchToken)
     const encodedToken = encodeURIComponent(tokenJson)
     const localUrl = `http://127.0.0.1:4777/assist?token=${encodedToken}`
-    const command = `node scripts/facebook-marketplace-assist-runner.mjs --token '${tokenJson}'`
+    const command = `node scripts/facebook-marketplace-assist-runner.mjs --profile-dir ".facebook-assist-profile" --token '${tokenJson}'`
     setAssistLaunch({ command, localUrl })
     window.open(localUrl, '_blank', 'noopener,noreferrer')
     await load()
@@ -392,6 +392,7 @@ export default function FacebookMarketplaceClient() {
               {assistLaunch ? (
                 <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">
                   <div className="font-semibold">Local browser assistant</div>
+                  <div className="mt-1 text-xs">The assistant uses a dedicated Facebook browser profile. Log in once in that window and future runs will reuse it.</div>
                   <div className="mt-2 flex flex-wrap gap-2">
                     <button type="button" onClick={() => window.open(assistLaunch.localUrl, '_blank', 'noopener,noreferrer')} className="text-xs font-semibold underline">
                       Open local runner

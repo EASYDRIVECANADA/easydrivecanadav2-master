@@ -6,6 +6,7 @@ import {
   buildAssistPayloadUrl,
   buildAssistStatusUrl,
   buildFacebookFieldPlan,
+  resolveProfileDir,
   createStatusBody,
 } from './facebook-marketplace-assist-runner.mjs'
 
@@ -17,11 +18,27 @@ const token = {
 }
 
 test('parseRunnerArgs reads token, port, dry-run, and browser options', () => {
-  const args = parseRunnerArgs(['--token', JSON.stringify(token), '--port', '4777', '--dry-run', '--browser', 'msedge'])
+  const args = parseRunnerArgs([
+    '--token',
+    JSON.stringify(token),
+    '--port',
+    '4777',
+    '--dry-run',
+    '--browser',
+    'msedge',
+    '--profile-dir',
+    '.facebook-assist-profile',
+  ])
   assert.equal(args.port, 4777)
   assert.equal(args.dryRun, true)
   assert.equal(args.browser, 'msedge')
+  assert.equal(args.profileDir, '.facebook-assist-profile')
   assert.equal(args.token.postId, 'post-1')
+})
+
+test('resolveProfileDir defaults to the dedicated Facebook assistant profile', () => {
+  assert.match(resolveProfileDir(), /facebook-assist-profile$/)
+  assert.match(resolveProfileDir('custom-facebook-profile'), /custom-facebook-profile$/)
 })
 
 test('requireLaunchToken rejects missing token', () => {
