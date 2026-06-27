@@ -1,0 +1,12 @@
+{
+  "name": "easydrive-facebook-assistant",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "start": "node facebook-marketplace-assist-runner.mjs --port 4777 --profile-dir \".facebook-assist-profile\""
+  },
+  "dependencies": {
+    "playwright": "^1.49.1"
+  }
+}

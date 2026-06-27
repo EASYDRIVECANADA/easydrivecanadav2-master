@@ -50,6 +50,9 @@ const STATUS_OPTIONS = [
 ]
 
 const facebookMarketplaceUrl = 'https://www.facebook.com/marketplace/create/vehicle'
+const localAssistantHealthUrl = 'http://127.0.0.1:4777/health'
+const localAssistantInstallerUrl = '/downloads/facebook-assistant/install.ps1'
+const localAssistantInstallCommand = 'powershell -ExecutionPolicy Bypass -File "$env:USERPROFILE\\Downloads\\install.ps1"'
 
 function readAdminHeaders(): Record<string, string> {
   if (typeof window === 'undefined') return {}
@@ -95,6 +98,8 @@ type AssistResponse = {
   launchToken?: unknown
 }
 
+type LocalAssistantStatus = 'checking' | 'online' | 'offline'
+
 export default function FacebookMarketplaceClient() {
   const [posts, setPosts] = useState<FacebookPostRow[]>([])
   const [summary, setSummary] = useState<Summary | null>(null)
@@ -106,6 +111,7 @@ export default function FacebookMarketplaceClient() {
   const [error, setError] = useState('')
   const [copied, setCopied] = useState('')
   const [assistLaunch, setAssistLaunch] = useState<AssistLaunch | null>(null)
+  const [assistantStatus, setAssistantStatus] = useState<LocalAssistantStatus>('checking')
   const [form, setForm] = useState({
     title: '',
     description: '',
@@ -145,6 +151,27 @@ export default function FacebookMarketplaceClient() {
   useEffect(() => {
     void load()
   }, [load])
+
+  const checkLocalAssistantStatus = useCallback(async () => {
+    try {
+      const res = await fetch(localAssistantHealthUrl, { cache: 'no-store' })
+      const json = await res.json().catch(() => null)
+      const online = Boolean(res.ok && json?.service === 'easy-drive-facebook-assistant')
+      setAssistantStatus(online ? 'online' : 'offline')
+      return online
+    } catch {
+      setAssistantStatus('offline')
+      return false
+    }
+  }, [])
+
+  useEffect(() => {
+    void checkLocalAssistantStatus()
+    const interval = window.setInterval(() => {
+      void checkLocalAssistantStatus()
+    }, 10000)
+    return () => window.clearInterval(interval)
+  }, [checkLocalAssistantStatus])
 
   useEffect(() => {
     setAssistLaunch(null)
@@ -236,6 +263,10 @@ export default function FacebookMarketplaceClient() {
       setError('Resolve missing Marketplace fields before launching browser assistance.')
       return
     }
+    if (assistantStatus !== 'online' && !(await checkLocalAssistantStatus())) {
+      setError('Facebook Assistant Offline. Run the one-time startup installer on this computer, then refresh this page.')
+      return
+    }
 
     setSaving(true)
     setError('')
@@ -300,6 +331,44 @@ export default function FacebookMarketplaceClient() {
         </div>
 
         {error ? <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div> : null}
+
+        <div className={`rounded-lg border p-4 ${assistantStatus === 'online' ? 'border-emerald-200 bg-emerald-50' : assistantStatus === 'checking' ? 'border-slate-200 bg-white' : 'border-amber-200 bg-amber-50'}`}>
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div>
+              <div className={`text-sm font-semibold ${assistantStatus === 'online' ? 'text-emerald-800' : assistantStatus === 'checking' ? 'text-slate-700' : 'text-amber-800'}`}>
+                {assistantStatus === 'online' ? 'Facebook Assistant Online' : assistantStatus === 'checking' ? 'Checking Facebook Assistant...' : 'Facebook Assistant Offline'}
+              </div>
+              <p className={`mt-1 text-sm ${assistantStatus === 'online' ? 'text-emerald-700' : assistantStatus === 'checking' ? 'text-slate-500' : 'text-amber-700'}`}>
+                {assistantStatus === 'online'
+                  ? 'This computer is ready to launch browser-assisted Marketplace posts.'
+                  : 'Install the startup helper once on the dealer computer so the assistant opens automatically after login.'}
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button type="button" onClick={() => void checkLocalAssistantStatus()} className="edc-btn-ghost inline-flex items-center gap-2 text-sm">
+                <RefreshCw className="h-4 w-4" />
+                Check Again
+              </button>
+              {assistantStatus !== 'online' ? (
+                <>
+                  <a href={localAssistantInstallerUrl} download className="edc-btn-primary inline-flex items-center gap-2 text-sm">
+                    <ExternalLink className="h-4 w-4" />
+                    Download Facebook Assistant
+                  </a>
+                  <button type="button" onClick={() => void copyText('startup installer command', localAssistantInstallCommand)} className="edc-btn-ghost inline-flex items-center gap-2 text-sm">
+                    <Copy className="h-4 w-4" />
+                    Copy Install Command
+                  </button>
+                </>
+              ) : null}
+            </div>
+          </div>
+          {assistantStatus !== 'online' ? (
+            <div className="mt-3 rounded-md bg-white/70 px-3 py-2 text-xs text-slate-700">
+              Download the installer, then run it once on the dealer computer. After installation, this assistant starts automatically when Windows logs in.
+            </div>
+          ) : null}
+        </div>
 
         <div className="grid grid-cols-2 gap-3 md:grid-cols-7">
           {[

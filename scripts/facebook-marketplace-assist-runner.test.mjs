@@ -1,5 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { once } from 'node:events'
 import {
   parseRunnerArgs,
   requireLaunchToken,
@@ -12,6 +13,7 @@ import {
   formatAssistFieldResults,
   resolveProfileDir,
   createStatusBody,
+  startRunnerServer,
 } from './facebook-marketplace-assist-runner.mjs'
 
 const token = {
@@ -138,4 +140,30 @@ test('formatAssistFieldResults reports fields that still need manual input', () 
 
   assert.equal(message, 'Needs manual input: price, location')
   assert.equal(formatAssistFieldResults([{ field: 'title', filled: true }]), '')
+})
+
+test('runner health endpoint is readable from the admin dashboard', async () => {
+  const server = startRunnerServer({ port: 0, browser: 'msedge', profileDir: '.facebook-assist-profile' })
+  await once(server, 'listening')
+  const address = server.address()
+  assert.equal(typeof address, 'object')
+  const baseUrl = `http://127.0.0.1:${address.port}`
+
+  try {
+    const preflight = await fetch(`${baseUrl}/health`, { method: 'OPTIONS' })
+    assert.equal(preflight.status, 204)
+    assert.equal(preflight.headers.get('access-control-allow-origin'), '*')
+
+    const res = await fetch(`${baseUrl}/health`)
+    assert.equal(res.status, 200)
+    assert.equal(res.headers.get('access-control-allow-origin'), '*')
+    assert.deepEqual(await res.json(), {
+      ok: true,
+      service: 'easy-drive-facebook-assistant',
+      browser: 'msedge',
+      profileDir: '.facebook-assist-profile',
+    })
+  } finally {
+    await new Promise((resolve) => server.close(resolve))
+  }
 })

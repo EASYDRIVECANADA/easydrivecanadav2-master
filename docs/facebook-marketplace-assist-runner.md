@@ -10,7 +10,31 @@ The EasyDrive admin API must generate the assist token first. The local runner u
 
 The runner attempts to upload listing photos from the EasyDrive image URLs, then fills or selects the visible Facebook vehicle fields such as Location, Year, Make, Model, Price, Mileage, Description, VIN, colour, transmission, and fuel type. Facebook can still change field labels or require manual selections, so the final review step remains required.
 
-## Start Runner
+## One-Time Dealership Setup
+
+Use the setup card in EasyDrive Admin > Marketplace > Facebook.
+
+1. Click `Download Facebook Assistant`.
+2. Run the downloaded `install.ps1` file with PowerShell on the dealership Windows computer.
+3. Return to EasyDrive Admin and click `Check Again`.
+
+The downloaded installer does not require the EasyDrive source code repo. It downloads the runner and package metadata from:
+
+```text
+https://easydrivecanada.com/downloads/facebook-assistant/
+```
+
+For local developer installs from this repo, this command still works:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\install-facebook-assistant-startup.ps1
+```
+
+Both installers create a Windows scheduled task named `EasyDrive Facebook Assistant`, start the local runner immediately, and start it again whenever that Windows user logs in.
+
+The admin dashboard checks `http://127.0.0.1:4777/health` and shows either `Facebook Assistant Online` or `Facebook Assistant Offline`.
+
+## Manual Start For Developers
 
 ```bash
 node scripts/facebook-marketplace-assist-runner.mjs --port 4777 --profile-dir ".facebook-assist-profile"
@@ -25,13 +49,14 @@ node scripts/facebook-marketplace-assist-runner.mjs --token '<token json>' --dry
 ## Expected Workflow
 
 1. Log into Facebook in the visible browser profile on the dealership computer.
-2. Start this runner.
+2. Download and run the one-time installer if the dashboard says `Facebook Assistant Offline`.
 3. Open EasyDrive Admin > Marketplace > Facebook.
-4. Pick a ready vehicle.
-5. Click Assist Post.
-6. Review the filled Facebook form.
-7. Manually click Post in Facebook.
-8. Paste the final Facebook listing URL into EasyDrive.
+4. Confirm the dashboard says `Facebook Assistant Online`.
+5. Pick a ready vehicle.
+6. Click Assist Post.
+7. Review the filled Facebook form.
+8. Manually click Post in Facebook.
+9. Paste the final Facebook listing URL into EasyDrive.
 
 ## Smoke Test
 
