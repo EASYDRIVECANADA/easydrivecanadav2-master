@@ -1,4 +1,16 @@
-const clean = (value) => String(value ?? '').trim()
+import { createHmac } from 'node:crypto'
+
+const clean = (value) => {
+  if (value == null) return ''
+  if (typeof value === 'object') {
+    for (const key of ['label', 'value', 'name', 'title', 'text']) {
+      const nested = clean(value[key])
+      if (nested) return nested
+    }
+    return ''
+  }
+  return String(value).trim()
+}
 const lower = (value) => clean(value).toLowerCase()
 
 const numberValue = (value) => {
@@ -24,6 +36,19 @@ const firstText = (...values) => values.map(clean).find(Boolean) || ''
 const firstNumber = (...values) => values.map(numberValue).find((value) => value > 0) || 0
 
 const absoluteSiteUrl = (siteUrl) => clean(siteUrl || process.env.NEXT_PUBLIC_SITE_URL || 'https://easydrivecanada.com').replace(/\/+$/, '')
+
+const signaturePayload = (token = {}) => [
+  clean(token.postId),
+  clean(token.baseUrl),
+  clean(token.issuedAt),
+  clean(token.expiresAt),
+].join('|')
+
+function signAssistToken(token = {}, secret = '') {
+  const key = clean(secret)
+  if (!key) return ''
+  return createHmac('sha256', key).update(signaturePayload(token)).digest('hex')
+}
 
 const vehicleTitle = (vehicle) =>
   [vehicle.year, vehicle.make, vehicle.model, vehicle.series || vehicle.trim]
@@ -76,12 +101,20 @@ export function buildFacebookMarketplacePayload(vehicle = {}, options = {}) {
   return {
     vehicleId: id,
     userId: clean(vehicle.user_id || vehicle.userId),
+    year: clean(vehicle.year),
+    make: clean(vehicle.make),
+    model: clean(vehicle.model),
+    trim: clean(vehicle.series || vehicle.trim),
     title,
     price,
     mileage,
     location,
     description: buildDescription({ vehicle, title, mileage, publicUrl }),
     images,
+    exteriorColor: firstText(vehicle.exterior_color, vehicle.exteriorColor, vehicle.color),
+    transmission: firstText(vehicle.transmission),
+    fuelType: firstText(vehicle.fuel_type, vehicle.fuelType),
+    drivetrain: firstText(vehicle.drivetrain),
     publicUrl,
     vin: clean(vehicle.vin),
     stockNumber: clean(vehicle.stock_number || vehicle.stockNumber),
@@ -184,6 +217,10 @@ export function buildFacebookAssistPayload(row = {}) {
   return {
     postId: clean(row.postId || row.id),
     vehicleId: clean(row.vehicleId || row.vehicle_id),
+    year: clean(row.year),
+    make: clean(row.make),
+    model: clean(row.model),
+    trim: clean(row.trim),
     title: clean(row.title || row.posting_title),
     description: clean(row.description || row.posting_description),
     price: numberValue(row.price || row.posting_price),
@@ -191,24 +228,30 @@ export function buildFacebookAssistPayload(row = {}) {
     location: clean(row.location || row.posting_location),
     vin: clean(row.vin),
     stockNumber: clean(row.stockNumber || row.stock_number),
+    exteriorColor: clean(row.exteriorColor || row.exterior_color || row.color),
+    transmission: clean(row.transmission),
+    fuelType: clean(row.fuelType || row.fuel_type),
+    drivetrain: clean(row.drivetrain),
     images: imageList(row.images),
     publicUrl: clean(row.publicUrl),
     finalSubmitRequired: true,
   }
 }
 
-export function buildFacebookAssistLaunchToken({ postId, baseUrl, issuedAt = new Date().toISOString(), ttlSeconds = 600 } = {}) {
+export function buildFacebookAssistLaunchToken({ postId, baseUrl, issuedAt = new Date().toISOString(), ttlSeconds = 600, secret = '' } = {}) {
   const issued = new Date(issuedAt)
   const expires = new Date(issued.getTime() + Number(ttlSeconds || 600) * 1000)
-  return {
+  const token = {
     postId: clean(postId),
     baseUrl: absoluteSiteUrl(baseUrl),
     issuedAt: issued.toISOString(),
     expiresAt: expires.toISOString(),
   }
+  const signature = signAssistToken(token, secret)
+  return signature ? { ...token, signature } : token
 }
 
-export function verifyFacebookAssistLaunchToken(token = {}, nowIso = new Date().toISOString()) {
+export function verifyFacebookAssistLaunchToken(token = {}, nowIso = new Date().toISOString(), secret = '') {
   const postId = clean(token.postId)
   const baseUrl = clean(token.baseUrl)
   const expiresAt = Date.parse(token.expiresAt)
@@ -217,7 +260,31 @@ export function verifyFacebookAssistLaunchToken(token = {}, nowIso = new Date().
   if (!baseUrl) return { valid: false, reason: 'missing_base_url' }
   if (!Number.isFinite(expiresAt)) return { valid: false, reason: 'missing_expiry' }
   if (Number.isFinite(now) && now > expiresAt) return { valid: false, reason: 'expired' }
+  if (clean(secret)) {
+    const expected = signAssistToken(token, secret)
+    if (!expected || clean(token.signature) !== expected) return { valid: false, reason: 'bad_signature' }
+  }
   return { valid: true, reason: '' }
+}
+
+export function normalizeFacebookListingUrl(value) {
+  const raw = clean(value)
+  if (!raw) return ''
+  const withScheme = /^https?:\/\//i.test(raw) ? raw : `https://${raw.replace(/^\/+/, '')}`
+  try {
+    const url = new URL(withScheme)
+    const host = url.hostname.toLowerCase()
+    const allowedHost = ['facebook.com', 'www.facebook.com', 'm.facebook.com'].includes(host)
+    if (!allowedHost || !/^\/marketplace\/item\/[^/]+\/?/i.test(url.pathname)) return ''
+    if (host === 'facebook.com') url.hostname = 'www.facebook.com'
+    return url.toString()
+  } catch {
+    return ''
+  }
+}
+
+export function isValidFacebookListingUrl(value) {
+  return Boolean(normalizeFacebookListingUrl(value))
 }
 
 export function vehicleMatchesFacebookSearch(row = {}, query = '') {

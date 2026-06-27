@@ -6,8 +6,10 @@ import {
   buildFacebookAssistPayload,
   buildFacebookAssistLaunchToken,
   buildFacebookMarketplacePayload,
+  isValidFacebookListingUrl,
   isValidFacebookAssistStatus,
   mergeFacebookPostRow,
+  normalizeFacebookListingUrl,
   normalizeFacebookAssistStatus,
   scoreFacebookMarketplaceReadiness,
   resolveFacebookMarketplaceStatus,
@@ -53,6 +55,12 @@ test('buildFacebookMarketplacePayload builds copy-ready listing data from a comp
   assert.equal(payload.location, 'Toronto, ON')
   assert.deepEqual(payload.images, ['https://example.com/1.jpg', 'https://example.com/2.jpg'])
   assert.equal(payload.publicUrl, 'https://easydrivecanada.com/inventory/vehicle-1')
+  assert.equal(payload.year, '2021')
+  assert.equal(payload.make, 'Honda')
+  assert.equal(payload.model, 'Civic')
+  assert.equal(payload.exteriorColor, 'Blue')
+  assert.equal(payload.transmission, 'Automatic')
+  assert.equal(payload.fuelType, 'Gasoline')
   assert.match(payload.description, /Clean Civic with strong service history/)
   assert.match(payload.description, /Stock: A123/)
   assert.match(payload.description, /VIN: 2HGFC2F59MH000001/)
@@ -81,6 +89,23 @@ test('buildFacebookMarketplacePayload falls back across common vehicle field var
   assert.equal(payload.location, 'Ottawa, ON')
   assert.deepEqual(payload.images, ['https://example.com/rav4.jpg'])
   assert.equal(payload.publicUrl, 'https://edc.test/inventory/vehicle-2')
+})
+
+test('buildFacebookMarketplacePayload normalizes object-like vehicle option values', () => {
+  const payload = buildFacebookMarketplacePayload({
+    id: 'vehicle-objects',
+    year: 2009,
+    make: 'BMW',
+    model: 'Z4',
+    exterior_color: { label: 'Black Sapphire Metallic' },
+    fuel_type: { value: 'Gasoline' },
+    drivetrain: { name: 'RWD' },
+  })
+
+  assert.equal(payload.exteriorColor, 'Black Sapphire Metallic')
+  assert.equal(payload.fuelType, 'Gasoline')
+  assert.match(payload.description, /Exterior: Black Sapphire Metallic/)
+  assert.doesNotMatch(payload.description, /\[object Object\]/)
 })
 
 test('scoreFacebookMarketplaceReadiness reports required missing fields', () => {
@@ -182,10 +207,16 @@ test('buildFacebookAssistPayload creates runner-safe payload from merged row', (
   assert.equal(payload.postId, 'post-1')
   assert.equal(payload.vehicleId, completeVehicle.id)
   assert.equal(payload.title, 'Custom Civic title')
+  assert.equal(payload.year, '2021')
+  assert.equal(payload.make, 'Honda')
+  assert.equal(payload.model, 'Civic')
   assert.equal(payload.price, 21500)
   assert.equal(payload.location, 'Ottawa, ON')
   assert.equal(payload.vin, completeVehicle.vin)
   assert.equal(payload.stockNumber, completeVehicle.stock_number)
+  assert.equal(payload.exteriorColor, 'Blue')
+  assert.equal(payload.transmission, 'Automatic')
+  assert.equal(payload.fuelType, 'Gasoline')
   assert.equal(Array.isArray(payload.images), true)
   assert.equal(payload.images.length > 0, true)
   assert.equal(payload.finalSubmitRequired, true)
@@ -197,12 +228,15 @@ test('facebook assist launch tokens expire and verify without secrets in the run
     baseUrl: 'https://easydrivecanada.com',
     issuedAt: '2026-06-26T00:00:00.000Z',
     ttlSeconds: 60,
+    secret: 'test-secret',
   })
 
   assert.equal(token.postId, 'post-1')
   assert.equal(token.baseUrl, 'https://easydrivecanada.com')
-  assert.equal(verifyFacebookAssistLaunchToken(token, '2026-06-26T00:00:30.000Z').valid, true)
-  assert.equal(verifyFacebookAssistLaunchToken(token, '2026-06-26T00:02:00.000Z').valid, false)
+  assert.equal(typeof token.signature, 'string')
+  assert.equal(verifyFacebookAssistLaunchToken(token, '2026-06-26T00:00:30.000Z', 'test-secret').valid, true)
+  assert.equal(verifyFacebookAssistLaunchToken(token, '2026-06-26T00:00:30.000Z', 'wrong-secret').reason, 'bad_signature')
+  assert.equal(verifyFacebookAssistLaunchToken(token, '2026-06-26T00:02:00.000Z', 'test-secret').valid, false)
 })
 
 test('buildFacebookAssistPayload never treats assist completion as posted', () => {
@@ -219,4 +253,15 @@ test('buildFacebookAssistPayload never treats assist completion as posted', () =
   assert.equal(payload.finalSubmitRequired, true)
   assert.equal(Object.prototype.hasOwnProperty.call(payload, 'status'), false)
   assert.equal(Object.prototype.hasOwnProperty.call(payload, 'postedAt'), false)
+})
+
+test('facebook listing URL normalization only accepts Marketplace item URLs', () => {
+  assert.equal(
+    normalizeFacebookListingUrl(' facebook.com/marketplace/item/12345/?ref=search '),
+    'https://www.facebook.com/marketplace/item/12345/?ref=search'
+  )
+  assert.equal(isValidFacebookListingUrl('https://www.facebook.com/marketplace/item/12345/'), true)
+  assert.equal(isValidFacebookListingUrl('https://m.facebook.com/marketplace/item/12345/'), true)
+  assert.equal(isValidFacebookListingUrl('https://example.com/marketplace/item/12345/'), false)
+  assert.equal(isValidFacebookListingUrl('https://www.facebook.com/profile.php?id=12345'), false)
 })

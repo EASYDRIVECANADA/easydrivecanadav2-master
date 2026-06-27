@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
+import { requireAdminSession } from '@/lib/apiAuth'
 import {
   buildFacebookMarketplacePayload,
   buildFacebookPostInsert,
@@ -25,9 +26,15 @@ const createSupabase = () => {
 
 const clean = (value: unknown) => String(value ?? '').trim()
 
+type FacebookQueueRow = Record<string, unknown> & {
+  vehicleId?: string
+  postId?: string
+  status?: string
+}
+
 type LoadedRows =
   | { response: NextResponse; supabase?: never; rows?: never; summary?: never }
-  | { response?: never; supabase: SupabaseClient; rows: Array<Record<string, any>>; summary: Record<string, number> }
+  | { response?: never; supabase: SupabaseClient; rows: FacebookQueueRow[]; summary: Record<string, number> }
 
 const loadRows = async (request: Request): Promise<LoadedRows> => {
   const supabase = createSupabase()
@@ -62,9 +69,9 @@ const loadRows = async (request: Request): Promise<LoadedRows> => {
   }
 
   const postByVehicleId = new Map(
-    (Array.isArray(postResult.data) ? postResult.data : []).map((post: any) => [clean(post.vehicle_id), post])
+    (Array.isArray(postResult.data) ? postResult.data : []).map((post: Record<string, unknown>) => [clean(post.vehicle_id), post])
   )
-  const rows = (Array.isArray(vehicleResult.data) ? vehicleResult.data : []).map((vehicle: any) => {
+  const rows: FacebookQueueRow[] = (Array.isArray(vehicleResult.data) ? vehicleResult.data : []).map((vehicle: Record<string, unknown>) => {
     const payload = buildFacebookMarketplacePayload(vehicle, {
       siteUrl: process.env.NEXT_PUBLIC_SITE_URL || 'https://easydrivecanada.com',
       defaultLocation: process.env.EASYDRIVE_MARKETPLACE_DEFAULT_LOCATION || 'Mississauga, ON',
@@ -73,18 +80,18 @@ const loadRows = async (request: Request): Promise<LoadedRows> => {
   })
 
   const filtered = rows
-    .filter((row: any) => !status || row.status === status)
-    .filter((row: any) => vehicleMatchesFacebookSearch(row, q))
+    .filter((row) => !status || row.status === status)
+    .filter((row) => vehicleMatchesFacebookSearch(row, q))
 
   const summary = {
     total: filtered.length,
-    ready: filtered.filter((row: any) => row.status === 'ready').length,
-    draft: filtered.filter((row: any) => row.status === 'draft').length,
-    posted: filtered.filter((row: any) => row.status === 'posted').length,
-    needsUpdate: filtered.filter((row: any) => row.status === 'needs_update').length,
-    soldRemove: filtered.filter((row: any) => row.status === 'sold_remove').length,
-    skipped: filtered.filter((row: any) => row.status === 'skipped').length,
-    failed: filtered.filter((row: any) => row.status === 'failed').length,
+    ready: filtered.filter((row) => row.status === 'ready').length,
+    draft: filtered.filter((row) => row.status === 'draft').length,
+    posted: filtered.filter((row) => row.status === 'posted').length,
+    needsUpdate: filtered.filter((row) => row.status === 'needs_update').length,
+    soldRemove: filtered.filter((row) => row.status === 'sold_remove').length,
+    skipped: filtered.filter((row) => row.status === 'skipped').length,
+    failed: filtered.filter((row) => row.status === 'failed').length,
   }
 
   return { supabase, rows: filtered, summary }
@@ -92,6 +99,9 @@ const loadRows = async (request: Request): Promise<LoadedRows> => {
 
 export async function GET(request: Request) {
   try {
+    const authError = await requireAdminSession(request)
+    if (authError) return authError
+
     const loaded = await loadRows(request)
     if (loaded.response) return loaded.response
     return NextResponse.json({ posts: loaded.rows, summary: loaded.summary }, { headers: noStore })
@@ -102,6 +112,9 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
+    const authError = await requireAdminSession(request)
+    if (authError) return authError
+
     const loaded = await loadRows(request)
     if (loaded.response) return loaded.response
 
@@ -109,9 +122,9 @@ export async function POST(request: Request) {
     const vehicleIds = Array.isArray(body?.vehicleIds) ? body.vehicleIds.map(clean).filter(Boolean) : []
     const refreshOverrides = body?.refreshOverrides === true
     const nowIso = new Date().toISOString()
-    const selected = vehicleIds.length ? loaded.rows.filter((row: any) => vehicleIds.includes(row.vehicleId)) : loaded.rows
+    const selected = vehicleIds.length ? loaded.rows.filter((row) => vehicleIds.includes(clean(row.vehicleId))) : loaded.rows
 
-    const upserts = selected.map((row: any) => {
+    const upserts = selected.map((row) => {
       const readiness = scoreFacebookMarketplaceReadiness(row)
       const insert = buildFacebookPostInsert(row, readiness, nowIso) as Record<string, unknown>
       if (!refreshOverrides && row.postId) {

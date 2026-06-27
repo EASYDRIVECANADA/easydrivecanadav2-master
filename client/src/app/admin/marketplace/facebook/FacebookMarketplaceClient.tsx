@@ -1,7 +1,8 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Bot, Copy, ExternalLink, RefreshCw, Search, Save } from 'lucide-react'
+import { Bot, CalendarDays, Copy, ExternalLink, RefreshCw, Search, Save } from 'lucide-react'
+import { buildBookingMessage } from '@/lib/bookingShare.mjs'
 
 type FacebookPostRow = {
   postId: string
@@ -49,6 +50,31 @@ const STATUS_OPTIONS = [
 ]
 
 const facebookMarketplaceUrl = 'https://www.facebook.com/marketplace/create/vehicle'
+
+function readAdminHeaders(): Record<string, string> {
+  if (typeof window === 'undefined') return {}
+  try {
+    const session = JSON.parse(window.localStorage.getItem('edc_admin_session') || '{}')
+    return {
+      'x-admin-email': String(session?.email || ''),
+      'x-admin-token': String(session?.session_token || session?.token || 'no-token'),
+    }
+  } catch {
+    return {}
+  }
+}
+
+function isValidFacebookMarketplaceUrl(value: string) {
+  try {
+    const raw = value.trim()
+    if (!raw) return false
+    const url = new URL(/^https?:\/\//i.test(raw) ? raw : `https://${raw}`)
+    return ['facebook.com', 'www.facebook.com', 'm.facebook.com'].includes(url.hostname.toLowerCase()) &&
+      /^\/marketplace\/item\/[^/]+\/?/i.test(url.pathname)
+  } catch {
+    return false
+  }
+}
 
 const statusLabel = (status: string) =>
   STATUS_OPTIONS.find((item) => item.value === status)?.label || status || 'Draft'
@@ -98,7 +124,7 @@ export default function FacebookMarketplaceClient() {
     if (status) params.set('status', status)
 
     const suffix = params.toString() ? `?${params.toString()}` : ''
-    const res = await fetch(`/api/admin/marketplace/facebook/posts${suffix}`, { cache: 'no-store' })
+    const res = await fetch(`/api/admin/marketplace/facebook/posts${suffix}`, { cache: 'no-store', headers: readAdminHeaders() })
     const json = await res.json().catch(() => null)
 
     if (!res.ok) {
@@ -144,7 +170,7 @@ export default function FacebookMarketplaceClient() {
     setError('')
     const res = await fetch('/api/admin/marketplace/facebook/posts', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...readAdminHeaders() },
       body: JSON.stringify({ vehicleIds }),
     })
     const json = await res.json().catch(() => null)
@@ -169,11 +195,16 @@ export default function FacebookMarketplaceClient() {
     }
   }
 
-  const saveSelected = async () => {
+  const saveSelected = async (overrides: Partial<typeof form> = {}) => {
     if (!selected) return
+    const nextForm = { ...form, ...overrides }
     if (!selected.postId) {
       const prepared = await prepareSelected([selected.vehicleId])
       if (prepared) setSelected(null)
+      return
+    }
+    if (nextForm.status === 'posted' && !isValidFacebookMarketplaceUrl(nextForm.facebookListingUrl)) {
+      setError('Paste the Facebook Marketplace listing URL before marking this vehicle posted.')
       return
     }
 
@@ -181,8 +212,8 @@ export default function FacebookMarketplaceClient() {
     setError('')
     const res = await fetch(`/api/admin/marketplace/facebook/posts/${encodeURIComponent(selected.postId)}`, {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(form),
+      headers: { 'Content-Type': 'application/json', ...readAdminHeaders() },
+      body: JSON.stringify(nextForm),
     })
     const json = await res.json().catch(() => null)
     setSaving(false)
@@ -213,6 +244,7 @@ export default function FacebookMarketplaceClient() {
     try {
       res = await fetch(`/api/admin/marketplace/facebook/posts/${encodeURIComponent(selected.postId)}/assist`, {
         cache: 'no-store',
+        headers: readAdminHeaders(),
       })
       json = (await res.json().catch(() => null)) as AssistResponse | null
     } catch {
@@ -240,6 +272,11 @@ export default function FacebookMarketplaceClient() {
     setAssistLaunch({ command, localUrl })
     window.open(localUrl, '_blank', 'noopener,noreferrer')
     await load()
+  }
+
+  const markSoldRemove = async () => {
+    setForm((prev) => ({ ...prev, status: 'sold_remove' }))
+    await saveSelected({ status: 'sold_remove' })
   }
 
   return (
@@ -350,6 +387,7 @@ export default function FacebookMarketplaceClient() {
                   <h2 className="text-lg font-bold text-slate-950">{selected.title}</h2>
                   <p className="text-sm text-slate-500">{statusLabel(selected.status)} - {selected.readiness?.score || 0}% ready</p>
                   {selected.assistStatus ? <p className="text-xs text-slate-500">Assist: {assistLabel(selected.assistStatus)}</p> : null}
+                  {selected.assistError ? <p className="mt-1 text-xs text-amber-700">{selected.assistError}</p> : null}
                 </div>
                 <button type="button" onClick={() => setSelected(null)} className="edc-btn-ghost text-sm">Close</button>
               </div>
@@ -374,6 +412,17 @@ export default function FacebookMarketplaceClient() {
                 <button type="button" onClick={() => copyText('vehicle link', selected.publicUrl)} className="edc-btn-ghost inline-flex items-center gap-2 text-sm">
                   <Copy className="h-4 w-4" />
                   Copy Vehicle Link
+                </button>
+                <button
+                  type="button"
+                  onClick={() => copyText('booking message', buildBookingMessage({ vehicleId: selected.vehicleId, vehicleTitle: selected.title }))}
+                  className="edc-btn-ghost inline-flex items-center gap-2 text-sm"
+                >
+                  <CalendarDays className="h-4 w-4" />
+                  Copy Booking Link
+                </button>
+                <button type="button" onClick={() => void markSoldRemove()} disabled={saving || form.status === 'sold_remove'} className="edc-btn-ghost inline-flex items-center gap-2 text-sm">
+                  Sold / Remove
                 </button>
                 <button
                   type="button"

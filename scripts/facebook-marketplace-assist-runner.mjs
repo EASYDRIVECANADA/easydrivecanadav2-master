@@ -1,5 +1,9 @@
 #!/usr/bin/env node
+import { createHash } from 'node:crypto'
+import { existsSync } from 'node:fs'
+import { mkdir, writeFile } from 'node:fs/promises'
 import http from 'node:http'
+import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { URL } from 'node:url'
@@ -38,7 +42,8 @@ export function requireLaunchToken(args) {
 }
 
 export function buildAssistPayloadUrl(token) {
-  return `${clean(token.baseUrl).replace(/\/+$/, '')}/api/admin/marketplace/facebook/posts/${encodeURIComponent(token.postId)}/assist`
+  const encodedToken = encodeURIComponent(JSON.stringify(token))
+  return `${clean(token.baseUrl).replace(/\/+$/, '')}/api/admin/marketplace/facebook/posts/${encodeURIComponent(token.postId)}/assist?token=${encodedToken}`
 }
 
 export function buildAssistStatusUrl(token) {
@@ -49,31 +54,212 @@ export function createStatusBody(assistStatus, assistError = '') {
   return { assistStatus, assistError: clean(assistError) }
 }
 
+const imageList = (value) => {
+  if (Array.isArray(value)) return value.map(clean).filter(Boolean)
+  const raw = clean(value)
+  if (!raw) return []
+  try {
+    const parsed = JSON.parse(raw)
+    if (Array.isArray(parsed)) return parsed.map(clean).filter(Boolean)
+  } catch {
+    // Fall through to comma parsing.
+  }
+  return raw.split(',').map(clean).filter(Boolean)
+}
+
+const isHttpUrl = (value) => /^https?:\/\//i.test(clean(value))
+const isLocalFilePath = (value) => /^[a-z]:[\\/]/i.test(clean(value)) || clean(value).startsWith('/') || clean(value).startsWith('.')
+
+export function buildFacebookPhotoUploadPlan(payload = {}) {
+  return imageList(payload.images).filter((item) => isHttpUrl(item) || isLocalFilePath(item))
+}
+
 export function buildFacebookFieldPlan(payload = {}) {
   return [
+    { field: 'location', value: clean(payload.location), labels: ['Location'], interaction: 'suggestion' },
+    { field: 'year', value: clean(payload.year), labels: ['Year'], interaction: 'option' },
+    { field: 'make', value: clean(payload.make), labels: ['Make'], interaction: 'option' },
+    { field: 'model', value: clean(payload.model), labels: ['Model'], interaction: 'option' },
     { field: 'title', value: clean(payload.title), labels: ['Title'] },
     { field: 'price', value: clean(payload.price), labels: ['Price'] },
-    { field: 'description', value: clean(payload.description), labels: ['Description'] },
     { field: 'mileage', value: clean(payload.mileage), labels: ['Mileage', 'Odometer'] },
-    { field: 'location', value: clean(payload.location), labels: ['Location'] },
     { field: 'vin', value: clean(payload.vin), labels: ['VIN'] },
+    { field: 'exteriorColor', value: clean(payload.exteriorColor), labels: ['Exterior color', 'Exterior Color', 'Colour', 'Color'], interaction: 'option' },
+    { field: 'transmission', value: clean(payload.transmission), labels: ['Transmission'], interaction: 'option' },
+    { field: 'fuelType', value: clean(payload.fuelType), labels: ['Fuel type', 'Fuel Type'], interaction: 'option' },
+    { field: 'description', value: clean(payload.description), labels: ['Description'] },
   ].filter((item) => item.value)
+}
+
+export function buildFacebookControlLocatorKinds() {
+  return ['label', 'placeholder', 'textbox', 'combobox', 'spinbutton', 'button', 'aria-input', 'visible-text']
+}
+
+export function formatAssistPlanSummary(payload = {}) {
+  const photos = buildFacebookPhotoUploadPlan(payload).length
+  const fields = buildFacebookFieldPlan(payload).map((item) => item.field)
+  return `photos=${photos}; fields=${fields.length ? fields.join(', ') : 'none'}`
+}
+
+export function formatAssistFieldResults(results = []) {
+  const missing = results
+    .filter((item) => !item?.filled)
+    .map((item) => clean(item?.field))
+    .filter(Boolean)
+  return missing.length ? `Needs manual input: ${missing.join(', ')}` : ''
+}
+
+const regexFor = (value) => new RegExp(clean(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i')
+
+const controlLocators = (page, label) => {
+  const name = regexFor(label)
+  return buildFacebookControlLocatorKinds().map((kind) => {
+    if (kind === 'label') return page.getByLabel(label, { exact: false }).first()
+    if (kind === 'placeholder') return page.getByPlaceholder(label, { exact: false }).first()
+    if (kind === 'textbox') return page.getByRole('textbox', { name }).first()
+    if (kind === 'combobox') return page.getByRole('combobox', { name }).first()
+    if (kind === 'spinbutton') return page.getByRole('spinbutton', { name }).first()
+    if (kind === 'button') return page.getByRole('button', { name }).first()
+    if (kind === 'aria-input') return page.locator(`input[aria-label*="${label}" i], textarea[aria-label*="${label}" i]`).first()
+    return page.getByText(label, { exact: true }).first()
+  })
+}
+
+async function tryFillLocator(locator, value) {
+  if (!(await locator.count().catch(() => 0))) return false
+  try {
+    await locator.fill(value)
+    return true
+  } catch {
+    try {
+      await locator.click()
+      await locator.press(process.platform === 'darwin' ? 'Meta+A' : 'Control+A')
+      await locator.type(value)
+      return true
+    } catch {
+      return false
+    }
+  }
+}
+
+async function findAndFillControl(page, item) {
+  for (const label of item.labels) {
+    for (const locator of controlLocators(page, label)) {
+      if (await tryFillLocator(locator, item.value)) return locator
+    }
+  }
+  return null
+}
+
+async function clickMatchingOption(page, value) {
+  const name = regexFor(value)
+  const option = page.getByRole('option', { name }).first()
+  if (await option.count().catch(() => 0)) {
+    await option.click()
+    return true
+  }
+  const text = page.getByText(name).first()
+  if (await text.count().catch(() => 0)) {
+    await text.click()
+    return true
+  }
+  return false
+}
+
+async function selectFacebookControlValue(page, item) {
+  let opened = false
+  for (const label of item.labels) {
+    for (const locator of controlLocators(page, label)) {
+      if (!(await locator.count().catch(() => 0))) continue
+      try {
+        await locator.click()
+        opened = true
+        break
+      } catch {
+        // Try the next locator.
+      }
+    }
+    if (opened) break
+  }
+  if (!opened) return false
+  if (await clickMatchingOption(page, item.value)) return true
+  try {
+    await page.keyboard.type(item.value)
+    if (await clickMatchingOption(page, item.value)) return true
+    await page.keyboard.press('ArrowDown')
+    await page.keyboard.press('Enter')
+    return true
+  } catch {
+    return false
+  }
+}
+
+async function fillFacebookSuggestion(page, item) {
+  const locator = await findAndFillControl(page, item)
+  if (!locator) return false
+  await page.waitForTimeout(500).catch(() => {})
+  if (await clickMatchingOption(page, item.value)) return true
+  try {
+    await locator.press('ArrowDown')
+    await locator.press('Enter')
+    return true
+  } catch {
+    return true
+  }
+}
+
+async function downloadImageToTemp(source) {
+  const url = new URL(source)
+  const response = await fetch(url)
+  if (!response.ok) throw new Error(`Image request failed (${response.status})`)
+  const contentType = clean(response.headers.get('content-type')).toLowerCase()
+  const extension = contentType.includes('png') ? 'png' : contentType.includes('webp') ? 'webp' : 'jpg'
+  const digest = createHash('sha1').update(source).digest('hex').slice(0, 12)
+  const dir = path.join(os.tmpdir(), 'edc-facebook-assist-images')
+  await mkdir(dir, { recursive: true })
+  const filePath = path.join(dir, `${digest}.${extension}`)
+  await writeFile(filePath, Buffer.from(await response.arrayBuffer()))
+  return filePath
+}
+
+async function resolveUploadablePhotoFiles(sources = []) {
+  const files = []
+  for (const source of sources) {
+    if (isHttpUrl(source)) {
+      files.push(await downloadImageToTemp(source))
+    } else if (existsSync(source)) {
+      files.push(source)
+    }
+  }
+  return files
+}
+
+async function uploadFacebookPhotos(page, payload) {
+  const sources = buildFacebookPhotoUploadPlan(payload)
+  if (!sources.length) return { field: 'photos', labels: ['Add photos'], filled: false }
+  const files = await resolveUploadablePhotoFiles(sources)
+  if (!files.length) return { field: 'photos', labels: ['Add photos'], filled: false }
+  const input = page.locator('input[type="file"]').first()
+  if (!(await input.count().catch(() => 0))) return { field: 'photos', labels: ['Add photos'], filled: false }
+  await input.setInputFiles(files)
+  return { field: 'photos', labels: ['Add photos'], filled: true }
 }
 
 export async function fillFacebookMarketplaceForm(page, payload) {
   const plan = buildFacebookFieldPlan(payload)
+  console.log(`[assist] Payload plan: ${formatAssistPlanSummary(payload)}`)
+  const results = [await uploadFacebookPhotos(page, payload)]
+  console.log(`[assist] ${results[0].filled ? 'Filled' : 'Needs manual input'}: photos`)
   for (const item of plan) {
     let filled = false
-    for (const label of item.labels) {
-      const locator = page.getByLabel(label, { exact: false }).first()
-      if (await locator.count().catch(() => 0)) {
-        await locator.fill(item.value)
-        filled = true
-        break
-      }
-    }
+    if (item.interaction === 'option') filled = await selectFacebookControlValue(page, item)
+    else if (item.interaction === 'suggestion') filled = await fillFacebookSuggestion(page, item)
+    else filled = Boolean(await findAndFillControl(page, item))
     if (!filled) console.warn(`Could not fill ${item.field}; Facebook may have changed this field.`)
+    console.log(`[assist] ${filled ? 'Filled' : 'Needs manual input'}: ${item.field}`)
+    results.push({ field: item.field, labels: item.labels, filled })
   }
+  return results
 }
 
 export async function openFacebookMarketplace(payload, { browser = 'msedge', profileDir = defaultProfileDir } = {}) {
@@ -84,8 +270,8 @@ export async function openFacebookMarketplace(payload, { browser = 'msedge', pro
   })
   const page = await context.newPage()
   await page.goto('https://www.facebook.com/marketplace/create/vehicle', { waitUntil: 'domcontentloaded' })
-  await fillFacebookMarketplaceForm(page, payload)
-  return { context, page }
+  const fieldResults = await fillFacebookMarketplaceForm(page, payload)
+  return { context, page, fieldResults }
 }
 
 async function fetchJson(url) {
@@ -113,8 +299,8 @@ export async function runAssistOnce(args) {
     console.log(JSON.stringify(payloadResponse.payload, null, 2))
     return payloadResponse.payload
   }
-  await openFacebookMarketplace(payloadResponse.payload, args)
-  await patchJson(buildAssistStatusUrl(token), createStatusBody('needs_review'))
+  const assistResult = await openFacebookMarketplace(payloadResponse.payload, args)
+  await patchJson(buildAssistStatusUrl(token), createStatusBody('needs_review', formatAssistFieldResults(assistResult.fieldResults)))
   return payloadResponse.payload
 }
 

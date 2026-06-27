@@ -1,10 +1,13 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { requireAdminSession } from '@/lib/apiAuth'
 import {
   buildFacebookAssistPayload,
   buildFacebookAssistLaunchToken,
+  buildFacebookMarketplacePayload,
   isValidFacebookAssistStatus,
   normalizeFacebookAssistStatus,
+  verifyFacebookAssistLaunchToken,
 } from '@/lib/facebookMarketplacePosting.mjs'
 
 export const dynamic = 'force-dynamic'
@@ -16,6 +19,7 @@ const clean = (value: unknown) => String(value ?? '').trim()
 
 type FacebookPostRecord = Record<string, unknown> & {
   id?: string
+  vehicle_id?: string | null
   posting_payload?: Record<string, unknown> | null
   posting_title?: string | null
   posting_description?: string | null
@@ -37,8 +41,35 @@ const setupRequired = (message: string) => {
   return normalized.includes('assist_') || normalized.includes('edc_facebook_marketplace_posts')
 }
 
+const assistTokenSecret = () =>
+  process.env.FACEBOOK_ASSIST_TOKEN_SECRET ||
+  process.env.SUPABASE_SERVICE_ROLE_KEY ||
+  process.env.NEXT_PUBLIC_SUPABASE_URL ||
+  'facebook-assist-development-secret'
+
+const parseLaunchToken = (request: Request) => {
+  const raw = clean(new URL(request.url).searchParams.get('token'))
+  if (!raw) return null
+  try {
+    return JSON.parse(raw)
+  } catch {
+    return null
+  }
+}
+
 export async function GET(request: Request, context: { params: { id: string } }) {
   try {
+    const providedLaunchToken = parseLaunchToken(request)
+    if (providedLaunchToken) {
+      const verification = verifyFacebookAssistLaunchToken(providedLaunchToken, new Date().toISOString(), assistTokenSecret())
+      if (!verification.valid || clean(providedLaunchToken.postId) !== clean(context.params.id)) {
+        return NextResponse.json({ error: 'Invalid or expired browser assistance token.' }, { status: 401, headers: noStore })
+      }
+    } else {
+      const authError = await requireAdminSession(request)
+      if (authError) return authError
+    }
+
     const supabase = createSupabase()
     if (!supabase) return NextResponse.json({ error: 'Server not configured' }, { status: 500, headers: noStore })
 
@@ -61,8 +92,25 @@ export async function GET(request: Request, context: { params: { id: string } })
 
     const post = result.data as FacebookPostRecord
     const rawPayload = post.posting_payload && typeof post.posting_payload === 'object' ? post.posting_payload : {}
+    let freshVehiclePayload: Record<string, unknown> = {}
+    const vehicleId = clean(post.vehicle_id)
+    if (vehicleId) {
+      const vehicleResult = await supabase
+        .from('edc_vehicles')
+        .select('*')
+        .eq('id', vehicleId)
+        .maybeSingle()
+
+      if (!vehicleResult.error && vehicleResult.data) {
+        freshVehiclePayload = buildFacebookMarketplacePayload(vehicleResult.data, {
+          siteUrl: process.env.NEXT_PUBLIC_SITE_URL || 'https://easydrivecanada.com',
+          defaultLocation: process.env.EASYDRIVE_MARKETPLACE_DEFAULT_LOCATION || 'Mississauga, ON',
+        })
+      }
+    }
     const payload = buildFacebookAssistPayload({
       ...rawPayload,
+      ...freshVehiclePayload,
       postId: post.id,
       title: post.posting_title,
       description: post.posting_description,
@@ -72,6 +120,7 @@ export async function GET(request: Request, context: { params: { id: string } })
     const launchToken = buildFacebookAssistLaunchToken({
       postId,
       baseUrl: process.env.NEXT_PUBLIC_SITE_URL || new URL(request.url).origin,
+      secret: assistTokenSecret(),
     })
     const nowIso = new Date().toISOString()
     const updateResult = await supabase
@@ -100,6 +149,17 @@ export async function GET(request: Request, context: { params: { id: string } })
 
 export async function PATCH(request: Request, context: { params: { id: string } }) {
   try {
+    const providedLaunchToken = parseLaunchToken(request)
+    if (providedLaunchToken) {
+      const verification = verifyFacebookAssistLaunchToken(providedLaunchToken, new Date().toISOString(), assistTokenSecret())
+      if (!verification.valid || clean(providedLaunchToken.postId) !== clean(context.params.id)) {
+        return NextResponse.json({ error: 'Invalid or expired browser assistance token.' }, { status: 401, headers: noStore })
+      }
+    } else {
+      const authError = await requireAdminSession(request)
+      if (authError) return authError
+    }
+
     const supabase = createSupabase()
     if (!supabase) return NextResponse.json({ error: 'Server not configured' }, { status: 500, headers: noStore })
 
