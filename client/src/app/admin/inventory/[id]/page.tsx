@@ -16,7 +16,10 @@ import {
   FolderOpen,
   FileSearch,
   Award,
+  CalendarDays,
+  Copy,
 } from 'lucide-react'
+import { buildBookingMessage } from '@/lib/bookingShare.mjs'
 
 // Tab Components
 import VehicleDetailsTab from './tabs/VehicleDetailsTab'
@@ -408,6 +411,22 @@ export default function AdminEditVehiclePage() {
     setImages(newImages)
   }
 
+  const copyBookingMessage = async () => {
+    try {
+      await navigator.clipboard.writeText(buildBookingMessage({
+        vehicleId: String(params.id),
+        vehicleTitle,
+      }))
+      setSaveModalTitle('Booking Link Copied')
+      setSaveModalMessage('Messenger-ready booking message copied to clipboard.')
+      setSaveModalOpen(true)
+    } catch {
+      setSaveModalTitle('Copy Failed')
+      setSaveModalMessage('Could not copy the booking link. Please copy it manually from the booking page.')
+      setSaveModalOpen(true)
+    }
+  }
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-100 flex items-center justify-center">
@@ -441,6 +460,15 @@ export default function AdminEditVehiclePage() {
               </div>
             </div>
             <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => void copyBookingMessage()}
+                className="inline-flex items-center gap-2 rounded-md border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-100"
+              >
+                <CalendarDays className="h-4 w-4" />
+                <span>Copy Booking Link</span>
+                <Copy className="h-3.5 w-3.5" />
+              </button>
               <span className={`px-3 py-1 rounded-full text-xs font-medium ${
                 formData.status === 'ACTIVE' ? 'bg-green-100 text-green-800' :
                 formData.status === 'SOLD' ? 'bg-red-100 text-red-800' :

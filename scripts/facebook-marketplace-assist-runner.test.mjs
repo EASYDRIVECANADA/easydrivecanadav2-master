@@ -5,7 +5,11 @@ import {
   requireLaunchToken,
   buildAssistPayloadUrl,
   buildAssistStatusUrl,
+  buildFacebookControlLocatorKinds,
   buildFacebookFieldPlan,
+  buildFacebookPhotoUploadPlan,
+  formatAssistPlanSummary,
+  formatAssistFieldResults,
   resolveProfileDir,
   createStatusBody,
 } from './facebook-marketplace-assist-runner.mjs'
@@ -46,8 +50,8 @@ test('requireLaunchToken rejects missing token', () => {
 })
 
 test('builds assist URLs from token', () => {
-  assert.equal(buildAssistPayloadUrl(token), 'https://easydrivecanada.com/api/admin/marketplace/facebook/posts/post-1/assist')
-  assert.equal(buildAssistStatusUrl(token), 'https://easydrivecanada.com/api/admin/marketplace/facebook/posts/post-1/assist')
+  assert.match(buildAssistPayloadUrl(token), /^https:\/\/easydrivecanada\.com\/api\/admin\/marketplace\/facebook\/posts\/post-1\/assist\?token=/)
+  assert.match(buildAssistStatusUrl(token), /^https:\/\/easydrivecanada\.com\/api\/admin\/marketplace\/facebook\/posts\/post-1\/assist\?token=/)
 })
 
 test('createStatusBody uses assistStatus and never marks durable posted status', () => {
@@ -57,6 +61,9 @@ test('createStatusBody uses assistStatus and never marks durable posted status',
 
 test('buildFacebookFieldPlan maps only supported safe fields', () => {
   const plan = buildFacebookFieldPlan({
+    year: '2020',
+    make: 'Honda',
+    model: 'Civic',
     title: '2020 Honda Civic',
     price: 21000,
     description: 'Clean local trade ready for test drive.',
@@ -64,6 +71,71 @@ test('buildFacebookFieldPlan maps only supported safe fields', () => {
     location: 'Mississauga, ON',
     vin: '2HGFC2F59LH000000',
   })
-  assert.deepEqual(plan.map((item) => item.field), ['title', 'price', 'description', 'mileage', 'location', 'vin'])
+  assert.deepEqual(plan.map((item) => item.field), ['location', 'year', 'make', 'model', 'title', 'price', 'mileage', 'vin', 'description'])
+  assert.equal(plan.find((item) => item.field === 'location')?.interaction, 'suggestion')
+  assert.equal(plan.find((item) => item.field === 'year')?.interaction, 'option')
   assert.equal(plan.find((item) => item.field === 'price')?.value, '21000')
+})
+
+test('buildFacebookFieldPlan fills description last to recover from focus leaks', () => {
+  const plan = buildFacebookFieldPlan({
+    description: 'Full listing description.',
+    vin: '2HGFC2F59LH000000',
+    exteriorColor: 'Blue',
+    transmission: 'Automatic',
+    fuelType: 'Gas',
+  })
+
+  assert.equal(plan.at(-1)?.field, 'description')
+  assert.equal(plan.some((item, index) => item.field === 'vin' && index < plan.length - 1), true)
+})
+
+test('buildFacebookControlLocatorKinds includes Facebook custom button fields', () => {
+  assert.deepEqual(buildFacebookControlLocatorKinds(), [
+    'label',
+    'placeholder',
+    'textbox',
+    'combobox',
+    'spinbutton',
+    'button',
+    'aria-input',
+    'visible-text',
+  ])
+})
+
+test('formatAssistPlanSummary exposes which vehicle fields reached the runner', () => {
+  assert.equal(
+    formatAssistPlanSummary({
+      images: ['https://example.com/1.jpg', 'https://example.com/2.jpg'],
+      location: 'Ottawa, Ontario',
+      year: '2021',
+      make: 'Toyota',
+      model: 'Corolla',
+      price: 24871,
+    }),
+    'photos=2; fields=location, year, make, model, price'
+  )
+})
+
+test('buildFacebookPhotoUploadPlan keeps uploadable image sources', () => {
+  const plan = buildFacebookPhotoUploadPlan({
+    images: [
+      'https://example.com/front.jpg',
+      'not-a-url',
+      'C:\\cars\\civic.jpg',
+    ],
+  })
+
+  assert.deepEqual(plan, ['https://example.com/front.jpg', 'C:\\cars\\civic.jpg'])
+})
+
+test('formatAssistFieldResults reports fields that still need manual input', () => {
+  const message = formatAssistFieldResults([
+    { field: 'title', filled: true },
+    { field: 'price', filled: false },
+    { field: 'location', filled: false },
+  ])
+
+  assert.equal(message, 'Needs manual input: price, location')
+  assert.equal(formatAssistFieldResults([{ field: 'title', filled: true }]), '')
 })

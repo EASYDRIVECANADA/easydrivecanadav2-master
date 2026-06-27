@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { requireAdminSession } from '@/lib/apiAuth'
+import { isValidFacebookListingUrl, normalizeFacebookListingUrl } from '@/lib/facebookMarketplacePosting.mjs'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -20,6 +22,9 @@ const createSupabase = () => {
 
 export async function PATCH(request: Request, context: { params: { id: string } }) {
   try {
+    const authError = await requireAdminSession(request)
+    if (authError) return authError
+
     const supabase = createSupabase()
     if (!supabase) return NextResponse.json({ error: 'Server not configured' }, { status: 500, headers: noStore })
 
@@ -32,13 +37,22 @@ export async function PATCH(request: Request, context: { params: { id: string } 
       updated_at: new Date().toISOString(),
     }
 
+    const normalizedListingUrl = 'facebookListingUrl' in body ? normalizeFacebookListingUrl(body.facebookListingUrl) : ''
+
+    if ('facebookListingUrl' in body && clean(body.facebookListingUrl) && !isValidFacebookListingUrl(body.facebookListingUrl)) {
+      return NextResponse.json({ error: 'Enter a valid Facebook Marketplace listing URL.' }, { status: 400, headers: noStore })
+    }
+
     if (status) {
       if (!allowedStatuses.has(status)) return NextResponse.json({ error: 'Invalid status' }, { status: 400, headers: noStore })
+      if (status === 'posted' && !normalizedListingUrl) {
+        return NextResponse.json({ error: 'Paste the Facebook Marketplace listing URL before marking posted.' }, { status: 400, headers: noStore })
+      }
       update.status = status
       if (status === 'posted' && !clean(body?.postedAt)) update.posted_at = new Date().toISOString()
     }
 
-    if ('facebookListingUrl' in body) update.facebook_listing_url = clean(body.facebookListingUrl) || null
+    if ('facebookListingUrl' in body) update.facebook_listing_url = normalizedListingUrl || null
     if ('title' in body) update.posting_title = clean(body.title) || null
     if ('description' in body) update.posting_description = clean(body.description) || null
     if ('price' in body) update.posting_price = Number(body.price) || null
