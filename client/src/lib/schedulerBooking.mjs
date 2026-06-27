@@ -192,5 +192,9 @@ export function buildAppointmentInsertPayload({
     google_event_id: null,
     google_sync_status: 'skipped',
     google_sync_error: null,
+    customer_notification_status: 'skipped',
+    customer_notification_error: null,
+    staff_notification_status: 'skipped',
+    staff_notification_error: null,
   }
 }

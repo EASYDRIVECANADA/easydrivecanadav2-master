@@ -24,3 +24,5 @@ export function vehicleMatchesAppointmentSearch(appointment: Record<string, unkn
 export function groupAppointmentsByDate<T extends Record<string, unknown>>(appointments?: T[], timeZone?: string): Array<{ dateKey: string; appointments: T[] }>
 export function buildAppointmentDateRange(range?: string, nowIso?: string): { from: string; to: string }
 export function buildAppointmentSummary(appointments?: Array<Record<string, unknown>>): AppointmentSummary
+export function buildAdminAppointmentPayload(input?: Record<string, unknown>): Record<string, unknown>
+export function buildAdminAppointmentUpdatePayload(input?: Record<string, unknown>): Record<string, unknown>

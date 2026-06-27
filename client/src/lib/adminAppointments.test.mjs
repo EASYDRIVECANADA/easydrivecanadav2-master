@@ -3,6 +3,8 @@ import assert from 'node:assert/strict'
 import {
   APPOINTMENT_STATUS_OPTIONS,
   buildAppointmentDateRange,
+  buildAdminAppointmentPayload,
+  buildAdminAppointmentUpdatePayload,
   buildAppointmentSearchText,
   buildAppointmentSummary,
   formatAppointmentCustomerName,
@@ -101,4 +103,55 @@ test('search matching tolerates missing vehicle records', () => {
   assert.equal(vehicleMatchesAppointmentSearch(sampleAppointment, null, 'avery'), true)
   assert.equal(vehicleMatchesAppointmentSearch(sampleAppointment, null, 'veh-1'), true)
   assert.equal(vehicleMatchesAppointmentSearch(sampleAppointment, null, 'rav4'), false)
+})
+
+test('builds admin appointment create payload with editable customer and scheduling fields', () => {
+  const payload = buildAdminAppointmentPayload({
+    vehicleId: ' vehicle-1 ',
+    leadId: ' lead-1 ',
+    appointmentType: 'test_drive',
+    source: 'admin',
+    firstName: ' Avery ',
+    lastName: ' Stone ',
+    email: ' AVERY@example.com ',
+    phone: ' 555-1000 ',
+    note: ' Bring trade-in ',
+    startsAt: '2026-06-25T14:00:00.000Z',
+    durationMinutes: 60,
+    timeZone: 'America/Toronto',
+  })
+
+  assert.equal(payload.vehicle_id, 'vehicle-1')
+  assert.equal(payload.lead_id, 'lead-1')
+  assert.equal(payload.source, 'admin')
+  assert.equal(payload.customer_first_name, 'Avery')
+  assert.equal(payload.customer_last_name, 'Stone')
+  assert.equal(payload.customer_email, 'avery@example.com')
+  assert.equal(payload.customer_phone, '555-1000')
+  assert.equal(payload.customer_note, 'Bring trade-in')
+  assert.equal(payload.starts_at, '2026-06-25T14:00:00.000Z')
+  assert.equal(payload.ends_at, '2026-06-25T15:00:00.000Z')
+  assert.equal(payload.status, 'booked')
+  assert.equal(payload.google_sync_status, 'skipped')
+})
+
+test('builds admin appointment update payload and normalizes reschedule/status fields', () => {
+  const payload = buildAdminAppointmentUpdatePayload({
+    vehicleId: '',
+    firstName: ' Avery ',
+    email: ' AVERY@example.com ',
+    phone: '555-1000',
+    startsAt: '2026-06-25T14:30:00.000Z',
+    durationMinutes: 30,
+    status: 'No Show',
+    timeZone: 'America/Toronto',
+  })
+
+  assert.equal(payload.vehicle_id, null)
+  assert.equal(payload.customer_first_name, 'Avery')
+  assert.equal(payload.customer_email, 'avery@example.com')
+  assert.equal(payload.starts_at, '2026-06-25T14:30:00.000Z')
+  assert.equal(payload.ends_at, '2026-06-25T15:00:00.000Z')
+  assert.equal(payload.status, 'no_show')
+  assert.match(payload.updated_at, /^\d{4}-\d{2}-\d{2}T/)
 })

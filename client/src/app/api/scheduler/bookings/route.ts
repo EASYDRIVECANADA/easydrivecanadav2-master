@@ -11,6 +11,10 @@ export const dynamic = 'force-dynamic'
 
 const clean = (value: unknown) => String(value ?? '').trim()
 const lower = (value: unknown) => clean(value).toLowerCase()
+const isDuplicateBookedSlotError = (error: unknown) => {
+  const record = error as { code?: string; message?: string }
+  return record?.code === '23505' || /edc_appointments_booked_starts_at_unique_idx|duplicate key/i.test(clean(record?.message))
+}
 
 const createServerSupabase = () => {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -104,7 +108,14 @@ export async function POST(request: Request) {
       .insert(appointmentPayload)
       .select('id,public_token')
       .single()
-    if (appointmentRes.error) return NextResponse.json({ error: appointmentRes.error.message }, { status: 500 })
+    if (appointmentRes.error) {
+      if (leadRes.data?.id) {
+        await supabase.from('edc_leads').delete().eq('id', leadRes.data.id)
+      }
+      return NextResponse.json({
+        error: isDuplicateBookedSlotError(appointmentRes.error) ? 'That time was just booked. Please choose another slot.' : appointmentRes.error.message,
+      }, { status: isDuplicateBookedSlotError(appointmentRes.error) ? 409 : 500 })
+    }
 
     return NextResponse.json({
       ok: true,

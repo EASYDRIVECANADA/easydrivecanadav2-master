@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { CalendarDays, CheckCircle2, Clock, Mail, Phone, RefreshCw, Search, XCircle } from 'lucide-react'
+import { CalendarDays, CheckCircle2, Clock, Mail, Pencil, Phone, Plus, RefreshCw, Save, Search, XCircle } from 'lucide-react'
 import {
   APPOINTMENT_STATUS_OPTIONS,
   formatAppointmentCustomerName,
@@ -50,12 +50,44 @@ type ApiSummary = {
   noShow: number
 }
 
+type AppointmentForm = {
+  firstName: string
+  lastName: string
+  email: string
+  phone: string
+  note: string
+  vehicleId: string
+  leadId: string
+  appointmentType: string
+  source: string
+  startsAt: string
+  durationMinutes: string
+  timeZone: string
+  status: string
+}
+
 const DATE_FILTERS = [
   { value: 'today', label: 'Today' },
   { value: 'tomorrow', label: 'Tomorrow' },
   { value: 'next_7', label: 'Next 7 days' },
   { value: 'past', label: 'Past' },
 ]
+
+const EMPTY_FORM: AppointmentForm = {
+  firstName: '',
+  lastName: '',
+  email: '',
+  phone: '',
+  note: '',
+  vehicleId: '',
+  leadId: '',
+  appointmentType: 'test_drive',
+  source: 'admin',
+  startsAt: '',
+  durationMinutes: '45',
+  timeZone: 'America/Toronto',
+  status: 'booked',
+}
 
 function readAdminHeaders(): Record<string, string> {
   if (typeof window === 'undefined') return {}
@@ -93,6 +125,50 @@ function formatTime(value: string, timeZone = 'America/Toronto') {
   }).format(date)
 }
 
+function timeZoneOffsetMinutes(timeZone: string, date: Date) {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    timeZoneName: 'shortOffset',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).formatToParts(date)
+  const raw = String(parts.find((part) => part.type === 'timeZoneName')?.value || '').trim()
+  const match = raw.match(/^GMT([+-])(\d{1,2})(?::(\d{2}))?$/)
+  if (!match) return 0
+  const sign = match[1] === '-' ? -1 : 1
+  return sign * (Number(match[2]) * 60 + Number(match[3] || 0))
+}
+
+function dealershipLocalToUtcIso(value: string, timeZone = 'America/Toronto') {
+  const [datePart, timePart] = value.split('T')
+  if (!datePart || !timePart) return ''
+  const [year, month, day] = datePart.split('-').map(Number)
+  const [hour, minute] = timePart.split(':').map(Number)
+  if (![year, month, day, hour, minute].every(Number.isFinite)) return ''
+  const localAsUtc = Date.UTC(year, month - 1, day, hour, minute, 0, 0)
+  const offset = timeZoneOffsetMinutes(timeZone, new Date(localAsUtc))
+  let utc = localAsUtc - offset * 60_000
+  const recalculated = timeZoneOffsetMinutes(timeZone, new Date(utc))
+  if (recalculated !== offset) utc = localAsUtc - recalculated * 60_000
+  return new Date(utc).toISOString()
+}
+
+function toDealershipDateTimeLocal(value: string, timeZone = 'America/Toronto') {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(date)
+  const get = (type: string) => parts.find((part) => part.type === type)?.value || ''
+  return `${get('year')}-${get('month')}-${get('day')}T${get('hour')}:${get('minute')}`
+}
+
 export default function AdminAppointmentsPage() {
   const [appointments, setAppointments] = useState<AppointmentRow[]>([])
   const [summary, setSummary] = useState<ApiSummary | null>(null)
@@ -103,6 +179,10 @@ export default function AdminAppointmentsPage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [formOpen, setFormOpen] = useState(false)
+  const [formMode, setFormMode] = useState<'create' | 'edit'>('create')
+  const [formAppointmentId, setFormAppointmentId] = useState('')
+  const [form, setForm] = useState<AppointmentForm>(EMPTY_FORM)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -154,6 +234,70 @@ export default function AdminAppointmentsPage() {
     setSelected((current) => current && current.id === appointment.id ? { ...current, ...updated, vehicle: current.vehicle } : current)
   }
 
+  const openCreateForm = () => {
+    setError('')
+    setFormMode('create')
+    setFormAppointmentId('')
+    setForm(EMPTY_FORM)
+    setFormOpen(true)
+  }
+
+  const openEditForm = (appointment: AppointmentRow) => {
+    setError('')
+    setFormMode('edit')
+    setFormAppointmentId(appointment.id)
+    setForm({
+      firstName: appointment.customer_first_name || '',
+      lastName: appointment.customer_last_name || '',
+      email: appointment.customer_email || '',
+      phone: appointment.customer_phone || '',
+      note: appointment.customer_note || '',
+      vehicleId: appointment.vehicle_id || '',
+      leadId: appointment.lead_id || '',
+      appointmentType: appointment.appointment_type || 'test_drive',
+      source: appointment.source || 'admin',
+      startsAt: toDealershipDateTimeLocal(appointment.starts_at, appointment.time_zone),
+      durationMinutes: String(Math.max(15, Math.round((new Date(appointment.ends_at).getTime() - new Date(appointment.starts_at).getTime()) / 60_000) || 45)),
+      timeZone: appointment.time_zone || 'America/Toronto',
+      status: appointment.status || 'booked',
+    })
+    setFormOpen(true)
+  }
+
+  const saveAppointment = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    setSaving(true)
+    setError('')
+
+    const startsAt = dealershipLocalToUtcIso(form.startsAt, form.timeZone)
+    const payload = {
+      ...form,
+      startsAt,
+      durationMinutes: Number(form.durationMinutes || 45),
+    }
+    const url = formMode === 'create'
+      ? '/api/admin/appointments'
+      : `/api/admin/appointments/${encodeURIComponent(formAppointmentId)}`
+    const res = await fetch(url, {
+      method: formMode === 'create' ? 'POST' : 'PATCH',
+      headers: { 'Content-Type': 'application/json', ...readAdminHeaders() },
+      body: JSON.stringify(payload),
+    })
+    const json = await res.json().catch(() => null)
+    setSaving(false)
+    if (!res.ok) {
+      setError(json?.error || 'Failed to save appointment.')
+      return
+    }
+    setFormOpen(false)
+    setSelected(null)
+    await load()
+  }
+
+  const setField = (key: keyof AppointmentForm, value: string) => {
+    setForm((current) => ({ ...current, [key]: value }))
+  }
+
   return (
     <div className="min-h-screen bg-slate-50">
       <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
@@ -162,9 +306,14 @@ export default function AdminAppointmentsPage() {
             <h1 className="text-2xl font-semibold text-slate-950">Appointments</h1>
             <p className="mt-1 text-sm text-slate-600">Track scheduled test drives and customer appointments.</p>
           </div>
-          <button onClick={() => void load()} className="inline-flex items-center gap-2 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100">
-            <RefreshCw className="h-4 w-4" /> Refresh
-          </button>
+          <div className="flex flex-wrap gap-2">
+            <button onClick={openCreateForm} className="inline-flex items-center gap-2 rounded-md bg-blue-700 px-3 py-2 text-sm font-medium text-white hover:bg-blue-800">
+              <Plus className="h-4 w-4" /> New appointment
+            </button>
+            <button onClick={() => void load()} className="inline-flex items-center gap-2 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100">
+              <RefreshCw className="h-4 w-4" /> Refresh
+            </button>
+          </div>
         </div>
 
         <div className="mb-4 grid gap-3 md:grid-cols-5">
@@ -235,7 +384,10 @@ export default function AdminAppointmentsPage() {
                 <h2 className="text-xl font-semibold text-slate-950">{formatAppointmentCustomerName(selected)}</h2>
                 <p className="mt-1 text-sm text-slate-500">{formatDateTime(selected.starts_at, selected.time_zone)}</p>
               </div>
-              <button onClick={() => setSelected(null)} className="rounded-md p-2 text-slate-500 hover:bg-slate-100"><XCircle className="h-5 w-5" /></button>
+              <div className="flex gap-2">
+                <button onClick={() => openEditForm(selected)} className="rounded-md p-2 text-slate-500 hover:bg-slate-100" aria-label="Edit appointment"><Pencil className="h-5 w-5" /></button>
+                <button onClick={() => setSelected(null)} className="rounded-md p-2 text-slate-500 hover:bg-slate-100" aria-label="Close appointment"><XCircle className="h-5 w-5" /></button>
+              </div>
             </div>
 
             <div className="space-y-5 text-sm">
@@ -273,6 +425,102 @@ export default function AdminAppointmentsPage() {
                 ))}
               </div>
             </div>
+          </aside>
+        </div>
+      ) : null}
+
+      {formOpen ? (
+        <div className="fixed inset-0 z-[60] bg-slate-950/40" onClick={() => setFormOpen(false)}>
+          <aside className="ml-auto h-full w-full max-w-2xl overflow-y-auto bg-white p-6 shadow-xl" onClick={(event) => event.stopPropagation()}>
+            <div className="mb-6 flex items-start justify-between gap-4">
+              <div>
+                <h2 className="text-xl font-semibold text-slate-950">{formMode === 'create' ? 'New appointment' : 'Edit appointment'}</h2>
+                <p className="mt-1 text-sm text-slate-500">Times are entered in {form.timeZone}.</p>
+              </div>
+              <button onClick={() => setFormOpen(false)} className="rounded-md p-2 text-slate-500 hover:bg-slate-100" aria-label="Close form"><XCircle className="h-5 w-5" /></button>
+            </div>
+
+            <form onSubmit={saveAppointment} className="space-y-5">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="block text-sm font-medium text-slate-700">
+                  First name
+                  <input value={form.firstName} onChange={(event) => setField('firstName', event.target.value)} className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm" required />
+                </label>
+                <label className="block text-sm font-medium text-slate-700">
+                  Last name
+                  <input value={form.lastName} onChange={(event) => setField('lastName', event.target.value)} className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm" />
+                </label>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="block text-sm font-medium text-slate-700">
+                  Phone
+                  <input value={form.phone} onChange={(event) => setField('phone', event.target.value)} className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm" inputMode="tel" />
+                </label>
+                <label className="block text-sm font-medium text-slate-700">
+                  Email
+                  <input value={form.email} onChange={(event) => setField('email', event.target.value)} className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm" type="email" />
+                </label>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="block text-sm font-medium text-slate-700">
+                  Appointment time
+                  <input value={form.startsAt} onChange={(event) => setField('startsAt', event.target.value)} className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm" type="datetime-local" required />
+                </label>
+                <label className="block text-sm font-medium text-slate-700">
+                  Duration
+                  <select value={form.durationMinutes} onChange={(event) => setField('durationMinutes', event.target.value)} className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+                    <option value="30">30 minutes</option>
+                    <option value="45">45 minutes</option>
+                    <option value="60">60 minutes</option>
+                    <option value="90">90 minutes</option>
+                  </select>
+                </label>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="block text-sm font-medium text-slate-700">
+                  Vehicle ID
+                  <input value={form.vehicleId} onChange={(event) => setField('vehicleId', event.target.value)} className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm" placeholder="Optional inventory ID" />
+                </label>
+                <label className="block text-sm font-medium text-slate-700">
+                  Lead ID
+                  <input value={form.leadId} onChange={(event) => setField('leadId', event.target.value)} className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm" placeholder="Optional lead ID" />
+                </label>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="block text-sm font-medium text-slate-700">
+                  Source
+                  <select value={form.source} onChange={(event) => setField('source', event.target.value)} className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+                    <option value="admin">Admin</option>
+                    <option value="messenger">Messenger</option>
+                    <option value="marketplace">Marketplace</option>
+                    <option value="website">Website</option>
+                    <option value="vehicle_page">Vehicle page</option>
+                  </select>
+                </label>
+                <label className="block text-sm font-medium text-slate-700">
+                  Status
+                  <select value={form.status} onChange={(event) => setField('status', event.target.value)} className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm" disabled={formMode === 'create'}>
+                    {APPOINTMENT_STATUS_OPTIONS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+                  </select>
+                </label>
+              </div>
+
+              <label className="block text-sm font-medium text-slate-700">
+                Note
+                <textarea value={form.note} onChange={(event) => setField('note', event.target.value)} className="mt-1 min-h-24 w-full rounded-md border border-slate-300 px-3 py-2 text-sm" />
+              </label>
+
+              <div className="flex justify-end gap-2 border-t border-slate-200 pt-4">
+                <button type="button" onClick={() => setFormOpen(false)} className="rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100">Cancel</button>
+                <button type="submit" disabled={saving} className="inline-flex items-center gap-2 rounded-md bg-blue-700 px-4 py-2 text-sm font-medium text-white hover:bg-blue-800 disabled:cursor-not-allowed disabled:bg-slate-300">
+                  <Save className="h-4 w-4" /> {saving ? 'Saving...' : 'Save appointment'}
+                </button>
+              </div>
+            </form>
           </aside>
         </div>
       ) : null}

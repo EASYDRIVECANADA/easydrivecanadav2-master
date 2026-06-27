@@ -17,9 +17,19 @@ create table if not exists public.edc_appointments (
   google_event_id text,
   google_sync_status text not null default 'skipped',
   google_sync_error text,
+  customer_notification_status text not null default 'skipped',
+  customer_notification_error text,
+  staff_notification_status text not null default 'skipped',
+  staff_notification_error text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+alter table public.edc_appointments
+  add column if not exists customer_notification_status text not null default 'skipped',
+  add column if not exists customer_notification_error text,
+  add column if not exists staff_notification_status text not null default 'skipped',
+  add column if not exists staff_notification_error text;
 
 create unique index if not exists edc_appointments_public_token_idx
   on public.edc_appointments (public_token);
@@ -31,8 +41,18 @@ create index if not exists edc_appointments_vehicle_starts_at_idx
   on public.edc_appointments (vehicle_id, starts_at)
   where status = 'booked';
 
+create unique index if not exists edc_appointments_booked_starts_at_unique_idx
+  on public.edc_appointments (starts_at)
+  where status = 'booked';
+
 comment on table public.edc_appointments is
   'Native EasyDrive scheduler bookings created from public booking links. Google fields are reserved for a future calendar-sync phase.';
 
 comment on column public.edc_appointments.google_sync_status is
   'Calendar sync state reserved for a future phase. Phase 1 bookings use skipped.';
+
+comment on column public.edc_appointments.customer_notification_status is
+  'Customer notification delivery state reserved for email/SMS integration: skipped, pending, sent, or failed.';
+
+comment on column public.edc_appointments.staff_notification_status is
+  'Staff notification delivery state reserved for internal alert integration: skipped, pending, sent, or failed.';

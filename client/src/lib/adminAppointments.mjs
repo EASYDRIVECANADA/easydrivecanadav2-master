@@ -6,9 +6,11 @@ export const APPOINTMENT_STATUS_OPTIONS = [
 ]
 
 const STATUS_VALUES = new Set(APPOINTMENT_STATUS_OPTIONS.map((item) => item.value))
+const DEFAULT_ADMIN_APPOINTMENT_DURATION_MINUTES = 45
 
 const clean = (value) => String(value ?? '').trim()
 const lower = (value) => clean(value).toLowerCase()
+const hasOwn = (object, key) => Object.prototype.hasOwnProperty.call(object || {}, key)
 
 export function normalizeAppointmentStatus(value) {
   const normalized = lower(value).replace(/[\s-]+/g, '_')
@@ -123,4 +125,76 @@ export function buildAppointmentSummary(appointments = []) {
     if (status === 'no_show') summary.noShow += 1
     return summary
   }, { total: 0, booked: 0, completed: 0, cancelled: 0, noShow: 0 })
+}
+
+function endIsoFromStart(startsAt, durationMinutes = DEFAULT_ADMIN_APPOINTMENT_DURATION_MINUTES) {
+  const start = new Date(clean(startsAt))
+  const minutes = Number(durationMinutes || DEFAULT_ADMIN_APPOINTMENT_DURATION_MINUTES)
+  return new Date(start.getTime() + minutes * 60_000).toISOString()
+}
+
+export function buildAdminAppointmentPayload({
+  leadId,
+  vehicleId,
+  appointmentType = 'test_drive',
+  source = 'admin',
+  firstName,
+  lastName,
+  email,
+  phone,
+  note,
+  startsAt,
+  durationMinutes = DEFAULT_ADMIN_APPOINTMENT_DURATION_MINUTES,
+  timeZone = 'America/Toronto',
+  status = 'booked',
+} = {}) {
+  return {
+    lead_id: clean(leadId) || null,
+    vehicle_id: clean(vehicleId) || null,
+    appointment_type: clean(appointmentType) || 'test_drive',
+    source: clean(source) || 'admin',
+    customer_first_name: clean(firstName) || null,
+    customer_last_name: clean(lastName) || null,
+    customer_email: lower(email) || null,
+    customer_phone: clean(phone) || null,
+    customer_note: clean(note) || null,
+    starts_at: new Date(clean(startsAt)).toISOString(),
+    ends_at: endIsoFromStart(startsAt, durationMinutes),
+    time_zone: clean(timeZone) || 'America/Toronto',
+    status: normalizeAppointmentStatus(status || 'booked'),
+    google_event_id: null,
+    google_sync_status: 'skipped',
+    google_sync_error: null,
+    customer_notification_status: 'skipped',
+    customer_notification_error: null,
+    staff_notification_status: 'skipped',
+    staff_notification_error: null,
+  }
+}
+
+export function buildAdminAppointmentUpdatePayload(input = {}) {
+  const payload = {
+    updated_at: new Date().toISOString(),
+  }
+
+  if (hasOwn(input, 'leadId')) payload.lead_id = clean(input.leadId) || null
+  if (hasOwn(input, 'vehicleId')) payload.vehicle_id = clean(input.vehicleId) || null
+  if (hasOwn(input, 'appointmentType')) payload.appointment_type = clean(input.appointmentType) || 'test_drive'
+  if (hasOwn(input, 'source')) payload.source = clean(input.source) || 'admin'
+  if (hasOwn(input, 'firstName')) payload.customer_first_name = clean(input.firstName) || null
+  if (hasOwn(input, 'lastName')) payload.customer_last_name = clean(input.lastName) || null
+  if (hasOwn(input, 'email')) payload.customer_email = lower(input.email) || null
+  if (hasOwn(input, 'phone')) payload.customer_phone = clean(input.phone) || null
+  if (hasOwn(input, 'note')) payload.customer_note = clean(input.note) || null
+  if (hasOwn(input, 'timeZone')) payload.time_zone = clean(input.timeZone) || 'America/Toronto'
+  if (hasOwn(input, 'status')) payload.status = normalizeAppointmentStatus(input.status)
+
+  if (hasOwn(input, 'startsAt')) {
+    payload.starts_at = new Date(clean(input.startsAt)).toISOString()
+    payload.ends_at = endIsoFromStart(input.startsAt, input.durationMinutes)
+  } else if (hasOwn(input, 'endsAt')) {
+    payload.ends_at = new Date(clean(input.endsAt)).toISOString()
+  }
+
+  return payload
 }
