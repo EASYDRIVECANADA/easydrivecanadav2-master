@@ -10,6 +10,7 @@ import { URL } from 'node:url'
 
 const clean = (value) => String(value ?? '').trim()
 const defaultProfileDir = '.facebook-assist-profile'
+export const facebookActionTimeoutMs = 1200
 
 const parseTokenValue = (value) => {
   const raw = clean(value)
@@ -177,17 +178,52 @@ async function verifyFilledValue(page, locator, value) {
   return filledValueMatches(value, activeValue)
 }
 
-async function tryFillLocator(page, locator, value) {
+async function forceSetLocatorValue(locator, value) {
+  if (!(await locator.count().catch(() => 0))) return false
+  return locator.evaluate((node, nextValue) => {
+    const findControl = (element) => {
+      if (!element) return null
+      if (element.matches?.('input, textarea, select, [contenteditable="true"]')) return element
+      return element.querySelector?.('input, textarea, select, [contenteditable="true"]') || null
+    }
+    const control = findControl(node)
+    if (!control) return false
+
+    if (control.isContentEditable) {
+      control.textContent = nextValue
+    } else {
+      const tagName = String(control.tagName || '').toLowerCase()
+      const prototype = tagName === 'textarea'
+        ? window.HTMLTextAreaElement?.prototype
+        : tagName === 'select'
+          ? window.HTMLSelectElement?.prototype
+          : window.HTMLInputElement?.prototype
+      const descriptor = prototype ? Object.getOwnPropertyDescriptor(prototype, 'value') : null
+      if (descriptor?.set) descriptor.set.call(control, nextValue)
+      else control.value = nextValue
+    }
+
+    control.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: nextValue }))
+    control.dispatchEvent(new Event('change', { bubbles: true }))
+    return true
+  }, value).catch(() => false)
+}
+
+export async function tryFillLocator(page, locator, value) {
   if (!(await locator.count().catch(() => 0))) return false
   try {
-    await locator.fill(value)
+    await locator.fill(value, { timeout: facebookActionTimeoutMs })
     await page.waitForTimeout(100).catch(() => {})
     if (await verifyFilledValue(page, locator, value)) return true
   } catch {
     // Fall through to keyboard-based input for Facebook's custom controls.
   }
+  if (await forceSetLocatorValue(locator, value)) {
+    await page.waitForTimeout(100).catch(() => {})
+    if (await verifyFilledValue(page, locator, value)) return true
+  }
   try {
-    await locator.click()
+    await locator.click({ timeout: facebookActionTimeoutMs })
     await page.keyboard.press(process.platform === 'darwin' ? 'Meta+A' : 'Control+A')
     await page.keyboard.type(value)
     await page.waitForTimeout(100).catch(() => {})
@@ -216,7 +252,7 @@ async function findAndFillControl(page, item) {
       if (await tryFillLocator(page, locator, item.value)) return locator
     }
     try {
-      await page.getByText(regexFor(label)).first().click()
+      await page.getByText(regexFor(label)).first().click({ timeout: facebookActionTimeoutMs })
       if (await tryClearAndFillFocusedControl(page, item.value)) return page.locator(':focus').first()
     } catch {
       // Try the next label.

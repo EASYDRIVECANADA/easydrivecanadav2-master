@@ -12,6 +12,8 @@ import {
   formatAssistPlanSummary,
   formatAssistFieldResults,
   filledValueMatches,
+  facebookActionTimeoutMs,
+  tryFillLocator,
   resolveProfileDir,
   createStatusBody,
   startRunnerServer,
@@ -148,6 +150,35 @@ test('filledValueMatches rejects unchanged Facebook price and empty description 
   assert.equal(filledValueMatches('24871', '₱0'), false)
   assert.equal(filledValueMatches('2009 BMW Z4 sDRIVE30I', ''), false)
   assert.equal(filledValueMatches('2009 BMW Z4 sDRIVE30I', '2009 BMW Z4 sDRIVE30I - clean roadster'), true)
+})
+
+test('tryFillLocator uses short action timeouts when a Facebook field rejects input', async () => {
+  const actions = []
+  const locator = {
+    count: async () => 1,
+    fill: async (_value, options) => {
+      actions.push(['fill', options?.timeout])
+      throw new Error('not editable')
+    },
+    click: async (options) => {
+      actions.push(['click', options?.timeout])
+    },
+    evaluate: async () => '₱0',
+  }
+  const page = {
+    waitForTimeout: async () => {},
+    keyboard: {
+      press: async () => {},
+      type: async () => {},
+    },
+    evaluate: async () => '',
+  }
+
+  assert.equal(await tryFillLocator(page, locator, '24871'), false)
+  assert.deepEqual(actions, [
+    ['fill', facebookActionTimeoutMs],
+    ['click', facebookActionTimeoutMs],
+  ])
 })
 
 test('runner health endpoint is readable from the admin dashboard', async () => {
