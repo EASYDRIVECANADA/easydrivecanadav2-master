@@ -13,6 +13,8 @@ test('facebook assistant installer creates a Windows logon scheduled task', asyn
   assert.match(source, /\.facebook-assist-profile/)
   assert.match(source, /\[int\]\$Port\s+=\s+4777/)
   assert.match(source, /--port\s+\$Port/)
+  assert.match(source, /-RunLevel\s+Limited/)
+  assert.doesNotMatch(source, /LeastPrivilege/)
   assert.doesNotMatch(source, /CodeGeneration/)
 })
 
@@ -27,6 +29,8 @@ test('site-hosted facebook assistant package can install without the repo checko
   assert.match(installer, /npm\s+install\s+--omit=dev/)
   assert.match(installer, /Register-ScheduledTask/)
   assert.match(installer, /start-facebook-assistant\.ps1/)
+  assert.match(installer, /-RunLevel\s+Limited/)
+  assert.doesNotMatch(installer, /LeastPrivilege/)
   assert.doesNotMatch(installer, /RepoRoot/)
   assert.equal(pkg.scripts.start, 'node facebook-marketplace-assist-runner.mjs --port 4777 --profile-dir ".facebook-assist-profile"')
   assert.equal(pkg.dependencies.playwright, '^1.49.1')
