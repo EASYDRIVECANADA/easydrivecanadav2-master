@@ -81,13 +81,13 @@ export function buildFacebookFieldPlan(payload = {}) {
     { field: 'make', value: clean(payload.make), labels: ['Make'], interaction: 'option' },
     { field: 'model', value: clean(payload.model), labels: ['Model'], interaction: 'option' },
     { field: 'title', value: clean(payload.title), labels: ['Title'] },
-    { field: 'price', value: clean(payload.price), labels: ['Price'] },
+    { field: 'price', value: clean(payload.price), labels: ['Price', 'Enter your price'] },
     { field: 'mileage', value: clean(payload.mileage), labels: ['Mileage', 'Odometer'] },
     { field: 'vin', value: clean(payload.vin), labels: ['VIN'] },
     { field: 'exteriorColor', value: clean(payload.exteriorColor), labels: ['Exterior color', 'Exterior Color', 'Colour', 'Color'], interaction: 'option' },
     { field: 'transmission', value: clean(payload.transmission), labels: ['Transmission'], interaction: 'option' },
     { field: 'fuelType', value: clean(payload.fuelType), labels: ['Fuel type', 'Fuel Type'], interaction: 'option' },
-    { field: 'description', value: clean(payload.description), labels: ['Description'] },
+    { field: 'description', value: clean(payload.description), labels: ['Description', 'Tell buyers anything'] },
   ].filter((item) => item.value)
 }
 
@@ -111,6 +111,32 @@ export function formatAssistFieldResults(results = []) {
 
 const regexFor = (value) => new RegExp(clean(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i')
 
+const normalizeComparableValue = (value) => clean(value).replace(/\s+/g, ' ').toLowerCase()
+const digitsOnly = (value) => clean(value).replace(/\D/g, '')
+
+export function filledValueMatches(expected, actual) {
+  const expectedText = normalizeComparableValue(expected)
+  if (!expectedText) return true
+  const actualText = normalizeComparableValue(actual)
+  if (!actualText) return false
+  if (/^\d+(?:\.\d+)?$/.test(expectedText)) return digitsOnly(actualText) === digitsOnly(expectedText)
+  return actualText.includes(expectedText)
+}
+
+const readableControlValue = (node) => {
+  if (!node) return ''
+  const readValue = (element) => {
+    const tagName = String(element?.tagName || '').toLowerCase()
+    if (tagName === 'input' || tagName === 'textarea' || tagName === 'select') return element.value || ''
+    if (element?.isContentEditable) return element.innerText || element.textContent || ''
+    return ''
+  }
+  const directValue = readValue(node)
+  if (directValue) return directValue
+  const nested = node.querySelector?.('input, textarea, select, [contenteditable="true"]')
+  return readValue(nested)
+}
+
 const controlLocators = (page, label) => {
   const name = regexFor(label)
   return buildFacebookControlLocatorKinds().map((kind) => {
@@ -125,27 +151,75 @@ const controlLocators = (page, label) => {
   })
 }
 
-async function tryFillLocator(locator, value) {
+async function readLocatorValue(locator) {
+  if (!(await locator.count().catch(() => 0))) return ''
+  return locator.evaluate(readableControlValue).catch(() => '')
+}
+
+async function readActiveElementValue(page) {
+  return page.evaluate(() => {
+    const readValue = (element) => {
+      const tagName = String(element?.tagName || '').toLowerCase()
+      if (tagName === 'input' || tagName === 'textarea' || tagName === 'select') return element.value || ''
+      if (element?.isContentEditable) return element.innerText || element.textContent || ''
+      return ''
+    }
+    const active = document.activeElement
+    if (!active || active === document.body || active === document.documentElement) return ''
+    return readValue(active)
+  }).catch(() => '')
+}
+
+async function verifyFilledValue(page, locator, value) {
+  const locatorValue = await readLocatorValue(locator)
+  if (filledValueMatches(value, locatorValue)) return true
+  const activeValue = await readActiveElementValue(page)
+  return filledValueMatches(value, activeValue)
+}
+
+async function tryFillLocator(page, locator, value) {
   if (!(await locator.count().catch(() => 0))) return false
   try {
     await locator.fill(value)
-    return true
+    await page.waitForTimeout(100).catch(() => {})
+    if (await verifyFilledValue(page, locator, value)) return true
   } catch {
-    try {
-      await locator.click()
-      await locator.press(process.platform === 'darwin' ? 'Meta+A' : 'Control+A')
-      await locator.type(value)
-      return true
-    } catch {
-      return false
-    }
+    // Fall through to keyboard-based input for Facebook's custom controls.
+  }
+  try {
+    await locator.click()
+    await page.keyboard.press(process.platform === 'darwin' ? 'Meta+A' : 'Control+A')
+    await page.keyboard.type(value)
+    await page.waitForTimeout(100).catch(() => {})
+    return verifyFilledValue(page, locator, value)
+  } catch {
+    return false
+  }
+}
+
+async function tryClearAndFillFocusedControl(page, value) {
+  try {
+    await page.keyboard.press(process.platform === 'darwin' ? 'Meta+A' : 'Control+A')
+    await page.keyboard.press('Backspace')
+    await page.keyboard.type(value)
+    await page.waitForTimeout(100).catch(() => {})
+    const activeValue = await readActiveElementValue(page)
+    return filledValueMatches(value, activeValue)
+  } catch {
+    return false
   }
 }
 
 async function findAndFillControl(page, item) {
   for (const label of item.labels) {
     for (const locator of controlLocators(page, label)) {
-      if (await tryFillLocator(locator, item.value)) return locator
+      if (await tryFillLocator(page, locator, item.value)) return locator
+    }
+    try {
+      await page.getByText(regexFor(label)).first().click()
+      if (await tryClearAndFillFocusedControl(page, item.value)) return page.locator(':focus').first()
+    } catch {
+      // Try the next label.
     }
   }
   return null

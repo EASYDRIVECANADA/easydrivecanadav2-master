@@ -11,6 +11,7 @@ import {
   buildFacebookPhotoUploadPlan,
   formatAssistPlanSummary,
   formatAssistFieldResults,
+  filledValueMatches,
   resolveProfileDir,
   createStatusBody,
   startRunnerServer,
@@ -140,6 +141,13 @@ test('formatAssistFieldResults reports fields that still need manual input', () 
 
   assert.equal(message, 'Needs manual input: price, location')
   assert.equal(formatAssistFieldResults([{ field: 'title', filled: true }]), '')
+})
+
+test('filledValueMatches rejects unchanged Facebook price and empty description fields', () => {
+  assert.equal(filledValueMatches('24871', '₱24,871'), true)
+  assert.equal(filledValueMatches('24871', '₱0'), false)
+  assert.equal(filledValueMatches('2009 BMW Z4 sDRIVE30I', ''), false)
+  assert.equal(filledValueMatches('2009 BMW Z4 sDRIVE30I', '2009 BMW Z4 sDRIVE30I - clean roadster'), true)
 })
 
 test('runner health endpoint is readable from the admin dashboard', async () => {
