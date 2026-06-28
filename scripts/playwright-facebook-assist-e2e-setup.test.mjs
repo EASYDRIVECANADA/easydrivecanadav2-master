@@ -22,6 +22,6 @@ test('facebook posting dashboard exposes local assistant status and setup guidan
   assert.match(source, /http:\/\/127\.0\.0\.1:4777\/health/)
   assert.match(source, /Facebook Assistant Online/)
   assert.match(source, /Facebook Assistant Offline/)
-  assert.match(source, /\/downloads\/facebook-assistant\/install\.ps1/)
+  assert.match(source, /\/downloads\/facebook-assistant\/install-facebook-assistant\.cmd/)
   assert.match(source, /Download Facebook Assistant/)
 })

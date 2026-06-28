@@ -51,8 +51,8 @@ const STATUS_OPTIONS = [
 
 const facebookMarketplaceUrl = 'https://www.facebook.com/marketplace/create/vehicle'
 const localAssistantHealthUrl = 'http://127.0.0.1:4777/health'
-const localAssistantInstallerUrl = '/downloads/facebook-assistant/install.ps1'
-const localAssistantInstallCommand = 'powershell -ExecutionPolicy Bypass -File "$env:USERPROFILE\\Downloads\\install.ps1"'
+const localAssistantInstallerUrl = '/downloads/facebook-assistant/install-facebook-assistant.cmd'
+const localAssistantInstallCommand = '"%USERPROFILE%\\Downloads\\install-facebook-assistant.cmd"'
 
 function readAdminHeaders(): Record<string, string> {
   if (typeof window === 'undefined') return {}
@@ -365,7 +365,7 @@ export default function FacebookMarketplaceClient() {
           </div>
           {assistantStatus !== 'online' ? (
             <div className="mt-3 rounded-md bg-white/70 px-3 py-2 text-xs text-slate-700">
-              Download the installer, then run it once on the dealer computer. After installation, this assistant starts automatically when Windows logs in.
+              Download the Windows installer, then double-click install-facebook-assistant.cmd once on the dealer computer. After installation, this assistant starts automatically when Windows logs in.
             </div>
           ) : null}
         </div>

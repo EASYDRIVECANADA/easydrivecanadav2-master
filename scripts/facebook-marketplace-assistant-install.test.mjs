@@ -22,6 +22,7 @@ test('facebook assistant installer creates a Windows logon scheduled task', asyn
 
 test('site-hosted facebook assistant package can install without the repo checkout', async () => {
   const installer = await readFile(new URL('../client/public/downloads/facebook-assistant/install.ps1', import.meta.url), 'utf8')
+  const commandLauncher = await readFile(new URL('../client/public/downloads/facebook-assistant/install-facebook-assistant.cmd', import.meta.url), 'utf8')
   const pkg = JSON.parse(await readFile(new URL('../client/public/downloads/facebook-assistant/package.json', import.meta.url), 'utf8'))
   const publicRunner = await readFile(new URL('../client/public/downloads/facebook-assistant/facebook-marketplace-assist-runner.mjs', import.meta.url), 'utf8')
   const repoRunner = await readFile(new URL('./facebook-marketplace-assist-runner.mjs', import.meta.url), 'utf8')
@@ -36,6 +37,10 @@ test('site-hosted facebook assistant package can install without the repo checko
   assert.match(installer, /-RunLevel\s+Limited/)
   assert.doesNotMatch(installer, /LeastPrivilege/)
   assert.doesNotMatch(installer, /RepoRoot/)
+  assert.match(commandLauncher, /install\.ps1/)
+  assert.match(commandLauncher, /ExecutionPolicy Bypass/)
+  assert.match(commandLauncher, /-NoExit/)
+  assert.match(commandLauncher, /https:\/\/easydrivecanada\.com\/downloads\/facebook-assistant\/install\.ps1/)
   assert.equal(pkg.scripts.start, 'node facebook-marketplace-assist-runner.mjs --port 4777 --profile-dir ".facebook-assist-profile"')
   assert.equal(pkg.dependencies.playwright, '^1.49.1')
   assert.equal(publicRunner, repoRunner)
