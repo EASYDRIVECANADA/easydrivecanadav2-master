@@ -2,20 +2,20 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 
-test('facebook assistant installer creates a Windows logon scheduled task', async () => {
+test('facebook assistant installer starts from the Windows Startup folder without Task Scheduler', async () => {
   const source = await readFile(new URL('./install-facebook-assistant-startup.ps1', import.meta.url), 'utf8')
 
-  assert.match(source, /Register-ScheduledTask/)
-  assert.match(source, /New-ScheduledTaskTrigger\s+-AtLogOn/)
   assert.match(source, /Startup\\EasyDrive Facebook Assistant\.cmd/)
-  assert.match(source, /Task Scheduler registration failed/)
   assert.match(source, /EasyDrive Facebook Assistant/)
   assert.match(source, /facebook-marketplace-assist-runner\.mjs/)
   assert.match(source, /--profile-dir/)
   assert.match(source, /\.facebook-assist-profile/)
   assert.match(source, /\[int\]\$Port\s+=\s+4777/)
   assert.match(source, /--port\s+\$Port/)
-  assert.match(source, /-RunLevel\s+Limited/)
+  assert.match(source, /Start-Process\s+powershell\.exe/)
+  assert.match(source, /WindowStyle\s+Hidden/)
+  assert.doesNotMatch(source, /Register-ScheduledTask/)
+  assert.doesNotMatch(source, /Start-ScheduledTask/)
   assert.doesNotMatch(source, /LeastPrivilege/)
   assert.doesNotMatch(source, /CodeGeneration/)
 })
@@ -30,11 +30,12 @@ test('site-hosted facebook assistant package can install without the repo checko
   assert.match(installer, /https:\/\/easydrivecanada\.com/)
   assert.match(installer, /Invoke-WebRequest/)
   assert.match(installer, /npm\s+install\s+--omit=dev/)
-  assert.match(installer, /Register-ScheduledTask/)
   assert.match(installer, /start-facebook-assistant\.ps1/)
   assert.match(installer, /Startup\\EasyDrive Facebook Assistant\.cmd/)
-  assert.match(installer, /Task Scheduler registration failed/)
-  assert.match(installer, /-RunLevel\s+Limited/)
+  assert.match(installer, /Start-Process\s+powershell\.exe/)
+  assert.match(installer, /WindowStyle\s+Hidden/)
+  assert.doesNotMatch(installer, /Register-ScheduledTask/)
+  assert.doesNotMatch(installer, /Start-ScheduledTask/)
   assert.doesNotMatch(installer, /LeastPrivilege/)
   assert.doesNotMatch(installer, /RepoRoot/)
   assert.match(commandLauncher, /install\.ps1/)
