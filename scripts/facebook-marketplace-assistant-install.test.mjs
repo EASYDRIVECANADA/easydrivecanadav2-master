@@ -7,6 +7,8 @@ test('facebook assistant installer creates a Windows logon scheduled task', asyn
 
   assert.match(source, /Register-ScheduledTask/)
   assert.match(source, /New-ScheduledTaskTrigger\s+-AtLogOn/)
+  assert.match(source, /Startup\\EasyDrive Facebook Assistant\.cmd/)
+  assert.match(source, /Task Scheduler registration failed/)
   assert.match(source, /EasyDrive Facebook Assistant/)
   assert.match(source, /facebook-marketplace-assist-runner\.mjs/)
   assert.match(source, /--profile-dir/)
@@ -29,6 +31,8 @@ test('site-hosted facebook assistant package can install without the repo checko
   assert.match(installer, /npm\s+install\s+--omit=dev/)
   assert.match(installer, /Register-ScheduledTask/)
   assert.match(installer, /start-facebook-assistant\.ps1/)
+  assert.match(installer, /Startup\\EasyDrive Facebook Assistant\.cmd/)
+  assert.match(installer, /Task Scheduler registration failed/)
   assert.match(installer, /-RunLevel\s+Limited/)
   assert.doesNotMatch(installer, /LeastPrivilege/)
   assert.doesNotMatch(installer, /RepoRoot/)

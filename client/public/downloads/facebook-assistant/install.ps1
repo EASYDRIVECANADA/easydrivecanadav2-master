@@ -15,6 +15,7 @@ $PackagePath = Join-Path $AssistantDir "package.json"
 $LauncherPath = Join-Path $AssistantDir "start-facebook-assistant.ps1"
 $LogFile = Join-Path $LogDir "facebook-assistant.log"
 $DownloadRoot = $BaseUrl.TrimEnd("/") + "/downloads/facebook-assistant"
+$StartupShortcutPath = Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs\Startup\EasyDrive Facebook Assistant.cmd"
 
 $NodeCommand = Get-Command node -ErrorAction SilentlyContinue
 if (!$NodeCommand) {
@@ -53,19 +54,27 @@ $Trigger = New-ScheduledTaskTrigger -AtLogOn
 $Principal = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" -LogonType Interactive -RunLevel Limited
 $Settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit (New-TimeSpan -Hours 12)
 
-Register-ScheduledTask `
-  -TaskName $TaskName `
-  -Action $Action `
-  -Trigger $Trigger `
-  -Principal $Principal `
-  -Settings $Settings `
-  -Description "Starts the EasyDrive Facebook Marketplace assistant when this Windows user logs in." `
-  -Force | Out-Null
+try {
+  Register-ScheduledTask `
+    -TaskName $TaskName `
+    -Action $Action `
+    -Trigger $Trigger `
+    -Principal $Principal `
+    -Settings $Settings `
+    -Description "Starts the EasyDrive Facebook Marketplace assistant when this Windows user logs in." `
+    -Force | Out-Null
 
-Start-ScheduledTask -TaskName $TaskName
+  Start-ScheduledTask -TaskName $TaskName
+} catch {
+  Write-Warning "Task Scheduler registration failed. Installing Startup folder fallback instead."
+  New-Item -ItemType Directory -Force -Path (Split-Path -Parent $StartupShortcutPath) | Out-Null
+  Set-Content -LiteralPath $StartupShortcutPath -Encoding ASCII -Value "@echo off`r`npowershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$LauncherPath`"`r`n"
+  Start-Process powershell.exe -ArgumentList @("-NoProfile", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden", "-File", $LauncherPath)
+}
 
 Write-Host "Installed $TaskName."
 Write-Host "The Facebook assistant will start automatically when this Windows user logs in."
 Write-Host "Health check: http://127.0.0.1:$Port/health"
 Write-Host "Install folder: $AssistantDir"
 Write-Host "Logs: $LogFile"
+Write-Host "Startup fallback: $StartupShortcutPath"
