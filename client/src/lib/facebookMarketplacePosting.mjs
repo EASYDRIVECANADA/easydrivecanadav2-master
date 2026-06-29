@@ -213,6 +213,18 @@ export function isValidFacebookAssistStatus(value) {
   return ASSIST_STATUS_VALUES.has(normalizeFacebookAssistStatus(value))
 }
 
+export function buildFacebookAssistPayloadFromPost({ post = {}, rawPayload = {}, freshVehiclePayload = {} } = {}) {
+  return buildFacebookAssistPayload({
+    ...rawPayload,
+    ...freshVehiclePayload,
+    postId: post.id,
+    title: firstText(post.posting_title, freshVehiclePayload.title, rawPayload.title),
+    description: firstText(post.posting_description, freshVehiclePayload.description, rawPayload.description),
+    price: firstNumber(post.posting_price, freshVehiclePayload.price, rawPayload.price),
+    location: firstText(post.posting_location, freshVehiclePayload.location, rawPayload.location),
+  })
+}
+
 export function buildFacebookAssistPayload(row = {}) {
   return {
     postId: clean(row.postId || row.id),
@@ -221,9 +233,9 @@ export function buildFacebookAssistPayload(row = {}) {
     make: clean(row.make),
     model: clean(row.model),
     trim: clean(row.trim),
-    title: clean(row.title || row.posting_title),
-    description: clean(row.description || row.posting_description),
-    price: numberValue(row.price || row.posting_price),
+    title: firstText(row.title, row.posting_title),
+    description: firstText(row.description, row.posting_description),
+    price: firstNumber(row.price, row.posting_price),
     mileage: numberValue(row.mileage),
     location: clean(row.location || row.posting_location),
     vin: clean(row.vin),

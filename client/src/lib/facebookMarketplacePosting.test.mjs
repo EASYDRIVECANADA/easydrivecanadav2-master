@@ -4,6 +4,7 @@ import { test } from 'node:test'
 import {
   ASSIST_STATUS_OPTIONS,
   buildFacebookAssistPayload,
+  buildFacebookAssistPayloadFromPost,
   buildFacebookAssistLaunchToken,
   buildFacebookMarketplacePayload,
   isValidFacebookListingUrl,
@@ -220,6 +221,34 @@ test('buildFacebookAssistPayload creates runner-safe payload from merged row', (
   assert.equal(Array.isArray(payload.images), true)
   assert.equal(payload.images.length > 0, true)
   assert.equal(payload.finalSubmitRequired, true)
+})
+
+test('buildFacebookAssistPayloadFromPost falls back to fresh vehicle price and description when saved row is empty', () => {
+  const freshPayload = buildFacebookMarketplacePayload(completeVehicle, {
+    siteUrl: 'https://easydrivecanada.com',
+    defaultLocation: 'Mississauga, ON',
+  })
+
+  const payload = buildFacebookAssistPayloadFromPost({
+    post: {
+      id: 'post-1',
+      posting_title: '',
+      posting_description: '',
+      posting_price: 0,
+      posting_location: '',
+    },
+    rawPayload: {
+      price: 0,
+      description: '',
+    },
+    freshVehiclePayload: freshPayload,
+  })
+
+  assert.equal(payload.postId, 'post-1')
+  assert.equal(payload.title, freshPayload.title)
+  assert.equal(payload.description, freshPayload.description)
+  assert.equal(payload.price, freshPayload.price)
+  assert.equal(payload.location, freshPayload.location)
 })
 
 test('facebook assist launch tokens expire and verify without secrets in the runner', () => {

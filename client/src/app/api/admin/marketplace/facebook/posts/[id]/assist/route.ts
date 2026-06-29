@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { requireAdminSession } from '@/lib/apiAuth'
 import {
-  buildFacebookAssistPayload,
+  buildFacebookAssistPayloadFromPost,
   buildFacebookAssistLaunchToken,
   buildFacebookMarketplacePayload,
   isValidFacebookAssistStatus,
@@ -108,14 +108,10 @@ export async function GET(request: Request, context: { params: { id: string } })
         })
       }
     }
-    const payload = buildFacebookAssistPayload({
-      ...rawPayload,
-      ...freshVehiclePayload,
-      postId: post.id,
-      title: post.posting_title,
-      description: post.posting_description,
-      price: post.posting_price,
-      location: post.posting_location,
+    const payload = buildFacebookAssistPayloadFromPost({
+      post,
+      rawPayload,
+      freshVehiclePayload,
     })
     const launchToken = buildFacebookAssistLaunchToken({
       postId,
