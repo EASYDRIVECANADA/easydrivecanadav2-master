@@ -47,7 +47,7 @@ if (!$NodeCommand) {
   throw "Node.js is required. Install Node.js from https://nodejs.org, then run this installer again."
 }
 
-$NpmCommand = Get-Command npm -ErrorAction SilentlyContinue
+$NpmCommand = Get-Command npm.cmd -ErrorAction SilentlyContinue
 if (!$NpmCommand) {
   throw "npm is required. Install Node.js from https://nodejs.org, then run this installer again."
 }
@@ -60,7 +60,7 @@ Invoke-WebRequest -Uri "$DownloadRoot/package.json" -OutFile $PackagePath
 
 Push-Location $AssistantDir
 try {
-  npm install --omit=dev
+  npm.cmd install --omit=dev
 } finally {
   Pop-Location
 }

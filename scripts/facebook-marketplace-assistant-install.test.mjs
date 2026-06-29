@@ -32,7 +32,8 @@ test('site-hosted facebook assistant package can install without the repo checko
 
   assert.match(installer, /https:\/\/easydrivecanada\.com/)
   assert.match(installer, /Invoke-WebRequest/)
-  assert.match(installer, /npm\s+install\s+--omit=dev/)
+  assert.match(installer, /npm\.cmd\s+install\s+--omit=dev/)
+  assert.doesNotMatch(installer, /^\s*npm\s+install\s+--omit=dev/m)
   assert.match(installer, /start-facebook-assistant\.ps1/)
   assert.match(installer, /Startup\\EasyDrive Facebook Assistant\.cmd/)
   assert.match(installer, /Stop-FacebookAssistantOnPort/)
