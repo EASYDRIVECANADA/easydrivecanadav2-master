@@ -261,17 +261,25 @@ async function findAndFillControl(page, item) {
   return null
 }
 
-async function clickMatchingOption(page, value) {
+export async function clickMatchingOption(page, value) {
   const name = regexFor(value)
   const option = page.getByRole('option', { name }).first()
   if (await option.count().catch(() => 0)) {
-    await option.click()
-    return true
+    try {
+      await option.click({ timeout: facebookActionTimeoutMs })
+      return true
+    } catch {
+      return false
+    }
   }
   const text = page.getByText(name).first()
   if (await text.count().catch(() => 0)) {
-    await text.click()
-    return true
+    try {
+      await text.click({ timeout: facebookActionTimeoutMs })
+      return true
+    } catch {
+      return false
+    }
   }
   return false
 }

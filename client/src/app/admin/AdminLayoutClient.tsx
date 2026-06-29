@@ -258,6 +258,7 @@ export default function AdminLayoutClient({ children }: { children: ReactNode })
       { href: '/admin', label: 'Home', icon: 'home', disabled: false, visible: true },
       { href: '/admin/leads', label: 'Leads', icon: 'phone', disabled: !isVerified, visible: canShow('customers') || canShow('access_all_leads_customers') },
       { href: '/admin/appointments', label: 'Appointments', icon: 'calendar', disabled: !isVerified, visible: canShow('customers') || canShow('access_all_leads_customers') || canShow('inventory') },
+      { href: '/admin/fleet-finance', label: 'Fleet Finance', icon: 'dollar', disabled: !isVerified, visible: canShow('inventory') || canShow('sales') || canShow('access_all_deals') },
       { href: '/admin/customer?view=list', label: 'Customers', icon: 'users', disabled: !isVerified, visible: canShow('customers') || canShow('access_all_leads_customers') },
       { href: '/admin/vendors', label: 'Vendors', icon: 'briefcase', disabled: !isVerified, visible: canShow('vendors') },
       { href: '/admin/marketplace', label: 'Market Place', icon: 'market', disabled: !isVerified, visible: true },

@@ -13,6 +13,7 @@ import {
   formatAssistFieldResults,
   filledValueMatches,
   facebookActionTimeoutMs,
+  clickMatchingOption,
   tryFillLocator,
   resolveProfileDir,
   createStatusBody,
@@ -179,6 +180,24 @@ test('tryFillLocator uses short action timeouts when a Facebook field rejects in
     ['fill', facebookActionTimeoutMs],
     ['click', facebookActionTimeoutMs],
   ])
+})
+
+test('clickMatchingOption uses short timeouts and falls back when Facebook overlays intercept suggestions', async () => {
+  const actions = []
+  const suggestion = {
+    count: async () => 1,
+    click: async (options) => {
+      actions.push(options?.timeout)
+      throw new Error('subtree intercepts pointer events')
+    },
+  }
+  const page = {
+    getByRole: () => ({ first: () => ({ count: async () => 0 }) }),
+    getByText: () => ({ first: () => suggestion }),
+  }
+
+  assert.equal(await clickMatchingOption(page, 'Ottawa, ON'), false)
+  assert.deepEqual(actions, [facebookActionTimeoutMs])
 })
 
 test('runner health endpoint is readable from the admin dashboard', async () => {
